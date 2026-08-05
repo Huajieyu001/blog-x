@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: blog_x
+      POSTGRES_USER: blog_x
+      POSTGRES_HOST_AUTH_METHOD: trust
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blog_x -d blog_x"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+
+volumes:
+  postgres-data:

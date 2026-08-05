@@ -1,0 +1,47 @@
+{
+  "name": "blog-x",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@11.20.0",
+  "engines": { "node": ">=24.15.0" },
+  "scripts": {
+    "dev:api": "tsx apps/api/src/app.ts",
+    "dev:web": "next dev apps/web",
+    "build": "next build apps/web",
+    "typecheck": "tsc --noEmit",
+    "db:generate:check": "drizzle-kit generate --config apps/api/drizzle.config.ts",
+    "db:migrate": "tsx apps/api/src/app.ts migrate",
+    "db:seed": "tsx apps/api/src/app.ts seed",
+    "db:schema:verify": "tsx apps/api/src/app.ts schema:verify",
+    "test:e2e": "playwright test apps/web/e2e/walking-skeleton.spec.ts --workers=1"
+  },
+  "dependencies": {
+    "@fastify/cookie": "11.1.2",
+    "@node-rs/argon2": "2.0.2",
+    "drizzle-orm": "0.45.2",
+    "fastify": "5.11.2",
+    "next": "16.3.0",
+    "pg": "8.22.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "rehype-sanitize": "6.0.0",
+    "rehype-stringify": "10.0.1",
+    "remark-gfm": "4.0.1",
+    "remark-parse": "11.0.0",
+    "remark-rehype": "11.1.2",
+    "shiki": "4.4.2",
+    "unified": "11.0.5",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@types/node": "26.1.2",
+    "@types/pg": "8.20.4",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "drizzle-kit": "0.31.10",
+    "tsx": "4.23.7",
+    "typescript": "7.0.2"
+  }
+}
