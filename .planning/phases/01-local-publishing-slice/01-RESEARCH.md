@@ -375,16 +375,15 @@ The cookie contains no user profile, role, password, or database credential; it 
 | A1 | Zod remains the best small schema validator for this TypeScript application. | Standard Stack | Select a different maintained validator before install. |
 | A2 | The listed unified packages remain mutually compatible at their current npm versions. | Standard Stack / Markdown | Pin and run the renderer/XSS tests before acceptance. |
 | A3 | Next's local rewrite can transparently proxy `/api/*` to Fastify and deployment Nginx can preserve the same path. | Architecture | Misconfigured rewrites/proxy headers would break sessions or browser requests. |
-| A4 | The proposed article status names and deleted-slug reservation policy are suitable. | Architecture Patterns | Schema/migration semantics may need revision; decide before initial migration. |
+| A4 | The proposed article status names are suitable; deleted slugs are reserved for every retained row. | Architecture Patterns | Status names remain an implementation assumption; slug reservation is resolved from D-08/D-10 before the initial migration. |
 | A5 | The current local machine can use Docker Desktop/Compose after installation to provide the isolated PostgreSQL dependency. | Environment Availability | Local one-command startup remains blocked until a DB runtime is installed. |
 | A6 | Lucia v3 should not be added. | State of the Art | Re-evaluate only if a supported session library materially reduces reviewed code. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Should a soft-deleted slug remain permanently reserved?**
+1. **RESOLVED — a soft-deleted slug remains reserved while its row is retained.**
    - What we know: **“slug 在所有文章状态中必须唯一。”** and **“删除在数据层采用可恢复的软删除，公开查询立即排除被删除内容；永久清理不进入本阶段。”** [VERIFIED: 01-CONTEXT.md:28-30]
-   - What's unclear: Whether a deleted post's slug may be reused would change the unique-index predicate and future URL compatibility.
-   - Recommendation: Reserve slugs for all retained rows in Phase 1, since reclaiming a former public URL is a costly public-contract decision. [ASSUMED]
+   - Resolution: Enforce uniqueness across all retained rows, including soft-deleted rows, because D-08 requires uniqueness across every article state and D-10 retains deleted rows. Reclaiming a former public URL is a separate costly contract decision and is not allowed in Phase 1. [VERIFIED: 01-CONTEXT.md:28-30]
 
 ## Environment Availability
 
