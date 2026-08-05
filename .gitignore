@@ -1,0 +1,27 @@
+# Local GSD/Codex runtime installation
+/.codex/
+
+# Dependencies and build output
+node_modules/
+.next/
+dist/
+coverage/
+playwright-report/
+test-results/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Local databases and generated runtime data
+*.sqlite
+*.sqlite3
+uploads/
+
+# Large recovery archives are retained locally, not in Git
+/backups/*.tar.gz
+
+# OS/editor files
+.DS_Store
+*.log
