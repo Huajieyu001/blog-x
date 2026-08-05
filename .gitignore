@@ -19,6 +19,9 @@ test-results/
 *.sqlite3
 uploads/
 
+# Reproducible GSD research registry cache
+/.planning/research/.cache/
+
 # Large recovery archives are retained locally, not in Git
 /backups/*.tar.gz
 
