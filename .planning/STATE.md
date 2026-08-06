@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 01
 current_phase_name: local-publishing-slice
 status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-08-05T14:55:12.130Z"
-last_activity: 2026-08-05
-last_activity_desc: Phase 01 execution started
+stopped_at: Completed 01-01-PLAN.md
+last_updated: "2026-08-06T16:07:28.939Z"
+last_activity: 2026-08-06
+last_activity_desc: Completed Phase 01 Plan 01 local publishing tracer
 progress:
-  total_phases: 1
+  total_phases: 4
   completed_phases: 0
   total_plans: 8
-  completed_plans: 0
+  completed_plans: 1
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 01 (local-publishing-slice) — EXECUTING
-Plan: 1 of 8
-Status: Executing Phase 01
-Last activity: 2026-08-05 — Phase 01 execution started
+Plan: 2 of 8
+Status: Ready to execute
+Last activity: 2026-08-06 — Completed Phase 01 Plan 01 local publishing tracer
 
-Progress: ░░░░░░░░░░ 0%
+Progress: [█░░░░░░░░░] 13%
 
 ## Performance Metrics
 
@@ -53,6 +53,12 @@ Progress: ░░░░░░░░░░ 0%
 - Last 5 plans: -
 - Trend: -
 
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 01 P01 | 2d elapsed | 2 tasks | 20 files |
+
 ## Accumulated Context
 
 ### Decisions
@@ -62,6 +68,9 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Initialization]: 主服务器在用户明确解冻前完全禁止连接和修改。
 - [Initialization]: 本地替代主服务器，副服务器可承载后端与数据库。
 - [Initialization]: P0 进入 v1，P1 功能作为后续增量。
+- [Phase 01]: Unsafe browser requests require an exact PUBLIC_ORIGIN. — Avoid trusting spoofable forwarded headers while supporting the Next-to-Fastify proxy boundary.
+- [Phase 01]: The tracer E2E uses local port 3100. — Port 3000 belongs to an unrelated user-owned Nuxt process and must not be terminated.
+- [Phase 01]: Repeat administrator seeds rotate the stored password hash. — Runtime-random credentials must keep migration and browser verification repeatable without persisting secrets.
 
 ### Pending Todos
 
@@ -81,6 +90,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-05T13:48:49.765Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-local-publishing-slice/01-CONTEXT.md
+Last session: 2026-08-06T16:07:08.340Z
+Stopped at: Completed 01-01-PLAN.md
+Resume file: None
