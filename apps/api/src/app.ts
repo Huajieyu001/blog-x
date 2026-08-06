@@ -29,6 +29,8 @@ function secureEqual(left: string, right: string) { const a = Buffer.from(left);
 function originIsTrusted(request: FastifyRequest) {
   const origin = request.headers.origin;
   if (!origin) return true;
+  const publicOrigin = process.env.PUBLIC_ORIGIN;
+  if (publicOrigin) return origin === publicOrigin;
   const host = request.headers.host;
   return Boolean(host) && origin === `${request.protocol}://${host}`;
 }
@@ -117,7 +119,10 @@ async function seed() {
   const username = process.env.ADMIN_USERNAME; const password = process.env.ADMIN_PASSWORD;
   if (!username || !password) throw new Error("ADMIN_USERNAME and ADMIN_PASSWORD are required for seed");
   const passwordHash = await hash(password, { algorithm: Algorithm.Argon2id, memoryCost: 19456, timeCost: 2, parallelism: 1 });
-  await db.insert(administrators).values({ username, passwordHash }).onConflictDoNothing();
+  await db.insert(administrators).values({ username, passwordHash }).onConflictDoUpdate({
+    target: administrators.username,
+    set: { passwordHash },
+  });
 }
 async function schemaVerify() {
   const result = await pool.query("select tablename from pg_tables where schemaname = 'public' and tablename = any($1)", [["administrators", "sessions", "articles"]]);
