@@ -27,7 +27,7 @@ Blog X 采用四个纵向 MVP 阶段交付。第一阶段在本地建立完整�
   3. 发布文章会出现在首页，访客可通过唯一固定链接阅读；草稿和下线文章不可公开访问。
   4. 管理员可修改文章核心元数据并完成下线或删除操作。
 
-**Plans**: 2/8 plans executed
+**Plans**: 3/8 plans executed
 
 Plans:
 **Wave 1**
@@ -40,7 +40,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-03-PLAN.md — 完成单管理员登录、服务端会话生命周期与受保护访问。
+- [x] 01-03-PLAN.md — 完成单管理员登录、服务端会话生命周期与受保护访问。
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -130,7 +130,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Local Publishing Slice | 2/8 | In Progress|  |
+| 1. Local Publishing Slice | 3/8 | In Progress|  |
 | 2. Complete Reading Experience | 0/2 | Not started | - |
 | 3. Distribution and Portability | 0/2 | Not started | - |
 | 4. Secure Operations and Release Gate | 0/3 | Not started | - |

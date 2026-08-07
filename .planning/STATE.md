@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 01
 current_phase_name: local-publishing-slice
 status: executing
-stopped_at: Completed 01-02-PLAN.md
-last_updated: "2026-08-07T11:55:59.737Z"
+stopped_at: Completed 01-03-PLAN.md
+last_updated: "2026-08-07T14:06:34.714Z"
 last_activity: 2026-08-07
-last_activity_desc: Completed Phase 01 Plan 02 workspace and shared contracts
+last_activity_desc: Completed Phase 01 Plan 03 single-administrator authentication
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 8
-  completed_plans: 2
+  completed_plans: 3
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 01 (local-publishing-slice) — EXECUTING
-Plan: 3 of 8
+Plan: 4 of 8
 Status: Ready to execute
-Last activity: 2026-08-07 — Completed Phase 01 Plan 02 workspace and shared contracts
+Last activity: 2026-08-07 — Completed Phase 01 Plan 03 single-administrator authentication
 
-Progress: [███░░░░░░░] 25%
+Progress: [████░░░░░░] 38%
 
 ## Performance Metrics
 
@@ -59,6 +59,7 @@ Progress: [███░░░░░░░] 25%
 |------|----------|-------|-------|
 | Phase 01 P01 | 2d elapsed | 2 tasks | 20 files |
 | Phase 01 P02 | 1182min | 2 tasks | 20 files |
+| Phase 01 P03 | 34min | 2 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -74,6 +75,8 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 01]: Repeat administrator seeds rotate the stored password hash. — Runtime-random credentials must keep migration and browser verification repeatable without persisting secrets.
 - [Phase 01]: Web, API, and wire contracts are separate pnpm packages with dependencies owned at the narrowest deployment boundary. — This preserves independent deployment and prevents the browser package from acquiring PostgreSQL, Drizzle, session, or password internals.
 - [Phase 01]: Shared request and response schemas use strict allowlists and are validated by both API and Web consumers. — Rejecting unknown response fields makes accidental disclosure of persistence or authentication internals a tested contract failure.
+- [Phase 01]: Fastify owns a single opaque session authority shared by auth and every protected API route. — Decorating the parent Fastify scope avoids plugin-encapsulation gaps and keeps Next redirects presentation-only.
+- [Phase 01]: Next forwards only the inbound Cookie header for server-side session checks and stores no token in browser JavaScript storage. — This preserves the HttpOnly boundary and prevents the frontend from becoming a second authentication authority.
 
 ### Pending Todos
 
@@ -93,6 +96,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-07T11:54:27.589Z
-Stopped at: Completed 01-02-PLAN.md
+Last session: 2026-08-07T14:06:18.015Z
+Stopped at: Completed 01-03-PLAN.md
 Resume file: None
