@@ -1,10 +1,19 @@
-import rehypeSanitize from "rehype-sanitize";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeStringify from "rehype-stringify";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { codeToHast } from "shiki";
 import { unified } from "unified";
+
+const markdownSanitizeSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    pre: [...(defaultSchema.attributes?.pre ?? []), ["class", /^shiki github-light$/], "style", "tabindex"],
+    span: [...(defaultSchema.attributes?.span ?? []), ["class", "line"], "style"],
+  },
+};
 
 type HastNode = {
   type: string;
@@ -45,7 +54,9 @@ export async function renderMarkdown(markdown: string) {
   const parser = unified().use(remarkParse).use(remarkGfm).use(remarkRehype, { allowDangerousHtml: false });
   const tree = await parser.run(parser.parse(markdown));
   await highlightCode(tree as HastNode);
-  const sanitizer = unified().use(rehypeSanitize).use(rehypeStringify);
+  // Raw HTML is disabled before highlighting. These attributes are therefore
+  // emitted only by Shiki and can survive the final sanitizer safely.
+  const sanitizer = unified().use(rehypeSanitize, markdownSanitizeSchema).use(rehypeStringify);
   const sanitizedTree = await sanitizer.run(tree);
   return String(sanitizer.stringify(sanitizedTree));
 }

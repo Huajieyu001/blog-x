@@ -1,5 +1,6 @@
 import {
   adminPostInputSchema,
+  adminPostIdSchema,
   adminPostPreviewInputSchema,
   adminPostPreviewSchema,
   fieldErrorResponseSchema,
@@ -80,7 +81,9 @@ export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async 
 
   app.get<{ Params: { id: string } }>("/admin/posts/:id", async (request, reply) => {
     if (!await guard(request, reply)) return;
-    const post = await options.articleService.getDraft(request.params.id);
+    const id = adminPostIdSchema.safeParse(request.params.id);
+    if (!id.success) return reply.code(404).send({ error: "not_found" });
+    const post = await options.articleService.getDraft(id.data);
     if (!post) return reply.code(404).send({ error: "not_found" });
     return post;
   });
@@ -88,10 +91,12 @@ export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async 
   app.put<{ Params: { id: string } }>("/admin/posts/:id", async (request, reply) => {
     if (!await guard(request, reply)) return;
     if (!trustedOrigin(request)) return reply.code(403).send({ error: "forbidden" });
+    const id = adminPostIdSchema.safeParse(request.params.id);
+    if (!id.success) return reply.code(404).send({ error: "not_found" });
     const parsed = adminPostInputSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send(fieldErrors(parsed.error));
     try {
-      const post = await options.articleService.updateDraft(request.params.id, parsed.data);
+      const post = await options.articleService.updateDraft(id.data, parsed.data);
       if (!post) return reply.code(404).send({ error: "not_found" });
       return post;
     } catch (error) {

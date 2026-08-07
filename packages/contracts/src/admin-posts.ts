@@ -2,14 +2,16 @@ import { z } from "zod";
 
 const slugPattern = /^[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*$/u;
 const publishedAtInputSchema = z.union([z.string().datetime({ offset: true }), z.null()]);
+const coverUrlSchema = z.url("请输入有效的封面 URL")
+  .refine((value) => /^https?:\/\//i.test(value), "封面 URL 必须使用 http 或 https");
 
 export const adminPostInputSchema = z.object({
   title: z.string().trim().min(1, "请输入标题").max(240, "标题不能超过 240 个字符"),
   summary: z.string().trim().max(1_000, "摘要不能超过 1000 个字符"),
-  coverUrl: z.union([z.literal(""), z.url("请输入有效的封面 URL")]),
+  coverUrl: z.union([z.literal(""), coverUrlSchema]),
   slug: z.string().trim().min(1, "请输入 Slug").max(180, "Slug 不能超过 180 个字符").regex(slugPattern, "Slug 只能包含字母、数字和单个连字符"),
   markdown: z.string().trim().min(1, "请输入 Markdown 正文").max(200_000, "正文不能超过 200000 个字符"),
-  publishedAt: publishedAtInputSchema,
+  publishedAt: publishedAtInputSchema.optional().default(null),
   seoDescription: z.string().trim().max(320, "SEO 描述不能超过 320 个字符"),
 }).strict();
 
@@ -24,6 +26,7 @@ export const adminPostPreviewInputSchema = z.object({
 
 export const adminPostPreviewSchema = z.object({ html: z.string() }).strict();
 export const slugSuggestionSchema = z.object({ slug: z.string() }).strict();
+export const adminPostIdSchema = z.uuid();
 
 export const fieldErrorResponseSchema = z.object({
   error: z.literal("validation_failed"),

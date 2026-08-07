@@ -100,6 +100,8 @@ test("draft metadata round-trips, slugs stay reserved, and preview uses the safe
   const reopened = await app.inject({ method: "GET", url: `/admin/posts/${created.json().id}`, headers: { cookie } });
   assert.equal(reopened.statusCode, 200);
   assert.deepEqual(reopened.json(), created.json());
+  const hiddenDraft = await app.inject({ method: "GET", url: `/public/articles/${original.slug}` });
+  assert.equal(hiddenDraft.statusCode, 404);
 
   const updatedInput = { ...original, title: "修改后的标题", summary: "修改后的摘要", markdown: "# 修改后", publishedAt: null };
   const updated = await app.inject({ method: "PUT", url: `/admin/posts/${created.json().id}`, headers, payload: updatedInput });
@@ -119,6 +121,8 @@ test("draft metadata round-trips, slugs stay reserved, and preview uses the safe
   const preview = await app.inject({ method: "POST", url: "/admin/posts/preview", headers, payload: { markdown: hostileMarkdown } });
   assert.equal(preview.statusCode, 200);
   assert.match(preview.json().html, /<h1>Safe<\/h1>/);
+  assert.match(preview.json().html, /class="shiki github-light"/);
+  assert.match(preview.json().html, /style="[^"]+"/);
   assert.doesNotMatch(preview.json().html, /<script|javascript:|onerror=/i);
   const afterPreview = await pool.query("select count(*)::int as count from articles");
   assert.equal(afterPreview.rows[0].count, beforePreview.rows[0].count);
