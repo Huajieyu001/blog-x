@@ -98,6 +98,7 @@ test("publish, edit, slug confirmation, unpublish, republish, and soft delete ar
   assert.equal(ordinaryEdit.statusCode, 200);
   assert.equal(ordinaryEdit.json().publishedAt, explicitPublishedAt);
   assert.equal(ordinaryEdit.json().status, "published");
+  assert.notEqual(ordinaryEdit.json().version, published.json().version);
 
   const changedSlug = `${slug}-changed`;
   const noConfirmation = await app.inject({ method: "PUT", url: `/admin/posts/${draft.json().id}`, headers, payload: { ...ordinaryEditInput, slug: changedSlug } });

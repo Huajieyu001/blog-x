@@ -46,12 +46,12 @@ test("login, refresh, expiry, logout, and revoked-token reuse stay server-author
   const validResponse = await login(page, password!);
   expect(validResponse.status()).toBe(200);
   await expect(page).toHaveURL(`${webOrigin}/admin`);
-  await expect(page.getByRole("heading", { name: "发布文章" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "文章管理" })).toBeVisible();
 
   const storageKeys = await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) }));
   expect(storageKeys).toEqual({ local: [], session: [] });
   await page.reload();
-  await expect(page.getByRole("heading", { name: "发布文章" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "文章管理" })).toBeVisible();
 
   const activeCookie = (await context.cookies(webOrigin)).find((cookie) => cookie.name === "blog_x_session");
   expect(activeCookie?.httpOnly).toBe(true);

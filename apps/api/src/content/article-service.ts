@@ -42,6 +42,10 @@ function statusOf(post: StoredAdminPost) {
   return articleStatusSchema.parse(post.status);
 }
 
+function nextVersion(current: StoredAdminPost) {
+  return new Date(Math.max(Date.now(), current.updatedAt.getTime() + 1));
+}
+
 function confirmationMatches(id: string, current: StoredAdminPost, input: AdminPostUpdateInput) {
   return input.slugChangeConfirmation?.articleId === id
     && input.slugChangeConfirmation.currentSlug === current.slug
@@ -94,7 +98,7 @@ export function createArticleService(repository: AdminPostRepository) {
         markdown: input.markdown,
         publishedAt,
         seoDescription: input.seoDescription,
-        updatedAt: new Date(),
+        updatedAt: nextVersion(current),
       });
       return { ok: true, post: serialize(updated) };
     });
@@ -108,7 +112,7 @@ export function createArticleService(repository: AdminPostRepository) {
       if (!target) return { ok: false, detail: { error: "invalid_transition", status, action } };
 
       if (action === "delete") {
-        await update({ deletedAt: new Date(), updatedAt: new Date() });
+        await update({ deletedAt: new Date(), updatedAt: nextVersion(current) });
         return { ok: true, deleted: { id, deleted: true } };
       }
 
@@ -131,7 +135,7 @@ export function createArticleService(repository: AdminPostRepository) {
       const updated = await update({
         status: target,
         publishedAt: action === "publish" ? (current.publishedAt ?? new Date()) : current.publishedAt,
-        updatedAt: new Date(),
+        updatedAt: nextVersion(current),
       });
       return { ok: true, post: serialize(updated) };
     });

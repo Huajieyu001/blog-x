@@ -33,11 +33,14 @@ test("administrator publishes Markdown that is immediately SSR-readable", async 
   const loginResponse = page.waitForResponse((response) => response.url().endsWith("/api/auth/login"));
   await page.getByRole("button", { name: "登录" }).click();
   await expect((await loginResponse).status()).toBe(200);
-  await expect(page.getByRole("heading", { name: "发布文章" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "文章管理" })).toBeVisible();
+  await page.getByRole("link", { name: "新建草稿" }).click();
   await page.getByLabel("标题").fill(title);
   await page.getByLabel("Slug").fill(slug);
   await page.getByLabel("Markdown").fill("# Hello\n\n| A | B |\n| - | - |\n| 1 | 2 |");
+  await page.getByRole("button", { name: "保存草稿" }).click();
   await page.getByRole("button", { name: "发布" }).click();
+  await page.goto(webOrigin);
   await expect(page.getByRole("link", { name: title })).toBeVisible();
   await page.getByRole("link", { name: title }).click();
   await expect(page.getByRole("heading", { name: "Hello" })).toBeVisible();
