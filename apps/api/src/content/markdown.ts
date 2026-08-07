@@ -1,4 +1,4 @@
-import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import rehypeSanitize, { defaultSchema, type Options as SanitizeSchema } from "rehype-sanitize";
 import rehypeStringify from "rehype-stringify";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
@@ -6,7 +6,7 @@ import remarkRehype from "remark-rehype";
 import { codeToHast } from "shiki";
 import { unified } from "unified";
 
-const markdownSanitizeSchema = {
+const markdownSanitizeSchema: SanitizeSchema = {
   ...defaultSchema,
   attributes: {
     ...defaultSchema.attributes,
