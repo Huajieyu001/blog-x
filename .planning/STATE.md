@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 01
 current_phase_name: local-publishing-slice
 status: executing
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-08-06T16:07:28.939Z"
-last_activity: 2026-08-06
-last_activity_desc: Completed Phase 01 Plan 01 local publishing tracer
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-08-07T11:55:59.737Z"
+last_activity: 2026-08-07
+last_activity_desc: Completed Phase 01 Plan 02 workspace and shared contracts
 progress:
-  total_phases: 4
+  total_phases: 1
   completed_phases: 0
   total_plans: 8
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 01 (local-publishing-slice) — EXECUTING
-Plan: 2 of 8
+Plan: 3 of 8
 Status: Ready to execute
-Last activity: 2026-08-06 — Completed Phase 01 Plan 01 local publishing tracer
+Last activity: 2026-08-07 — Completed Phase 01 Plan 02 workspace and shared contracts
 
-Progress: [█░░░░░░░░░] 13%
+Progress: [███░░░░░░░] 25%
 
 ## Performance Metrics
 
@@ -58,6 +58,7 @@ Progress: [█░░░░░░░░░] 13%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 01 P01 | 2d elapsed | 2 tasks | 20 files |
+| Phase 01 P02 | 1182min | 2 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -71,6 +72,8 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 01]: Unsafe browser requests require an exact PUBLIC_ORIGIN. — Avoid trusting spoofable forwarded headers while supporting the Next-to-Fastify proxy boundary.
 - [Phase 01]: The tracer E2E uses local port 3100. — Port 3000 belongs to an unrelated user-owned Nuxt process and must not be terminated.
 - [Phase 01]: Repeat administrator seeds rotate the stored password hash. — Runtime-random credentials must keep migration and browser verification repeatable without persisting secrets.
+- [Phase 01]: Web, API, and wire contracts are separate pnpm packages with dependencies owned at the narrowest deployment boundary. — This preserves independent deployment and prevents the browser package from acquiring PostgreSQL, Drizzle, session, or password internals.
+- [Phase 01]: Shared request and response schemas use strict allowlists and are validated by both API and Web consumers. — Rejecting unknown response fields makes accidental disclosure of persistence or authentication internals a tested contract failure.
 
 ### Pending Todos
 
@@ -90,6 +93,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-06T16:07:08.340Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-08-07T11:54:27.589Z
+Stopped at: Completed 01-02-PLAN.md
 Resume file: None
