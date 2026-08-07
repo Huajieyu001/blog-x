@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { loginInputSchema, loginResponseSchema, publishInputSchema, publishedArticleSchema } from "@blog-x/contracts";
 
-export default function TracerAdmin() {
-  const [loggedIn, setLoggedIn] = useState(false);
+export default function TracerAdmin({ initiallyAuthenticated = false }: { initiallyAuthenticated?: boolean }) {
+  const [loggedIn, setLoggedIn] = useState(initiallyAuthenticated);
   const [message, setMessage] = useState("");
   async function login(form: FormData) {
     const parsed = loginInputSchema.safeParse(Object.fromEntries(form));

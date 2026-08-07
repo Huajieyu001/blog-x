@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  loginInputSchema,
-  publishInputSchema,
-  publicArticleDetailSchema,
-  publicArticleListSchema,
-} from "./tracer.js";
+import { loginInputSchema } from "./auth.js";
+import { publishInputSchema, publicArticleDetailSchema, publicArticleListSchema } from "./tracer.js";
 
 test("login input requires bounded username and password fields", () => {
   assert.equal(loginInputSchema.safeParse({ username: "admin", password: "secret" }).success, true);

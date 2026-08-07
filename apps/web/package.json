@@ -6,7 +6,8 @@
     "dev": "next dev .",
     "build": "next build .",
     "typecheck": "tsc --project tsconfig.json --noEmit",
-    "test:e2e": "cd ../.. && playwright test apps/web/e2e/walking-skeleton.spec.ts --workers=1"
+    "test:e2e": "cd ../.. && playwright test apps/web/e2e/walking-skeleton.spec.ts --workers=1",
+    "test:e2e:auth": "cd ../.. && playwright test apps/web/e2e/auth-session.spec.ts --workers=1"
   },
   "dependencies": {
     "@blog-x/contracts": "workspace:*",

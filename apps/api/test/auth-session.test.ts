@@ -32,7 +32,10 @@ test("single administrator sessions are opaque, rotated, revocable, and do not l
   const password = "credential-that-must-not-appear-in-logs";
 
   await pool.query("truncate table sessions, administrators cascade");
-  context.after(async () => { await pool.end(); });
+  context.after(async () => {
+    await pool.query("truncate table sessions, administrators cascade");
+    await pool.end();
+  });
 
   await seedAdministrator(db, { username, password });
   await seedAdministrator(db, { username, password });

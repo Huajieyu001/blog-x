@@ -15,7 +15,8 @@
     "db:migrate": "corepack pnpm --filter @blog-x/api db:migrate",
     "db:seed": "corepack pnpm --filter @blog-x/api db:seed",
     "db:schema:verify": "corepack pnpm --filter @blog-x/api db:schema:verify",
-    "test:e2e": "corepack pnpm --filter @blog-x/web test:e2e"
+    "test:e2e": "corepack pnpm --filter @blog-x/web test:e2e",
+    "test:e2e:auth": "corepack pnpm --filter @blog-x/web test:e2e:auth"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
