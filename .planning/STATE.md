@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 01
 current_phase_name: local-publishing-slice
 status: executing
-stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-08-07T14:06:34.714Z"
+stopped_at: Completed 01-04-PLAN.md
+last_updated: "2026-08-07T15:04:03.618Z"
 last_activity: 2026-08-07
-last_activity_desc: Completed Phase 01 Plan 03 single-administrator authentication
+last_activity_desc: Completed Phase 01 Plan 04 draft authoring and safe preview
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 8
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 01 (local-publishing-slice) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Status: Ready to execute
-Last activity: 2026-08-07 — Completed Phase 01 Plan 03 single-administrator authentication
+Last activity: 2026-08-07 — Completed Phase 01 Plan 04 draft authoring and safe preview
 
-Progress: [████░░░░░░] 38%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Progress: [████░░░░░░] 38%
 | Phase 01 P01 | 2d elapsed | 2 tasks | 20 files |
 | Phase 01 P02 | 1182min | 2 tasks | 20 files |
 | Phase 01 P03 | 34min | 2 tasks | 19 files |
+| Phase 01 P04 | 55min | 2 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,9 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 01]: Shared request and response schemas use strict allowlists and are validated by both API and Web consumers. — Rejecting unknown response fields makes accidental disclosure of persistence or authentication internals a tested contract failure.
 - [Phase 01]: Fastify owns a single opaque session authority shared by auth and every protected API route. — Decorating the parent Fastify scope avoids plugin-encapsulation gaps and keeps Next redirects presentation-only.
 - [Phase 01]: Next forwards only the inbound Cookie header for server-side session checks and stores no token in browser JavaScript storage. — This preserves the HttpOnly boundary and prevents the frontend from becoming a second authentication authority.
+- [Phase 01]: Keep raw Markdown as content authority and derive both public and preview HTML through one Fastify renderer. — One server-owned rendering pipeline prevents preview/public drift and keeps unsafe content out of the browser package.
+- [Phase 01]: Reserve every retained slug through the unconditional PostgreSQL unique index, including soft-deleted rows. — Permanent reservation preserves old-link meaning and avoids accidental identifier reuse across lifecycle states.
+- [Phase 01]: Allow only HTTP(S) cover URLs and exact Shiki-generated presentation attributes through final Markdown sanitization. — The narrow allowlist preserves syntax highlighting while removing executable HTML and dangerous URL protocols.
 
 ### Pending Todos
 
@@ -96,6 +100,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-07T14:06:18.015Z
-Stopped at: Completed 01-03-PLAN.md
+Last session: 2026-08-07T15:03:24.796Z
+Stopped at: Completed 01-04-PLAN.md
 Resume file: None
