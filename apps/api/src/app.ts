@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import {
   publicArticleDetailSchema,
@@ -11,42 +11,18 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import Fastify, { type FastifyLoggerOptions, type FastifyPluginAsync } from "fastify";
 import { Pool } from "pg";
-import rehypeSanitize from "rehype-sanitize";
-import rehypeStringify from "rehype-stringify";
-import remarkGfm from "remark-gfm";
-import remarkParse from "remark-parse";
-import remarkRehype from "remark-rehype";
-import { codeToHast } from "shiki";
-import { unified } from "unified";
 import { administrators, articles, sessions } from "./db/schema.js";
 import { seedAdministratorFromEnvironment } from "./db/seed-admin.js";
 import { authRoutes } from "./routes/auth.js";
 import { createSessionService, sessionCookieName } from "./auth/sessions.js";
+import { createAdminPostRepository } from "./content/admin-repository.js";
+import { createArticleService } from "./content/article-service.js";
+import { renderMarkdown } from "./content/markdown.js";
+import { adminPostRoutes } from "./routes/admin-posts.js";
 
 const databaseUrl = process.env.DATABASE_URL ?? "postgres://blog_x@127.0.0.1:5432/blog_x";
 const pool = new Pool({ connectionString: databaseUrl });
 const db = drizzle({ client: pool, schema: { administrators, articles, sessions } });
-
-type HastNode = { type: string; tagName?: string; properties?: Record<string, unknown>; value?: string; children?: HastNode[] };
-function textContent(node: HastNode): string { return node.value ?? node.children?.map(textContent).join("") ?? ""; }
-async function highlightCode(tree: HastNode) {
-  if (!tree.children) return;
-  for (let index = 0; index < tree.children.length; index += 1) {
-    const node = tree.children[index];
-    if (node.tagName === "pre" && node.children?.[0]?.tagName === "code") {
-      const code = node.children[0]; const className = code.properties?.className;
-      const language = Array.isArray(className) ? className.find((name): name is string => typeof name === "string" && name.startsWith("language-"))?.slice(9) : undefined;
-      if (language) try { tree.children.splice(index, 1, ...(await codeToHast(textContent(code), { lang: language, theme: "github-light" })).children as HastNode[]); continue; } catch { /* retained as escaped code */ }
-    }
-    await highlightCode(node);
-  }
-}
-async function renderMarkdown(markdown: string) {
-  const parser = unified().use(remarkParse).use(remarkGfm).use(remarkRehype, { allowDangerousHtml: false });
-  const tree = await parser.run(parser.parse(markdown));
-  await highlightCode(tree as HastNode);
-  return String(await unified().use(rehypeSanitize).use(rehypeStringify).stringify(tree));
-}
 
 type BuildAppOptions = {
   logger?: FastifyLoggerOptions;
@@ -73,6 +49,11 @@ export async function buildApp(options: BuildAppOptions = {}) {
     sessionAuth: app.sessionAuth,
     publicOrigin,
     secureCookies,
+  });
+  await app.register(adminPostRoutes, {
+    articleService: createArticleService(createAdminPostRepository(db)),
+    sessionAuth: app.sessionAuth,
+    publicOrigin,
   });
   app.post("/articles/publish", async (request, reply) => {
     reply.header("cache-control", "no-store");
@@ -105,12 +86,20 @@ export async function buildApp(options: BuildAppOptions = {}) {
 }
 
 async function migrate() {
-  const migration = await readFile(fileURLToPath(new URL("../drizzle/0000_phase1_walking_skeleton.sql", import.meta.url)), "utf8");
+  const migrationDirectory = fileURLToPath(new URL("../drizzle/", import.meta.url));
+  const migrationFiles = (await readdir(migrationDirectory)).filter((name) => /^\d+.*\.sql$/.test(name)).sort();
   const client = await pool.connect();
   try {
     await client.query("select pg_advisory_lock(hashtext('blog-x-phase1-migration'))");
-    for (const statement of migration.split("--> statement-breakpoint").map((value) => value.trim()).filter(Boolean)) {
-      try { await client.query(statement); } catch (error: unknown) { if ((error as { code?: string }).code !== "42P07") throw error; }
+    for (const migrationFile of migrationFiles) {
+      const migration = await readFile(`${migrationDirectory}/${migrationFile}`, "utf8");
+      for (const statement of migration.split("--> statement-breakpoint").map((value) => value.trim()).filter(Boolean)) {
+        try {
+          await client.query(statement);
+        } catch (error: unknown) {
+          if (!["42P07", "42701", "42710"].includes((error as { code?: string }).code ?? "")) throw error;
+        }
+      }
     }
   } finally { await client.query("select pg_advisory_unlock(hashtext('blog-x-phase1-migration'))").catch(() => undefined); client.release(); }
 }

@@ -19,8 +19,11 @@ export const sessions = pgTable("sessions", {
 export const articles = pgTable("articles", {
   id: uuid("id").defaultRandom().primaryKey(),
   title: text("title").notNull(),
+  summary: text("summary").notNull().default(""),
+  coverUrl: text("cover_url").notNull().default(""),
   slug: text("slug").notNull(),
   markdown: text("markdown").notNull(),
+  seoDescription: text("seo_description").notNull().default(""),
   status: text("status").notNull().default("published"),
   publishedAt: timestamp("published_at", { withTimezone: true }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
