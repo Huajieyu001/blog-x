@@ -17,7 +17,7 @@ async function waitFor(url: string) {
 test.beforeAll(async () => {
   const api = spawn(process.execPath, ["--import", "tsx", "apps/api/src/app.ts"], { stdio: "ignore", env: process.env });
   processes.push(api); await waitFor("http://127.0.0.1:3001/health");
-  const web = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "apps/web", "-p", "3100"], { stdio: "ignore", env: process.env });
+  const web = spawn(process.execPath, ["apps/web/node_modules/next/dist/bin/next", "dev", "apps/web", "-p", "3100"], { stdio: "ignore", env: process.env });
   processes.push(web); await waitFor(webOrigin);
 });
 test.afterAll(() => { for (const process of processes) process.kill("SIGTERM"); });

@@ -2,10 +2,18 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { Algorithm, hash, verify } from "@node-rs/argon2";
+import {
+  loginInputSchema,
+  loginResponseSchema,
+  publicArticleDetailSchema,
+  publicArticleListSchema,
+  publishInputSchema,
+  publishedArticleSchema,
+} from "@blog-x/contracts";
 import cookie from "@fastify/cookie";
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import Fastify, { type FastifyRequest } from "fastify";
+import Fastify, { type FastifyPluginAsync, type FastifyRequest } from "fastify";
 import { Pool } from "pg";
 import rehypeSanitize from "rehype-sanitize";
 import rehypeStringify from "rehype-stringify";
@@ -14,15 +22,12 @@ import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { codeToHast } from "shiki";
 import { unified } from "unified";
-import { z } from "zod";
 import { administrators, articles, sessions } from "./db/schema.js";
 
 const databaseUrl = process.env.DATABASE_URL ?? "postgres://blog_x@127.0.0.1:5432/blog_x";
 const cookieName = process.env.NODE_ENV === "production" ? "__Host-blog_x_session" : "blog_x_session";
 const pool = new Pool({ connectionString: databaseUrl });
 const db = drizzle({ client: pool });
-const loginInput = z.object({ username: z.string().min(1).max(120), password: z.string().min(1).max(1024) });
-const publishInput = z.object({ title: z.string().trim().min(1).max(240), slug: z.string().trim().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(180), markdown: z.string().trim().min(1).max(200_000) });
 
 function digest(value: string) { return createHash("sha256").update(value).digest("hex"); }
 function secureEqual(left: string, right: string) { const a = Buffer.from(left); const b = Buffer.from(right); return a.length === b.length && timingSafeEqual(a, b); }
@@ -66,12 +71,14 @@ async function currentAdministrator(request: FastifyRequest) {
 
 export async function buildApp() {
   const app = Fastify({ logger: process.env.NODE_ENV === "production" });
-  await app.register(cookie);
+  // TypeScript 7's bundler resolution does not model the package's CommonJS
+  // `export =` declaration as an ESM Fastify plugin, though the runtime shape is compatible.
+  await app.register(cookie as unknown as FastifyPluginAsync);
   app.get("/health", async () => ({ ok: true }));
   app.post("/auth/login", async (request, reply) => {
     noStore(reply);
     if (!originIsTrusted(request)) return reply.code(403).send({ error: "forbidden" });
-    const parsed = loginInput.safeParse(request.body);
+    const parsed = loginInputSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(401).send({ error: "invalid credentials" });
     const admin = await db.select().from(administrators).where(eq(administrators.username, parsed.data.username)).limit(1);
     if (!admin[0] || !(await verify(admin[0].passwordHash, parsed.data.password))) return reply.code(401).send({ error: "invalid credentials" });
@@ -79,28 +86,34 @@ export async function buildApp() {
     const token = randomBytes(32).toString("base64url");
     await db.insert(sessions).values({ administratorId: admin[0].id, tokenDigest: digest(token), expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14) });
     reply.setCookie(cookieName, token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 14 });
-    return { ok: true };
+    return loginResponseSchema.parse({ ok: true });
   });
   app.post("/articles/publish", async (request, reply) => {
     noStore(reply);
     if (!originIsTrusted(request)) return reply.code(403).send({ error: "forbidden" });
     if (!await currentAdministrator(request)) return reply.code(401).send({ error: "unauthorized" });
-    const parsed = publishInput.safeParse(request.body);
+    const parsed = publishInputSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid article" });
     try {
       const now = new Date();
       const inserted = await db.insert(articles).values({ ...parsed.data, status: "published", publishedAt: now, updatedAt: now }).returning({ slug: articles.slug, title: articles.title, publishedAt: articles.publishedAt });
-      return inserted[0];
+      const article = inserted[0];
+      if (!article?.publishedAt) throw new Error("published article was not persisted");
+      return publishedArticleSchema.parse({ ...article, publishedAt: article.publishedAt.toISOString() });
     } catch (error: unknown) {
       if ((error as { code?: string }).code === "23505") return reply.code(409).send({ error: "slug already reserved" });
       throw error;
     }
   });
-  app.get("/public/articles", async () => db.select({ title: articles.title, slug: articles.slug, publishedAt: articles.publishedAt }).from(articles).where(and(eq(articles.status, "published"), isNull(articles.deletedAt), sql`${articles.publishedAt} is not null`)).orderBy(desc(articles.publishedAt)));
+  app.get("/public/articles", async () => publicArticleListSchema.parse((await db.select({ title: articles.title, slug: articles.slug, publishedAt: articles.publishedAt }).from(articles).where(and(eq(articles.status, "published"), isNull(articles.deletedAt), sql`${articles.publishedAt} is not null`)).orderBy(desc(articles.publishedAt))).map((article) => {
+    if (!article.publishedAt) throw new Error("public article is missing publishedAt");
+    return { ...article, publishedAt: article.publishedAt.toISOString() };
+  })));
   app.get<{ Params: { slug: string } }>("/public/articles/:slug", async (request, reply) => {
     const article = await db.select().from(articles).where(and(eq(articles.slug, request.params.slug), eq(articles.status, "published"), isNull(articles.deletedAt), sql`${articles.publishedAt} is not null`)).limit(1);
     if (!article[0]) return reply.code(404).send({ error: "not found" });
-    return { title: article[0].title, slug: article[0].slug, publishedAt: article[0].publishedAt, html: await renderMarkdown(article[0].markdown) };
+    if (!article[0].publishedAt) throw new Error("public article is missing publishedAt");
+    return publicArticleDetailSchema.parse({ title: article[0].title, slug: article[0].slug, publishedAt: article[0].publishedAt.toISOString(), html: await renderMarkdown(article[0].markdown) });
   });
   return app;
 }
