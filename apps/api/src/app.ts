@@ -1,19 +1,15 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { Algorithm, hash, verify } from "@node-rs/argon2";
 import {
-  loginInputSchema,
-  loginResponseSchema,
   publicArticleDetailSchema,
   publicArticleListSchema,
   publishInputSchema,
   publishedArticleSchema,
 } from "@blog-x/contracts";
 import cookie from "@fastify/cookie";
-import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import Fastify, { type FastifyPluginAsync, type FastifyRequest } from "fastify";
+import Fastify, { type FastifyLoggerOptions, type FastifyPluginAsync } from "fastify";
 import { Pool } from "pg";
 import rehypeSanitize from "rehype-sanitize";
 import rehypeStringify from "rehype-stringify";
@@ -23,23 +19,13 @@ import remarkRehype from "remark-rehype";
 import { codeToHast } from "shiki";
 import { unified } from "unified";
 import { administrators, articles, sessions } from "./db/schema.js";
+import { seedAdministratorFromEnvironment } from "./db/seed-admin.js";
+import { authRoutes } from "./routes/auth.js";
+import { createSessionService, sessionCookieName } from "./auth/sessions.js";
 
 const databaseUrl = process.env.DATABASE_URL ?? "postgres://blog_x@127.0.0.1:5432/blog_x";
-const cookieName = process.env.NODE_ENV === "production" ? "__Host-blog_x_session" : "blog_x_session";
 const pool = new Pool({ connectionString: databaseUrl });
-const db = drizzle({ client: pool });
-
-function digest(value: string) { return createHash("sha256").update(value).digest("hex"); }
-function secureEqual(left: string, right: string) { const a = Buffer.from(left); const b = Buffer.from(right); return a.length === b.length && timingSafeEqual(a, b); }
-function originIsTrusted(request: FastifyRequest) {
-  const origin = request.headers.origin;
-  if (!origin) return true;
-  const publicOrigin = process.env.PUBLIC_ORIGIN;
-  if (publicOrigin) return origin === publicOrigin;
-  const host = request.headers.host;
-  return Boolean(host) && origin === `${request.protocol}://${host}`;
-}
-function noStore(reply: { header: (name: string, value: string) => unknown }) { reply.header("cache-control", "no-store"); }
+const db = drizzle({ client: pool, schema: { administrators, articles, sessions } });
 
 type HastNode = { type: string; tagName?: string; properties?: Record<string, unknown>; value?: string; children?: HastNode[] };
 function textContent(node: HastNode): string { return node.value ?? node.children?.map(textContent).join("") ?? ""; }
@@ -62,36 +48,36 @@ async function renderMarkdown(markdown: string) {
   return String(await unified().use(rehypeSanitize).use(rehypeStringify).stringify(tree));
 }
 
-async function currentAdministrator(request: FastifyRequest) {
-  const token = request.cookies[cookieName];
-  if (!token) return null;
-  const row = await db.select({ administratorId: sessions.administratorId, tokenDigest: sessions.tokenDigest }).from(sessions).where(and(eq(sessions.tokenDigest, digest(token)), isNull(sessions.revokedAt), gt(sessions.expiresAt, new Date()))).limit(1);
-  return row[0] && secureEqual(row[0].tokenDigest, digest(token)) ? row[0].administratorId : null;
-}
+type BuildAppOptions = {
+  logger?: FastifyLoggerOptions;
+  publicOrigin?: string;
+};
 
-export async function buildApp() {
-  const app = Fastify({ logger: process.env.NODE_ENV === "production" });
+export async function buildApp(options: BuildAppOptions = {}) {
+  const publicOrigin = options.publicOrigin ?? process.env.PUBLIC_ORIGIN;
+  const secureCookies = process.env.NODE_ENV === "production" || publicOrigin?.startsWith("https://") === true;
+  const app = Fastify({
+    logger: {
+      level: options.logger?.level ?? (process.env.NODE_ENV === "production" ? "info" : "silent"),
+      ...options.logger,
+      redact: ["req.headers.cookie", "req.headers.authorization", "res.headers.set-cookie", "password", "token", "credentials"],
+    },
+  });
   // TypeScript 7's bundler resolution does not model the package's CommonJS
   // `export =` declaration as an ESM Fastify plugin, though the runtime shape is compatible.
   await app.register(cookie as unknown as FastifyPluginAsync);
+  app.decorate("sessionAuth", createSessionService(db));
   app.get("/health", async () => ({ ok: true }));
-  app.post("/auth/login", async (request, reply) => {
-    noStore(reply);
-    if (!originIsTrusted(request)) return reply.code(403).send({ error: "forbidden" });
-    const parsed = loginInputSchema.safeParse(request.body);
-    if (!parsed.success) return reply.code(401).send({ error: "invalid credentials" });
-    const admin = await db.select().from(administrators).where(eq(administrators.username, parsed.data.username)).limit(1);
-    if (!admin[0] || !(await verify(admin[0].passwordHash, parsed.data.password))) return reply.code(401).send({ error: "invalid credentials" });
-    await db.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.administratorId, admin[0].id));
-    const token = randomBytes(32).toString("base64url");
-    await db.insert(sessions).values({ administratorId: admin[0].id, tokenDigest: digest(token), expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14) });
-    reply.setCookie(cookieName, token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 14 });
-    return loginResponseSchema.parse({ ok: true });
+  await app.register(authRoutes, {
+    db,
+    sessionAuth: app.sessionAuth,
+    publicOrigin,
+    secureCookies,
   });
   app.post("/articles/publish", async (request, reply) => {
-    noStore(reply);
-    if (!originIsTrusted(request)) return reply.code(403).send({ error: "forbidden" });
-    if (!await currentAdministrator(request)) return reply.code(401).send({ error: "unauthorized" });
+    reply.header("cache-control", "no-store");
+    if (request.headers.origin !== publicOrigin) return reply.code(403).send({ error: "forbidden" });
+    if (!await app.sessionAuth.administratorIdForToken(request.cookies[sessionCookieName])) return reply.code(401).send({ error: "unauthorized" });
     const parsed = publishInputSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid article" });
     try {
@@ -129,13 +115,7 @@ async function migrate() {
   } finally { await client.query("select pg_advisory_unlock(hashtext('blog-x-phase1-migration'))").catch(() => undefined); client.release(); }
 }
 async function seed() {
-  const username = process.env.ADMIN_USERNAME; const password = process.env.ADMIN_PASSWORD;
-  if (!username || !password) throw new Error("ADMIN_USERNAME and ADMIN_PASSWORD are required for seed");
-  const passwordHash = await hash(password, { algorithm: Algorithm.Argon2id, memoryCost: 19456, timeCost: 2, parallelism: 1 });
-  await db.insert(administrators).values({ username, passwordHash }).onConflictDoUpdate({
-    target: administrators.username,
-    set: { passwordHash },
-  });
+  await seedAdministratorFromEnvironment(db);
 }
 async function schemaVerify() {
   const result = await pool.query("select tablename from pg_tables where schemaname = 'public' and tablename = any($1)", [["administrators", "sessions", "articles"]]);
@@ -146,6 +126,7 @@ async function main() {
   if (command === "migrate") { await migrate(); await pool.end(); return; }
   if (command === "seed") { await seed(); await pool.end(); return; }
   if (command === "schema:verify") { await schemaVerify(); await pool.end(); return; }
+  if (!process.env.PUBLIC_ORIGIN) throw new Error("PUBLIC_ORIGIN is required when starting the API server");
   const app = await buildApp(); await app.listen({ host: "127.0.0.1", port: Number(process.env.API_PORT ?? 3001) });
 }
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main().catch(async (error) => { console.error(error instanceof Error ? error.message : "startup failed"); await pool.end(); process.exitCode = 1; });
