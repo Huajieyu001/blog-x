@@ -15,9 +15,41 @@ export const adminPostInputSchema = z.object({
   seoDescription: z.string().trim().max(320, "SEO 描述不能超过 320 个字符"),
 }).strict();
 
+export const publishedSlugConfirmationSchema = z.object({
+  articleId: z.uuid(),
+  currentSlug: z.string(),
+  version: z.string().datetime({ offset: true }),
+}).strict();
+
+export const adminPostUpdateSchema = adminPostInputSchema.extend({
+  publishedAtCorrection: z.boolean().optional().default(false),
+  slugChangeConfirmation: publishedSlugConfirmationSchema.optional(),
+}).strict();
+
+export const articleStatusSchema = z.enum(["draft", "published", "unpublished"]);
+
 export const adminPostSchema = adminPostInputSchema.extend({
   id: z.uuid(),
-  status: z.enum(["draft", "published", "unpublished"]),
+  status: articleStatusSchema,
+  version: z.string().datetime({ offset: true }),
+}).strict();
+
+export const adminPostListSchema = z.array(adminPostSchema);
+export const articleActionSchema = z.enum(["publish", "unpublish", "republish", "delete"]);
+export const lifecycleActionInputSchema = z.object({}).strict().optional().default({});
+export const deletedArticleSchema = z.object({ id: z.uuid(), deleted: z.literal(true) }).strict();
+
+export const invalidTransitionResponseSchema = z.object({
+  error: z.literal("invalid_transition"),
+  status: articleStatusSchema,
+  action: articleActionSchema,
+}).strict();
+
+export const publishedSlugConfirmationRequiredSchema = z.object({
+  error: z.literal("published_slug_confirmation_required"),
+  currentSlug: z.string(),
+  requestedSlug: z.string(),
+  version: z.string().datetime({ offset: true }),
 }).strict();
 
 export const adminPostPreviewInputSchema = z.object({
@@ -49,5 +81,9 @@ export function suggestSlug(title: string) {
 }
 
 export type AdminPostInput = z.infer<typeof adminPostInputSchema>;
+export type AdminPostUpdateInput = z.infer<typeof adminPostUpdateSchema>;
 export type AdminPost = z.infer<typeof adminPostSchema>;
+export type ArticleAction = z.infer<typeof articleActionSchema>;
+export type ArticleStatus = z.infer<typeof articleStatusSchema>;
+export type PublishedSlugConfirmation = z.infer<typeof publishedSlugConfirmationSchema>;
 export type FieldErrorResponse = z.infer<typeof fieldErrorResponseSchema>;

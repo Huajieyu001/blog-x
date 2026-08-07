@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { buildApp } from "../src/app.js";
@@ -54,17 +55,18 @@ test("publish, edit, slug confirmation, unpublish, republish, and soft delete ar
 
   const unauthorized = await app.inject({ method: "POST", url: "/admin/posts/00000000-0000-4000-8000-000000000000/publish", headers: { origin: publicOrigin } });
   assert.equal(unauthorized.statusCode, 401);
-  const rejectedOrigin = await app.inject({ method: "POST", url: "/admin/posts/00000000-0000-4000-8000-000000000000/publish", headers: { ...headers, origin: "https://untrusted.invalid" } });
+  const rejectedOrigin = await app.inject({ method: "POST", url: "/admin/posts/00000000-0000-4000-8000-000000000000/publish", headers: { ...headers, origin: "https://untrusted.invalid" }, payload: {} });
   assert.equal(rejectedOrigin.statusCode, 403);
 
   const invalidRow = await db.insert(articles).values({ title: " ", slug: `invalid-${Date.now()}`, markdown: " ", status: "draft" }).returning({ id: articles.id });
-  const invalidPublish = await app.inject({ method: "POST", url: `/admin/posts/${invalidRow[0]!.id}/publish`, headers });
+  const invalidPublish = await app.inject({ method: "POST", url: `/admin/posts/${invalidRow[0]!.id}/publish`, headers, payload: {} });
   assert.equal(invalidPublish.statusCode, 400);
   assert.equal(invalidPublish.json().error, "validation_failed");
   assert.deepEqual(Object.keys(invalidPublish.json().fields).sort(), ["markdown", "title"]);
-  const invalidAfter = await db.select().from(articles).where((fields, operators) => operators.eq(fields.id, invalidRow[0]!.id));
+  const invalidAfter = await db.select().from(articles).where(eq(articles.id, invalidRow[0]!.id));
   assert.equal(invalidAfter[0]?.status, "draft");
   assert.equal(invalidAfter[0]?.publishedAt, null);
+  await db.update(articles).set({ deletedAt: new Date() }).where(eq(articles.id, invalidRow[0]!.id));
 
   const explicitPublishedAt = "2026-08-01T02:30:00.000Z";
   const slug = `lifecycle-${Date.now()}`;
@@ -78,14 +80,14 @@ test("publish, edit, slug confirmation, unpublish, republish, and soft delete ar
     seoDescription: "Lifecycle SEO",
   };
   const draft = await app.inject({ method: "POST", url: "/admin/posts", headers, payload: draftInput });
-  assert.equal(draft.statusCode, 201);
+  assert.equal(draft.statusCode, 201, draft.body);
 
   const directStateTamper = await app.inject({ method: "PUT", url: `/admin/posts/${draft.json().id}`, headers, payload: { ...draftInput, status: "published", deletedAt: new Date().toISOString() } });
   assert.equal(directStateTamper.statusCode, 400);
   const stillDraft = await app.inject({ method: "GET", url: `/admin/posts/${draft.json().id}`, headers: { cookie } });
   assert.equal(stillDraft.json().status, "draft");
 
-  const published = await app.inject({ method: "POST", url: `/admin/posts/${draft.json().id}/publish`, headers });
+  const published = await app.inject({ method: "POST", url: `/admin/posts/${draft.json().id}/publish`, headers, payload: {} });
   assert.equal(published.statusCode, 200);
   assert.equal(published.json().status, "published");
   assert.equal(published.json().publishedAt, explicitPublishedAt);
@@ -115,7 +117,10 @@ test("publish, edit, slug confirmation, unpublish, republish, and soft delete ar
   const reservedSlug = `reserved-lifecycle-${Date.now()}`;
   const reserved = await app.inject({ method: "POST", url: "/admin/posts", headers, payload: { ...draftInput, slug: reservedSlug, publishedAt: null } });
   assert.equal(reserved.statusCode, 201);
-  const reservedDelete = await app.inject({ method: "POST", url: `/admin/posts/${reserved.json().id}/delete`, headers });
+  const reservedPublish = await app.inject({ method: "POST", url: `/admin/posts/${reserved.json().id}/publish`, headers, payload: {} });
+  assert.equal(reservedPublish.statusCode, 200);
+  assert.match(reservedPublish.json().publishedAt, /^\d{4}-\d{2}-\d{2}T/);
+  const reservedDelete = await app.inject({ method: "POST", url: `/admin/posts/${reserved.json().id}/delete`, headers, payload: {} });
   assert.equal(reservedDelete.statusCode, 200);
   const reservedConflict = await app.inject({
     method: "PUT",
@@ -146,30 +151,33 @@ test("publish, edit, slug confirmation, unpublish, republish, and soft delete ar
   assert.equal(correction.statusCode, 200);
   assert.equal(correction.json().publishedAt, correctedPublishedAt);
 
-  const unpublished = await app.inject({ method: "POST", url: `/admin/posts/${draft.json().id}/unpublish`, headers });
+  const unpublished = await app.inject({ method: "POST", url: `/admin/posts/${draft.json().id}/unpublish`, headers, payload: {} });
   assert.equal(unpublished.statusCode, 200);
   assert.equal(unpublished.json().status, "unpublished");
   assert.equal(unpublished.json().publishedAt, correctedPublishedAt);
   assert.equal((await app.inject({ method: "GET", url: `/public/articles/${changedSlug}` })).statusCode, 404);
-  const repeatedUnpublish = await app.inject({ method: "POST", url: `/admin/posts/${draft.json().id}/unpublish`, headers });
+  const repeatedUnpublish = await app.inject({ method: "POST", url: `/admin/posts/${draft.json().id}/unpublish`, headers, payload: {} });
   assert.equal(repeatedUnpublish.statusCode, 409);
   assert.equal(repeatedUnpublish.json().error, "invalid_transition");
 
-  const republished = await app.inject({ method: "POST", url: `/admin/posts/${draft.json().id}/republish`, headers });
+  const republished = await app.inject({ method: "POST", url: `/admin/posts/${draft.json().id}/republish`, headers, payload: {} });
   assert.equal(republished.statusCode, 200);
   assert.equal(republished.json().status, "published");
   assert.equal(republished.json().publishedAt, correctedPublishedAt);
   assert.equal((await app.inject({ method: "GET", url: `/public/articles/${changedSlug}` })).statusCode, 200);
 
-  const deleted = await app.inject({ method: "POST", url: `/admin/posts/${draft.json().id}/delete`, headers });
+  const deleted = await app.inject({ method: "POST", url: `/admin/posts/${draft.json().id}/delete`, headers, payload: {} });
   assert.equal(deleted.statusCode, 200);
   assert.deepEqual(deleted.json(), { id: draft.json().id, deleted: true });
   assert.equal((await app.inject({ method: "GET", url: `/admin/posts/${draft.json().id}`, headers: { cookie } })).statusCode, 404);
-  assert.equal((await app.inject({ method: "POST", url: `/admin/posts/${draft.json().id}/republish`, headers })).statusCode, 404);
+  assert.equal((await app.inject({ method: "POST", url: `/admin/posts/${draft.json().id}/republish`, headers, payload: {} })).statusCode, 404);
   assert.equal((await app.inject({ method: "GET", url: `/public/articles/${changedSlug}` })).statusCode, 404);
-  const retained = await db.select().from(articles).where((fields, operators) => operators.eq(fields.id, draft.json().id));
+  const retained = await db.select().from(articles).where(eq(articles.id, draft.json().id));
   assert.equal(retained.length, 1);
   assert.equal(retained[0]?.slug, changedSlug);
   assert.equal(retained[0]?.markdown, draftInput.markdown);
   assert.ok(retained[0]?.deletedAt);
+  const retainedList = await app.inject({ method: "GET", url: "/admin/posts", headers: { cookie } });
+  assert.equal(retainedList.statusCode, 200);
+  assert.equal(retainedList.json().some((post: { id: string }) => post.id === draft.json().id), false);
 });

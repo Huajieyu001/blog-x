@@ -1,16 +1,23 @@
 import {
   adminPostInputSchema,
   adminPostIdSchema,
+  adminPostListSchema,
   adminPostPreviewInputSchema,
   adminPostPreviewSchema,
+  adminPostUpdateSchema,
+  articleActionSchema,
+  deletedArticleSchema,
   fieldErrorResponseSchema,
+  invalidTransitionResponseSchema,
+  lifecycleActionInputSchema,
+  publishedSlugConfirmationRequiredSchema,
   slugConflictResponseSchema,
   slugSuggestionSchema,
   suggestSlug,
 } from "@blog-x/contracts";
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { sessionCookieName, type SessionService } from "../auth/sessions.js";
-import type { ArticleService } from "../content/article-service.js";
+import type { ArticleService, ArticleServiceResult, DeleteServiceResult } from "../content/article-service.js";
 import { renderMarkdown } from "../content/markdown.js";
 
 type AdminPostRouteOptions = {
@@ -35,6 +42,17 @@ function isSlugConflict(error: unknown) {
     current = (current as { cause?: unknown }).cause;
   }
   return false;
+}
+
+function sendServiceResult(result: ArticleServiceResult | DeleteServiceResult, reply: { code: (statusCode: number) => { send: (payload: unknown) => unknown } }) {
+  if (result.ok) {
+    if ("deleted" in result) return deletedArticleSchema.parse(result.deleted);
+    return result.post;
+  }
+  if (result.detail.error === "not_found") return reply.code(404).send({ error: "not_found" });
+  if (result.detail.error === "validation_failed") return reply.code(400).send(fieldErrorResponseSchema.parse(result.detail));
+  if (result.detail.error === "invalid_transition") return reply.code(409).send(invalidTransitionResponseSchema.parse(result.detail));
+  return reply.code(409).send(publishedSlugConfirmationRequiredSchema.parse(result.detail));
 }
 
 export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async (app, options) => {
@@ -79,6 +97,11 @@ export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async 
     }
   });
 
+  app.get("/admin/posts", async (request, reply) => {
+    if (!await guard(request, reply)) return;
+    return adminPostListSchema.parse(await options.articleService.listDrafts());
+  });
+
   app.get<{ Params: { id: string } }>("/admin/posts/:id", async (request, reply) => {
     if (!await guard(request, reply)) return;
     const id = adminPostIdSchema.safeParse(request.params.id);
@@ -93,15 +116,25 @@ export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async 
     if (!trustedOrigin(request)) return reply.code(403).send({ error: "forbidden" });
     const id = adminPostIdSchema.safeParse(request.params.id);
     if (!id.success) return reply.code(404).send({ error: "not_found" });
-    const parsed = adminPostInputSchema.safeParse(request.body);
+    const parsed = adminPostUpdateSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send(fieldErrors(parsed.error));
     try {
-      const post = await options.articleService.updateDraft(id.data, parsed.data);
-      if (!post) return reply.code(404).send({ error: "not_found" });
-      return post;
+      return sendServiceResult(await options.articleService.updateDraft(id.data, parsed.data), reply);
     } catch (error) {
       if (isSlugConflict(error)) return reply.code(409).send(slugConflictResponseSchema.parse({ error: "slug_conflict", fields: { slug: ["Slug 已被占用"] } }));
       throw error;
     }
   });
+
+  for (const action of articleActionSchema.options) {
+    app.post<{ Params: { id: string } }>(`/admin/posts/:id/${action}`, async (request, reply) => {
+      if (!await guard(request, reply)) return;
+      if (!trustedOrigin(request)) return reply.code(403).send({ error: "forbidden" });
+      const id = adminPostIdSchema.safeParse(request.params.id);
+      if (!id.success) return reply.code(404).send({ error: "not_found" });
+      const input = lifecycleActionInputSchema.safeParse(request.body);
+      if (!input.success) return reply.code(400).send(fieldErrors(input.error));
+      return sendServiceResult(await options.articleService.transition(id.data, action), reply);
+    });
+  }
 };

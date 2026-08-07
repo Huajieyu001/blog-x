@@ -91,10 +91,12 @@ test("draft metadata round-trips, slugs stay reserved, and preview uses the safe
   assert.match(created.headers.location ?? "", /^\/admin\/posts\/[0-9a-f-]+$/);
   const createdBody = created.json();
   assert.match(createdBody.id, /^[0-9a-f-]+$/);
+  assert.match(createdBody.version, /^\d{4}-\d{2}-\d{2}T/);
   assert.deepEqual(created.json(), {
     id: createdBody.id,
     ...original,
     status: "draft",
+    version: createdBody.version,
   });
 
   const reopened = await app.inject({ method: "GET", url: `/admin/posts/${created.json().id}`, headers: { cookie } });
@@ -106,7 +108,8 @@ test("draft metadata round-trips, slugs stay reserved, and preview uses the safe
   const updatedInput = { ...original, title: "修改后的标题", summary: "修改后的摘要", markdown: "# 修改后", publishedAt: null };
   const updated = await app.inject({ method: "PUT", url: `/admin/posts/${created.json().id}`, headers, payload: updatedInput });
   assert.equal(updated.statusCode, 200);
-  assert.deepEqual(updated.json(), { id: created.json().id, ...updatedInput, status: "draft" });
+  assert.match(updated.json().version, /^\d{4}-\d{2}-\d{2}T/);
+  assert.deepEqual(updated.json(), { id: created.json().id, ...updatedInput, status: "draft", version: updated.json().version });
 
   const reservedSlug = `reserved-${Date.now()}`;
   const reserved = await app.inject({ method: "POST", url: "/admin/posts", headers, payload: { ...original, slug: reservedSlug } });
