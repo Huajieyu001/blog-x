@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 01
 current_phase_name: local-publishing-slice
 status: executing
-stopped_at: Completed 01-04-PLAN.md
-last_updated: "2026-08-07T15:04:03.618Z"
+stopped_at: Completed 01-05-PLAN.md
+last_updated: "2026-08-07T16:44:04.445Z"
 last_activity: 2026-08-07
-last_activity_desc: Completed Phase 01 Plan 04 draft authoring and safe preview
+last_activity_desc: Completed Phase 01 Plan 05 recoverable article lifecycle
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 8
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 01 (local-publishing-slice) — EXECUTING
-Plan: 5 of 8
+Plan: 6 of 8
 Status: Ready to execute
-Last activity: 2026-08-07 — Completed Phase 01 Plan 04 draft authoring and safe preview
+Last activity: 2026-08-07 — Completed Phase 01 Plan 05 recoverable article lifecycle
 
-Progress: [█████░░░░░] 50%
+Progress: [██████░░░░] 63%
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [█████░░░░░] 50%
 | Phase 01 P02 | 1182min | 2 tasks | 20 files |
 | Phase 01 P03 | 34min | 2 tasks | 19 files |
 | Phase 01 P04 | 55min | 2 tasks | 22 files |
+| Phase 01 P05 | 70min | 2 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,9 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 01]: Keep raw Markdown as content authority and derive both public and preview HTML through one Fastify renderer. — One server-owned rendering pipeline prevents preview/public drift and keeps unsafe content out of the browser package.
 - [Phase 01]: Reserve every retained slug through the unconditional PostgreSQL unique index, including soft-deleted rows. — Permanent reservation preserves old-link meaning and avoids accidental identifier reuse across lifecycle states.
 - [Phase 01]: Allow only HTTP(S) cover URLs and exact Shiki-generated presentation attributes through final Markdown sanitization. — The narrow allowlist preserves syntax highlighting while removing executable HTML and dangerous URL protocols.
+- [Phase 01]: Lifecycle status changes only through explicit action endpoints under a retained-row lock. — This rejects client-controlled status/deletedAt writes and serializes visibility changes.
+- [Phase 01]: Published-slug confirmation binds article identity, current slug, and a monotonic persisted version. — A stale or cross-article confirmation cannot authorize a costly public URL change.
+- [Phase 01]: Soft deletion retains Markdown, metadata, publication time, and slug with no permanent purge UI. — Phase 1 deletion stays recoverable and never reassigns an exposed identifier.
 
 ### Pending Todos
 
@@ -100,6 +104,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-07T15:03:24.796Z
-Stopped at: Completed 01-04-PLAN.md
+Last session: 2026-08-07T16:44:04.440Z
+Stopped at: Completed 01-05-PLAN.md
 Resume file: None
