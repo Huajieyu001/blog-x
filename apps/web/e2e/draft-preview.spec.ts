@@ -54,7 +54,7 @@ test("administrator saves, reopens, and responsively previews a complete Markdow
 
   await page.getByRole("button", { name: "保存草稿" }).click();
   await expect(page).toHaveURL(/\/admin\/posts\/[0-9a-f-]+$/);
-  await expect(page.getByRole("status")).toHaveText("草稿已保存");
+  await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("草稿已保存");
   await page.reload();
   await expect(page.getByLabel("标题")).toHaveValue("标题改变后仍保留 Slug");
   await expect(page.getByLabel("摘要")).toHaveValue("完整元数据摘要");
@@ -91,7 +91,7 @@ test("administrator saves, reopens, and responsively previews a complete Markdow
   await page.getByRole("button", { name: "编辑" }).click();
   await expect(page.getByLabel("Markdown")).toHaveValue(unsavedMarkdown);
   await page.getByLabel("封面 URL").fill("invalid cover url");
-  await page.getByRole("button", { name: "保存草稿" }).click();
-  await expect(page.getByRole("status")).toHaveText("请修正标记的字段");
+  await page.getByRole("button", { name: "保存更改" }).click();
+  await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("请修正标记的字段");
   await expect(page.getByLabel("Markdown")).toHaveValue(unsavedMarkdown);
 });

@@ -10,6 +10,7 @@ import {
 } from "@blog-x/contracts";
 import { useEffect, useRef, useState } from "react";
 import styles from "../admin.module.css";
+import ArticleActions from "./ArticleActions";
 
 type EditorFields = Omit<AdminPostInput, "publishedAt"> & { publishedAt: string };
 
@@ -55,11 +56,14 @@ function zodFieldErrors(error: { issues: Array<{ path: PropertyKey[]; message: s
 export default function ArticleEditor({ post, heading }: { post?: AdminPost; heading: string }) {
   const [fields, setFields] = useState(() => initialFields(post));
   const [postId, setPostId] = useState(post?.id);
+  const [currentPost, setCurrentPost] = useState(post);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [message, setMessage] = useState("");
   const [previewHtml, setPreviewHtml] = useState("");
   const [previewMessage, setPreviewMessage] = useState("");
   const [mobilePane, setMobilePane] = useState<"edit" | "preview">("edit");
+  const [publishedAtCorrection, setPublishedAtCorrection] = useState(false);
+  const [pendingSlugConfirmation, setPendingSlugConfirmation] = useState(false);
   const slugManuallyEdited = useRef(Boolean(post));
   const previewSequence = useRef(0);
 
@@ -112,9 +116,14 @@ export default function ArticleEditor({ post, heading }: { post?: AdminPost; hea
     }));
   }
 
-  async function save() {
+  async function save(confirmSlugChange = false) {
+    if (currentPost?.status === "published" && fields.slug !== currentPost.slug && !confirmSlugChange) {
+      setPendingSlugConfirmation(true);
+      setMessage("修改公开 Slug 需要显式确认");
+      return;
+    }
     setMessage("保存中…");
-    const candidate = {
+    const candidate: AdminPostInput = {
       ...fields,
       publishedAt: fields.publishedAt ? new Date(fields.publishedAt).toISOString() : null,
     };
@@ -125,23 +134,35 @@ export default function ArticleEditor({ post, heading }: { post?: AdminPost; hea
       return;
     }
     try {
+      const payload = postId ? {
+        ...parsed.data,
+        publishedAtCorrection,
+        ...(confirmSlugChange && currentPost ? {
+          slugChangeConfirmation: { articleId: currentPost.id, currentSlug: currentPost.slug, version: currentPost.version },
+        } : {}),
+      } : parsed.data;
       const response = await fetch(postId ? `/api/admin/posts/${postId}` : "/api/admin/posts", {
         method: postId ? "PUT" : "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(parsed.data),
+        body: JSON.stringify(payload),
         credentials: "same-origin",
       });
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok) {
         const apiError = body as { fields?: Record<string, string[]>; error?: string } | null;
         if (apiError?.fields) setErrors(apiError.fields);
-        setMessage(apiError?.error === "slug_conflict" ? "Slug 已被占用" : "草稿保存失败，请重试");
+        if (apiError?.error === "published_slug_confirmation_required") setMessage("文章版本已变化，请刷新后重新确认 Slug");
+        else setMessage(apiError?.error === "slug_conflict" ? "Slug 已被占用" : "文章保存失败，请重试");
         return;
       }
       const saved = adminPostSchema.safeParse(body);
       if (!saved.success) throw new Error("invalid save response");
       setErrors({});
-      setMessage("草稿已保存");
+      setCurrentPost(saved.data);
+      setFields(initialFields(saved.data));
+      setPublishedAtCorrection(false);
+      setPendingSlugConfirmation(false);
+      setMessage(postId ? "更改已保存" : "草稿已保存");
       if (!postId) {
         setPostId(saved.data.id);
         window.history.replaceState(window.history.state, "", `/admin/posts/${saved.data.id}`);
@@ -149,6 +170,12 @@ export default function ArticleEditor({ post, heading }: { post?: AdminPost; hea
     } catch {
       setMessage("网络异常，草稿内容仍保留在编辑器中");
     }
+  }
+
+  function lifecycleChanged(nextPost: AdminPost) {
+    setCurrentPost(nextPost);
+    setFields(initialFields(nextPost));
+    setPublishedAtCorrection(false);
   }
 
   function errorFor(name: keyof EditorFields) {
@@ -159,7 +186,7 @@ export default function ArticleEditor({ post, heading }: { post?: AdminPost; hea
     <main className={styles.page}>
       <div className={styles.titleRow}>
         <div><p className={styles.eyebrow}>Blog X / 内容管理</p><h1>{heading}</h1></div>
-        <button className={styles.primaryButton} type="button" onClick={() => { void save(); }}>保存草稿</button>
+        <button className={styles.primaryButton} type="button" onClick={() => { void save(); }}>{postId ? "保存更改" : "保存草稿"}</button>
       </div>
 
       <section className={styles.metadata} aria-label="文章元数据">
@@ -173,6 +200,9 @@ export default function ArticleEditor({ post, heading }: { post?: AdminPost; hea
           <label>封面 URL<input type="url" value={fields.coverUrl} onChange={(event) => update("coverUrl", event.target.value)} aria-invalid={Boolean(errorFor("coverUrl"))} /></label>
           <label>SEO 描述<input value={fields.seoDescription} onChange={(event) => update("seoDescription", event.target.value)} aria-invalid={Boolean(errorFor("seoDescription"))} /></label>
         </div>
+        {currentPost && currentPost.status !== "draft" && (
+          <label className={styles.correctionToggle}><input type="checkbox" checked={publishedAtCorrection} onChange={(event) => setPublishedAtCorrection(event.target.checked)} />确认将输入值作为发布时间更正</label>
+        )}
         {errorFor("slug") && <p className={styles.error}>{errorFor("slug")}</p>}
         {errorFor("publishedAt") && <p className={styles.error}>{errorFor("publishedAt")}</p>}
         {errorFor("coverUrl") && <p className={styles.error}>{errorFor("coverUrl")}</p>}
@@ -194,7 +224,22 @@ export default function ArticleEditor({ post, heading }: { post?: AdminPost; hea
           <article className={styles.preview} data-testid="markdown-preview" dangerouslySetInnerHTML={{ __html: previewHtml }} />
         </div>
       </section>
-      <p role="status" className={styles.status}>{message}</p>
+      {currentPost && <ArticleActions post={currentPost} onChanged={lifecycleChanged} onDeleted={() => window.location.assign("/admin")} />}
+      <p role="status" aria-label="编辑器状态" className={styles.status}>{message}</p>
+      {pendingSlugConfirmation && currentPost && (
+        <div className={styles.dialogBackdrop}>
+          <section className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby="slug-confirm-title">
+            <h2 id="slug-confirm-title">确认修改公开链接</h2>
+            <p>旧 Slug：<code>{currentPost.slug}</code></p>
+            <p>新 Slug：<code>{fields.slug}</code></p>
+            <p>此操作会改变已发布文章的公开 URL，现有外部链接可能失效。</p>
+            <div className={styles.dialogActions}>
+              <button type="button" onClick={() => setPendingSlugConfirmation(false)}>取消</button>
+              <button className={styles.dangerButton} type="button" onClick={() => { void save(true); }}>确认修改 Slug</button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

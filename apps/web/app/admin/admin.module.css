@@ -37,6 +37,28 @@
 .preview th, .preview td { border: 1px solid var(--line); padding: 7px 9px; }
 .status { min-height: 1.5em; color: var(--muted); font: .9rem/1.5 ui-sans-serif, system-ui, sans-serif; }
 .mobileTabs { display: none; }
+.correctionToggle { display: flex !important; grid-template-columns: auto 1fr; align-items: center; margin-top: 16px; }
+.correctionToggle input { width: auto; }
+.lifecycle { display: flex; align-items: center; gap: 18px; margin-top: 22px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.lifecycleState { min-width: 8em; margin: 0; font-weight: 600; }
+.actionButtons { display: flex; flex-wrap: wrap; gap: 8px; }
+.actionButtons button { border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; background: #fff; cursor: pointer; }
+.actionButtons .dangerButton, .dangerButton { border-color: #a1261d; color: #a1261d; }
+.actionStatus { min-width: 9em; margin: 0; color: var(--muted); font: .82rem/1.4 ui-sans-serif, system-ui, sans-serif; }
+.dialogBackdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 20px; background: rgb(32 32 29 / 55%); }
+.dialog { width: min(520px, 100%); border: 1px solid var(--line); border-radius: 5px; padding: 24px; background: #fff; box-shadow: 0 24px 80px rgb(0 0 0 / 20%); }
+.dialog h2 { margin-top: 0; }
+.dialog code { overflow-wrap: anywhere; }
+.dialogActions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+.dialogActions button { border: 1px solid var(--line); border-radius: 999px; padding: 9px 15px; background: #fff; cursor: pointer; }
+.management { max-width: 1100px; margin: 28px auto; padding: 0 24px; }
+.managementTitle { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #d8d4ca; }
+.managementTitle h1 { font: 500 2rem/1.2 ui-serif, Georgia, serif; }
+.postList { display: grid; }
+.postRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: center; padding: 18px 0; border-bottom: 1px solid #d8d4ca; }
+.postRow a { color: #20201d; font: 600 1.05rem/1.4 ui-serif, Georgia, serif; }
+.postRow p { margin: 4px 0; }
+.postRow > div:last-child { display: flex; align-items: center; gap: 14px; }
 
 @media (max-width: 720px) {
   .page { padding: 24px 16px 48px; }
@@ -51,4 +73,5 @@
   .mobileInactive { display: none; }
   .mobileActive { display: block; }
   .markdownLabel textarea { min-height: 440px; }
+  .lifecycle, .postRow, .postRow > div:last-child { display: grid; grid-template-columns: 1fr; }
 }
