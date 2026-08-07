@@ -64,6 +64,22 @@ test("administrator saves, reopens, and responsively previews a complete Markdow
   await expect(page.getByLabel("发布时间")).toHaveValue("2026-08-07T16:30");
   await expect(page.getByLabel("SEO 描述")).toHaveValue("完整元数据 SEO 描述");
 
+  await page.route("**/api/admin/posts/preview", async (route) => {
+    const submitted = route.request().postDataJSON() as { markdown: string };
+    if (submitted.markdown.includes("较慢的旧预览")) await new Promise((resolve) => setTimeout(resolve, 700));
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ html: submitted.markdown.includes("较新的预览") ? "<h1>较新的预览</h1>" : "<h1>较慢的旧预览</h1>" }),
+    });
+  });
+  await page.getByLabel("Markdown").fill("# 较慢的旧预览");
+  await page.waitForTimeout(350);
+  await page.getByLabel("Markdown").fill("# 较新的预览");
+  await expect(page.getByTestId("markdown-preview").getByRole("heading", { name: "较新的预览" })).toBeVisible();
+  await page.waitForTimeout(750);
+  await expect(page.getByTestId("markdown-preview").getByRole("heading", { name: "较新的预览" })).toBeVisible();
+  await page.unroute("**/api/admin/posts/preview");
+
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("button", { name: "编辑" })).toBeVisible();
   await expect(page.getByRole("button", { name: "预览" })).toBeVisible();
@@ -73,5 +89,9 @@ test("administrator saves, reopens, and responsively previews a complete Markdow
   await expect(page.getByTestId("markdown-preview").getByRole("heading", { name: "尚未保存但不能丢失" })).toBeVisible();
   await expect(page.getByTestId("editor-source")).toBeHidden();
   await page.getByRole("button", { name: "编辑" }).click();
+  await expect(page.getByLabel("Markdown")).toHaveValue(unsavedMarkdown);
+  await page.getByLabel("封面 URL").fill("invalid cover url");
+  await page.getByRole("button", { name: "保存草稿" }).click();
+  await expect(page.getByRole("status")).toHaveText("请修正标记的字段");
   await expect(page.getByLabel("Markdown")).toHaveValue(unsavedMarkdown);
 });
