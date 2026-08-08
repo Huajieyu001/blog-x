@@ -13,6 +13,7 @@ test("renders the supported technical Markdown surface and safely falls back for
     "| Node | Pass |",
     "",
     "[Documentation](https://example.com/docs)",
+    "[Local page](/about)",
     "",
     "![Architecture](https://images.example.com/architecture.png)",
     "",
@@ -31,6 +32,7 @@ test("renders the supported technical Markdown surface and safely falls back for
   assert.match(html, /<blockquote>/);
   assert.match(html, /<table>/);
   assert.match(html, /href="https:\/\/example\.com\/docs"/);
+  assert.match(html, /href="\/about"/);
   assert.match(html, /src="https:\/\/images\.example\.com\/architecture\.png"/);
   assert.match(html, /class="shiki github-light"/);
   assert.match(html, /language-not-a-real-language/);
@@ -48,6 +50,8 @@ test("removes raw executable markup, event handlers, styles, and unsafe URL prot
     "",
     "[script link](javascript:alert(1))",
     "[data link](data:text/html;base64,PHNjcmlwdD4=)",
+    "[mail link](mailto:attacker@example.com)",
+    "[file link](ftp://example.com/payload)",
     "![data image](data:image/svg+xml,<svg onload=alert(1)></svg>)",
     "",
     "```html",
@@ -57,5 +61,5 @@ test("removes raw executable markup, event handlers, styles, and unsafe URL prot
 
   assert.match(html, /<h1>Still safe<\/h1>/);
   assert.match(html, /class="shiki github-light"/);
-  assert.doesNotMatch(html, /<script|<style|onerror=|onload=|href="(?:javascript|data):|src="data:/i);
+  assert.doesNotMatch(html, /<script|<style|onerror=|onload=|href="(?:javascript|data|mailto|ftp):|src="data:/i);
 });

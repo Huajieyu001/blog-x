@@ -51,6 +51,11 @@ const markdownSanitizeSchema: SanitizeSchema = {
     pre: [...(defaultSchema.attributes?.pre ?? []), ["class", /^shiki github-light$/], "style", "tabindex"],
     span: [...(defaultSchema.attributes?.span ?? []), ["class", "line"], "style"],
   },
+  protocols: {
+    ...defaultSchema.protocols,
+    href: ["http", "https"],
+    src: ["http", "https"],
+  },
 };
 
 type HastNode = {
