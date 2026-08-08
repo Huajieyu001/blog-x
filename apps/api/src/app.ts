@@ -2,12 +2,11 @@ import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import {
   publicArticleDetailSchema,
-  publicArticleListSchema,
   publishInputSchema,
   publishedArticleSchema,
 } from "@blog-x/contracts";
 import cookie from "@fastify/cookie";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import Fastify, { type FastifyLoggerOptions, type FastifyPluginAsync } from "fastify";
 import { Pool } from "pg";
@@ -19,6 +18,8 @@ import { createAdminPostRepository } from "./content/admin-repository.js";
 import { createArticleService } from "./content/article-service.js";
 import { renderMarkdown } from "./content/markdown.js";
 import { adminPostRoutes } from "./routes/admin-posts.js";
+import { createPublicRepository } from "./content/public-repository.js";
+import { publicPostRoutes } from "./routes/public-posts.js";
 
 const databaseUrl = process.env.DATABASE_URL ?? "postgres://blog_x@127.0.0.1:5432/blog_x";
 const pool = new Pool({ connectionString: databaseUrl });
@@ -55,6 +56,9 @@ export async function buildApp(options: BuildAppOptions = {}) {
     sessionAuth: app.sessionAuth,
     publicOrigin,
   });
+  await app.register(publicPostRoutes, {
+    publicRepository: createPublicRepository(db),
+  });
   app.post("/articles/publish", async (request, reply) => {
     reply.header("cache-control", "no-store");
     if (request.headers.origin !== publicOrigin) return reply.code(403).send({ error: "forbidden" });
@@ -72,10 +76,6 @@ export async function buildApp(options: BuildAppOptions = {}) {
       throw error;
     }
   });
-  app.get("/public/articles", async () => publicArticleListSchema.parse((await db.select({ title: articles.title, slug: articles.slug, publishedAt: articles.publishedAt }).from(articles).where(and(eq(articles.status, "published"), isNull(articles.deletedAt), sql`${articles.publishedAt} is not null`)).orderBy(desc(articles.publishedAt))).map((article) => {
-    if (!article.publishedAt) throw new Error("public article is missing publishedAt");
-    return { ...article, publishedAt: article.publishedAt.toISOString() };
-  })));
   app.get<{ Params: { slug: string } }>("/public/articles/:slug", async (request, reply) => {
     const article = await db.select().from(articles).where(and(eq(articles.slug, request.params.slug), eq(articles.status, "published"), isNull(articles.deletedAt), sql`${articles.publishedAt} is not null`)).limit(1);
     if (!article[0]) return reply.code(404).send({ error: "not found" });
