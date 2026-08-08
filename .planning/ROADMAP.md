@@ -76,12 +76,12 @@ Plans:
   3. 管理员可管理分类标签、上传受校验图片并插入文章，图片通过站点入口访问。
   4. 不存在的页面和暂时性服务异常均显示明确、可恢复导航的错误状态。
 
-**Plans**: 1/6 plans executed
+**Plans**: 2/6 plans executed
 
 Plans:
 
 - [x] 02-01-PLAN.md
-- [ ] 02-02-PLAN.md
+- [x] 02-02-PLAN.md
 - [ ] 02-03-PLAN.md
 - [ ] 02-04-PLAN.md
 - [ ] 02-05-PLAN.md
@@ -93,7 +93,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02-02: 实现可发布的关于页与按年月组织的文章归档。
+- [x] 02-02: 实现可发布的关于页与按年月组织的文章归档。
 
 **Wave 3** *(blocked on Wave 1 completion)*
 
@@ -159,6 +159,6 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Local Publishing Slice | 8/8 | Complete    | 2026-08-08 |
-| 2. Complete Reading Experience | 1/6 | In Progress|  |
+| 2. Complete Reading Experience | 2/6 | In Progress|  |
 | 3. Distribution and Portability | 0/2 | Not started | - |
 | 4. Secure Operations and Release Gate | 0/3 | Not started | - |
