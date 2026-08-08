@@ -1,4 +1,5 @@
-import { boolean, index, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, index, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const administrators = pgTable("administrators", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -49,4 +50,4 @@ export const articleTags = pgTable("article_tags", {
 
 export const sitePages = pgTable("site_pages", {
   id: uuid("id").defaultRandom().primaryKey(), key: text("key").notNull(), title: text("title").notNull(), markdown: text("markdown").notNull().default(""), status: text("status").notNull().default("draft"), version: timestamp("version", { withTimezone: true }).defaultNow().notNull(), createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(), updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [uniqueIndex("site_pages_key_unique").on(table.key)]);
+}, (table) => [uniqueIndex("site_pages_key_unique").on(table.key), check("site_pages_key_about_check", sql`${table.key} = 'about'`), check("site_pages_status_check", sql`${table.status} in ('draft', 'published')`)]);
