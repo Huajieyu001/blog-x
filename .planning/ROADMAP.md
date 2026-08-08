@@ -76,16 +76,40 @@ Plans:
   3. 管理员可管理分类标签、上传受校验图片并插入文章，图片通过站点入口访问。
   4. 不存在的页面和暂时性服务异常均显示明确、可恢复导航的错误状态。
 
-**Plans**: 2 plans
+**Plans**: 1/6 plans executed
 
 Plans:
+
+- [x] 02-01-PLAN.md
+- [ ] 02-02-PLAN.md
+- [ ] 02-03-PLAN.md
+- [ ] 02-04-PLAN.md
+- [ ] 02-05-PLAN.md
+- [ ] 02-06-PLAN.md
+
 **Wave 1**
 
-- [ ] 02-01: 实现分类、标签、归档、关于页和文章目录。
+- [x] 02-01: 实现分类/标签管理、文章关联与公开筛选浏览。
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02-02: 实现媒体上传、响应式视觉系统、主题偏好和错误/降级页面。
+- [ ] 02-02: 实现可发布的关于页与按年月组织的文章归档。
+
+**Wave 3** *(blocked on Wave 1 completion)*
+
+- [ ] 02-03: 实现服务端文章目录、稳定标题锚点与无脚本导航。
+
+**Wave 4** *(blocked on Waves 1 and 3 completion)*
+
+- [ ] 02-04: 实现受校验的图片上传、同源媒体访问与 Markdown 插入。
+
+**Wave 5** *(blocked on Waves 1 through 3 completion)*
+
+- [ ] 02-05: 完成响应式公共外壳、主题偏好及明确的错误恢复体验。
+
+**Wave 6** *(blocked on Waves 1 through 5 completion)*
+
+- [ ] 02-06: 完成 Phase 2 本地可复现验收与高成本决策回退门禁。
 
 ### Phase 3: Distribution and Portability
 
@@ -135,6 +159,6 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Local Publishing Slice | 8/8 | Complete    | 2026-08-08 |
-| 2. Complete Reading Experience | 0/2 | Not started | - |
+| 2. Complete Reading Experience | 1/6 | In Progress|  |
 | 3. Distribution and Portability | 0/2 | Not started | - |
 | 4. Secure Operations and Release Gate | 0/3 | Not started | - |
