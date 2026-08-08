@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 01
 current_phase_name: local-publishing-slice
 status: executing
-stopped_at: Completed 01-06-PLAN.md
-last_updated: "2026-08-08T03:18:32.989Z"
-last_activity: 2026-08-07
-last_activity_desc: Completed Phase 01 Plan 06 published editorial home
+stopped_at: Completed 01-07-PLAN.md
+last_updated: "2026-08-08T03:40:17.673Z"
+last_activity: 2026-08-08
+last_activity_desc: Completed Phase 01 Plan 07 safe technical permalink
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 8
-  completed_plans: 6
+  completed_plans: 7
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 01 (local-publishing-slice) — EXECUTING
-Plan: 7 of 8
+Plan: 8 of 8
 Status: Ready to execute
-Last activity: 2026-08-08 — Completed Phase 01 Plan 06 published editorial home
+Last activity: 2026-08-08 — Completed Phase 01 Plan 07 safe technical permalink
 
-Progress: [████████░░] 75%
+Progress: [█████████░] 88%
 
 ## Performance Metrics
 
@@ -63,6 +63,7 @@ Progress: [████████░░] 75%
 | Phase 01 P04 | 55min | 2 tasks | 22 files |
 | Phase 01 P05 | 70min | 2 tasks | 16 files |
 | Phase 01 P06 | 568min | 2 tasks | 17 files |
+| Phase 01 P07 | 20min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -89,6 +90,9 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 01]: Public list count and items share a fixed visibility predicate inside one repeatable-read transaction. — Pagination metadata and cards describe the same publication-only snapshot.
 - [Phase 01]: Public pages are one-based, fixed at ten items, and ordered by publication time then UUID descending. — Stable explicit URLs and deterministic ties support accessibility and later SEO.
 - [Phase 01]: The homepage fetches the public DTO only from a server-side internal API origin. — The browser receives SSR HTML and never depends on PostgreSQL or a server public IP.
+- [Phase 01]: Public detail reuses the invariant published/non-deleted/non-null-publication predicate and exposes no Markdown or admin fields. — One public repository boundary prevents non-public state disclosure.
+- [Phase 01]: Preview and permalink share one bounded cached Shiki renderer; unknown fences remain escaped plaintext. — One renderer prevents output drift and bounds highlighter resource use.
+- [Phase 01]: Rendered article destinations allow only HTTP(S) and root-relative URLs. — A narrow final sanitizer protocol policy blocks executable and unnecessary schemes.
 
 ### Pending Todos
 
@@ -108,6 +112,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-08T03:18:32.984Z
-Stopped at: Completed 01-06-PLAN.md
+Last session: 2026-08-08T03:39:40.152Z
+Stopped at: Completed 01-07-PLAN.md
 Resume file: None
