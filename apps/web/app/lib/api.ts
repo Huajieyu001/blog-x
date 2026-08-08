@@ -10,6 +10,10 @@ import {
   type PublicPostListResponse,
   type SessionStatus,
   type TaxonomyTerm,
+  publicAboutSchema,
+  archiveSchema,
+  type AdminAbout,
+  adminAboutSchema,
 } from "@blog-x/contracts";
 
 const internalApiOrigin = process.env.INTERNAL_API_ORIGIN ?? "http://127.0.0.1:3001";
@@ -26,6 +30,34 @@ export async function getSessionStatus(cookieHeader: string): Promise<SessionSta
   } catch {
     return null;
   }
+}
+
+export async function getAdminAbout(cookieHeader: string): Promise<AdminAbout | null> {
+  try {
+    const response = await fetch(`${internalApiOrigin}/admin/about`, { cache: "no-store", headers: cookieHeader ? { cookie: cookieHeader } : undefined });
+    if (!response.ok) return null;
+    const parsed = adminAboutSchema.safeParse(await response.json());
+    return parsed.success ? parsed.data : null;
+  } catch { return null; }
+}
+
+export async function getPublicAbout() {
+  try {
+    const response = await fetch(`${internalApiOrigin}/public/about`, { cache: "no-store" });
+    if (response.status === 404) return "not_found" as const;
+    if (!response.ok) return null;
+    const parsed = publicAboutSchema.safeParse(await response.json());
+    return parsed.success ? parsed.data : null;
+  } catch { return null; }
+}
+
+export async function getArchives() {
+  try {
+    const response = await fetch(`${internalApiOrigin}/public/archives`, { cache: "no-store" });
+    if (!response.ok) return null;
+    const parsed = archiveSchema.safeParse(await response.json());
+    return parsed.success ? parsed.data : null;
+  } catch { return null; }
 }
 
 export async function getAdminPost(id: string, cookieHeader: string): Promise<AdminPost | null> {

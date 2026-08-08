@@ -6,3 +6,4 @@ export const archiveSchema = z.object({ years: z.array(z.object({ year: z.number
 export const aboutPreviewSchema = z.object({ html: z.string() }).strict();
 export const aboutVersionSchema = z.object({ version: z.string().datetime({ offset: true }) }).strict();
 export const staleVersionSchema = z.object({ error: z.literal("stale_version") }).strict();
+export type AdminAbout = z.infer<typeof adminAboutSchema>;
