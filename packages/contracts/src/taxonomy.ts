@@ -9,3 +9,4 @@ export const taxonomyListSchema = z.object({ items: z.array(taxonomyTermSchema) 
 export const publicTaxonomyListSchema = z.object({ items: z.array(publicTaxonomyTermSchema) }).strict();
 export const taxonomyDeleteConflictSchema = z.object({ error: z.literal("associated_delete"), articleCount: z.number().int().positive() }).strict();
 export type TaxonomyInput = z.infer<typeof taxonomyInputSchema>;
+export type TaxonomyTerm = z.infer<typeof taxonomyTermSchema>;

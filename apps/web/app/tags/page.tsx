@@ -1,0 +1,3 @@
+import { getPublicTaxonomy } from "../lib/api";
+import styles from "../public.module.css";
+export default async function TagsPage() { const result = await getPublicTaxonomy("tags"); return <main className={styles.page}><header className={styles.siteHeader}><a className={styles.brand} href="/">Blog X</a><nav aria-label="站点导航"><a href="/categories">分类</a></nav></header><section className={styles.feed}><header className={styles.feedHeader}><h1>标签</h1><p>公开文章标签</p></header>{result?.items.length ? <div className={styles.taxonomy}>{result.items.map((term) => <a key={term.slug} href={`/tags/${encodeURIComponent(term.slug)}`}>#{term.name} · {term.articleCount}</a>)}</div> : <div className={styles.empty}><h2>暂时没有可公开浏览的分类或标签</h2><p>发布文章后，内容组织会显示在这里。</p></div>}</section></main>; }

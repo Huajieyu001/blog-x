@@ -58,6 +58,8 @@ test("public list is publication-only, deterministic, and explicitly paginated",
         slug: `published-${index + 1}`,
         publishedAt: tiedPublication.toISOString(),
         status: "published",
+        category: null,
+        tags: [],
       };
     }),
   });
@@ -73,8 +75,8 @@ test("public list is publication-only, deterministic, and explicitly paginated",
     totalItems: 12,
     totalPages: 2,
     items: [
-      { title: "Published 1", summary: "Summary 1", slug: "published-1", publishedAt: tiedPublication.toISOString(), status: "published" },
-      { title: "Published 12", summary: "Summary 12", slug: "published-12", publishedAt: olderPublication.toISOString(), status: "published" },
+      { title: "Published 1", summary: "Summary 1", slug: "published-1", publishedAt: tiedPublication.toISOString(), status: "published", category: null, tags: [] },
+      { title: "Published 12", summary: "Summary 12", slug: "published-12", publishedAt: olderPublication.toISOString(), status: "published", category: null, tags: [] },
     ],
   });
 
@@ -88,4 +90,3 @@ test("public list is publication-only, deterministic, and explicitly paginated",
     assert.deepEqual(invalid.json(), { error: "invalid_page" });
   }
 });
-

@@ -13,6 +13,8 @@ export const adminPostInputSchema = z.object({
   markdown: z.string().trim().min(1, "请输入 Markdown 正文").max(200_000, "正文不能超过 200000 个字符"),
   publishedAt: publishedAtInputSchema.optional().default(null),
   seoDescription: z.string().trim().max(320, "SEO 描述不能超过 320 个字符"),
+  categoryId: z.uuid().nullable().optional().default(null),
+  tagIds: z.array(z.uuid()).max(50).refine((ids) => new Set(ids).size === ids.length, "标签不能重复").optional().default([]),
 }).strict();
 
 export const publishedSlugConfirmationSchema = z.object({

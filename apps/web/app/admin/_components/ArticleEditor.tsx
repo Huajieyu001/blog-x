@@ -6,6 +6,7 @@ import {
   adminPostSchema,
   type AdminPost,
   type AdminPostInput,
+  type TaxonomyTerm,
   suggestSlug,
 } from "@blog-x/contracts";
 import { useEffect, useRef, useState } from "react";
@@ -22,6 +23,8 @@ const emptyFields: EditorFields = {
   markdown: "",
   publishedAt: "",
   seoDescription: "",
+  categoryId: null,
+  tagIds: [],
 };
 
 function toLocalDateTime(value: string | null) {
@@ -41,6 +44,8 @@ function initialFields(post?: AdminPost): EditorFields {
     markdown: post.markdown,
     publishedAt: toLocalDateTime(post.publishedAt),
     seoDescription: post.seoDescription,
+    categoryId: post.categoryId,
+    tagIds: post.tagIds,
   };
 }
 
@@ -53,7 +58,17 @@ function zodFieldErrors(error: { issues: Array<{ path: PropertyKey[]; message: s
   return fields;
 }
 
-export default function ArticleEditor({ post, heading }: { post?: AdminPost; heading: string }) {
+export default function ArticleEditor({
+  post,
+  heading,
+  categories,
+  tags,
+}: {
+  post?: AdminPost;
+  heading: string;
+  categories: TaxonomyTerm[];
+  tags: TaxonomyTerm[];
+}) {
   const [fields, setFields] = useState(() => initialFields(post));
   const [postId, setPostId] = useState(post?.id);
   const [currentPost, setCurrentPost] = useState(post);
@@ -114,6 +129,12 @@ export default function ArticleEditor({ post, heading }: { post?: AdminPost; hea
       title,
       slug: slugManuallyEdited.current ? current.slug : suggestSlug(title),
     }));
+  }
+
+  function toggleTag(tagId: string, checked: boolean) {
+    update("tagIds", checked
+      ? [...fields.tagIds, tagId]
+      : fields.tagIds.filter((id) => id !== tagId));
   }
 
   async function save(confirmSlugChange = false) {
@@ -194,6 +215,36 @@ export default function ArticleEditor({ post, heading }: { post?: AdminPost; hea
         {errorFor("title") && <p className={styles.error}>{errorFor("title")}</p>}
         <label>摘要<textarea rows={3} value={fields.summary} onChange={(event) => update("summary", event.target.value)} /></label>
         {errorFor("summary") && <p className={styles.error}>{errorFor("summary")}</p>}
+        <div className={styles.taxonomyFields}>
+          <label>
+            分类
+            <select
+              value={fields.categoryId ?? ""}
+              onChange={(event) => update("categoryId", event.target.value || null)}
+              aria-invalid={Boolean(errorFor("categoryId"))}
+            >
+              <option value="">未分类</option>
+              {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+            </select>
+          </label>
+          <fieldset>
+            <legend>标签</legend>
+            <div className={styles.tagOptions}>
+              {tags.length ? tags.map((tag) => (
+                <label key={tag.id}>
+                  <input
+                    type="checkbox"
+                    checked={fields.tagIds.includes(tag.id)}
+                    onChange={(event) => toggleTag(tag.id, event.target.checked)}
+                  />
+                  <span>{tag.name}</span>
+                </label>
+              )) : <p>还没有标签</p>}
+            </div>
+          </fieldset>
+        </div>
+        {errorFor("categoryId") && <p className={styles.error}>{errorFor("categoryId")}</p>}
+        {errorFor("tagIds") && <p className={styles.error}>{errorFor("tagIds")}</p>}
         <div className={styles.metadataGrid}>
           <label>Slug<input value={fields.slug} onChange={(event) => { slugManuallyEdited.current = true; update("slug", event.target.value); }} aria-invalid={Boolean(errorFor("slug"))} /></label>
           <label>发布时间<input type="datetime-local" value={fields.publishedAt} onChange={(event) => update("publishedAt", event.target.value)} aria-invalid={Boolean(errorFor("publishedAt"))} /></label>

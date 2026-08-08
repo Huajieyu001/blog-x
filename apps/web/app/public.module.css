@@ -56,6 +56,8 @@
 .postCard h3 a:hover, .postCard h3 a:focus-visible { color: var(--accent); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: .18em; }
 .summary { max-width: 700px; margin: 0; color: var(--muted); font-size: 1rem; line-height: 1.75; }
 .readLink { display: inline-flex; gap: 10px; margin-top: 19px; color: var(--ink); font: 700 .78rem/1.4 ui-sans-serif, system-ui, sans-serif; text-decoration: none; }
+.taxonomy { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; font: .76rem/1.4 ui-sans-serif, system-ui, sans-serif; }
+.taxonomy a { min-height: 28px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); overflow-wrap: anywhere; text-decoration: none; }
 
 .empty { padding: 70px 0; border-bottom: 1px solid var(--line); text-align: center; }
 .empty h3 { margin: 0 0 10px; font-size: 1.8rem; font-weight: 500; }

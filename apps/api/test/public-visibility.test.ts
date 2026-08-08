@@ -118,7 +118,9 @@ test("public detail exposes only published content, uses one renderer, and gives
 
   const published = await app.inject({ method: "GET", url: `/public/articles/${slugs.published}` });
   assert.equal(published.statusCode, 200);
-  assert.deepEqual(Object.keys(published.json()).sort(), ["publishedAt", "renderedHtml", "slug", "status", "summary", "title"]);
+  assert.deepEqual(Object.keys(published.json()).sort(), ["category", "publishedAt", "renderedHtml", "slug", "status", "summary", "tags", "title"]);
+  assert.equal(published.json().category, null);
+  assert.deepEqual(published.json().tags, []);
   assert.equal(published.json().status, "published");
   assert.equal(published.json().summary, "Public summary");
   assert.match(published.json().renderedHtml, /<table>/);

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { publicTaxonomyTermSchema } from "./taxonomy.js";
+import { publicTaxonomyTermSchema } from "./taxonomy";
 
 export const publicPostPageSize = 10;
 
@@ -35,6 +35,11 @@ export const publicPostListResponseSchema = z.object({
 
 export const publicPostDetailSchema = publicPostListItemSchema.extend({
   renderedHtml: z.string(),
+}).strict();
+
+export const publicTaxonomyPostListSchema = z.object({
+  term: publicTaxonomyTermSchema,
+  posts: publicPostListResponseSchema,
 }).strict();
 
 export const publicPostNotFoundResponseSchema = z.object({

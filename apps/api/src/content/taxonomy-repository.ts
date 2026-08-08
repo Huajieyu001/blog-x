@@ -41,10 +41,33 @@ export function createTaxonomyRepository(db: Database) {
       ? db.select({ total: count() }).from(schema.articles).innerJoin(schema.categories, eq(schema.articles.categoryId, schema.categories.id)).where(where)
       : db.select({ total: count() }).from(schema.articles).innerJoin(schema.articleTags, eq(schema.articleTags.articleId, schema.articles.id)).innerJoin(schema.tags, eq(schema.articleTags.tagId, schema.tags.id)).where(where);
     const totalItems = Number((await base)[0]?.total ?? 0);
+    const selection = {
+      id: schema.articles.id,
+      title: schema.articles.title,
+      summary: schema.articles.summary,
+      slug: schema.articles.slug,
+      publishedAt: schema.articles.publishedAt,
+      status: schema.articles.status,
+      categoryName: schema.categories.name,
+      categorySlug: schema.categories.slug,
+    };
     const rows = kind === "categories"
-      ? await db.select({ title: schema.articles.title, summary: schema.articles.summary, slug: schema.articles.slug, publishedAt: schema.articles.publishedAt, status: schema.articles.status }).from(schema.articles).innerJoin(schema.categories, eq(schema.articles.categoryId, schema.categories.id)).where(where).orderBy(desc(schema.articles.publishedAt), desc(schema.articles.id)).limit(publicPostPageSize).offset((page - 1) * publicPostPageSize)
-      : await db.selectDistinct({ title: schema.articles.title, summary: schema.articles.summary, slug: schema.articles.slug, publishedAt: schema.articles.publishedAt, status: schema.articles.status, id: schema.articles.id }).from(schema.articles).innerJoin(schema.articleTags, eq(schema.articleTags.articleId, schema.articles.id)).innerJoin(schema.tags, eq(schema.articleTags.tagId, schema.tags.id)).where(where).orderBy(desc(schema.articles.publishedAt), desc(schema.articles.id)).limit(publicPostPageSize).offset((page - 1) * publicPostPageSize);
-    return { term, posts: publicPostListResponseSchema.parse({ page, pageSize: publicPostPageSize, totalItems, totalPages: Math.ceil(totalItems / publicPostPageSize), items: rows.map((row) => ({ title: row.title, summary: row.summary, slug: row.slug, status: "published", publishedAt: row.publishedAt!.toISOString(), tags: [], category: null })) }) };
+      ? await db.select(selection).from(schema.articles).innerJoin(schema.categories, eq(schema.articles.categoryId, schema.categories.id)).where(where).orderBy(desc(schema.articles.publishedAt), desc(schema.articles.id)).limit(publicPostPageSize).offset((page - 1) * publicPostPageSize)
+      : await db.selectDistinct(selection).from(schema.articles).innerJoin(schema.articleTags, eq(schema.articleTags.articleId, schema.articles.id)).innerJoin(schema.tags, eq(schema.articleTags.tagId, schema.tags.id)).leftJoin(schema.categories, eq(schema.articles.categoryId, schema.categories.id)).where(where).orderBy(desc(schema.articles.publishedAt), desc(schema.articles.id)).limit(publicPostPageSize).offset((page - 1) * publicPostPageSize);
+    const items = await Promise.all(rows.map(async (row) => ({
+      title: row.title,
+      summary: row.summary,
+      slug: row.slug,
+      status: "published" as const,
+      publishedAt: row.publishedAt!.toISOString(),
+      category: row.categoryName && row.categorySlug ? { name: row.categoryName, slug: row.categorySlug } : null,
+      tags: await db.select({ name: schema.tags.name, slug: schema.tags.slug })
+        .from(schema.articleTags)
+        .innerJoin(schema.tags, eq(schema.articleTags.tagId, schema.tags.id))
+        .where(eq(schema.articleTags.articleId, row.id))
+        .orderBy(schema.tags.name),
+    })));
+    return { term, posts: publicPostListResponseSchema.parse({ page, pageSize: publicPostPageSize, totalItems, totalPages: Math.ceil(totalItems / publicPostPageSize), items }) };
   }
   return { list, find, create, update, remove, publicArticles };
 }

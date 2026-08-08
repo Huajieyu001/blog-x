@@ -98,8 +98,9 @@ export function createArticleService(repository: AdminPostRepository) {
         markdown: input.markdown,
         publishedAt,
         seoDescription: input.seoDescription,
+        categoryId: input.categoryId,
         updatedAt: nextVersion(current),
-      });
+      }, input.tagIds);
       return { ok: true, post: serialize(updated) };
     });
     return result ?? { ok: false, detail: { error: "not_found" } };

@@ -19,6 +19,10 @@ export default function PostCard({ post, position }: { post: PublicPostListItem;
         </div>
         <h3><a href={`/posts/${encodeURIComponent(post.slug)}`}>{post.title}</a></h3>
         <p className={styles.summary}>{post.summary || "暂无摘要"}</p>
+        {post.category || post.tags.length ? <div className={styles.taxonomy} aria-label="文章分类和标签">
+          {post.category ? <a href={`/categories/${encodeURIComponent(post.category.slug)}`}>分类：{post.category.name}</a> : null}
+          {post.tags.map((tag) => <a key={tag.slug} href={`/tags/${encodeURIComponent(tag.slug)}`}>#{tag.name}</a>)}
+        </div> : null}
         <a className={styles.readLink} href={`/posts/${encodeURIComponent(post.slug)}`} aria-label={`阅读《${post.title}》`}>
           阅读文章 <span aria-hidden="true">→</span>
         </a>

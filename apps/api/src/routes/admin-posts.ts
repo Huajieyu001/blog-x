@@ -44,6 +44,22 @@ function isSlugConflict(error: unknown) {
   return false;
 }
 
+function isForeignKeyConflict(error: unknown) {
+  let current: unknown = error;
+  while (current && typeof current === "object") {
+    if ((current as { code?: string }).code === "23503") return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+function invalidTaxonomy(reply: { code: (statusCode: number) => { send: (payload: unknown) => unknown } }) {
+  return reply.code(400).send(fieldErrorResponseSchema.parse({
+    error: "validation_failed",
+    fields: { taxonomy: ["所选分类或标签不存在"] },
+  }));
+}
+
 function sendServiceResult(result: ArticleServiceResult | DeleteServiceResult, reply: { code: (statusCode: number) => { send: (payload: unknown) => unknown } }) {
   if (result.ok) {
     if ("deleted" in result) return deletedArticleSchema.parse(result.deleted);
@@ -93,6 +109,7 @@ export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async 
       return reply.code(201).send(post);
     } catch (error) {
       if (isSlugConflict(error)) return reply.code(409).send(slugConflictResponseSchema.parse({ error: "slug_conflict", fields: { slug: ["Slug 已被占用"] } }));
+      if (isForeignKeyConflict(error)) return invalidTaxonomy(reply);
       throw error;
     }
   });
@@ -122,6 +139,7 @@ export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async 
       return sendServiceResult(await options.articleService.updateDraft(id.data, parsed.data), reply);
     } catch (error) {
       if (isSlugConflict(error)) return reply.code(409).send(slugConflictResponseSchema.parse({ error: "slug_conflict", fields: { slug: ["Slug 已被占用"] } }));
+      if (isForeignKeyConflict(error)) return invalidTaxonomy(reply);
       throw error;
     }
   });
