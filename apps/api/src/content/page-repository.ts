@@ -1,0 +1,13 @@
+import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import * as schema from "../db/schema.js";
+import { publicPredicate } from "./public-repository.js";
+type Database = NodePgDatabase<typeof schema>;
+export function createPageRepository(db: Database) {
+  const about = () => db.select().from(schema.sitePages).where(eq(schema.sitePages.key, "about")).limit(1);
+  async function save(input: { title: string; markdown: string; version?: string | null }) { return db.transaction(async (tx) => { const current = (await tx.select().from(schema.sitePages).where(eq(schema.sitePages.key, "about")).limit(1).for("update"))[0]; if (current && input.version !== current.version.toISOString()) return { stale: true as const }; const now = new Date(); const row = current ? (await tx.update(schema.sitePages).set({ title: input.title, markdown: input.markdown, status: "draft", version: now, updatedAt: now }).where(eq(schema.sitePages.id, current.id)).returning())[0]! : (await tx.insert(schema.sitePages).values({ key: "about", title: input.title, markdown: input.markdown, status: "draft", version: now }).returning())[0]!; return { stale: false as const, row }; }); }
+  async function publish(version: string) { return db.transaction(async (tx) => { const current = (await tx.select().from(schema.sitePages).where(eq(schema.sitePages.key, "about")).limit(1).for("update"))[0]; if (!current) return null; if (current.version.toISOString() !== version) return { stale: true as const }; const now = new Date(); return { stale: false as const, row: (await tx.update(schema.sitePages).set({ status: "published", version: now, updatedAt: now }).where(eq(schema.sitePages.id, current.id)).returning())[0]! }; }); }
+  async function archive() { const rows = await db.select({ title: schema.articles.title, slug: schema.articles.slug, publishedAt: schema.articles.publishedAt }).from(schema.articles).where(publicPredicate).orderBy(desc(schema.articles.publishedAt), desc(schema.articles.id)); const groups = new Map<number, Map<number, typeof rows>>(); for (const row of rows) { const date = row.publishedAt!; const year = date.getUTCFullYear(), month = date.getUTCMonth() + 1; const months = groups.get(year) ?? new Map(); months.set(month, [...(months.get(month) ?? []), row]); groups.set(year, months); } return [...groups.entries()].sort((a,b)=>b[0]-a[0]).map(([year, months]) => ({ year, months: [...months.entries()].sort((a,b)=>b[0]-a[0]).map(([month, items]) => ({ month, items: items.map((item)=>({ ...item, publishedAt:item.publishedAt!.toISOString() })) })) })); }
+  return { about, save, publish, archive };
+}
+export type PageRepository = ReturnType<typeof createPageRepository>;
