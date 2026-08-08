@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 01
 current_phase_name: local-publishing-slice
 status: executing
-stopped_at: Completed 01-05-PLAN.md
-last_updated: "2026-08-07T16:44:04.445Z"
+stopped_at: Completed 01-06-PLAN.md
+last_updated: "2026-08-08T03:18:32.989Z"
 last_activity: 2026-08-07
-last_activity_desc: Completed Phase 01 Plan 05 recoverable article lifecycle
+last_activity_desc: Completed Phase 01 Plan 06 published editorial home
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 8
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 01 (local-publishing-slice) — EXECUTING
-Plan: 6 of 8
+Plan: 7 of 8
 Status: Ready to execute
-Last activity: 2026-08-07 — Completed Phase 01 Plan 05 recoverable article lifecycle
+Last activity: 2026-08-08 — Completed Phase 01 Plan 06 published editorial home
 
-Progress: [██████░░░░] 63%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [██████░░░░] 63%
 | Phase 01 P03 | 34min | 2 tasks | 19 files |
 | Phase 01 P04 | 55min | 2 tasks | 22 files |
 | Phase 01 P05 | 70min | 2 tasks | 16 files |
+| Phase 01 P06 | 568min | 2 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -85,6 +86,9 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 01]: Lifecycle status changes only through explicit action endpoints under a retained-row lock. — This rejects client-controlled status/deletedAt writes and serializes visibility changes.
 - [Phase 01]: Published-slug confirmation binds article identity, current slug, and a monotonic persisted version. — A stale or cross-article confirmation cannot authorize a costly public URL change.
 - [Phase 01]: Soft deletion retains Markdown, metadata, publication time, and slug with no permanent purge UI. — Phase 1 deletion stays recoverable and never reassigns an exposed identifier.
+- [Phase 01]: Public list count and items share a fixed visibility predicate inside one repeatable-read transaction. — Pagination metadata and cards describe the same publication-only snapshot.
+- [Phase 01]: Public pages are one-based, fixed at ten items, and ordered by publication time then UUID descending. — Stable explicit URLs and deterministic ties support accessibility and later SEO.
+- [Phase 01]: The homepage fetches the public DTO only from a server-side internal API origin. — The browser receives SSR HTML and never depends on PostgreSQL or a server public IP.
 
 ### Pending Todos
 
@@ -104,6 +108,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-07T16:44:04.440Z
-Stopped at: Completed 01-05-PLAN.md
+Last session: 2026-08-08T03:18:32.984Z
+Stopped at: Completed 01-06-PLAN.md
 Resume file: None
