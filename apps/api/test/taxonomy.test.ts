@@ -27,11 +27,15 @@ test("taxonomy mutations are guarded and public discovery is published-only", as
   const publishedAt = new Date("2026-08-01T00:00:00.000Z");
   const post = await db.insert(articles).values({ title: "公开文章", summary: "摘要", slug: "public-post", markdown: "# public", status: "published", publishedAt, categoryId: category[0]!.id }).returning();
   await db.insert(articleTags).values({ articleId: post[0]!.id, tagId: tag[0]!.id });
-  await assert.rejects(db.insert(articleTags).values({ articleId: post[0]!.id, tagId: tag[0]!.id }), /duplicate|unique/i, "duplicate tag joins conflict");
+  await assert.rejects(db.insert(articleTags).values({ articleId: post[0]!.id, tagId: tag[0]!.id }), (error: unknown) => {
+    let current: unknown = error;
+    while (current && typeof current === "object") { if ((current as { code?: string }).code === "23505") return true; current = (current as { cause?: unknown }).cause; }
+    return false;
+  }, "duplicate tag joins conflict");
   await db.insert(articles).values({ title: "草稿", summary: "", slug: "draft-post", markdown: "# draft", status: "draft", categoryId: category[0]!.id });
 
   const categoriesResponse = await app.inject({ method: "GET", url: "/public/categories" });
-  assert.equal(categoriesResponse.statusCode, 200);
+  assert.equal(categoriesResponse.statusCode, 200, categoriesResponse.body);
   assert.deepEqual(categoriesResponse.json().items, [{ name: "技术", slug: "tech", articleCount: 1 }], "published-only category index");
   const unknown = await app.inject({ method: "GET", url: "/public/categories/missing/articles" });
   assert.equal(unknown.statusCode, 404);
