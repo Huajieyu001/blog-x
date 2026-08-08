@@ -79,8 +79,12 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
+**Wave 1**
 
 - [ ] 02-01: 实现分类、标签、归档、关于页和文章目录。
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 02-02: 实现媒体上传、响应式视觉系统、主题偏好和错误/降级页面。
 
 ### Phase 3: Distribution and Portability
