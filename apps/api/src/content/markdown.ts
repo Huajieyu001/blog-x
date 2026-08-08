@@ -3,8 +3,46 @@ import rehypeStringify from "rehype-stringify";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
-import { codeToHast } from "shiki";
+import { createHighlighter, type BundledLanguage } from "shiki";
 import { unified } from "unified";
+
+const highlightedLanguages = [
+  "bash",
+  "css",
+  "html",
+  "javascript",
+  "json",
+  "markdown",
+  "python",
+  "sql",
+  "typescript",
+  "yaml",
+] as const satisfies readonly BundledLanguage[];
+
+const languageAliases: Readonly<Record<string, (typeof highlightedLanguages)[number]>> = {
+  bash: "bash",
+  css: "css",
+  html: "html",
+  javascript: "javascript",
+  js: "javascript",
+  json: "json",
+  markdown: "markdown",
+  md: "markdown",
+  py: "python",
+  python: "python",
+  sh: "bash",
+  shell: "bash",
+  sql: "sql",
+  ts: "typescript",
+  typescript: "typescript",
+  yaml: "yaml",
+  yml: "yaml",
+};
+
+const highlighter = createHighlighter({
+  langs: [...highlightedLanguages],
+  themes: ["github-light"],
+});
 
 const markdownSanitizeSchema: SanitizeSchema = {
   ...defaultSchema,
@@ -37,13 +75,11 @@ async function highlightCode(tree: HastNode) {
       const language = Array.isArray(className)
         ? className.find((name): name is string => typeof name === "string" && name.startsWith("language-"))?.slice(9)
         : undefined;
-      if (language) {
-        try {
-          tree.children.splice(index, 1, ...(await codeToHast(textContent(code), { lang: language, theme: "github-light" })).children as HastNode[]);
-          continue;
-        } catch {
-          // Unknown languages remain escaped code.
-        }
+      const supportedLanguage = language ? languageAliases[language.toLowerCase()] : undefined;
+      if (supportedLanguage) {
+        const highlighted = (await highlighter).codeToHast(textContent(code), { lang: supportedLanguage, theme: "github-light" });
+        tree.children.splice(index, 1, ...highlighted.children as HastNode[]);
+        continue;
       }
     }
     await highlightCode(node);

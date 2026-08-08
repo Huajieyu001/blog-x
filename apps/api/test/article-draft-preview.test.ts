@@ -134,5 +134,5 @@ test("draft metadata round-trips, slugs stay reserved, and preview uses the safe
   await db.insert(articles).values({ title: "Renderer parity", slug: publicSlug, markdown: hostileMarkdown, status: "published", publishedAt: new Date() });
   const publicArticle = await app.inject({ method: "GET", url: `/public/articles/${publicSlug}` });
   assert.equal(publicArticle.statusCode, 200);
-  assert.equal(preview.json().html, publicArticle.json().html);
+  assert.equal(preview.json().html, publicArticle.json().renderedHtml);
 });

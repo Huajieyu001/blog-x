@@ -19,6 +19,11 @@ const publicListSelection = {
   status: schema.articles.status,
 };
 
+const publicDetailSelection = {
+  ...publicListSelection,
+  markdown: schema.articles.markdown,
+};
+
 export function createPublicRepository(db: Database) {
   async function listPage(page: number) {
     return db.transaction(async (tx) => {
@@ -43,8 +48,21 @@ export function createPublicRepository(db: Database) {
     }, { isolationLevel: "repeatable read", accessMode: "read only" });
   }
 
-  return { listPage };
+  async function findDetailBySlug(slug: string) {
+    const rows = await db.select(publicDetailSelection).from(schema.articles)
+      .where(and(publicPredicate, eq(schema.articles.slug, slug)))
+      .limit(1);
+    const article = rows[0];
+    if (!article) return null;
+    if (!article.publishedAt || article.status !== "published") throw new Error("public predicate returned a non-public article");
+    return {
+      ...article,
+      status: "published" as const,
+      publishedAt: article.publishedAt.toISOString(),
+    };
+  }
+
+  return { findDetailBySlug, listPage };
 }
 
 export type PublicRepository = ReturnType<typeof createPublicRepository>;
-

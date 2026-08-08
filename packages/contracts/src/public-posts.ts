@@ -30,9 +30,18 @@ export const publicPostListResponseSchema = z.object({
   items: z.array(publicPostListItemSchema),
 }).strict();
 
+export const publicPostDetailSchema = publicPostListItemSchema.extend({
+  renderedHtml: z.string(),
+}).strict();
+
+export const publicPostNotFoundResponseSchema = z.object({
+  error: z.literal("not_found"),
+}).strict();
+
 export const invalidPublicPageResponseSchema = z.object({
   error: z.literal("invalid_page"),
 }).strict();
 
 export type PublicPostListItem = z.infer<typeof publicPostListItemSchema>;
 export type PublicPostListResponse = z.infer<typeof publicPostListResponseSchema>;
+export type PublicPostDetail = z.infer<typeof publicPostDetailSchema>;

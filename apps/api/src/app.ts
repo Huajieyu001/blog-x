@@ -1,12 +1,10 @@
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import {
-  publicArticleDetailSchema,
   publishInputSchema,
   publishedArticleSchema,
 } from "@blog-x/contracts";
 import cookie from "@fastify/cookie";
-import { and, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import Fastify, { type FastifyLoggerOptions, type FastifyPluginAsync } from "fastify";
 import { Pool } from "pg";
@@ -16,7 +14,6 @@ import { authRoutes } from "./routes/auth.js";
 import { createSessionService, sessionCookieName } from "./auth/sessions.js";
 import { createAdminPostRepository } from "./content/admin-repository.js";
 import { createArticleService } from "./content/article-service.js";
-import { renderMarkdown } from "./content/markdown.js";
 import { adminPostRoutes } from "./routes/admin-posts.js";
 import { createPublicRepository } from "./content/public-repository.js";
 import { publicPostRoutes } from "./routes/public-posts.js";
@@ -75,12 +72,6 @@ export async function buildApp(options: BuildAppOptions = {}) {
       if ((error as { code?: string }).code === "23505") return reply.code(409).send({ error: "slug already reserved" });
       throw error;
     }
-  });
-  app.get<{ Params: { slug: string } }>("/public/articles/:slug", async (request, reply) => {
-    const article = await db.select().from(articles).where(and(eq(articles.slug, request.params.slug), eq(articles.status, "published"), isNull(articles.deletedAt), sql`${articles.publishedAt} is not null`)).limit(1);
-    if (!article[0]) return reply.code(404).send({ error: "not found" });
-    if (!article[0].publishedAt) throw new Error("public article is missing publishedAt");
-    return publicArticleDetailSchema.parse({ title: article[0].title, slug: article[0].slug, publishedAt: article[0].publishedAt.toISOString(), html: await renderMarkdown(article[0].markdown) });
   });
   return app;
 }
