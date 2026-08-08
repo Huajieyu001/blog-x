@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 02
 current_phase_name: Complete Reading Experience
 status: executing
-stopped_at: Completed 02-02-PLAN.md
-last_updated: "2026-08-08T12:33:40.708Z"
+stopped_at: Completed 02-03-PLAN.md
+last_updated: "2026-08-08T14:18:17.000Z"
 last_activity: 2026-08-08
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 14
-  completed_plans: 10
+  completed_plans: 11
 ---
 
 # Project State
@@ -28,17 +28,17 @@ See: .planning/PROJECT.md (updated 2026-08-08)
 ## Current Position
 
 Phase: 02 (Complete Reading Experience) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-08-08 — Phase 02 execution started
 
-Progress: [███████░░░] 71%
+Progress: [████████░░] 79%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 8
+- Total plans completed: 11
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -67,6 +67,7 @@ Progress: [███████░░░] 71%
 | Phase 01 P08 | 1h 41m | 2 tasks | 13 files |
 | Phase 02 P01 | 0min | 4 tasks | 27 files |
 | Phase 02 P02 | 0min | 4 tasks | 20 files |
+| Phase 02 P03 | 0min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -100,6 +101,8 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 01]: Concurrent migration activation uses one advisory lock and one fingerprint ledger row. — Retried migrations converge on the existing PostgreSQL volume with auditable schema state.
 - [Phase 01]: Whole-phase acceptance mutates content through visible browser controls and same-origin relative `/api` only. — Direct database access is limited to runner-owned postcondition diagnostics.
 - [Transition 01→02]: Phase 1 closed with 29/29 UAT checks, canonical verification passed, and 33/33 modeled threats resolved or explicitly accepted.
+- [Phase 02]: Generate durable h2/h3 anchors only in the server Markdown AST, using NFKC Unicode slugs and collision-safe deterministic suffixes. — Published hash links must never depend on browser parsing or random IDs.
+- [Phase 02]: Render the same server-owned ToC as a desktop sticky nav or narrow native details using CSS, while omitting both when no qualifying headings exist. — Ordinary hash navigation and keyboard access remain functional without JavaScript.
 
 ### Pending Todos
 
@@ -119,6 +122,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-08T12:33:40.702Z
-Stopped at: Completed 02-02-PLAN.md
+Last session: 2026-08-08T14:18:17.000Z
+Stopped at: Completed 02-03-PLAN.md
 Resume file: None
