@@ -7,8 +7,8 @@
 
 ### Public Reading
 
-- [ ] **READ-01**: 访客可在首页查看已发布文章的标题、摘要、发布日期和分页信息。
-- [ ] **READ-02**: 访客可打开文章固定链接，并正确阅读 Markdown、代码块、表格、引用、链接和图片。
+- [x] **READ-01**: 访客可在首页查看已发布文章的标题、摘要、发布日期和分页信息。
+- [x] **READ-02**: 访客可打开文章固定链接，并正确阅读 Markdown、代码块、表格、引用、链接和图片。
 - [ ] **READ-03**: 访客可通过文章标题生成的分层目录定位到正文对应章节。
 - [ ] **READ-04**: 访客可在文章卡片看到分类与标签，并分别查看某个分类、某个标签及按时间归档的已发布文章列表。
 - [ ] **READ-05**: 访客可访问由管理员维护的“关于”独立页面。
@@ -17,10 +17,10 @@
 
 ### Administration and Content
 
-- [ ] **AUTH-01**: 唯一管理员可登录后台并保持安全会话，未登录访客无法访问受保护的管理功能。
-- [ ] **CONT-01**: 管理员可创建、编辑、预览、发布、下线和删除 Markdown 文章。
-- [ ] **CONT-02**: 管理员可保存草稿，且草稿及已下线文章不会出现在公开页面、RSS 或 Sitemap 中。
-- [ ] **CONT-03**: 管理员可维护文章标题、摘要、封面、唯一固定链接、发布时间和 SEO 描述。
+- [x] **AUTH-01**: 唯一管理员可登录后台并保持安全会话，未登录访客无法访问受保护的管理功能。
+- [x] **CONT-01**: 管理员可创建、编辑、预览、发布、下线和删除 Markdown 文章。
+- [x] **CONT-02**: 管理员可保存草稿，且草稿及已下线文章不会出现在公开页面、RSS 或 Sitemap 中。
+- [x] **CONT-03**: 管理员可维护文章标题、摘要、封面、唯一固定链接、发布时间和 SEO 描述。
 - [ ] **TAXO-01**: 管理员可创建、修改、删除分类与标签，并将它们关联到文章。
 - [ ] **MEDIA-01**: 管理员可上传经过类型和大小校验的图片，将其插入文章，并通过站点入口公开访问。
 - [ ] **PORT-01**: 管理员可导出文章 Markdown 原文和必要元数据，导出结果可用于迁移。
@@ -39,7 +39,7 @@
 - [ ] **OPS-01**: 浏览器的页面、API 和媒体请求在正式环境中只使用博客 HTTPS 域名，副服务器 API 和数据库不直接暴露公网。
 - [ ] **OPS-02**: 应用进程异常后可自动恢复，日志会轮转，并可检查服务存活、CPU、内存、磁盘和证书状态。
 - [ ] **OPS-03**: 数据库、Markdown 内容、媒体和关键配置至少每日备份，并可通过恢复演练验证内容重新可访问。
-- [ ] **OPS-04**: 开发者可在本地通过隔离的开发配置启动并验证前台、后台、API 和数据库，不依赖主服务器。
+- [x] **OPS-04**: 开发者可在本地通过隔离的开发配置启动并验证前台、后台、API 和数据库，不依赖主服务器。
 - [ ] **OPS-05**: 只有在用户明确解除主服务器冻结，且生产备份、回滚和节点间安全链路均验证通过后，系统才允许部署到主服务器。
 
 ## v2 Requirements
@@ -79,13 +79,13 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | Phase 1 | Pending |
-| CONT-01 | Phase 1 | Pending |
-| CONT-02 | Phase 1 | Pending |
-| CONT-03 | Phase 1 | Pending |
-| READ-01 | Phase 1 | Pending |
-| READ-02 | Phase 1 | Pending |
-| OPS-04 | Phase 1 | Pending |
+| AUTH-01 | Phase 1 | Complete |
+| CONT-01 | Phase 1 | Complete |
+| CONT-02 | Phase 1 | Complete |
+| CONT-03 | Phase 1 | Complete |
+| READ-01 | Phase 1 | Complete |
+| READ-02 | Phase 1 | Complete |
+| OPS-04 | Phase 1 | Complete |
 | READ-03 | Phase 2 | Pending |
 | READ-04 | Phase 2 | Pending |
 | READ-05 | Phase 2 | Pending |
@@ -106,6 +106,7 @@
 | OPS-05 | Phase 4 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 25 total
 - Mapped to phases: 25
 - Unmapped: 0 ✓

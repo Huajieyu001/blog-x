@@ -4,16 +4,16 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 01
 current_phase_name: local-publishing-slice
-status: executing
-stopped_at: Completed 01-07-PLAN.md
-last_updated: "2026-08-08T03:40:17.673Z"
+status: verifying
+stopped_at: Completed 01-08-PLAN.md
+last_updated: "2026-08-08T05:33:33.711Z"
 last_activity: 2026-08-08
-last_activity_desc: Completed Phase 01 Plan 07 safe technical permalink
+last_activity_desc: Completed Phase 01 Plan 08 reproducible local acceptance
 progress:
   total_phases: 1
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 8
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -27,12 +27,12 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 
 ## Current Position
 
-Phase: 01 (local-publishing-slice) — EXECUTING
+Phase: 01 (local-publishing-slice) — VERIFYING
 Plan: 8 of 8
-Status: Ready to execute
-Last activity: 2026-08-08 — Completed Phase 01 Plan 07 safe technical permalink
+Status: Phase complete — ready for verification
+Last activity: 2026-08-08 — Completed Phase 01 Plan 08 reproducible local acceptance
 
-Progress: [█████████░] 88%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [█████████░] 88%
 | Phase 01 P05 | 70min | 2 tasks | 16 files |
 | Phase 01 P06 | 568min | 2 tasks | 17 files |
 | Phase 01 P07 | 20min | 2 tasks | 12 files |
+| Phase 01 P08 | 1h 41m | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -93,6 +94,9 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 01]: Public detail reuses the invariant published/non-deleted/non-null-publication predicate and exposes no Markdown or admin fields. — One public repository boundary prevents non-public state disclosure.
 - [Phase 01]: Preview and permalink share one bounded cached Shiki renderer; unknown fences remain escaped plaintext. — One renderer prevents output drift and bounds highlighter resource use.
 - [Phase 01]: Rendered article destinations allow only HTTP(S) and root-relative URLs. — A narrow final sanitizer protocol policy blocks executable and unnecessary schemes.
+- [Phase 01]: Canonical verification owns a generated, validated Compose/database namespace and cleans only that namespace. — Interrupted and parallel runs cannot reset or remove another environment.
+- [Phase 01]: Concurrent migration activation uses one advisory lock and one fingerprint ledger row. — Retried migrations converge on the existing PostgreSQL volume with auditable schema state.
+- [Phase 01]: Whole-phase acceptance mutates content through visible browser controls and same-origin relative `/api` only. — Direct database access is limited to runner-owned postcondition diagnostics.
 
 ### Pending Todos
 
@@ -112,6 +116,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-08T03:39:40.152Z
-Stopped at: Completed 01-07-PLAN.md
+Last session: 2026-08-08T05:33:33.706Z
+Stopped at: Completed 01-08-PLAN.md
 Resume file: None
