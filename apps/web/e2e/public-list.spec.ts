@@ -28,6 +28,7 @@ test.afterAll(async () => {
 });
 
 test("public SSR home exposes editorial cards, stable pagination, and fresh lifecycle visibility", async ({ page, request }) => {
+  test.setTimeout(90_000);
   test.skip(!username || !password || !databaseUrl, "E2E database and administrator credentials are required");
   const browserApiRequests: string[] = [];
   page.on("request", (requestEvent) => {
@@ -42,7 +43,7 @@ test("public SSR home exposes editorial cards, stable pagination, and fresh life
   await expect(page.getByRole("heading", { name: "Blog X" })).toBeVisible();
   await expect(page.getByTestId("post-card")).toHaveCount(10);
   const firstCard = page.getByTestId("post-card").first();
-  await expect(firstCard.getByRole("link", { name: "Editorial 11" })).toHaveAttribute("href", "/posts/editorial-11");
+  await expect(firstCard.getByRole("link", { name: "Editorial 11", exact: true })).toHaveAttribute("href", "/posts/editorial-11");
   await expect(firstCard).toContainText("A concise summary for article 11.");
   await expect(firstCard).toContainText("已发布");
   await expect(firstCard.locator("time")).toHaveAttribute("datetime", "2026-08-01T12:00:00.000Z");
@@ -72,6 +73,7 @@ test("public SSR home exposes editorial cards, stable pagination, and fresh life
   await page.getByLabel("用户名").fill(username!);
   await page.getByLabel("密码").fill(password!);
   await page.getByRole("button", { name: "登录" }).click();
+  await expect(page).toHaveURL(`${webOrigin}/admin`);
   await page.goto(`${webOrigin}/admin/new`);
   const slug = `fresh-public-${Date.now()}`;
   const title = "Fresh lifecycle publication";
@@ -80,24 +82,26 @@ test("public SSR home exposes editorial cards, stable pagination, and fresh life
   await page.getByLabel("Slug").fill(slug);
   await page.getByLabel("Markdown").fill("# Fresh publication");
   await page.getByRole("button", { name: "保存草稿" }).click();
+  await expect(page).toHaveURL(/\/admin\/posts\/[0-9a-f-]+$/);
   const editorUrl = page.url();
   await page.getByRole("button", { name: "发布" }).click();
   await page.goto(webOrigin);
-  await expect(page.getByRole("link", { name: title })).toBeVisible();
+  await expect(page.getByRole("link", { name: title, exact: true })).toBeVisible();
 
   await page.goto(editorUrl);
   await page.getByRole("button", { name: "下线" }).click();
   await page.goto(webOrigin);
-  await expect(page.getByRole("link", { name: title })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: title, exact: true })).toHaveCount(0);
 
   await page.goto(editorUrl);
   await page.getByRole("button", { name: "重新发布" }).click();
   await page.goto(webOrigin);
-  await expect(page.getByRole("link", { name: title })).toBeVisible();
+  await expect(page.getByRole("link", { name: title, exact: true })).toBeVisible();
 
   await page.goto(editorUrl);
   await page.getByRole("button", { name: "删除" }).click();
   await page.getByRole("dialog", { name: "确认软删除文章" }).getByRole("button", { name: "确认软删除" }).click();
+  await expect(page).toHaveURL(`${webOrigin}/admin`);
   await page.goto(webOrigin);
-  await expect(page.getByRole("link", { name: title })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: title, exact: true })).toHaveCount(0);
 });

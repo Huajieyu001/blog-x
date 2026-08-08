@@ -1,4 +1,12 @@
-import { adminPostListSchema, adminPostSchema, sessionStatusSchema, type AdminPost, type SessionStatus } from "@blog-x/contracts";
+import {
+  adminPostListSchema,
+  adminPostSchema,
+  publicPostListResponseSchema,
+  sessionStatusSchema,
+  type AdminPost,
+  type PublicPostListResponse,
+  type SessionStatus,
+} from "@blog-x/contracts";
 
 const internalApiOrigin = process.env.INTERNAL_API_ORIGIN ?? "http://127.0.0.1:3001";
 
@@ -41,5 +49,18 @@ export async function getAdminPosts(cookieHeader: string): Promise<AdminPost[]> 
     return parsed.success ? parsed.data : [];
   } catch {
     return [];
+  }
+}
+
+export async function getPublicPosts(page: number): Promise<PublicPostListResponse | null> {
+  try {
+    const response = await fetch(`${internalApiOrigin}/public/articles?page=${encodeURIComponent(String(page))}`, {
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    const parsed = publicPostListResponseSchema.safeParse(await response.json());
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
   }
 }
