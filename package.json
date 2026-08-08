@@ -12,6 +12,8 @@
     "typecheck": "corepack pnpm -r typecheck",
     "test": "corepack pnpm -r test",
     "test:ops": "node --test scripts/local-verify.test.mjs",
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "local:verify": "node scripts/local-verify.mjs",
     "db:generate:check": "corepack pnpm --filter @blog-x/api db:generate:check",
     "db:migrate": "corepack pnpm --filter @blog-x/api db:migrate",
     "db:seed": "corepack pnpm --filter @blog-x/api db:seed",

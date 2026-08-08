@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import {
@@ -79,11 +80,19 @@ export async function buildApp(options: BuildAppOptions = {}) {
 async function migrate() {
   const migrationDirectory = fileURLToPath(new URL("../drizzle/", import.meta.url));
   const migrationFiles = (await readdir(migrationDirectory)).filter((name) => /^\d+.*\.sql$/.test(name)).sort();
+  const fingerprint = createHash("sha256");
   const client = await pool.connect();
   try {
     await client.query("select pg_advisory_lock(hashtext('blog-x-phase1-migration'))");
+    if (process.env.BLOG_X_MIGRATION_HOLD_MS) {
+      const holdMs = Number(process.env.BLOG_X_MIGRATION_HOLD_MS);
+      if (!Number.isInteger(holdMs) || holdMs < 0 || holdMs > 60_000) throw new Error("BLOG_X_MIGRATION_HOLD_MS must be an integer from 0 to 60000");
+      console.log("migration lock acquired");
+      await new Promise((accept) => setTimeout(accept, holdMs));
+    }
     for (const migrationFile of migrationFiles) {
       const migration = await readFile(`${migrationDirectory}/${migrationFile}`, "utf8");
+      fingerprint.update(migrationFile).update("\0").update(migration).update("\0");
       for (const statement of migration.split("--> statement-breakpoint").map((value) => value.trim()).filter(Boolean)) {
         try {
           await client.query(statement);
@@ -92,6 +101,8 @@ async function migrate() {
         }
       }
     }
+    await client.query("create table if not exists blog_x_schema_ledger (scope text primary key, migration_count integer not null, migration_fingerprint text not null, applied_at timestamp with time zone not null default now())");
+    await client.query("insert into blog_x_schema_ledger (scope, migration_count, migration_fingerprint) values ('phase1', $1, $2) on conflict (scope) do update set migration_count = excluded.migration_count, migration_fingerprint = excluded.migration_fingerprint, applied_at = now()", [migrationFiles.length, fingerprint.digest("hex")]);
   } finally { await client.query("select pg_advisory_unlock(hashtext('blog-x-phase1-migration'))").catch(() => undefined); client.release(); }
 }
 async function seed() {
@@ -100,6 +111,8 @@ async function seed() {
 async function schemaVerify() {
   const result = await pool.query("select tablename from pg_tables where schemaname = 'public' and tablename = any($1)", [["administrators", "sessions", "articles"]]);
   if (result.rowCount !== 3) throw new Error("phase 1 schema is not active; run pnpm db:migrate first");
+  const ledger = await pool.query("select migration_count from blog_x_schema_ledger where scope = 'phase1'");
+  if (ledger.rowCount !== 1 || Number(ledger.rows[0]?.migration_count) !== 2) throw new Error("phase 1 migration ledger is incomplete; run pnpm db:migrate first");
 }
 async function main() {
   const command = process.argv[2];
@@ -107,6 +120,6 @@ async function main() {
   if (command === "seed") { await seed(); await pool.end(); return; }
   if (command === "schema:verify") { await schemaVerify(); await pool.end(); return; }
   if (!process.env.PUBLIC_ORIGIN) throw new Error("PUBLIC_ORIGIN is required when starting the API server");
-  const app = await buildApp(); await app.listen({ host: "127.0.0.1", port: Number(process.env.API_PORT ?? 3001) });
+  const app = await buildApp(); await app.listen({ host: process.env.API_HOST ?? "127.0.0.1", port: Number(process.env.API_PORT ?? 3001) });
 }
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main().catch(async (error) => { console.error(error instanceof Error ? error.message : "startup failed"); await pool.end(); process.exitCode = 1; });
