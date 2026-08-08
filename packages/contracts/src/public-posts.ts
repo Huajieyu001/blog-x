@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { publicTaxonomyTermSchema } from "./taxonomy.js";
 
 export const publicPostPageSize = 10;
 
@@ -20,6 +21,8 @@ export const publicPostListItemSchema = z.object({
   slug: z.string(),
   publishedAt: z.string().datetime({ offset: true }),
   status: z.literal("published"),
+  category: publicTaxonomyTermSchema.pick({ name: true, slug: true }).nullable().optional(),
+  tags: z.array(publicTaxonomyTermSchema.pick({ name: true, slug: true })),
 }).strict();
 
 export const publicPostListResponseSchema = z.object({

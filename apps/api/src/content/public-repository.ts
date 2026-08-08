@@ -5,13 +5,13 @@ import * as schema from "../db/schema.js";
 
 type Database = NodePgDatabase<typeof schema>;
 
-const publicPredicate = and(
+export const publicPredicate = and(
   eq(schema.articles.status, "published"),
   isNull(schema.articles.deletedAt),
   isNotNull(schema.articles.publishedAt),
 );
 
-const publicListSelection = {
+export const publicListSelection = {
   title: schema.articles.title,
   summary: schema.articles.summary,
   slug: schema.articles.slug,

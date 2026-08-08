@@ -29,4 +29,20 @@ export const articles = pgTable("articles", {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [uniqueIndex("articles_slug_reserved_unique").on(table.slug), index("articles_public_index").on(table.status, table.publishedAt)]);
+  categoryId: uuid("category_id").references(() => categories.id, { onDelete: "restrict" }),
+}, (table) => [uniqueIndex("articles_slug_reserved_unique").on(table.slug), index("articles_public_index").on(table.status, table.publishedAt), index("articles_category_public_index").on(table.categoryId, table.status, table.publishedAt)]);
+
+export const categories = pgTable("categories", {
+  id: uuid("id").defaultRandom().primaryKey(), name: text("name").notNull(), slug: text("slug").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(), updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [uniqueIndex("taxonomy_category_slug_unique").on(table.slug)]);
+
+export const tags = pgTable("tags", {
+  id: uuid("id").defaultRandom().primaryKey(), name: text("name").notNull(), slug: text("slug").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(), updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [uniqueIndex("taxonomy_tag_slug_unique").on(table.slug)]);
+
+export const articleTags = pgTable("article_tags", {
+  articleId: uuid("article_id").notNull().references(() => articles.id, { onDelete: "restrict" }),
+  tagId: uuid("tag_id").notNull().references(() => tags.id, { onDelete: "restrict" }),
+}, (table) => [uniqueIndex("article_tags_article_tag_unique").on(table.articleId, table.tagId), index("article_tags_tag_index").on(table.tagId)]);
