@@ -41,7 +41,7 @@ test("administrator publishes Markdown that is immediately SSR-readable", async 
   await page.getByRole("button", { name: "保存草稿" }).click();
   await page.getByRole("button", { name: "发布" }).click();
   await page.goto(webOrigin);
-  await expect(page.getByRole("link", { name: title })).toBeVisible();
-  await page.getByRole("link", { name: title }).click();
+  await expect(page.getByRole("link", { name: title, exact: true })).toBeVisible();
+  await page.getByRole("link", { name: title, exact: true }).click();
   await expect(page.getByRole("heading", { name: "Hello" })).toBeVisible();
 });
