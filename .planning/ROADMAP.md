@@ -15,7 +15,7 @@ Blog X 采用四个纵向 MVP 阶段交付。第一阶段在本地建立完整�
 
 ### Phase 1: Local Publishing Slice
 
-**Goal**: 开发者可在本地启动系统，管理员可登录并发布 Markdown 文章，访客可立即在首页和固定链接阅读。
+**Goal**: As a developer and blog administrator, I want to start the complete publishing system locally and publish Markdown articles, so that visitors can immediately read only currently published content from the homepage and stable permalinks.
 **Mode:** mvp
 **Depends on**: Nothing (first phase)
 **Requirements**: AUTH-01, CONT-01, CONT-02, CONT-03, READ-01, READ-02, OPS-04
