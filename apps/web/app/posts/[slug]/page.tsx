@@ -1,13 +1,15 @@
-import { publicArticleDetailSchema, type PublicArticleDetail } from "@blog-x/contracts";
+import { publicPostDetailSchema, type PublicPostDetail } from "@blog-x/contracts";
 import { notFound } from "next/navigation";
+import ArticleBody from "../../_components/ArticleBody";
+import styles from "../../public.module.css";
 
 const apiOrigin = process.env.INTERNAL_API_ORIGIN ?? "http://127.0.0.1:3001";
 
-async function getPublicArticle(slug: string): Promise<PublicArticleDetail | null> {
+async function getPublicPost(slug: string): Promise<PublicPostDetail | null> {
   try {
     const response = await fetch(`${apiOrigin}/public/articles/${encodeURIComponent(slug)}`, { cache: "no-store" });
     if (!response.ok) return null;
-    const parsed = publicArticleDetailSchema.safeParse(await response.json());
+    const parsed = publicPostDetailSchema.safeParse(await response.json());
     return parsed.success ? parsed.data : null;
   } catch {
     return null;
@@ -15,7 +17,25 @@ async function getPublicArticle(slug: string): Promise<PublicArticleDetail | nul
 }
 
 export default async function PublicArticlePage({ params }: { params: Promise<{ slug: string }> }) {
-  const article = await getPublicArticle((await params).slug);
+  const article = await getPublicPost((await params).slug);
   if (!article) notFound();
-  return <main><a href="/">Blog X</a><article><h1>{article.title}</h1><div dangerouslySetInnerHTML={{ __html: article.html }} /></article></main>;
+  return (
+    <main className={styles.page}>
+      <header className={styles.siteHeader}>
+        <a className={styles.brand} href="/">Blog X</a>
+        <nav aria-label="站点导航"><a href="/">所有文章</a><a href="/admin">管理</a></nav>
+      </header>
+      <article className={styles.articleShell}>
+        <header className={styles.articleHeader}>
+          <p className={styles.eyebrow}>Published note</p>
+          <h1>{article.title}</h1>
+          <p className={styles.articleSummary}>{article.summary}</p>
+          <time dateTime={article.publishedAt}>
+            {new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeZone: "Asia/Shanghai" }).format(new Date(article.publishedAt))}
+          </time>
+        </header>
+        <ArticleBody renderedHtml={article.renderedHtml} />
+      </article>
+    </main>
+  );
 }

@@ -88,6 +88,7 @@ test("published permalink is a safe focused technical reading surface and every 
   await page.getByRole("button", { name: "发布" }).click();
   await page.getByRole("button", { name: "删除" }).click();
   await page.getByRole("dialog", { name: "确认软删除文章" }).getByRole("button", { name: "确认软删除" }).click();
+  await expect(page).toHaveURL(`${webOrigin}/admin`);
 
   await page.setViewportSize({ width: 1280, height: 900 });
   const publishedResponse = await page.goto(`${webOrigin}/posts/${slugs.published}`);
