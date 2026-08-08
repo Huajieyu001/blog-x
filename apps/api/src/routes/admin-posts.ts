@@ -95,7 +95,7 @@ export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async 
     if (!trustedOrigin(request)) return reply.code(403).send({ error: "forbidden" });
     const parsed = adminPostPreviewInputSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send(fieldErrors(parsed.error));
-    return adminPostPreviewSchema.parse({ html: await renderMarkdown(parsed.data.markdown) });
+    return adminPostPreviewSchema.parse({ html: (await renderMarkdown(parsed.data.markdown)).html });
   });
 
   app.post("/admin/posts", async (request, reply) => {

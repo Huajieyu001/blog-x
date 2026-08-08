@@ -26,7 +26,7 @@ test("renders the supported technical Markdown surface and safely falls back for
     "```",
   ].join("\n");
 
-  const html = await renderMarkdown(markdown);
+  const { html, toc } = await renderMarkdown(markdown);
 
   assert.match(html, /<h1>Technical note<\/h1>/);
   assert.match(html, /<blockquote>/);
@@ -38,10 +38,11 @@ test("renders the supported technical Markdown surface and safely falls back for
   assert.match(html, /language-not-a-real-language/);
   assert.match(html, /&#x3C;button onclick="steal\(\)"/);
   assert.doesNotMatch(html, /<button/i);
+  assert.deepEqual(toc, []);
 });
 
 test("removes raw executable markup, event handlers, styles, and unsafe URL protocols after transforms", async () => {
-  const html = await renderMarkdown([
+  const { html } = await renderMarkdown([
     "# Still safe",
     "",
     "<script>alert('script')</script>",
@@ -62,4 +63,69 @@ test("removes raw executable markup, event handlers, styles, and unsafe URL prot
   assert.match(html, /<h1>Still safe<\/h1>/);
   assert.match(html, /class="shiki github-light"/);
   assert.doesNotMatch(html, /<script|<style|onerror=|onload=|href="(?:javascript|data|mailto|ftp):|src="data:/i);
+});
+
+test("assigns stable Unicode heading IDs and returns only h2/h3 ToC entries", async () => {
+  const markdown = [
+    "# Document title",
+    "",
+    "## 架构 / API",
+    "",
+    "### Café ＡＰＩ",
+    "",
+    "## 架构 / API",
+    "",
+    "## Repeat",
+    "",
+    "## Repeat",
+    "",
+    "## Repeat-2",
+    "",
+    "### !!!",
+    "",
+    "### ???",
+    "",
+    "### [Nested `Code`](https://example.com) & *emphasis*",
+    "",
+    "#### Omitted subsection",
+  ].join("\n");
+
+  const first = await renderMarkdown(markdown);
+  const second = await renderMarkdown(markdown);
+
+  assert.deepEqual(first, second, "the renderer must preserve externally visible anchors");
+  assert.deepEqual(first.toc, [
+    { id: "架构-api", depth: 2, text: "架构 / API" },
+    { id: "café-api", depth: 3, text: "Café ＡＰＩ" },
+    { id: "架构-api-2", depth: 2, text: "架构 / API" },
+    { id: "repeat", depth: 2, text: "Repeat" },
+    { id: "repeat-2", depth: 2, text: "Repeat" },
+    { id: "repeat-2-2", depth: 2, text: "Repeat-2" },
+    { id: "section", depth: 3, text: "!!!" },
+    { id: "section-2", depth: 3, text: "???" },
+    { id: "nested-code-emphasis", depth: 3, text: "Nested Code & emphasis" },
+  ]);
+  assert.match(first.html, /<h2 id="架构-api">架构 \/ API<a [^>]*href="#架构-api"/);
+  assert.match(first.html, /<h3 id="café-api">Café ＡＰＩ<a [^>]*href="#café-api"/);
+  assert.match(first.html, /class="heading-permalink"/);
+  assert.match(first.html, /aria-label="链接到“架构 \/ API”"/);
+  assert.doesNotMatch(first.html, /<h1 id=|<h4 id=/);
+});
+
+test("keeps generated heading anchors safe when heading Markdown is hostile", async () => {
+  const { html, toc } = await renderMarkdown([
+    "## [Safe label](javascript:alert(1)) <img src=x onerror=alert(1)>",
+    "",
+    "### \" onmouseover=\"alert(1)",
+    "",
+    "<script>alert(1)</script>",
+  ].join("\n"));
+
+  assert.deepEqual(toc, [
+    { id: "safe-label", depth: 2, text: "Safe label" },
+    { id: "onmouseover-alert-1", depth: 3, text: "\" onmouseover=\"alert(1)" },
+  ]);
+  assert.match(html, /<h2 id="safe-label">/);
+  assert.match(html, /href="#safe-label"/);
+  assert.doesNotMatch(html, /javascript:|<script|<img|<[^>]*\s(?:onerror|onmouseover)="[^"]*"[^>]*>/i);
 });

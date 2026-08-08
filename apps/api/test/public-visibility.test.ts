@@ -91,6 +91,8 @@ test("public detail exposes only published content, uses one renderer, and gives
   const markdown = [
     "# Shared renderer",
     "",
+    "## 中文 API",
+    "",
     "| State | Visible |",
     "| --- | --- |",
     "| published | yes |",
@@ -118,11 +120,13 @@ test("public detail exposes only published content, uses one renderer, and gives
 
   const published = await app.inject({ method: "GET", url: `/public/articles/${slugs.published}` });
   assert.equal(published.statusCode, 200);
-  assert.deepEqual(Object.keys(published.json()).sort(), ["category", "publishedAt", "renderedHtml", "slug", "status", "summary", "tags", "title"]);
+  assert.deepEqual(Object.keys(published.json()).sort(), ["category", "publishedAt", "renderedHtml", "slug", "status", "summary", "tags", "title", "toc"]);
   assert.equal(published.json().category, null);
   assert.deepEqual(published.json().tags, []);
   assert.equal(published.json().status, "published");
   assert.equal(published.json().summary, "Public summary");
+  assert.deepEqual(published.json().toc, [{ id: "中文-api", depth: 2, text: "中文 API" }]);
+  assert.match(published.json().renderedHtml, /<h2 id="中文-api">/);
   assert.match(published.json().renderedHtml, /<table>/);
   assert.match(published.json().renderedHtml, /class="shiki github-light"/);
   assert.doesNotMatch(published.json().renderedHtml, /<script|javascript:/i);

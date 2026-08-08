@@ -33,8 +33,15 @@ export const publicPostListResponseSchema = z.object({
   items: z.array(publicPostListItemSchema),
 }).strict();
 
+export const tocEntrySchema = z.object({
+  id: z.string().min(1),
+  depth: z.union([z.literal(2), z.literal(3)]),
+  text: z.string(),
+}).strict();
+
 export const publicPostDetailSchema = publicPostListItemSchema.extend({
   renderedHtml: z.string(),
+  toc: z.array(tocEntrySchema),
 }).strict();
 
 export const publicTaxonomyPostListSchema = z.object({
@@ -53,3 +60,4 @@ export const invalidPublicPageResponseSchema = z.object({
 export type PublicPostListItem = z.infer<typeof publicPostListItemSchema>;
 export type PublicPostListResponse = z.infer<typeof publicPostListResponseSchema>;
 export type PublicPostDetail = z.infer<typeof publicPostDetailSchema>;
+export type TocEntry = z.infer<typeof tocEntrySchema>;

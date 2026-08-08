@@ -27,9 +27,11 @@ export const publicPostRoutes: FastifyPluginAsync<PublicPostRouteOptions> = asyn
       return reply.code(404).send(publicPostNotFoundResponseSchema.parse({ error: "not_found" }));
     }
     const { markdown, ...metadata } = article;
+    const rendered = await renderMarkdown(markdown);
     return publicPostDetailSchema.parse({
       ...metadata,
-      renderedHtml: await renderMarkdown(markdown),
+      renderedHtml: rendered.html,
+      toc: rendered.toc,
     });
   });
 };
