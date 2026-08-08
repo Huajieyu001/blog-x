@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 01
-current_phase_name: local-publishing-slice
-status: verifying
-stopped_at: Completed 01-08-PLAN.md
-last_updated: "2026-08-08T05:33:33.711Z"
+current_phase: 2
+current_phase_name: Complete Reading Experience
+status: planning
+stopped_at: Phase 1 complete, ready to discuss and plan Phase 2
+last_updated: "2026-08-08T14:23:28+08:00"
 last_activity: 2026-08-08
-last_activity_desc: Completed Phase 01 Plan 08 reproducible local acceptance
+last_activity_desc: Phase 01 complete, transitioned to Phase 2
 progress:
   total_phases: 1
   completed_phases: 1
@@ -20,17 +20,17 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-05)
+See: .planning/PROJECT.md (updated 2026-08-08)
 
 **Core value:** 博主能够可靠地发布和保存 Markdown 内容，访客能够持续、快速地通过博客域名阅读已发布文章。  
-**Current focus:** Phase 01 — local-publishing-slice
+**Current focus:** Phase 2 — Complete Reading Experience
 
 ## Current Position
 
-Phase: 01 (local-publishing-slice) — VERIFYING
-Plan: 8 of 8
-Status: Phase complete — ready for verification
-Last activity: 2026-08-08 — Completed Phase 01 Plan 08 reproducible local acceptance
+Phase: 2 — Complete Reading Experience
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-08-08 — Phase 01 complete, transitioned to Phase 2
 
 Progress: [██████████] 100%
 
@@ -38,7 +38,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 0
+- Total plans completed: 8
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -46,7 +46,7 @@ Progress: [██████████] 100%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 01 | 8 | - | - |
 
 **Recent Trend:**
 
@@ -97,6 +97,7 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 01]: Canonical verification owns a generated, validated Compose/database namespace and cleans only that namespace. — Interrupted and parallel runs cannot reset or remove another environment.
 - [Phase 01]: Concurrent migration activation uses one advisory lock and one fingerprint ledger row. — Retried migrations converge on the existing PostgreSQL volume with auditable schema state.
 - [Phase 01]: Whole-phase acceptance mutates content through visible browser controls and same-origin relative `/api` only. — Direct database access is limited to runner-owned postcondition diagnostics.
+- [Transition 01→02]: Phase 1 closed with 29/29 UAT checks, canonical verification passed, and 33/33 modeled threats resolved or explicitly accepted.
 
 ### Pending Todos
 
@@ -104,9 +105,9 @@ None yet.
 
 ### Blockers/Concerns
 
-- GSD 专用子代理未安装到当前运行时，本次初始化按 GSD 降级规则在主会话内完成。
-- 副服务器系统、端口、历史数据与私网能力尚未只读核验。
-- 评论、统计深度、私密内容、图片规模和精确 RPO/RTO 延后决策，不阻塞 v1。
+- [Phase 2+] 副服务器系统、端口、历史数据与私网能力尚未只读核验。
+- [Phase 2] 图片存储上限、允许格式及本地开发存储策略需要在媒体方案中确定。
+- [Later] 评论、统计深度、私密内容和精确 RPO/RTO 延后决策，不阻塞 v1。
 
 ## Deferred Items
 
@@ -116,6 +117,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-08T05:33:33.706Z
-Stopped at: Completed 01-08-PLAN.md
+Last session: 2026-08-08T14:23:28+08:00
+Stopped at: Phase 1 complete, ready to discuss and plan Phase 2
 Resume file: None
