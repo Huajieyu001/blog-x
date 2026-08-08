@@ -3,6 +3,10 @@ FROM node:24.15.0-alpine AS build
 WORKDIR /workspace
 RUN corepack enable
 
+ARG INTERNAL_API_ORIGIN=http://api:3001
+ENV INTERNAL_API_ORIGIN=${INTERNAL_API_ORIGIN}
+ENV NEXT_TELEMETRY_DISABLED=1
+
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
