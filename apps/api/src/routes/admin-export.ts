@@ -9,6 +9,10 @@ type AdminExportRouteOptions = {
 };
 
 export const adminExportRoutes: FastifyPluginAsync<AdminExportRouteOptions> = async (app, options) => {
+  app.addContentTypeParser("application/x-www-form-urlencoded", { parseAs: "string" }, (_request, body, done) => {
+    done(null, body);
+  });
+
   async function guard(request: FastifyRequest, reply: { code: (statusCode: number) => { send: (payload: unknown) => unknown }; header: (name: string, value: string) => unknown }) {
     reply.header("cache-control", "no-store");
     if (!await options.sessionAuth.administratorIdForToken(request.cookies[sessionCookieName])) {
@@ -18,9 +22,10 @@ export const adminExportRoutes: FastifyPluginAsync<AdminExportRouteOptions> = as
     return true;
   }
 
-  app.post("/admin/export", async (request, reply) => {
+  app.post<{ Body: string | undefined }>("/admin/export", async (request, reply) => {
     if (!await guard(request, reply)) return;
     if (!options.publicOrigin || request.headers.origin !== options.publicOrigin) return reply.code(403).send({ error: "forbidden" });
+    if (request.body !== undefined && request.body !== "") return reply.code(400).send({ error: "invalid_export_request" });
     const archive = await options.exportRepository.archive();
     reply.header("content-disposition", 'attachment; filename="blog-x-export-v1.json"');
     reply.type("application/json; charset=utf-8");

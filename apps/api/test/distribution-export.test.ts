@@ -76,6 +76,21 @@ test("the protected export reconstructs every retained source state without bina
     assert.equal(exported.headers["cache-control"], "no-store");
     assert.equal(exported.headers["content-type"], "application/json; charset=utf-8");
     assert.equal(exported.headers["content-disposition"], 'attachment; filename="blog-x-export-v1.json"');
+    const nativeFormExport = await app.inject({
+      method: "POST",
+      url: "/admin/export",
+      headers: { cookie, origin, "content-type": "application/x-www-form-urlencoded" },
+      payload: "",
+    });
+    assert.equal(nativeFormExport.statusCode, 200, nativeFormExport.body);
+    assert.equal(nativeFormExport.headers["content-disposition"], 'attachment; filename="blog-x-export-v1.json"');
+    const rejectedFormInput = await app.inject({
+      method: "POST",
+      url: "/admin/export",
+      headers: { cookie, origin, "content-type": "application/x-www-form-urlencoded" },
+      payload: "unexpected=value",
+    });
+    assert.equal(rejectedFormInput.statusCode, 400);
     const manifest = portableExportManifestSchema.parse(JSON.parse(JSON.stringify(exported.json())));
     assert.equal(manifest.format, "blog-x-portable-export");
     assert.equal(manifest.version, 1);
