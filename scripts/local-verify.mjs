@@ -51,7 +51,7 @@ export function phase3Selection(mode) {
   const selections = {
     api: { databaseSuites: [api], webSuites: [] },
     metadata: { databaseSuites: [], webSuites: [metadata, browser] },
-    full: { databaseSuites: [api], webSuites: [metadata, browser] },
+    full: { databaseSuites: [api, exportApi], webSuites: [metadata, browser] },
     "export-api": { databaseSuites: [exportApi], webSuites: [] },
     "export-browser": { databaseSuites: [], webSuites: [browser] },
   };
