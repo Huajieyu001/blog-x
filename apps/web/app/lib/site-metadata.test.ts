@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { escapeXml, publicOrigin, publicUrl, renderRss } from "./site-metadata";
+import { escapeXml, pageMetadata, publicOrigin, publicUrl, renderRss, resolveCanonicalPage } from "./site-metadata";
 
 test("public origin accepts only an absolute HTTP(S) origin and fails closed in production", () => {
   assert.equal(publicOrigin("https://blog.example").toString(), "https://blog.example/");
@@ -35,4 +35,40 @@ test("RSS escapes hostile summary text, removes invalid controls, and preserves 
   assert.match(rss, /<pubDate>Sun, 09 Aug 2026 09:00:00 GMT<\/pubDate>/);
   assert.doesNotMatch(rss, /markdown|renderedHtml|INTERNAL_API_ORIGIN/i);
   assert.equal(escapeXml("<&>\"'\u0000"), "&lt;&amp;&gt;&quot;&apos;");
+});
+
+test("canonical pagination accepts only the exact indexable shapes", () => {
+  const origin = publicOrigin("https://blog.example");
+  const indexable = resolveCanonicalPage("/categories", {}, 3, origin);
+  assert.deepEqual(indexable, { canonical: "https://blog.example/categories", index: true });
+  assert.deepEqual(resolveCanonicalPage("/categories", { page: "1" }, 3, origin), indexable);
+  assert.deepEqual(resolveCanonicalPage("/categories", { page: "2" }, 3, origin), {
+    canonical: "https://blog.example/categories?page=2", index: true,
+  });
+  for (const searchParams of [
+    { page: ["1", "2"] }, { page: "01" }, { page: "0" }, { page: "4" },
+    { page: "" }, { page: "2.0" }, { page: "two" }, { page: "1", extra: "x" },
+  ]) {
+    assert.deepEqual(resolveCanonicalPage("/categories", searchParams, 3, origin), { index: false });
+  }
+});
+
+test("page metadata emits complete canonical Open Graph and noindex metadata", () => {
+  const origin = publicOrigin("https://blog.example");
+  const metadata = pageMetadata({
+    title: "文章标题",
+    description: "文章描述",
+    path: "/posts/example",
+    type: "article",
+    origin,
+  });
+  assert.equal(metadata.alternates?.canonical, "https://blog.example/posts/example");
+  assert.deepEqual(metadata.openGraph, {
+    title: "文章标题",
+    description: "文章描述",
+    type: "article",
+    url: "https://blog.example/posts/example",
+    siteName: "Blog X",
+  });
+  assert.deepEqual(pageMetadata({ title: "无效", description: "无效", path: "/", origin, index: false }).robots, { index: false, follow: true });
 });

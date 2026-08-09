@@ -41,6 +41,7 @@ export const tocEntrySchema = z.object({
 }).strict();
 
 export const publicPostDetailSchema = publicPostListItemSchema.extend({
+  seoDescription: z.string(),
   renderedHtml: z.string(),
   toc: z.array(tocEntrySchema),
   cover: mediaUsageReferenceSchema.nullable().optional(),

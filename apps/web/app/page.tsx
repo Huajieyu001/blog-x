@@ -3,6 +3,7 @@ import Link from "next/link";
 import Pagination from "./_components/Pagination";
 import PostCard from "./_components/PostCard";
 import { getPublicPosts } from "./lib/api";
+import { pageMetadata, resolveCanonicalPage } from "./lib/site-metadata";
 import styles from "./public.module.css";
 
 type HomePageProps = {
@@ -10,6 +11,26 @@ type HomePageProps = {
 };
 
 export const dynamic = "force-dynamic";
+
+async function homeResult(searchParams: Record<string, string | string[] | undefined>) {
+  const rawPage = searchParams.page;
+  const query = publicPostPageQuerySchema.safeParse({ page: rawPage });
+  const outcome = query.success ? await getPublicPosts(query.data.page) : null;
+  if (outcome && outcome.kind !== "ok") throw new Error("public content unavailable");
+  return { query, outcome, result: outcome?.kind === "ok" ? outcome.data : null };
+}
+
+export async function generateMetadata({ searchParams }: HomePageProps) {
+  const resolvedSearchParams = await searchParams;
+  const { result } = await homeResult(resolvedSearchParams);
+  const canonical = resolveCanonicalPage("/", resolvedSearchParams, result?.totalPages ?? 0);
+  return pageMetadata({
+    title: "最新文章",
+    description: "记录代码、系统与长期实践。",
+    path: canonical.canonical ? new URL(canonical.canonical).pathname + new URL(canonical.canonical).search : "/",
+    index: canonical.index,
+  });
+}
 
 function EmptyState({ invalid = false }: { invalid?: boolean }) {
   return (
@@ -22,11 +43,7 @@ function EmptyState({ invalid = false }: { invalid?: boolean }) {
 }
 
 export default async function HomePage({ searchParams }: HomePageProps) {
-  const rawPage = (await searchParams).page;
-  const query = publicPostPageQuerySchema.safeParse({ page: rawPage });
-  const outcome = query.success ? await getPublicPosts(query.data.page) : null;
-  if (outcome && outcome.kind !== "ok") throw new Error("public content unavailable");
-  const result = outcome?.kind === "ok" ? outcome.data : null;
+  const { query, result } = await homeResult(await searchParams);
   const page = query.success ? query.data.page : 1;
 
   return (

@@ -42,7 +42,7 @@ export function phase3Selection(mode) {
   const exportBrowser = "apps/web/e2e/phase3-distribution.spec.ts";
   const selections = {
     api: { databaseSuites: [api], webSuites: [] },
-    metadata: { databaseSuites: [], webSuites: [metadata] },
+    metadata: { databaseSuites: [], webSuites: [metadata, exportBrowser] },
     "export-api": { databaseSuites: [exportApi], webSuites: [] },
     "export-browser": { databaseSuites: [], webSuites: [exportBrowser] },
     full: { databaseSuites: [api, exportApi], webSuites: [metadata, exportBrowser] },
@@ -334,7 +334,7 @@ async function runPhase3Checks(context, mode) {
   for (const [variable, file] of selection.databaseSuites) await runDatabaseSuite(context, variable, file);
   for (const file of selection.webSuites) {
     if (file.endsWith(".test.ts")) {
-      const result = await runStep(context, `run ${file}`, "corepack", ["pnpm", "--filter", "@blog-x/web", "exec", "tsx", "--test", "--test-reporter=tap", file], { env: process.env });
+      const result = await runStep(context, `run ${file}`, "corepack", ["pnpm", "exec", "tsx", "--test", "--test-reporter=tap", file], { env: process.env });
       assertSemanticTap(result.combined);
       continue;
     }

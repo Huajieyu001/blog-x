@@ -23,6 +23,7 @@ export const publicListSelection = {
 
 const publicDetailSelection = {
   ...publicListSelection,
+  seoDescription: schema.articles.seoDescription,
   markdown: schema.articles.markdown,
   coverMediaId: schema.articles.coverMediaId,
   coverAlt: schema.articles.coverAlt,
@@ -99,6 +100,7 @@ export function createPublicRepository(db: Database) {
     return {
       title: article.title,
       summary: article.summary,
+      seoDescription: article.seoDescription,
       slug: article.slug,
       markdown: article.markdown,
       status: "published" as const,

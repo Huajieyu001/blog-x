@@ -1,8 +1,10 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import ArticleBody from "../../_components/ArticleBody";
 import ArticleToc from "../../_components/ArticleToc";
 import { getPublicPost } from "../../lib/api";
+import { pageMetadata } from "../../lib/site-metadata";
 import styles from "../../public.module.css";
 
 export default async function PublicArticlePage({ params }: { params: Promise<{ slug: string }> }) {
@@ -46,4 +48,18 @@ export default async function PublicArticlePage({ params }: { params: Promise<{ 
       </article>
     </main>
   );
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const result = await getPublicPost(slug);
+  if (result.kind === "not_found") notFound();
+  if (result.kind === "upstream_error") throw new Error("public content unavailable");
+  const article = result.data;
+  return pageMetadata({
+    title: article.title,
+    description: article.seoDescription || article.summary || "记录代码、系统与长期实践。",
+    path: `/posts/${encodeURIComponent(article.slug)}`,
+    type: "article",
+  });
 }
