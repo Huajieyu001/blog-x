@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 02
-current_phase_name: Complete Reading Experience
-status: executing
-stopped_at: Completed 02-05-PLAN.md
-last_updated: "2026-08-09T01:26:46.000Z"
+current_phase: 03
+current_phase_name: Distribution and Portability
+status: ready
+stopped_at: Completed 02-06-PLAN.md and Phase 02 verification
+last_updated: "2026-08-09T01:59:46.000Z"
 last_activity: 2026-08-09
-last_activity_desc: Phase 02 execution started
+last_activity_desc: Phase 02 canonical acceptance completed
 progress:
-  total_phases: 2
-  completed_phases: 1
-  total_plans: 14
-  completed_plans: 13
+  total_phases: 4
+  completed_phases: 2
+  total_plans: 19
+  completed_plans: 14
 ---
 
 # Project State
@@ -23,22 +23,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-08)
 
 **Core value:** 博主能够可靠地发布和保存 Markdown 内容，访客能够持续、快速地通过博客域名阅读已发布文章。  
-**Current focus:** Phase 02 — Complete Reading Experience
+**Current focus:** Phase 03 — Distribution and Portability
 
 ## Current Position
 
-Phase: 02 (Complete Reading Experience) — EXECUTING
-Plan: 6 of 6
+Phase: 03 (Distribution and Portability) — READY
+Plan: 0 of 2
 Status: Ready to execute
-Last activity: 2026-08-09 — Completed responsive public shell and honest recovery
+Last activity: 2026-08-09 — Phase 02 canonical acceptance passed
 
-Progress: [█████████░] 93%
+Progress: [███████░░░] 74%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 13
+- Total plans completed: 14
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -70,6 +70,7 @@ Progress: [█████████░] 93%
 | Phase 02 P03 | 0min | 2 tasks | 12 files |
 | Phase 02 P04 | 0min | 5 tasks | 29 files |
 | Phase 02 P05 | 0min | 2 tasks | 21 files |
+| Phase 02 P06 | 0min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -111,6 +112,8 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 02]: Treat public API outcomes as strict ok/not-found/upstream-error values and require a parsed absence DTO before invoking Next notFound(). — Temporary outages and malformed responses must never become misleading 404 or empty states.
 - [Phase 02]: Apply only light/dark/system preferences through a synchronous pre-paint resolver with CSS OS and no-JavaScript fallbacks. — Theme persistence cannot become an injection surface or a prerequisite for readable content.
 - [Phase 02]: Keep one public navigation order across every visitor page and progressively enhance its compact menu while excluding login/admin surfaces. — Responsive adaptation preserves all actions instead of hiding them by device class.
+- [Phase 02]: Canonical acceptance validates one exact generated media volume and preserves an existing article across concurrent migration retries before feature tests run. — Cleanup and schema retry cannot silently destroy unrelated or retained content.
+- [Phase 02]: The final browser journey uses visible UI and same-origin requests, while unavailable responses come only from a separate loopback process fixture. — Failure evidence never requires a production test endpoint or cloud dependency.
 
 ### Pending Todos
 
@@ -129,6 +132,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-09T01:26:46.000Z
-Stopped at: Completed 02-05-PLAN.md
+Last session: 2026-08-09T01:59:46.000Z
+Stopped at: Completed 02-06-PLAN.md and Phase 02 verification
 Resume file: None

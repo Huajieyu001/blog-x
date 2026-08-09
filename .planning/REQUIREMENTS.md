@@ -9,11 +9,11 @@
 
 - [x] **READ-01**: 访客可在首页查看已发布文章的标题、摘要、发布日期和分页信息。
 - [x] **READ-02**: 访客可打开文章固定链接，并正确阅读 Markdown、代码块、表格、引用、链接和图片。
-- [ ] **READ-03**: 访客可通过文章标题生成的分层目录定位到正文对应章节。
-- [ ] **READ-04**: 访客可在文章卡片看到分类与标签，并分别查看某个分类、某个标签及按时间归档的已发布文章列表。
-- [ ] **READ-05**: 访客可访问由管理员维护的“关于”独立页面。
-- [ ] **READ-06**: 访客可在手机、平板和桌面端正常导航与阅读，并可选择浅色、深色或跟随系统主题。
-- [ ] **READ-07**: 访客访问不存在的页面或后端暂时不可用时，可看到明确且可继续导航的错误提示。
+- [x] **READ-03**: 访客可通过文章标题生成的分层目录定位到正文对应章节。
+- [x] **READ-04**: 访客可在文章卡片看到分类与标签，并分别查看某个分类、某个标签及按时间归档的已发布文章列表。
+- [x] **READ-05**: 访客可访问由管理员维护的“关于”独立页面。
+- [x] **READ-06**: 访客可在手机、平板和桌面端正常导航与阅读，并可选择浅色、深色或跟随系统主题。
+- [x] **READ-07**: 访客访问不存在的页面或后端暂时不可用时，可看到明确且可继续导航的错误提示。
 
 ### Administration and Content
 
@@ -21,8 +21,8 @@
 - [x] **CONT-01**: 管理员可创建、编辑、预览、发布、下线和删除 Markdown 文章。
 - [x] **CONT-02**: 管理员可保存草稿，且草稿及已下线文章不会出现在公开页面、RSS 或 Sitemap 中。
 - [x] **CONT-03**: 管理员可维护文章标题、摘要、封面、唯一固定链接、发布时间和 SEO 描述。
-- [ ] **TAXO-01**: 管理员可创建、修改、删除分类与标签，并将它们关联到文章。
-- [ ] **MEDIA-01**: 管理员可上传经过类型和大小校验的图片，将其插入文章，并通过站点入口公开访问。
+- [x] **TAXO-01**: 管理员可创建、修改、删除分类与标签，并将它们关联到文章。
+- [x] **MEDIA-01**: 管理员可上传经过类型和大小校验的图片，将其插入文章，并通过站点入口公开访问。
 - [ ] **PORT-01**: 管理员可导出文章 Markdown 原文和必要元数据，导出结果可用于迁移。
 
 ### Discovery and Distribution
@@ -86,13 +86,13 @@
 | READ-01 | Phase 1 | Complete |
 | READ-02 | Phase 1 | Complete |
 | OPS-04 | Phase 1 | Complete |
-| READ-03 | Phase 2 | Pending |
-| READ-04 | Phase 2 | Pending |
-| READ-05 | Phase 2 | Pending |
-| READ-06 | Phase 2 | Pending |
-| READ-07 | Phase 2 | Pending |
-| TAXO-01 | Phase 2 | Pending |
-| MEDIA-01 | Phase 2 | Pending |
+| READ-03 | Phase 2 | Complete |
+| READ-04 | Phase 2 | Complete |
+| READ-05 | Phase 2 | Complete |
+| READ-06 | Phase 2 | Complete |
+| READ-07 | Phase 2 | Complete |
+| TAXO-01 | Phase 2 | Complete |
+| MEDIA-01 | Phase 2 | Complete |
 | PORT-01 | Phase 3 | Pending |
 | SEO-01 | Phase 3 | Pending |
 | SEO-02 | Phase 3 | Pending |
@@ -113,4 +113,4 @@
 
 ---
 *Requirements defined: 2026-08-05*  
-*Last updated: 2026-08-05 after initial roadmap mapping*
+*Last updated: 2026-08-09 after Phase 2 verification*

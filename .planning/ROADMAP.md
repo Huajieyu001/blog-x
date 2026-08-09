@@ -7,7 +7,7 @@ Blog X 采用四个纵向 MVP 阶段交付。第一阶段在本地建立完整�
 ## Phases
 
 - [x] **Phase 1: Local Publishing Slice** - 在本地跑通管理员登录、Markdown 写作、发布与访客阅读。 (completed 2026-08-08)
-- [ ] **Phase 2: Complete Reading Experience** - 补齐分类标签、归档、关于页、图片、目录、主题和错误体验。
+- [x] **Phase 2: Complete Reading Experience** - 补齐分类标签、归档、关于页、图片、目录、主题和错误体验。 (completed 2026-08-09)
 - [ ] **Phase 3: Distribution and Portability** - 提供 SEO、Sitemap、RSS 和可迁移内容导出。
 - [ ] **Phase 4: Secure Operations and Release Gate** - 完成安全加固、备份恢复、监控和受控生产部署准备。
 
@@ -76,7 +76,7 @@ Plans:
   3. 管理员可管理分类标签、上传受校验图片并插入文章，图片通过站点入口访问。
   4. 不存在的页面和暂时性服务异常均显示明确、可恢复导航的错误状态。
 
-**Plans**: 5/6 plans executed
+**Plans**: 6/6 plans executed
 
 Plans:
 
@@ -85,7 +85,7 @@ Plans:
 - [x] 02-03-PLAN.md
 - [x] 02-04-PLAN.md
 - [x] 02-05-PLAN.md
-- [ ] 02-06-PLAN.md
+- [x] 02-06-PLAN.md
 
 **Wave 1**
 
@@ -109,7 +109,7 @@ Plans:
 
 **Wave 6** *(blocked on Waves 1 through 5 completion)*
 
-- [ ] 02-06: 完成 Phase 2 本地可复现验收与高成本决策回退门禁。
+- [x] 02-06: 完成 Phase 2 本地可复现验收与高成本决策回退门禁。
 
 ### Phase 3: Distribution and Portability
 
@@ -159,6 +159,6 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Local Publishing Slice | 8/8 | Complete    | 2026-08-08 |
-| 2. Complete Reading Experience | 5/6 | In Progress|  |
+| 2. Complete Reading Experience | 6/6 | Complete | 2026-08-09 |
 | 3. Distribution and Portability | 0/2 | Not started | - |
 | 4. Secure Operations and Release Gate | 0/3 | Not started | - |
