@@ -1,0 +1,15 @@
+[Unit]
+Description=Blog X complete backup set
+ConditionPathExists=/etc/blog-x/backup-policy.json
+
+[Service]
+Type=oneshot
+User=blog-x
+Group=blog-x
+UMask=0077
+WorkingDirectory=/opt/blog-x
+ExecStart=/usr/bin/node /opt/blog-x/scripts/backup/create.mjs --policy=/etc/blog-x/backup-policy.json
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true

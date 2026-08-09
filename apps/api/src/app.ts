@@ -35,6 +35,7 @@ import { adminExportRoutes } from "./routes/admin-export.js";
 import { parseApiRuntimeConfig, type ApiRuntimeConfig, type RateLimitConfig } from "./security/config.js";
 import { BoundedRateLimitStore, createRateLimitKey } from "./security/rate-limiter.js";
 import { requireAdministratorMutation, requireContentType, type MutationGuardOptions } from "./security/mutation-guard.js";
+import { writePortableExport } from "./ops/portable-export.js";
 
 const databaseSchema = { administrators, articles, sessions, categories, tags, articleTags, sitePages, media };
 
@@ -207,14 +208,15 @@ async function schemaVerify(pool: Pool) {
 }
 async function main() {
   const command = process.argv[2];
-  const configCommand = command === "migrate" || command === "seed" || command === "schema:verify" ? command : "serve";
+  const configCommand = command === "migrate" || command === "seed" || command === "schema:verify" || command === "portable-export" ? command : "serve";
   const config = parseApiRuntimeConfig(process.env, configCommand);
   const resources = createRuntimeResources(config);
-  if (command === "migrate" || command === "seed" || command === "schema:verify") {
+  if (command === "migrate" || command === "seed" || command === "schema:verify" || command === "portable-export") {
     try {
       if (command === "migrate") await migrate(resources.pool);
       if (command === "seed") await seed(resources.db, config.administrator!);
       if (command === "schema:verify") await schemaVerify(resources.pool);
+      if (command === "portable-export") await writePortableExport(resources.db);
     } finally {
       await resources.pool.end();
     }

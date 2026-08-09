@@ -83,7 +83,7 @@ test("manifest verification accepts exact complete bytes and rejects tamper, ext
   assert.equal((await verifyBackupSet(result.finalRoot)).manifest.format, "blog-x-backup-set");
   assert.match(await hashFile(join(result.finalRoot, "database.dump")), /^[a-f0-9]{64}$/);
   await writeFile(join(result.finalRoot, "database.dump"), "tampered");
-  await assert.rejects(verifyBackupSet(result.finalRoot), /database\.dump.*checksum|checksum.*database\.dump/i);
+  await assert.rejects(verifyBackupSet(result.finalRoot), /database\.dump.*(?:size|checksum)|(?:size|checksum).*database\.dump/i);
 
   const second = await createBackupSet(policy(root, "b1b2c3d4"), { setId: "20260809T100001Z-b1b2c3d4", collect: collectComplete });
   await writeFile(join(second.finalRoot, "extra.txt"), "extra");

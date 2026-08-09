@@ -65,7 +65,7 @@ test("Phase 4 security selection names every local API security suite", () => {
 
 test("Phase 4 operations selection is explicit and keeps restore separate", () => {
   assert.deepEqual(phase4Selection("operations"), {
-    nodeSuites: ["scripts/ops-status.test.mjs", "scripts/local-verify.test.mjs"],
+    nodeSuites: ["scripts/ops-status.test.mjs", "scripts/backup/backup.test.mjs", "scripts/local-verify.test.mjs"],
   });
   assert.throws(() => phase4Selection("restore"), /not recognized/i);
 });

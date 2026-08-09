@@ -1,11 +1,14 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { basename, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { auditRepository } from "./check-boundaries.mjs";
+import { createBackupSet } from "./backup/create.mjs";
+import { verifyBackupSet } from "./backup/manifest.mjs";
+import { cleanupGeneratedBackupRoot } from "./backup/paths.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = fileURLToPath(import.meta.url);
@@ -82,7 +85,7 @@ export function phase4Selection(mode) {
       ],
     },
     operations: {
-      nodeSuites: ["scripts/ops-status.test.mjs", "scripts/local-verify.test.mjs"],
+      nodeSuites: ["scripts/ops-status.test.mjs", "scripts/backup/backup.test.mjs", "scripts/local-verify.test.mjs"],
     },
   }[mode];
   if (!selection) throw new Error(`Phase 4 selection is not recognized: ${mode}`);
@@ -483,6 +486,22 @@ async function runPhase4OperationsChecks(context) {
   await exerciseApiRecovery(context);
   const status = await runStep(context, "run redacted local operator status", "node", ["scripts/ops-status.mjs", `--project=${context.namespace}`, `--web-origin=${context.webOrigin}`]);
   if (!status.stdout.includes("BLOG X STATUS PASS") || !status.stdout.includes("TLS NOT_EVALUATED")) throw new Error("local operator status did not pass with TLS not evaluated");
+  const backupRoot = await mkdtemp(resolve(tmpdir(), "blog-x-backup-verify-"));
+  try {
+    process.stdout.write("[local-verify] create complete atomic backup set\n");
+    const backup = await createBackupSet({
+      format: "blog-x-backup-policy", version: 1, destination_root: backupRoot,
+      off_host_destination_ref: "external:off-host-destination", retention_decision_ref: "external:retention-decision",
+      encryption_key_ref: "external:encryption-authority", alert_recipient_ref: "external:alert-recipient",
+      secret_authority_ref: "external:service-secret-authority", schedule: "daily",
+      compose_project: context.namespace, database_name: context.database, media_root: "/var/lib/blog-x/media",
+      config_inventory_sources: ["compose.yaml", "ops/production-config.names.json", "ops/topology-policy.json"],
+    }, { env: composeEnvironment(context) });
+    await verifyBackupSet(backup.finalRoot);
+    process.stdout.write(`[local-verify] ${backup.message}\n`);
+  } finally {
+    await cleanupGeneratedBackupRoot(backupRoot);
+  }
 }
 
 async function runSingle(options) {

@@ -1,0 +1,18 @@
+{
+  "format": "blog-x-backup-policy-names",
+  "version": 1,
+  "activation": "blocked-until-external-references",
+  "fields": [
+    { "name": "destination_root", "class": "protected-path", "source": "untracked-service-owned-policy" },
+    { "name": "off_host_destination_ref", "class": "external-decision-reference", "source": "untracked-service-owned-policy" },
+    { "name": "retention_decision_ref", "class": "external-decision-reference", "source": "untracked-service-owned-policy" },
+    { "name": "encryption_key_ref", "class": "secret-authority-reference", "source": "untracked-service-owned-policy" },
+    { "name": "alert_recipient_ref", "class": "external-decision-reference", "source": "untracked-service-owned-policy" },
+    { "name": "secret_authority_ref", "class": "secret-authority-reference", "source": "untracked-service-owned-policy" },
+    { "name": "schedule", "class": "daily-policy", "source": "tracked-contract" },
+    { "name": "compose_project", "class": "generated-local-authority", "source": "runtime" },
+    { "name": "database_name", "class": "generated-local-authority", "source": "runtime" },
+    { "name": "media_root", "class": "api-owned-path", "source": "runtime" },
+    { "name": "config_inventory_sources", "class": "name-only-artifact-list", "source": "tracked-contract" }
+  ]
+}

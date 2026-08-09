@@ -32,3 +32,18 @@ corepack pnpm local:verify -- --phase4-operations
 以下内容尚未选择或测量，不能由本地通过结果代替：生产资源限制、日志采集目的地、告警接收人、证书与续期状态、节点间防火墙/加密链路、异机备份目的地、保留策略、加密密钥权威以及 RPO/RTO。
 
 主服务器仍处于冻结状态；本文不提供远程执行命令，也不构成解除冻结或部署授权。
+
+## 完整备份集合
+
+Blog X 备份格式版本 1 将四类恢复权威放在同一个原子集合中：PostgreSQL 自定义格式 dump、保持不变的 `blog-x-portable-export` v1、API 所有的 source/derivative 媒体字节，以及不含秘密值的配置/镜像/迁移清单。`manifest.json` 记录每个 payload 的字节数与 SHA-256，`COMPLETE` 只绑定 manifest 哈希并且最后写入；集合通过验证后才从唯一 incomplete staging 目录原子改名。
+
+生产策略文件不进入 Git。跟踪的 [backup-policy.names.json](../ops/backup-policy.names.json) 只列字段名和权威来源。创建命令在以下外部引用全部存在前拒绝运行：异机目的地、保留决策、加密密钥权威、告警接收人和服务秘密权威。仅在同一主机复制不构成灾难恢复；`daily` 定时器也不代表已经选择或测量 RPO/RTO。
+
+本地生成策略准备完成后，操作顺序为：
+
+```text
+create.mjs --policy=<未跟踪的生成策略>
+verify.mjs --backup-root=<精确生成的最终集合>
+```
+
+`ops/systemd/blog-x-backup.service` 与 `.timer` 是未启用的结构合同。只有 04-03 发布门禁确认外部引用、权限、目的地和恢复证据后，才具备讨论启用条件。
