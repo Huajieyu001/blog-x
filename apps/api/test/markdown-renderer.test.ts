@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { classifyArticleMedia, isMediaPath } from "../src/content/media-reference-policy.js";
 import { renderMarkdown } from "../src/content/markdown.js";
 
 test("renders the supported technical Markdown surface and safely falls back for unknown fences", async () => {
@@ -15,7 +16,7 @@ test("renders the supported technical Markdown surface and safely falls back for
     "[Documentation](https://example.com/docs)",
     "[Local page](/about)",
     "",
-    "![Architecture](https://images.example.com/architecture.png)",
+    "![Architecture](/media/123e4567-e89b-42d3-a456-426614174000)",
     "",
     "```ts",
     "const answer: number = 42;",
@@ -33,12 +34,55 @@ test("renders the supported technical Markdown surface and safely falls back for
   assert.match(html, /<table>/);
   assert.match(html, /href="https:\/\/example\.com\/docs"/);
   assert.match(html, /href="\/about"/);
-  assert.match(html, /src="https:\/\/images\.example\.com\/architecture\.png"/);
+  assert.match(html, /src="\/media\/123e4567-e89b-42d3-a456-426614174000"/);
   assert.match(html, /class="shiki github-light"/);
   assert.match(html, /language-not-a-real-language/);
   assert.match(html, /&#x3C;button onclick="steal\(\)"/);
   assert.doesNotMatch(html, /<button/i);
   assert.deepEqual(toc, []);
+});
+
+test("allows only exact root-relative UUID media images while retaining ordinary external anchors", async () => {
+  const allowed = "/media/123e4567-e89b-42d3-a456-426614174000";
+  const rejected = [
+    "https://images.example.test/remote.png",
+    "http://images.example.test/mixed.png",
+    "//images.example.test/protocol-relative.png",
+    "data:image/png;base64,AA==",
+    "blob:https://images.example.test/id",
+    "file:///tmp/image.png",
+    "javascript:alert(1)",
+    "images/relative.png",
+    "/media/not-a-uuid",
+    `${allowed}?cache=1`,
+    `${allowed}#fragment`,
+    "/media/%31%32%33e4567-e89b-42d3-a456-426614174000",
+    "/media/../images/relative.png",
+    "https://blog.example.test/media/123e4567-e89b-42d3-a456-426614174000",
+  ];
+
+  assert.equal(isMediaPath(allowed), true);
+  for (const source of rejected) {
+    assert.equal(isMediaPath(source), false, source);
+    const { html } = await renderMarkdown(`![Unsafe](${source})`);
+    assert.doesNotMatch(html, /<img[^>]+src=/, source);
+  }
+
+  const classification = classifyArticleMedia({
+    markdown: [
+      `![Allowed](${allowed})`,
+      "[Documentation](https://docs.example.test/guide)",
+      "```markdown",
+      "![Code lookalike](https://images.example.test/code.png)",
+      "```",
+    ].join("\n\n"),
+    coverUrl: "",
+  });
+  assert.equal(classification.legacyMediaReview, "clear");
+
+  const { html } = await renderMarkdown("[Documentation](https://docs.example.test/guide)\n\n## Heading");
+  assert.match(html, /href="https:\/\/docs\.example\.test\/guide"/);
+  assert.match(html, /href="#heading"/);
 });
 
 test("removes raw executable markup, event handlers, styles, and unsafe URL protocols after transforms", async () => {

@@ -53,6 +53,18 @@ test("publish, edit, slug confirmation, unpublish, republish, and soft delete ar
   const cookie = sessionCookie(String(login.headers["set-cookie"]));
   const headers = { origin: publicOrigin, cookie, "content-type": "application/json" };
 
+  const rejectedLegacyPublish = await app.inject({
+    method: "POST",
+    url: "/articles/publish",
+    headers,
+    payload: { title: "Unsafe legacy publish", slug: `unsafe-legacy-${Date.now()}`, markdown: "![Remote](http://images.example.test/legacy.png)" },
+  });
+  assert.equal(rejectedLegacyPublish.statusCode, 400);
+  assert.deepEqual(rejectedLegacyPublish.json(), {
+    error: "validation_failed",
+    fields: { markdown: ["图片只能使用已上传媒体的 /media/<uuid> 地址"] },
+  });
+
   const unauthorized = await app.inject({ method: "POST", url: "/admin/posts/00000000-0000-4000-8000-000000000000/publish", headers: { origin: publicOrigin } });
   assert.equal(unauthorized.statusCode, 401);
   const rejectedOrigin = await app.inject({ method: "POST", url: "/admin/posts/00000000-0000-4000-8000-000000000000/publish", headers: { ...headers, origin: "https://untrusted.invalid" }, payload: {} });
@@ -73,7 +85,7 @@ test("publish, edit, slug confirmation, unpublish, republish, and soft delete ar
   const draftInput = {
     title: "Lifecycle article",
     summary: "Lifecycle summary",
-    coverUrl: "https://images.example.test/lifecycle.png",
+    coverUrl: "",
     slug,
     markdown: "# Lifecycle\n\nOriginal source",
     publishedAt: explicitPublishedAt,
@@ -92,6 +104,16 @@ test("publish, edit, slug confirmation, unpublish, republish, and soft delete ar
   assert.equal(published.json().status, "published");
   assert.equal(published.json().publishedAt, explicitPublishedAt);
   assert.equal((await app.inject({ method: "GET", url: `/public/articles/${slug}` })).statusCode, 200);
+
+  const unsafePublishedEdit = await app.inject({
+    method: "PUT",
+    url: `/admin/posts/${draft.json().id}`,
+    headers,
+    payload: { ...draftInput, markdown: "![Remote](https://images.example.test/update.png)" },
+  });
+  assert.equal(unsafePublishedEdit.statusCode, 400);
+  assert.deepEqual(unsafePublishedEdit.json().fields, { markdown: ["图片只能使用已上传媒体的 /media/<uuid> 地址"] });
+  assert.equal((await app.inject({ method: "GET", url: `/admin/posts/${draft.json().id}`, headers: { cookie } })).json().markdown, draftInput.markdown);
 
   const ordinaryEditInput = { ...draftInput, title: "Ordinary edit", publishedAt: "2026-08-02T02:30:00.000Z", publishedAtCorrection: false };
   const ordinaryEdit = await app.inject({ method: "PUT", url: `/admin/posts/${draft.json().id}`, headers, payload: ordinaryEditInput });
@@ -160,6 +182,12 @@ test("publish, edit, slug confirmation, unpublish, republish, and soft delete ar
   const repeatedUnpublish = await app.inject({ method: "POST", url: `/admin/posts/${draft.json().id}/unpublish`, headers, payload: {} });
   assert.equal(repeatedUnpublish.statusCode, 409);
   assert.equal(repeatedUnpublish.json().error, "invalid_transition");
+
+  await db.update(articles).set({ markdown: "![Remote](https://images.example.test/republish.png)" }).where(eq(articles.id, draft.json().id));
+  const rejectedRepublish = await app.inject({ method: "POST", url: `/admin/posts/${draft.json().id}/republish`, headers, payload: {} });
+  assert.equal(rejectedRepublish.statusCode, 400);
+  assert.deepEqual(rejectedRepublish.json().fields, { markdown: ["图片只能使用已上传媒体的 /media/<uuid> 地址"] });
+  await db.update(articles).set({ markdown: draftInput.markdown }).where(eq(articles.id, draft.json().id));
 
   const republished = await app.inject({ method: "POST", url: `/admin/posts/${draft.json().id}/republish`, headers, payload: {} });
   assert.equal(republished.statusCode, 200);

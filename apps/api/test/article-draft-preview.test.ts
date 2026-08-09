@@ -69,6 +69,27 @@ test("draft metadata round-trips, slugs stay reserved, and preview uses the safe
   assert.equal(invalid.json().error, "validation_failed");
   assert.deepEqual(Object.keys(invalid.json().fields).sort(), ["coverUrl", "markdown", "publishedAt", "slug", "title"]);
 
+  const externalCover = await app.inject({
+    method: "POST",
+    url: "/admin/posts",
+    headers,
+    payload: { title: "外部封面", summary: "", coverUrl: "https://images.example.test/cover.png", slug: `external-cover-${Date.now()}`, markdown: "# 仅本地媒体", publishedAt: null, seoDescription: "" },
+  });
+  assert.equal(externalCover.statusCode, 400);
+  assert.deepEqual(externalCover.json().fields, { coverUrl: ["封面 URL 已停用；请使用已上传媒体"] });
+
+  const beforeRejectedImage = await pool.query("select count(*)::int as count from articles");
+  const externalImage = await app.inject({
+    method: "POST",
+    url: "/admin/posts",
+    headers,
+    payload: { title: "外部图片", summary: "", coverUrl: "", slug: `external-image-${Date.now()}`, markdown: "![Remote](https://images.example.test/remote.png)", publishedAt: null, seoDescription: "" },
+  });
+  assert.equal(externalImage.statusCode, 400);
+  assert.deepEqual(externalImage.json().fields, { markdown: ["图片只能使用已上传媒体的 /media/<uuid> 地址"] });
+  const afterRejectedImage = await pool.query("select count(*)::int as count from articles");
+  assert.equal(afterRejectedImage.rows[0].count, beforeRejectedImage.rows[0].count);
+
   const suggestion = await app.inject({
     method: "GET",
     url: `/admin/posts/slug-suggestion?title=${encodeURIComponent("你好 TypeScript Café")}`,
@@ -80,7 +101,7 @@ test("draft metadata round-trips, slugs stay reserved, and preview uses the safe
   const original = {
     title: "完整草稿",
     summary: "这是摘要",
-    coverUrl: "https://images.example.test/cover.png",
+    coverUrl: "",
     slug: `complete-draft-${Date.now()}`,
     markdown: "# 初稿\n\n正文 **加粗**",
     publishedAt: "2026-08-07T08:30:00.000Z",
