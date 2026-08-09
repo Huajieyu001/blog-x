@@ -161,7 +161,7 @@ test("Phase 3 metadata is a managed same-origin public journey", async ({ page }
   expect(sitemap.status()).toBe(200);
   const locations = [...sitemapText.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
   const expectedLocations = new Set([
-    webOrigin, `${webOrigin}/?page=2`, `${webOrigin}/categories`, `${webOrigin}/categories/${taxonomy.category.slug}`, `${webOrigin}/categories/${taxonomy.category.slug}?page=2`,
+    `${webOrigin}/`, `${webOrigin}/?page=2`, `${webOrigin}/categories`, `${webOrigin}/categories/${taxonomy.category.slug}`, `${webOrigin}/categories/${taxonomy.category.slug}?page=2`,
     `${webOrigin}/tags`, `${webOrigin}/tags/${taxonomy.tag.slug}`, `${webOrigin}/tags/${taxonomy.tag.slug}?page=2`, `${webOrigin}/archives`, `${webOrigin}/about`,
     ...articles.map((item) => `${webOrigin}/posts/${item.slug}`),
   ]);
