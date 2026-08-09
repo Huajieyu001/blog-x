@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 05
-status: planning
-stopped_at: Phase 05 planned and independently verified; ready for execution
-last_updated: "2026-08-09T15:09:34.000Z"
+status: executing
+stopped_at: Phase 05 Plan 01 executed; ready for Plan 02
+last_updated: "2026-08-09T23:54:00+08:00"
 last_activity: 2026-08-09
-last_activity_desc: Planned and verified 3 Phase 05 gap-closure plans
+last_activity_desc: Executed Phase 05 Plan 01 same-origin media closure
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 24
-  completed_plans: 21
+  completed_plans: 22
 current_phase_name: Integration Gap Closure
 ---
 
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-08-08)
 ## Current Position
 
 Phase: 05 — Integration Gap Closure
-Plan: 0 of 3
-Status: Three plans verified; ready for execution
-Last activity: 2026-08-09 — planned and independently verified Phase 05
+Plan: 1 of 3
+Status: Plan 01 complete; ready for Plan 02
+Last activity: 2026-08-09 — completed same-origin media closure
 
 Progress: [████████░░] 80% (4 of 5 phases implemented)
 
@@ -38,7 +38,7 @@ Progress: [████████░░] 80% (4 of 5 phases implemented)
 
 **Velocity:**
 
-- Total plans completed: 21
+- Total plans completed: 22
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -50,7 +50,7 @@ Progress: [████████░░] 80% (4 of 5 phases implemented)
 | 02 | 6 | - | - |
 | 03 | 4 | - | - |
 | 04 | 3 | - | - |
-| 05 | 0 | - | - |
+| 05 | 1 | 3 | 31min |
 
 **Recent Trend:**
 
@@ -82,6 +82,7 @@ Progress: [████████░░] 80% (4 of 5 phases implemented)
 | Phase 04 P01 | 1h 52m | 3 tasks | 24 files |
 | Phase 04 P02 | 42min | 3 tasks | 26 files |
 | Phase 04 P03 | 32min | 3 tasks | 16 files |
+| Phase 05 P01 | 31min | 3 tasks | 31 files |
 
 ## Accumulated Context
 
@@ -143,10 +144,12 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 04]: The canonical release state contains only pending reasons and no artifact locators. — Local success, Git state, synthetic evidence, or elapsed time cannot become production authorization.
 - [Phase 04]: Release validation is a byte-bound local decision process with no network or deployment adapter. — Only explicit future authorization plus complete current host/network/backup/operations/rollback evidence can reach READY.
 - [Phase 04]: The sole final gate is offline-preflighted Phase 1-4 regression ending in a machine-checked BLOCKED production decision. — Local readiness and production authority remain separate facts.
+- [Phase 05]: Published image sources accept only literal root-relative lowercase UUID media paths, while HTTP(S) anchors remain a separate allowed capability. — One AST-based predicate prevents third-party or mixed-content image requests without breaking ordinary links.
+- [Phase 05]: Legacy media is dispositioned transactionally and idempotently without source rewrite or network retrieval. — Export/restore retains raw Markdown and historic cover data for repair.
+- [Phase 05]: Restore fixtures reset only generated media directories before deterministic seeding. — Fresh-browser uploads cannot leave untracked bytes that invalidate complete-backup inventory evidence.
 
 ### Blockers/Concerns
 
-- [v1.0 audit] 发布 Markdown 仍允许外部 HTTP(S) 图片，违反正式环境浏览器媒体严格同源边界（OPS-01）。
 - [v1.0 audit] 备份/恢复仅有本地验证执行路径，生产每日异机、加密、保留与告警路径尚未实现（OPS-03/OPS-05）。
 - [v1.0 audit] READY 门禁把发布后冒烟证据作为发布前条件，必须拆分预发布与发布后状态（OPS-05）。
 - [Phase 2+] 副服务器系统、端口、历史数据与私网能力尚未只读核验。
@@ -154,6 +157,6 @@ Decisions are logged in PROJECT.md Key Decisions table.
 
 ## Session Continuity
 
-Last session: 2026-08-09T15:09:34.000Z
-Stopped at: Phase 05 planned and independently verified; ready for execution
-Resume file: .planning/phases/05-v1-0-integration-gap-closure/05-01-PLAN.md
+Last session: 2026-08-09T23:54:00+08:00
+Stopped at: Phase 05 Plan 01 complete; do not begin Plan 02 in this task
+Resume file: .planning/phases/05-v1-0-integration-gap-closure/05-02-PLAN.md

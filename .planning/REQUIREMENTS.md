@@ -36,7 +36,7 @@
 - [x] **SEC-01**: 管理写接口要求认证，并具备登录失败限制、请求限流和适当的 CSRF 防护。
 - [x] **SEC-02**: 服务端校验所有输入和上传，渲染内容不会执行不可信脚本，数据访问不接受 SQL 注入。
 - [x] **SEC-03**: 密码只以安全哈希保存，应用密钥和数据库凭据通过环境配置提供且不会提交到 Git。
-- [ ] **OPS-01**: 浏览器的页面、API 和媒体请求在正式环境中只使用博客 HTTPS 域名，副服务器 API 和数据库不直接暴露公网。
+- [x] **OPS-01**: 浏览器的页面、API 和媒体请求在正式环境中只使用博客 HTTPS 域名，副服务器 API 和数据库不直接暴露公网。
 - [x] **OPS-02**: 应用进程异常后可自动恢复，日志会轮转，并可检查服务存活、CPU、内存、磁盘和证书状态。
 - [ ] **OPS-03**: 数据库、Markdown 内容、媒体和关键配置至少每日备份，并可通过恢复演练验证内容重新可访问。
 - [x] **OPS-04**: 开发者可在本地通过隔离的开发配置启动并验证前台、后台、API 和数据库，不依赖主服务器。
@@ -100,7 +100,7 @@
 | SEC-01 | Phase 4 | Complete |
 | SEC-02 | Phase 4 | Complete |
 | SEC-03 | Phase 4 | Complete |
-| OPS-01 | Phase 5 | Pending |
+| OPS-01 | Phase 5 | Complete |
 | OPS-02 | Phase 4 | Complete |
 | OPS-03 | Phase 5 | Pending |
 | OPS-05 | Phase 5 | Pending |
@@ -109,10 +109,10 @@
 
 - v1 requirements: 25 total
 - Mapped to phases: 25
-- Complete: 22
-- Pending gap closure: 3
+- Complete: 23
+- Pending gap closure: 2
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-08-05*  
-*Last updated: 2026-08-09 after v1.0 milestone gap planning*
+*Last updated: 2026-08-09 after Phase 05 Plan 01 same-origin media closure*
