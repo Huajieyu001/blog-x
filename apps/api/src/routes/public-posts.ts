@@ -1,5 +1,6 @@
 import {
   invalidPublicPageResponseSchema,
+  publicDistributionSchema,
   publicPostDetailSchema,
   publicPostNotFoundResponseSchema,
   publicPostPageQuerySchema,
@@ -13,6 +14,8 @@ type PublicPostRouteOptions = {
 };
 
 export const publicPostRoutes: FastifyPluginAsync<PublicPostRouteOptions> = async (app, options) => {
+  app.get("/public/distribution", async () => publicDistributionSchema.parse(await options.publicRepository.distribution()));
+
   app.get<{ Querystring: Record<string, unknown> }>("/public/articles", async (request, reply) => {
     const query = publicPostPageQuerySchema.safeParse(request.query);
     if (!query.success) {
