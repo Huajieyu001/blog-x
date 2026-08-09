@@ -10,7 +10,6 @@ type DraftInput = {
   slug: string;
   markdown: string;
   summary?: string;
-  coverUrl?: string;
   seoDescription?: string;
 };
 
@@ -19,7 +18,6 @@ async function createDraft(page: Page, input: DraftInput) {
   await page.getByLabel("标题").fill(input.title);
   await page.getByLabel("摘要").fill(input.summary ?? "");
   await page.getByLabel("Slug").fill(input.slug);
-  await page.getByLabel("封面 URL").fill(input.coverUrl ?? "");
   await page.getByLabel("SEO 描述").fill(input.seoDescription ?? "");
   await page.getByLabel("Markdown").fill(input.markdown);
   await page.getByRole("button", { name: "保存草稿" }).click();
@@ -39,11 +37,15 @@ test("Phase 1 completes the local author-to-reader publishing journey through vi
   test.skip(!username || !password || !runId, "isolated verification credentials and run id are required");
 
   const browserApiRequests: string[] = [];
+  const browserImageRequests: string[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (!url.pathname.startsWith("/api/")) return;
     browserApiRequests.push(request.url());
     expect(url.origin).toBe(webOrigin);
+  });
+  page.on("request", (request) => {
+    if (request.resourceType() === "image") browserImageRequests.push(request.url());
   });
 
   await page.goto(`${webOrigin}/admin`);
@@ -68,9 +70,7 @@ test("Phase 1 completes the local author-to-reader publishing journey through vi
     "| --- | --- |",
     "| Browser | Render safe published content |",
     "",
-    "[Safe documentation](https://example.com/docs)",
-    "",
-    "![Architecture diagram](https://images.example.test/architecture.png)",
+    "[Safe documentation](https://docs.example.test/guide)",
     "",
     "```ts",
     "const published = true;",
@@ -81,14 +81,30 @@ test("Phase 1 completes the local author-to-reader publishing journey through vi
     "[Unsafe destination](javascript:alert(1))",
   ].join("\n");
 
-  const editorUrl = await createDraft(page, {
-    title: originalTitle,
-    summary,
-    coverUrl: "https://images.example.test/phase-1-cover.png",
-    slug: originalSlug,
-    markdown,
-    seoDescription: "Phase 1 local publishing acceptance metadata.",
+  await page.goto(`${webOrigin}/admin/new`);
+  await page.getByLabel("标题").fill(originalTitle);
+  await page.getByLabel("摘要").fill(summary);
+  await page.getByLabel("Slug").fill(originalSlug);
+  await page.getByLabel("SEO 描述").fill("Phase 1 local publishing acceptance metadata.");
+  const source = page.getByLabel("Markdown");
+  await source.fill(markdown);
+  const fileInput = page.getByLabel("上传图片（JPEG、PNG 或 WebP，最大 5 MiB）");
+  await fileInput.setInputFiles({
+    name: "phase-1-media.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"),
   });
+  await page.getByRole("button", { name: "上传图片", exact: true }).click();
+  await expect(page.getByText("图片已上传，可插入文章。")).toBeFocused();
+  await page.getByTestId("media-alt-text").fill("Architecture diagram");
+  await page.getByRole("button", { name: "插入 Markdown" }).click();
+  const mediaPath = (await source.inputValue()).match(/\((\/media\/[0-9a-f-]{36})\)/)?.[1];
+  expect(mediaPath).toBeTruthy();
+  await page.getByRole("button", { name: "设为封面" }).click();
+  await page.getByRole("button", { name: "保存草稿" }).click();
+  await expect(page).toHaveURL(/\/admin\/posts\/[0-9a-f-]+$/);
+  await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("草稿已保存");
+  const editorUrl = page.url();
   await expect(page.getByLabel("发布时间", { exact: true })).toHaveValue("");
   await expect(page.getByTestId("markdown-preview").getByRole("heading", { name: "Reliable rendering" })).toBeVisible();
   await expect(page.getByTestId("markdown-preview").locator("script, style, [data-hostile]")).toHaveCount(0);
@@ -117,8 +133,8 @@ test("Phase 1 completes the local author-to-reader publishing journey through vi
   await expect(body.locator("blockquote")).toBeVisible();
   await expect(body.locator("table")).toBeVisible();
   await expect(body.locator("pre.shiki")).toBeVisible();
-  await expect(body.getByRole("link", { name: "Safe documentation" })).toHaveAttribute("href", "https://example.com/docs");
-  await expect(body.getByRole("img", { name: "Architecture diagram" })).toHaveAttribute("src", "https://images.example.test/architecture.png");
+  await expect(body.getByRole("link", { name: "Safe documentation" })).toHaveAttribute("href", "https://docs.example.test/guide");
+  await expect(body.getByRole("img", { name: "Architecture diagram" })).toHaveAttribute("src", mediaPath!);
   await expect(body.locator("script, style, [data-hostile], [onerror], [onclick]")).toHaveCount(0);
   await expect(body.getByText("Unsafe destination")).not.toHaveAttribute("href", /^(?:javascript|data):/i);
 
@@ -205,4 +221,10 @@ test("Phase 1 completes the local author-to-reader publishing journey through vi
   expect((await context.request.get(`${webOrigin}/posts/${changedSlug}`)).status()).toBe(404);
 
   expect(browserApiRequests.length).toBeGreaterThan(0);
+  expect(browserImageRequests.length).toBeGreaterThan(0);
+  for (const request of browserImageRequests) {
+    const url = new URL(request);
+    expect(url.origin).toBe(webOrigin);
+    expect(url.pathname).toMatch(/^\/media\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  }
 });

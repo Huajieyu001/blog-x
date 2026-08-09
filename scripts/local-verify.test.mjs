@@ -83,15 +83,16 @@ test("Phase 5 media selection owns seventh-migration and legacy restore evidence
       ["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"],
     ],
     apiSuites: ["apps/api/test/markdown-renderer.test.ts"],
-    nodeSuites: ["scripts/local-verify.test.mjs"],
+    nodeSuites: ["scripts/prohibitions/media-policy.test.mjs", "scripts/local-verify.test.mjs"],
     databaseSuite: "apps/api/test/backup-restore.test.ts",
-    browserSuite: "apps/web/e2e/phase4-restore.spec.ts",
+    browserSuites: ["apps/web/e2e/phase1-publishing.spec.ts", "apps/web/e2e/phase4-restore.spec.ts"],
   });
   const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
   assert.match(runner, /values\[1\] !== 7/);
   assert.doesNotMatch(runner, /values\[1\] !== 6/);
   assert.match(runner, /--phase5-media/);
   assert.match(runner, /PHASE5_LEGACY_ARTICLE_ID/);
+  assert.match(runner, /phase1-publishing\.spec\.ts/);
 });
 
 test("Phase 4 full selection explicitly names security, operations, restore, release, database, and browser evidence", () => {

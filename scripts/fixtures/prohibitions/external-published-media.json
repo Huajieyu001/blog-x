@@ -1,0 +1,13 @@
+{
+  "format": "blog-x-media-policy",
+  "version": 1,
+  "images": [
+    "https://images.example.test/mixed-content.png",
+    "http://images.example.test/cleartext.png",
+    "//images.example.test/protocol-relative.png",
+    "/media/AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
+  ],
+  "coverUrl": "https://images.example.test/historic-cover.png",
+  "legacyMediaReview": "review_required",
+  "externalAnchor": "https://docs.example.test/guide"
+}
