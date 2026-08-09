@@ -14,9 +14,30 @@ import {
   archiveSchema,
   type AdminAbout,
   adminAboutSchema,
+  publicPostDetailSchema,
+  publicPostNotFoundResponseSchema,
+  type PublicPostDetail,
 } from "@blog-x/contracts";
 
 const internalApiOrigin = process.env.INTERNAL_API_ORIGIN ?? "http://127.0.0.1:3001";
+
+type Parser<T> = { safeParse: (value: unknown) => { success: true; data: T } | { success: false } };
+export type PublicResult<T> = { kind: "ok"; data: T } | { kind: "not_found" } | { kind: "upstream_error" };
+
+async function getPublic<T>(path: string, schema: Parser<T>, allowNotFound = false): Promise<PublicResult<T>> {
+  try {
+    const response = await fetch(`${internalApiOrigin}${path}`, { cache: "no-store" });
+    if (response.status === 404) {
+      const missing = publicPostNotFoundResponseSchema.safeParse(await response.json());
+      return allowNotFound && missing.success ? { kind: "not_found" } : { kind: "upstream_error" };
+    }
+    if (!response.ok) return { kind: "upstream_error" };
+    const parsed = schema.safeParse(await response.json());
+    return parsed.success ? { kind: "ok", data: parsed.data } : { kind: "upstream_error" };
+  } catch {
+    return { kind: "upstream_error" };
+  }
+}
 
 export async function getSessionStatus(cookieHeader: string): Promise<SessionStatus | null> {
   try {
@@ -41,24 +62,9 @@ export async function getAdminAbout(cookieHeader: string): Promise<AdminAbout | 
   } catch { return null; }
 }
 
-export async function getPublicAbout() {
-  try {
-    const response = await fetch(`${internalApiOrigin}/public/about`, { cache: "no-store" });
-    if (response.status === 404) return "not_found" as const;
-    if (!response.ok) return null;
-    const parsed = publicAboutSchema.safeParse(await response.json());
-    return parsed.success ? parsed.data : null;
-  } catch { return null; }
-}
+export function getPublicAbout() { return getPublic("/public/about", publicAboutSchema, true); }
 
-export async function getArchives() {
-  try {
-    const response = await fetch(`${internalApiOrigin}/public/archives`, { cache: "no-store" });
-    if (!response.ok) return null;
-    const parsed = archiveSchema.safeParse(await response.json());
-    return parsed.success ? parsed.data : null;
-  } catch { return null; }
-}
+export function getArchives() { return getPublic("/public/archives", archiveSchema); }
 
 export async function getAdminPost(id: string, cookieHeader: string): Promise<AdminPost | null> {
   try {
@@ -105,23 +111,18 @@ export async function getAdminTaxonomy(
   }
 }
 
-export async function getPublicPosts(page: number): Promise<PublicPostListResponse | null> {
-  try {
-    const response = await fetch(`${internalApiOrigin}/public/articles?page=${encodeURIComponent(String(page))}`, {
-      cache: "no-store",
-    });
-    if (!response.ok) return null;
-    const parsed = publicPostListResponseSchema.safeParse(await response.json());
-    return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
-  }
+export function getPublicPosts(page: number): Promise<PublicResult<PublicPostListResponse>> {
+  return getPublic(`/public/articles?page=${encodeURIComponent(String(page))}`, publicPostListResponseSchema);
 }
 
-export async function getPublicTaxonomy(kind: "categories" | "tags") {
-  try { const response = await fetch(`${internalApiOrigin}/public/${kind}`, { cache: "no-store" }); if (!response.ok) return null; const parsed = publicTaxonomyListSchema.safeParse(await response.json()); return parsed.success ? parsed.data : null; } catch { return null; }
+export function getPublicPost(slug: string): Promise<PublicResult<PublicPostDetail>> {
+  return getPublic(`/public/articles/${encodeURIComponent(slug)}`, publicPostDetailSchema, true);
 }
 
-export async function getPublicTaxonomyPosts(kind: "categories" | "tags", slug: string, page: number) {
-  try { const response = await fetch(`${internalApiOrigin}/public/${kind}/${encodeURIComponent(slug)}/articles?page=${page}`, { cache: "no-store" }); if (response.status === 404) return "not_found" as const; if (!response.ok) return null; const parsed = publicTaxonomyPostListSchema.safeParse(await response.json()); return parsed.success ? parsed.data : null; } catch { return null; }
+export function getPublicTaxonomy(kind: "categories" | "tags") {
+  return getPublic(`/public/${kind}`, publicTaxonomyListSchema);
+}
+
+export function getPublicTaxonomyPosts(kind: "categories" | "tags", slug: string, page: number) {
+  return getPublic(`/public/${kind}/${encodeURIComponent(slug)}/articles?page=${encodeURIComponent(String(page))}`, publicTaxonomyPostListSchema, true);
 }

@@ -1,38 +1,24 @@
-import { publicPostDetailSchema, type PublicPostDetail } from "@blog-x/contracts";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import ArticleBody from "../../_components/ArticleBody";
 import ArticleToc from "../../_components/ArticleToc";
+import { getPublicPost } from "../../lib/api";
 import styles from "../../public.module.css";
 
-const apiOrigin = process.env.INTERNAL_API_ORIGIN ?? "http://127.0.0.1:3001";
-
-async function getPublicPost(slug: string): Promise<PublicPostDetail | null> {
-  try {
-    const response = await fetch(`${apiOrigin}/public/articles/${encodeURIComponent(slug)}`, { cache: "no-store" });
-    if (!response.ok) return null;
-    const parsed = publicPostDetailSchema.safeParse(await response.json());
-    return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
-  }
-}
-
 export default async function PublicArticlePage({ params }: { params: Promise<{ slug: string }> }) {
-  const article = await getPublicPost((await params).slug);
-  if (!article) notFound();
+  const result = await getPublicPost((await params).slug);
+  if (result.kind === "not_found") notFound();
+  if (result.kind === "upstream_error") throw new Error("public content unavailable");
+  const article = result.data;
   return (
     <main className={styles.page}>
-      <header className={styles.siteHeader}>
-        <a className={styles.brand} href="/">Blog X</a>
-        <nav aria-label="站点导航"><a href="/">所有文章</a><a href="/admin">管理</a></nav>
-      </header>
       <article className={styles.articleShell}>
         <header className={styles.articleHeader}>
           <p className={styles.eyebrow}>Published note</p>
           {article.category || article.tags.length > 0 ? (
             <div className={styles.articleTaxonomy} aria-label="文章分类与标签">
-              {article.category ? <a href={`/categories/${encodeURIComponent(article.category.slug)}`}>{article.category.name}</a> : null}
-              {article.tags.map((tag) => <a href={`/tags/${encodeURIComponent(tag.slug)}`} key={tag.slug}>#{tag.name}</a>)}
+              {article.category ? <Link href={`/categories/${encodeURIComponent(article.category.slug)}`}>{article.category.name}</Link> : null}
+              {article.tags.map((tag) => <Link href={`/tags/${encodeURIComponent(tag.slug)}`} key={tag.slug}>#{tag.name}</Link>)}
             </div>
           ) : null}
           <h1>{article.title}</h1>

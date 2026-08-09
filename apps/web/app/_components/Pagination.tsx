@@ -1,3 +1,4 @@
+import Link from "next/link";
 import styles from "../public.module.css";
 
 function pageHref(page: number, basePath: string) { return page === 1 ? basePath : `${basePath}?page=${page}`; }
@@ -15,24 +16,24 @@ export default function Pagination({ page, totalPages, basePath = "/" }: { page:
   return (
     <nav className={styles.pagination} aria-label="文章分页">
       {page > 1
-        ? <a className={styles.direction} href={pageHref(page - 1, basePath)}>上一页</a>
+        ? <Link className={styles.direction} href={pageHref(page - 1, basePath)}>上一页</Link>
         : <span className={styles.direction} aria-disabled="true">上一页</span>}
       <ol>
         {pages.map((number, index) => (
           <li key={number}>
             {index > 0 && pages[index - 1] !== number - 1 ? <span className={styles.ellipsis} aria-hidden="true">…</span> : null}
-            <a
+            <Link
               href={pageHref(number, basePath)}
               aria-label={`第 ${number} 页`}
               aria-current={number === page ? "page" : undefined}
             >
               {String(number).padStart(2, "0")}
-            </a>
+            </Link>
           </li>
         ))}
       </ol>
       {page < totalPages
-        ? <a className={styles.direction} href={pageHref(page + 1, basePath)}>下一页</a>
+        ? <Link className={styles.direction} href={pageHref(page + 1, basePath)}>下一页</Link>
         : <span className={styles.direction} aria-disabled="true">下一页</span>}
     </nav>
   );

@@ -1,4 +1,5 @@
 import type { PublicPostListItem } from "@blog-x/contracts";
+import Link from "next/link";
 import styles from "../public.module.css";
 
 const dateFormatter = new Intl.DateTimeFormat("zh-CN", {
@@ -17,15 +18,15 @@ export default function PostCard({ post, position }: { post: PublicPostListItem;
           <span className={styles.status}><span aria-hidden="true" />已发布</span>
           <time dateTime={post.publishedAt}>{dateFormatter.format(new Date(post.publishedAt))}</time>
         </div>
-        <h3><a href={`/posts/${encodeURIComponent(post.slug)}`}>{post.title}</a></h3>
+        <h3><Link href={`/posts/${encodeURIComponent(post.slug)}`}>{post.title}</Link></h3>
         <p className={styles.summary}>{post.summary || "暂无摘要"}</p>
         {post.category || post.tags.length ? <div className={styles.taxonomy} aria-label="文章分类和标签">
-          {post.category ? <a href={`/categories/${encodeURIComponent(post.category.slug)}`}>分类：{post.category.name}</a> : null}
-          {post.tags.map((tag) => <a key={tag.slug} href={`/tags/${encodeURIComponent(tag.slug)}`}>#{tag.name}</a>)}
+          {post.category ? <Link href={`/categories/${encodeURIComponent(post.category.slug)}`}>分类：{post.category.name}</Link> : null}
+          {post.tags.map((tag) => <Link key={tag.slug} href={`/tags/${encodeURIComponent(tag.slug)}`}>#{tag.name}</Link>)}
         </div> : null}
-        <a className={styles.readLink} href={`/posts/${encodeURIComponent(post.slug)}`} aria-label={`阅读《${post.title}》`}>
+        <Link className={styles.readLink} href={`/posts/${encodeURIComponent(post.slug)}`} aria-label={`阅读《${post.title}》`}>
           阅读文章 <span aria-hidden="true">→</span>
-        </a>
+        </Link>
       </div>
     </article>
   );
