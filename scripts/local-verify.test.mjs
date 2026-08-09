@@ -4,12 +4,71 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { auditFiles } from "./check-boundaries.mjs";
-import { cleanupGeneratedMediaRoot, redactText, validateMediaVolume, validateNamespace } from "./local-verify.mjs";
+import {
+  assertSemanticTap,
+  cleanupGeneratedMediaRoot,
+  phase3Selection,
+  redactText,
+  semanticTestCommand,
+  validateLoopbackHttpOrigin,
+  validateMediaVolume,
+  validateNamespace,
+} from "./local-verify.mjs";
 
 test("verification namespaces are narrow and safe cleanup targets", () => {
   assert.equal(validateNamespace("blogxverify_a1b2c3d4"), "blogxverify_a1b2c3d4");
   for (const candidate of ["", "/", ".", "blogxverify", "blogxverify_A1B2C3D4", "blogxverify_a;rm", "other_a1b2c3d4"]) {
     assert.throws(() => validateNamespace(candidate), /namespace/i);
+  }
+});
+
+test("Phase 3 selections deterministically route only their named semantic suites", () => {
+  assert.deepEqual(phase3Selection("api"), {
+    databaseSuites: [["PHASE3_TEST_DATABASE_URL", "apps/api/test/public-distribution.test.ts"]],
+    webSuites: [],
+  });
+  assert.deepEqual(phase3Selection("metadata"), {
+    databaseSuites: [],
+    webSuites: ["apps/web/app/lib/site-metadata.test.ts"],
+  });
+  assert.deepEqual(phase3Selection("export-api"), {
+    databaseSuites: [["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"]],
+    webSuites: [],
+  });
+  assert.deepEqual(phase3Selection("export-browser"), {
+    databaseSuites: [],
+    webSuites: ["apps/web/e2e/phase3-distribution.spec.ts"],
+  });
+  assert.deepEqual(phase3Selection("full"), {
+    databaseSuites: [
+      ["PHASE3_TEST_DATABASE_URL", "apps/api/test/public-distribution.test.ts"],
+      ["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"],
+    ],
+    webSuites: ["apps/web/app/lib/site-metadata.test.ts", "apps/web/e2e/phase3-distribution.spec.ts"],
+  });
+  assert.throws(() => phase3Selection("unknown"), /Phase 3 selection/i);
+});
+
+test("Phase 3 semantic TAP output fails closed on skip or zero tests", () => {
+  assert.doesNotThrow(() => assertSemanticTap("TAP version 13\n# tests 2\n# pass 2\n# fail 0\n# skipped 0\n"));
+  assert.throws(() => assertSemanticTap("TAP version 13\n# tests 1\n# pass 0\n# skipped 1\n"), /skip/i);
+  assert.throws(() => assertSemanticTap("TAP version 13\n# tests 0\n# pass 0\n# skipped 0\n"), /zero semantic tests/i);
+  assert.throws(() => assertSemanticTap("TAP version 13\n# SKIP missing database\n"), /skip/i);
+  assert.throws(() => assertSemanticTap("ℹ tests 7\nℹ pass 7\n"), /zero semantic tests/i);
+  assert.deepEqual(semanticTestCommand("apps/api/test/public-distribution.test.ts"), [
+    "node",
+    "--import",
+    "tsx",
+    "--test",
+    "--test-reporter=tap",
+    "apps/api/test/public-distribution.test.ts",
+  ]);
+});
+
+test("Phase 3 generated public origins are loopback-only and separate from internal API routing", () => {
+  assert.equal(validateLoopbackHttpOrigin("http://127.0.0.1:3100"), "http://127.0.0.1:3100");
+  for (const candidate of ["https://example.com", "http://localhost:3100", "http://127.0.0.1/path", "http://127.0.0.1:3100/?q=1", "http://127.0.0.1:3100/#hash"]) {
+    assert.throws(() => validateLoopbackHttpOrigin(candidate), /loopback/i);
   }
 });
 

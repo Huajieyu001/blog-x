@@ -26,6 +26,45 @@ export function validateMediaVolume(value, namespace) {
   return value;
 }
 
+export function validateLoopbackHttpOrigin(value) {
+  let url;
+  try { url = new URL(value); } catch { throw new Error("verification public origin must be an absolute loopback HTTP origin"); }
+  if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+    throw new Error("verification public origin must be an absolute loopback HTTP origin");
+  }
+  return url.origin;
+}
+
+export function phase3Selection(mode) {
+  const api = ["PHASE3_TEST_DATABASE_URL", "apps/api/test/public-distribution.test.ts"];
+  const exportApi = ["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"];
+  const metadata = "apps/web/app/lib/site-metadata.test.ts";
+  const exportBrowser = "apps/web/e2e/phase3-distribution.spec.ts";
+  const selections = {
+    api: { databaseSuites: [api], webSuites: [] },
+    metadata: { databaseSuites: [], webSuites: [metadata] },
+    "export-api": { databaseSuites: [exportApi], webSuites: [] },
+    "export-browser": { databaseSuites: [], webSuites: [exportBrowser] },
+    full: { databaseSuites: [api, exportApi], webSuites: [metadata, exportBrowser] },
+  };
+  const selection = selections[mode];
+  if (!selection) throw new Error(`Phase 3 selection is not recognized: ${mode}`);
+  return selection;
+}
+
+export function assertSemanticTap(output) {
+  const tap = String(output);
+  if (/(?:^|\n)#\s*(?:SKIP|TODO)\b/i.test(tap) || /# skipped [1-9]\d*/i.test(tap)) {
+    throw new Error("semantic test output contains a skip");
+  }
+  const total = [...tap.matchAll(/^# tests (\d+)$/gmi)].map((match) => Number(match[1]));
+  if (!total.length || total.every((count) => count === 0)) throw new Error("semantic test output reported zero semantic tests");
+}
+
+export function semanticTestCommand(file) {
+  return ["node", "--import", "tsx", "--test", "--test-reporter=tap", file];
+}
+
 export async function cleanupGeneratedMediaRoot(value) {
   const resolved = resolve(value ?? "");
   if (dirname(resolved) !== resolve(tmpdir()) || !/^blog-x-media-verify-[A-Za-z0-9_-]{6,64}$/.test(basename(resolved))) {
@@ -91,6 +130,7 @@ function composeEnvironment(context) {
     BLOG_X_POSTGRES_DB: context.database,
     BLOG_X_POSTGRES_USER: "blog_x",
     BLOG_X_WEB_PORT: String(context.webPort),
+    BLOG_X_PUBLIC_ORIGIN: context.publicOrigin,
   };
 }
 
@@ -196,10 +236,11 @@ async function seed(context) {
 }
 
 async function runDatabaseSuite(context, variable, file) {
-  await compose(context, `run ${file}`, "exec", "-T",
+  const result = await compose(context, `run ${file}`, "exec", "-T",
     "-e", `DATABASE_URL=${context.databaseUrl}`,
     "-e", `${variable}=${context.databaseUrl}`,
-    "api", "node", "--import", "tsx", "--test", file);
+    "api", ...semanticTestCommand(file));
+  assertSemanticTap(result.combined);
 }
 
 function startManaged(context, label, commandName, args, env) {
@@ -281,17 +322,42 @@ async function fullPhaseChecks(context, phase2Full) {
   }
 }
 
+async function runPhase3Checks(context, mode) {
+  const selection = phase3Selection(mode);
+  for (const [variable, file] of selection.databaseSuites) await runDatabaseSuite(context, variable, file);
+  for (const file of selection.webSuites) {
+    if (file.endsWith(".test.ts")) {
+      const result = await runStep(context, `run ${file}`, "corepack", ["pnpm", "--filter", "@blog-x/web", "exec", "tsx", "--test", "--test-reporter=tap", file], { env: process.env });
+      assertSemanticTap(result.combined);
+      continue;
+    }
+    const result = await runStep(context, `run ${file}`, "corepack", ["pnpm", "exec", "playwright", "test", file, "--workers=1"], {
+      env: {
+        ...process.env,
+        E2E_WEB_ORIGIN: context.publicOrigin,
+        E2E_ADMIN_USERNAME: context.username,
+        E2E_ADMIN_PASSWORD: context.password,
+        E2E_RUN_ID: context.runId,
+      },
+    });
+  }
+}
+
 async function runSingle(options) {
   const namespace = validateNamespace(options.namespace ?? generatedNamespace());
   const database = `blog_x_${namespace.slice("blogxverify_".length)}`;
   const webPort = options.webPort ?? await freePort();
-  const runId = namespace.replace("blogxverify_", options.phase2Full ? "phase2-" : "phase1-");
+  const phaseLabel = options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
+  const runId = namespace.replace("blogxverify_", phaseLabel);
+  const publicOrigin = validateLoopbackHttpOrigin(`http://127.0.0.1:${webPort}`);
   const context = {
     namespace,
     database,
     webPort,
     runId,
-    webOrigin: `http://127.0.0.1:${webPort}`,
+    webOrigin: publicOrigin,
+    publicOrigin,
+    internalApiOrigin: "http://api:3001",
     databaseUrl: `postgres://blog_x@postgres:5432/${database}`,
     username: `admin-${runId}`,
     password: randomBytes(24).toString("base64url"),
@@ -301,6 +367,7 @@ async function runSingle(options) {
     children: [],
   };
   context.secrets.push(context.password, context.databaseUrl);
+  if (context.publicOrigin === context.internalApiOrigin) throw new Error("public and internal API origins must remain separate");
 
   try {
     if (!options.skipBuild) await compose(context, "build local API and Web images", "build", "api", "web");
@@ -317,7 +384,8 @@ async function runSingle(options) {
     await compose(context, "verify active schema", "exec", "-T", "-e", `DATABASE_URL=${context.databaseUrl}`,
       "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:schema:verify");
     await seed(context);
-    if (options.fullPhase) await fullPhaseChecks(context, options.phase2Full);
+    if (options.phase3Mode) await runPhase3Checks(context, options.phase3Mode);
+    else if (options.fullPhase) await fullPhaseChecks(context, options.phase2Full);
     await assertCleanLogs(context);
     process.stdout.write(`[local-verify] ${namespace} passed\n`);
   } finally {
@@ -349,10 +417,13 @@ function optionValue(name) {
 
 async function main() {
   const flags = new Set(process.argv.slice(2));
+  const phase3Modes = ["api", "metadata", "export-api", "export-browser", "full"].filter((mode) => flags.has(`--phase3-${mode}`));
+  if (phase3Modes.length > 1) throw new Error("choose at most one Phase 3 verification selection");
   const options = {
     namespace: optionValue("namespace"),
     webPort: optionValue("web-port") ? Number(optionValue("web-port")) : undefined,
     phase2Full: flags.has("--phase2-full"),
+    phase3Mode: phase3Modes[0],
     fullPhase: flags.has("--full-phase") || flags.has("--phase2-full") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run")),
     interruptionCheck: flags.has("--interruption-check"),
     parallelCheck: flags.has("--parallel-check"),

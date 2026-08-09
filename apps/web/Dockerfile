@@ -4,7 +4,9 @@ WORKDIR /workspace
 RUN corepack enable
 
 ARG INTERNAL_API_ORIGIN=http://api:3001
+ARG PUBLIC_ORIGIN=http://127.0.0.1:3100
 ENV INTERNAL_API_ORIGIN=${INTERNAL_API_ORIGIN}
+ENV PUBLIC_ORIGIN=${PUBLIC_ORIGIN}
 ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./

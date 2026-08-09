@@ -20,7 +20,7 @@ services:
       dockerfile: apps/api/Dockerfile
     environment:
       DATABASE_URL: postgres://${BLOG_X_POSTGRES_USER:-blog_x}@postgres:5432/${BLOG_X_POSTGRES_DB:-blog_x}
-      PUBLIC_ORIGIN: http://127.0.0.1:${BLOG_X_WEB_PORT:-3100}
+      PUBLIC_ORIGIN: ${BLOG_X_PUBLIC_ORIGIN:-http://127.0.0.1:3100}
       API_HOST: 0.0.0.0
       API_PORT: 3001
       MEDIA_ROOT: /var/lib/blog-x/media
@@ -40,8 +40,11 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        PUBLIC_ORIGIN: ${BLOG_X_PUBLIC_ORIGIN:-http://127.0.0.1:3100}
     environment:
       INTERNAL_API_ORIGIN: http://api:3001
+      PUBLIC_ORIGIN: ${BLOG_X_PUBLIC_ORIGIN:-http://127.0.0.1:3100}
     depends_on:
       api:
         condition: service_healthy
