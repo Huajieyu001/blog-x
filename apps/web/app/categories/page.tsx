@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { getPublicTaxonomy } from "../lib/api";
+import { pageMetadata } from "../lib/site-metadata";
 import styles from "../public.module.css";
 
 export const dynamic = "force-dynamic";
+export const metadata = pageMetadata({ title: "分类", description: "浏览公开文章分类。", path: "/categories" });
 
 export default async function CategoriesPage() {
   const result = await getPublicTaxonomy("categories");

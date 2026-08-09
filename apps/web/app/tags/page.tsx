@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { getPublicTaxonomy } from "../lib/api";
+import { pageMetadata } from "../lib/site-metadata";
 import styles from "../public.module.css";
 
 export const dynamic = "force-dynamic";
+export const metadata = pageMetadata({ title: "标签", description: "浏览公开文章标签。", path: "/tags" });
 
 export default async function TagsPage() {
   const result = await getPublicTaxonomy("tags");
