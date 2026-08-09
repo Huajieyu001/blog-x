@@ -113,9 +113,9 @@ export function phase5MediaSelection() {
       ["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"],
     ],
     apiSuites: ["apps/api/test/markdown-renderer.test.ts"],
-    nodeSuites: ["scripts/local-verify.test.mjs"],
+    nodeSuites: ["scripts/prohibitions/media-policy.test.mjs", "scripts/local-verify.test.mjs"],
     databaseSuite: "apps/api/test/backup-restore.test.ts",
-    browserSuite: "apps/web/e2e/phase4-restore.spec.ts",
+    browserSuites: ["apps/web/e2e/phase1-publishing.spec.ts", "apps/web/e2e/phase4-restore.spec.ts"],
   };
 }
 
@@ -619,7 +619,7 @@ async function seedRestoreFixture(context, includePhase5Legacy = false) {
   return { mediaId, publishedSlug, publishedTitle, hiddenSlugs, ...(includePhase5Legacy ? { legacyArticleId, legacyArticleSlug } : {}) };
 }
 
-async function runPhase4RestoreChecks(context, includePhase5Legacy = false) {
+async function runPhase4RestoreChecks(context, includePhase5Legacy = false, browserSuite = phase4Selection("restore").browserSuite) {
   const selection = phase4Selection("restore");
   for (const file of selection.nodeSuites) {
     const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
@@ -652,14 +652,18 @@ async function runPhase4RestoreChecks(context, includePhase5Legacy = false) {
     if (!/^[a-f0-9]{12,64}$/.test(containerId)) throw new Error("restored API container is unavailable");
     await runStep(context, "create restored comparison root", "docker", ["exec", containerId, "mkdir", "-p", "/tmp/blog-x-restore-expected"]);
     await runStep(context, "copy immutable backup evidence for comparison", "docker", ["cp", `${backup.finalRoot}/.`, `${containerId}:/tmp/blog-x-restore-expected`]);
-    const authority = await compose(restoreContext, `run ${selection.databaseSuite}`, "exec", "-T",
+    const authorityEnvironment = [
       "-e", `DATABASE_URL=postgres://blog_x@postgres:5432/${restoreContext.database}`,
       "-e", `BACKUP_RESTORE_TEST_DATABASE_URL=postgres://blog_x@postgres:5432/${restoreContext.database}`,
-      "-e", "BACKUP_RESTORE_EXPECTED_ROOT=/tmp/blog-x-restore-expected", "-e", "MEDIA_ROOT=/var/lib/blog-x/media",
-      "api", ...semanticTestCommand(selection.databaseSuite));
+      "-e", "BACKUP_RESTORE_EXPECTED_ROOT=/tmp/blog-x-restore-expected",
+      "-e", "MEDIA_ROOT=/var/lib/blog-x/media",
+      ...(includePhase5Legacy ? ["-e", `PHASE5_LEGACY_ARTICLE_ID=${fixture.legacyArticleId}`] : []),
+    ];
+    const authority = await compose(restoreContext, `run ${selection.databaseSuite}`, "exec", "-T",
+      ...authorityEnvironment, "api", ...semanticTestCommand(selection.databaseSuite));
     assertSemanticTap(authority.combined);
-    const browser = await runStep(context, `run ${selection.browserSuite}`, "corepack",
-      ["pnpm", "exec", "playwright", "test", selection.browserSuite, "--workers=1"], {
+    const browser = await runStep(context, `run ${browserSuite}`, "corepack",
+      ["pnpm", "exec", "playwright", "test", browserSuite, "--workers=1"], {
         env: { ...process.env, E2E_WEB_ORIGIN: restoreContext.webOrigin, E2E_RESTORE_WEB_ORIGIN: restoreContext.webOrigin,
           E2E_RESTORE_PUBLISHED_SLUG: fixture.publishedSlug, E2E_RESTORE_PUBLISHED_TITLE: fixture.publishedTitle,
           E2E_RESTORE_MEDIA_ID: fixture.mediaId, E2E_RESTORE_HIDDEN_SLUGS: fixture.hiddenSlugs.join(","),
@@ -720,7 +724,19 @@ async function runPhase5MediaChecks(context) {
     const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
     assertSemanticTap(result.combined);
   }
-  await runPhase4RestoreChecks(context, true);
+  await resetAcceptanceData(context, "clear Phase 5 fresh-browser acceptance data");
+  const freshBrowser = await runStep(context, `run ${selection.browserSuites[0]}`, "corepack",
+    ["pnpm", "exec", "playwright", "test", selection.browserSuites[0], "--workers=1"], {
+      env: {
+        ...process.env,
+        E2E_WEB_ORIGIN: context.webOrigin,
+        E2E_ADMIN_USERNAME: context.username,
+        E2E_ADMIN_PASSWORD: context.password,
+        E2E_RUN_ID: context.runId,
+      },
+    });
+  assertPlaywrightJourney(freshBrowser.combined);
+  await runPhase4RestoreChecks(context, true, selection.browserSuites[1]);
 }
 
 async function runSingle(options) {

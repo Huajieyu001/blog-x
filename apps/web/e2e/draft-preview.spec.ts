@@ -42,7 +42,6 @@ test("administrator saves, reopens, and responsively previews a complete Markdow
   await expect(page.getByLabel("Slug")).toHaveValue(manualSlug);
 
   await page.getByLabel("摘要").fill("完整元数据摘要");
-  await page.getByLabel("封面 URL").fill("https://images.example.test/editor-cover.png");
   await page.getByLabel("发布时间").fill("2026-08-07T16:30");
   await page.getByLabel("SEO 描述").fill("完整元数据 SEO 描述");
   const markdown = "# 浏览器预览\n\n正文 **保留**\n\n<script>alert(1)</script>";
@@ -58,7 +57,6 @@ test("administrator saves, reopens, and responsively previews a complete Markdow
   await page.reload();
   await expect(page.getByLabel("标题")).toHaveValue("标题改变后仍保留 Slug");
   await expect(page.getByLabel("摘要")).toHaveValue("完整元数据摘要");
-  await expect(page.getByLabel("封面 URL")).toHaveValue("https://images.example.test/editor-cover.png");
   await expect(page.getByLabel("Slug")).toHaveValue(manualSlug);
   await expect(page.getByLabel("Markdown")).toHaveValue(markdown);
   await expect(page.getByLabel("发布时间")).toHaveValue("2026-08-07T16:30");
@@ -90,7 +88,7 @@ test("administrator saves, reopens, and responsively previews a complete Markdow
   await expect(page.getByTestId("editor-source")).toBeHidden();
   await page.getByRole("button", { name: "编辑" }).click();
   await expect(page.getByLabel("Markdown")).toHaveValue(unsavedMarkdown);
-  await page.getByLabel("封面 URL").fill("invalid cover url");
+  await page.getByLabel("标题").fill("");
   await page.getByRole("button", { name: "保存更改" }).click();
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("请修正标记的字段");
   await expect(page.getByLabel("Markdown")).toHaveValue(unsavedMarkdown);

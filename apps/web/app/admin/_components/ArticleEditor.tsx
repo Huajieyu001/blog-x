@@ -41,7 +41,9 @@ function initialFields(post?: AdminPost): EditorFields {
   return {
     title: post.title,
     summary: post.summary,
-    coverUrl: post.coverUrl,
+    // Historic URLs remain available in the retained API/export record, but
+    // authoring can only submit an uploaded media reference as a cover.
+    coverUrl: "",
     slug: post.slug,
     markdown: post.markdown,
     publishedAt: toLocalDateTime(post.publishedAt),
@@ -269,7 +271,6 @@ export default function ArticleEditor({
         <div className={styles.metadataGrid}>
           <label>Slug<input value={fields.slug} onChange={(event) => { slugManuallyEdited.current = true; update("slug", event.target.value); }} aria-invalid={Boolean(errorFor("slug"))} /></label>
           <label>发布时间<input type="datetime-local" value={fields.publishedAt} onChange={(event) => update("publishedAt", event.target.value)} aria-invalid={Boolean(errorFor("publishedAt"))} /></label>
-          <label>封面 URL<input type="url" value={fields.coverUrl} onChange={(event) => update("coverUrl", event.target.value)} aria-invalid={Boolean(errorFor("coverUrl"))} /></label>
           <label>SEO 描述<input value={fields.seoDescription} onChange={(event) => update("seoDescription", event.target.value)} aria-invalid={Boolean(errorFor("seoDescription"))} /></label>
         </div>
         {currentPost && currentPost.status !== "draft" && (
@@ -277,11 +278,15 @@ export default function ArticleEditor({
         )}
         {errorFor("slug") && <p className={styles.error}>{errorFor("slug")}</p>}
         {errorFor("publishedAt") && <p className={styles.error}>{errorFor("publishedAt")}</p>}
-        {errorFor("coverUrl") && <p className={styles.error}>{errorFor("coverUrl")}</p>}
         {errorFor("seoDescription") && <p className={styles.error}>{errorFor("seoDescription")}</p>}
       </section>
 
       <MediaPanel currentCover={fields.coverMedia ?? null} onInsert={insertMedia} onCover={selectCover} />
+      {currentPost?.legacyMediaReview === "review_required" && (
+        <p className={styles.error} role="status">
+          历史媒体需要修复：请删除或将正文中的外部图片替换为已上传媒体，并使用已上传媒体作为封面；历史封面 URL 已保留在导出中。
+        </p>
+      )}
 
       <div className={styles.mobileTabs} aria-label="编辑器视图">
         <button type="button" aria-pressed={mobilePane === "edit"} onClick={() => setMobilePane("edit")}>编辑</button>
