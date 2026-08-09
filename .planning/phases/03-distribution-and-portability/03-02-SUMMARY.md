@@ -100,7 +100,7 @@ status: complete
 1. **[Rule 2 - Required public fact]** Added `seoDescription` to the strict public post projection so article metadata can prefer the administrator-supplied SEO description without accessing private content.
 2. **[Rule 1 - Verifier contract]** Added a Playwright-specific completion assertion: TAP rules apply only to Node semantic suites, while skipped or zero-test browser journeys still fail closed.
 3. **[Rule 1 - Runtime normalization]** Corrected exact browser expectations for Next's normalized root Sitemap URL (`/`) and the RSS handler's `application/rss+xml; charset=utf-8` response media type.
-4. **[Rule 3 - Local build reliability]** Moved generated `PUBLIC_ORIGIN` after the frozen dependency-install Docker layer and added a cache-order test. Before this correction, one local verifier Docker build invalidated that layer, attempted package-registry downloads, and timed out. No cloud server, production host, external service, CDN, deployment, or push was contacted.
+4. **[Rule 3 - Local build reliability]** Moved generated `PUBLIC_ORIGIN` after the frozen dependency-install Docker layer and added a cache-order test. Before this correction, one local verifier Docker build invalidated that layer, contacted `registry.npmjs.org` while attempting to download the already-locked dependencies, and timed out. This was the only unintended external contact; neither cloud server nor any production host, CDN, deployment target, or Git remote was contacted during execution.
 
 **Impact:** All changes stay within the metadata/discovery verifier boundary; no dependencies were added.
 
