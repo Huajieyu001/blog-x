@@ -286,6 +286,16 @@ test("adapter fails closed for mount, receipt, catalog, retention, result, alert
   await assert.rejects(runProductionBackup(alertFault, { inspectMount: async (root) => ({ isMountPoint: true, root }), recordAlert: async () => ({ status: "unconfirmed" }) }), /alert/i);
 });
 
+test("a successful generated fake remains fault-only and cannot parse as production release evidence", async (context) => {
+  const input = await adapterFixture(context, "z1b2c3d4");
+  const result = await runProductionBackup(input, {
+    inspectMount: async (root) => ({ isMountPoint: true, root }),
+    transport: createGeneratedFakeTransport(),
+  });
+  assert.equal(result.scope, "generated-fake");
+  assert.throws(() => parseProductionReleaseEvidence(result), /generated|live/i);
+});
+
 test("receipt-gated retention preserves the minimum known-good ciphertext and deletes nothing on catalog ambiguity", async (context) => {
   const input = await adapterFixture(context, "i1b2c3d4");
   const transport = await createMountedDirectoryTransport(input.destination, { inspectMount: async (root) => ({ isMountPoint: true, root }) });
