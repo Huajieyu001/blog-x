@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { publicTaxonomyTermSchema } from "./taxonomy";
+import { mediaUsageReferenceSchema } from "./media";
 
 export const publicPostPageSize = 10;
 
@@ -42,6 +43,7 @@ export const tocEntrySchema = z.object({
 export const publicPostDetailSchema = publicPostListItemSchema.extend({
   renderedHtml: z.string(),
   toc: z.array(tocEntrySchema),
+  cover: mediaUsageReferenceSchema.nullable().optional(),
 }).strict();
 
 export const publicTaxonomyPostListSchema = z.object({

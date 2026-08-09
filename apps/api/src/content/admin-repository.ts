@@ -1,4 +1,4 @@
-import type { AdminPostInput } from "@blog-x/contracts";
+import { mediaReferenceSchema, type AdminPostInput, type MediaReference } from "@blog-x/contracts";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "../db/schema.js";
@@ -16,6 +16,9 @@ const selectedPost = {
   status: schema.articles.status,
   updatedAt: schema.articles.updatedAt,
   categoryId: schema.articles.categoryId,
+  coverMediaId: schema.articles.coverMediaId,
+  coverAlt: schema.articles.coverAlt,
+  coverDecorative: schema.articles.coverDecorative,
 };
 
 export type StoredAdminPost = {
@@ -31,6 +34,7 @@ export type StoredAdminPost = {
   updatedAt: Date;
   categoryId: string | null;
   tagIds: string[];
+  coverMedia: MediaReference | null;
 };
 
 export type RetainedArticleChanges = Partial<{
@@ -45,6 +49,9 @@ export type RetainedArticleChanges = Partial<{
   deletedAt: Date;
   updatedAt: Date;
   categoryId: string | null;
+  coverMediaId: string | null;
+  coverAlt: string;
+  coverDecorative: boolean;
 }>;
 
 type RetainedArticleUpdate = (
@@ -53,20 +60,42 @@ type RetainedArticleUpdate = (
 ) => Promise<StoredAdminPost>;
 
 function values(input: AdminPostInput) {
-  return { ...input, publishedAt: input.publishedAt ? new Date(input.publishedAt) : null };
+  const { tagIds, coverMedia, ...article } = input;
+  return {
+    article: {
+      ...article,
+      publishedAt: input.publishedAt ? new Date(input.publishedAt) : null,
+      coverMediaId: coverMedia?.id ?? null,
+      coverAlt: coverMedia?.alt ?? "",
+      coverDecorative: coverMedia?.decorative ?? false,
+    },
+    tagIds,
+  };
 }
 
 export function createAdminPostRepository(db: Database) {
+  async function hydrate(executor: Database, post: typeof schema.articles.$inferSelect, tagIds?: string[]): Promise<StoredAdminPost> {
+    const resolvedTags = tagIds ?? (await executor.select({ tagId: schema.articleTags.tagId }).from(schema.articleTags).where(eq(schema.articleTags.articleId, post.id))).map((row) => row.tagId);
+    let coverMedia: MediaReference | null = null;
+    if (post.coverMediaId) {
+      const asset = (await executor.select({ id: schema.media.id, width: schema.media.width, height: schema.media.height, mimeType: schema.media.derivativeMimeType }).from(schema.media).where(eq(schema.media.id, post.coverMediaId)).limit(1))[0];
+      if (!asset) throw new Error("cover media reference is missing");
+      coverMedia = mediaReferenceSchema.parse({ ...asset, url: `/media/${asset.id}`, alt: post.coverAlt, decorative: post.coverDecorative });
+    }
+    const { coverMediaId: _coverMediaId, coverAlt: _coverAlt, coverDecorative: _coverDecorative, ...stored } = post;
+    return { ...stored, tagIds: resolvedTags, coverMedia };
+  }
+
   async function createDraft(input: AdminPostInput) {
-    return db.transaction(async (tx) => { const { tagIds, ...article } = values(input); const created = (await tx.insert(schema.articles).values({ ...article, status: "draft" }).returning(selectedPost))[0]; if (!created) return null; if (tagIds.length) await tx.insert(schema.articleTags).values(tagIds.map((tagId) => ({ articleId: created.id, tagId }))); return { ...created, tagIds }; });
+    return db.transaction(async (tx) => { const { tagIds, article } = values(input); const created = (await tx.insert(schema.articles).values({ ...article, status: "draft" }).returning(selectedPost))[0]; if (!created) return null; if (tagIds.length) await tx.insert(schema.articleTags).values(tagIds.map((tagId) => ({ articleId: created.id, tagId }))); return hydrate(tx as Database, created as typeof schema.articles.$inferSelect, tagIds); });
   }
 
   async function findRetainedById(id: string) {
-    const post = (await db.select(selectedPost).from(schema.articles).where(and(eq(schema.articles.id, id), isNull(schema.articles.deletedAt))).limit(1))[0]; if (!post) return null; const tagIds = (await db.select({ tagId: schema.articleTags.tagId }).from(schema.articleTags).where(eq(schema.articleTags.articleId, id))).map((row) => row.tagId); return { ...post, tagIds };
+    const post = (await db.select(selectedPost).from(schema.articles).where(and(eq(schema.articles.id, id), isNull(schema.articles.deletedAt))).limit(1))[0]; if (!post) return null; return hydrate(db, post as typeof schema.articles.$inferSelect);
   }
 
   async function listRetained() {
-    const posts = await db.select(selectedPost).from(schema.articles).where(isNull(schema.articles.deletedAt)).orderBy(desc(schema.articles.updatedAt)); return Promise.all(posts.map(async (post) => ({ ...post, tagIds: (await db.select({ tagId: schema.articleTags.tagId }).from(schema.articleTags).where(eq(schema.articleTags.articleId, post.id))).map((row) => row.tagId) })));
+    const posts = await db.select(selectedPost).from(schema.articles).where(isNull(schema.articles.deletedAt)).orderBy(desc(schema.articles.updatedAt)); return Promise.all(posts.map((post) => hydrate(db, post as typeof schema.articles.$inferSelect)));
   }
 
   async function transactRetained<T>(
@@ -77,7 +106,7 @@ export function createAdminPostRepository(db: Database) {
       const current = (await tx.select(selectedPost).from(schema.articles)
         .where(and(eq(schema.articles.id, id), isNull(schema.articles.deletedAt))).limit(1).for("update"))[0];
       if (!current) return null;
-      const currentWithTags: StoredAdminPost = { ...current, tagIds: (await tx.select({ tagId: schema.articleTags.tagId }).from(schema.articleTags).where(eq(schema.articleTags.articleId, id))).map((row) => row.tagId) };
+      const currentWithTags = await hydrate(tx as Database, current as typeof schema.articles.$inferSelect);
       const update: RetainedArticleUpdate = async (changes, tagIds) => {
         const updated = (await tx.update(schema.articles).set(changes).where(eq(schema.articles.id, id)).returning(selectedPost))[0];
         if (!updated) throw new Error("retained article update did not return a row");
@@ -87,7 +116,7 @@ export function createAdminPostRepository(db: Database) {
             await tx.insert(schema.articleTags).values(tagIds.map((tagId) => ({ articleId: id, tagId })));
           }
         }
-        return { ...updated, tagIds: tagIds ?? currentWithTags.tagIds };
+        return hydrate(tx as Database, updated as typeof schema.articles.$inferSelect, tagIds ?? currentWithTags.tagIds);
       };
       return operation(currentWithTags, update);
     });

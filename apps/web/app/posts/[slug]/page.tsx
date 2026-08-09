@@ -41,6 +41,15 @@ export default async function PublicArticlePage({ params }: { params: Promise<{ 
             {new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeZone: "Asia/Shanghai" }).format(new Date(article.publishedAt))}
           </time>
         </header>
+        {article.cover ? (
+          <img
+            className={styles.articleCover}
+            src={article.cover.url}
+            width={article.cover.width}
+            height={article.cover.height}
+            alt={article.cover.decorative ? "" : article.cover.alt}
+          />
+        ) : null}
         <div
           className={`${styles.articleContent} ${article.toc.length > 0 ? styles.articleContentWithToc : styles.articleContentSingle}`}
           data-testid="article-content"

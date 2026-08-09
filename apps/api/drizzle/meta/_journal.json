@@ -36,6 +36,13 @@
       "when": 1786190113530,
       "tag": "0004_sturdy_wrecker",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786204673123,
+      "tag": "0005_curved_magus",
+      "breakpoints": true
     }
   ]
 }

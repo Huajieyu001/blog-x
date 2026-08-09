@@ -129,6 +129,14 @@
   text-underline-offset: .2em;
 }
 
+.articleCover {
+  display: block;
+  width: min(100%, 760px);
+  height: auto;
+  margin: clamp(32px, 6vw, 56px) auto 0;
+  border-radius: 4px;
+}
+
 .articleContent {
   display: grid;
   align-items: start;

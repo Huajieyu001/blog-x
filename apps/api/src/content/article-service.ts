@@ -21,9 +21,10 @@ export type ArticleServiceResult = { ok: true; post: AdminPost } | { ok: false; 
 export type DeleteServiceResult = { ok: true; deleted: { id: string; deleted: true } } | { ok: false; detail: ArticleServiceError };
 
 function serialize(post: StoredAdminPost): AdminPost {
-  const { updatedAt, ...wirePost } = post;
+  const { updatedAt, coverMedia, ...wirePost } = post;
   return adminPostSchema.parse({
     ...wirePost,
+    ...(coverMedia ? { coverMedia } : {}),
     publishedAt: post.publishedAt?.toISOString() ?? null,
     version: updatedAt.toISOString(),
   });
@@ -99,6 +100,9 @@ export function createArticleService(repository: AdminPostRepository) {
         publishedAt,
         seoDescription: input.seoDescription,
         categoryId: input.categoryId,
+        coverMediaId: input.coverMedia?.id ?? null,
+        coverAlt: input.coverMedia?.alt ?? "",
+        coverDecorative: input.coverMedia?.decorative ?? false,
         updatedAt: nextVersion(current),
       }, input.tagIds);
       return { ok: true, post: serialize(updated) };
@@ -126,6 +130,9 @@ export function createArticleService(repository: AdminPostRepository) {
           markdown: current.markdown,
           publishedAt: current.publishedAt?.toISOString() ?? null,
           seoDescription: current.seoDescription,
+          categoryId: current.categoryId,
+          tagIds: current.tagIds,
+          ...(current.coverMedia ? { coverMedia: current.coverMedia } : {}),
         });
         if (!valid.success) return { ok: false, detail: { error: "validation_failed", fields: validationFields(valid.error) } };
       }

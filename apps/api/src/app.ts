@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import {
   publishInputSchema,
   publishedArticleSchema,
@@ -9,7 +10,7 @@ import cookie from "@fastify/cookie";
 import { drizzle } from "drizzle-orm/node-postgres";
 import Fastify, { type FastifyLoggerOptions, type FastifyPluginAsync } from "fastify";
 import { Pool } from "pg";
-import { administrators, articleTags, articles, categories, sessions, sitePages, tags } from "./db/schema.js";
+import { administrators, articleTags, articles, categories, media, sessions, sitePages, tags } from "./db/schema.js";
 import { seedAdministratorFromEnvironment } from "./db/seed-admin.js";
 import { authRoutes } from "./routes/auth.js";
 import { createSessionService, sessionCookieName } from "./auth/sessions.js";
@@ -26,14 +27,18 @@ import { createPageRepository } from "./content/page-repository.js";
 import { createPageService } from "./content/page-service.js";
 import { pageRoutes } from "./routes/pages.js";
 import { publicPageRoutes } from "./routes/public-pages.js";
+import { LocalMediaStorage } from "./media/storage.js";
+import { createMediaService } from "./content/media-service.js";
+import { mediaRoutes } from "./routes/media.js";
 
 const databaseUrl = process.env.DATABASE_URL ?? "postgres://blog_x@127.0.0.1:5432/blog_x";
 const pool = new Pool({ connectionString: databaseUrl });
-const db = drizzle({ client: pool, schema: { administrators, articles, sessions, categories, tags, articleTags, sitePages } });
+const db = drizzle({ client: pool, schema: { administrators, articles, sessions, categories, tags, articleTags, sitePages, media } });
 
 type BuildAppOptions = {
   logger?: FastifyLoggerOptions;
   publicOrigin?: string;
+  mediaRoot?: string;
 };
 
 export async function buildApp(options: BuildAppOptions = {}) {
@@ -71,6 +76,12 @@ export async function buildApp(options: BuildAppOptions = {}) {
   const pageRepository = createPageRepository(db);
   await app.register(pageRoutes, { pageService: createPageService(pageRepository), sessionAuth: app.sessionAuth, publicOrigin });
   await app.register(publicPageRoutes, { pageRepository });
+  const mediaStorage = new LocalMediaStorage(options.mediaRoot ?? process.env.MEDIA_ROOT ?? resolve(process.cwd(), "uploads"));
+  await app.register(mediaRoutes, {
+    mediaService: createMediaService(db, mediaStorage),
+    sessionAuth: app.sessionAuth,
+    publicOrigin,
+  });
   app.post("/articles/publish", async (request, reply) => {
     reply.header("cache-control", "no-store");
     if (request.headers.origin !== publicOrigin) return reply.code(403).send({ error: "forbidden" });
@@ -123,14 +134,16 @@ async function seed() {
   await seedAdministratorFromEnvironment(db);
 }
 async function schemaVerify() {
-  const result = await pool.query("select tablename from pg_tables where schemaname = 'public' and tablename = any($1)", [["administrators", "sessions", "articles", "categories", "tags", "article_tags", "site_pages"]]);
-  if (result.rowCount !== 7) throw new Error("page schema is not active; run pnpm db:migrate first");
+  const result = await pool.query("select tablename from pg_tables where schemaname = 'public' and tablename = any($1)", [["administrators", "sessions", "articles", "categories", "tags", "article_tags", "site_pages", "media"]]);
+  if (result.rowCount !== 8) throw new Error("media schema is not active; run pnpm db:migrate first");
   const ledger = await pool.query("select migration_count from blog_x_schema_ledger where scope = 'phase1'");
-  if (ledger.rowCount !== 1 || Number(ledger.rows[0]?.migration_count) !== 5) throw new Error("page migration ledger is incomplete; run pnpm db:migrate first");
-  const indices = await pool.query("select indexname from pg_indexes where schemaname = 'public' and indexname = any($1)", [["taxonomy_category_slug_unique", "taxonomy_tag_slug_unique", "article_tags_article_tag_unique", "articles_category_public_index", "site_pages_key_unique"]]);
-  if (indices.rowCount !== 5) throw new Error("required indexes are incomplete; run pnpm db:migrate first");
+  if (ledger.rowCount !== 1 || Number(ledger.rows[0]?.migration_count) !== 6) throw new Error("media migration ledger is incomplete; run pnpm db:migrate first");
+  const indices = await pool.query("select indexname from pg_indexes where schemaname = 'public' and indexname = any($1)", [["taxonomy_category_slug_unique", "taxonomy_tag_slug_unique", "article_tags_article_tag_unique", "articles_category_public_index", "site_pages_key_unique", "media_source_key_unique", "media_derivative_key_unique", "articles_cover_media_index"]]);
+  if (indices.rowCount !== 8) throw new Error("required indexes are incomplete; run pnpm db:migrate first");
   const constraints = await pool.query("select conname from pg_constraint where conrelid = 'site_pages'::regclass and conname = any($1)", [["site_pages_key_about_check", "site_pages_status_check"]]);
   if (constraints.rowCount !== 2) throw new Error("site_pages singleton constraints are incomplete; run pnpm db:migrate first");
+  const mediaConstraints = await pool.query("select conname from pg_constraint where conname = any($1)", [["media_source_mime_check", "media_derivative_mime_check", "media_dimensions_check", "media_bytes_check", "articles_cover_alt_check", "articles_cover_media_id_media_id_fk"]]);
+  if (mediaConstraints.rowCount !== 6) throw new Error("media constraints are incomplete; run pnpm db:migrate first");
 }
 async function main() {
   const command = process.argv[2];

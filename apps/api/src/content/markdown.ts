@@ -84,6 +84,26 @@ function textContent(node: HastNode): string {
   return node.value ?? node.children?.map(textContent).join("") ?? "";
 }
 
+const mediaSourcePattern = /^\/media\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function allowedImageSource(value: unknown) {
+  if (typeof value !== "string") return false;
+  if (mediaSourcePattern.test(value)) return true;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function constrainImageSources(node: HastNode) {
+  if (node.tagName === "img" && !allowedImageSource(node.properties?.src)) {
+    if (node.properties) delete node.properties.src;
+  }
+  node.children?.forEach(constrainImageSources);
+}
+
 function headingBase(text: string): string {
   return text
     .normalize("NFKC")
@@ -157,6 +177,7 @@ async function highlightCode(tree: HastNode) {
 export async function renderMarkdown(markdown: string) {
   const parser = unified().use(remarkParse).use(remarkGfm).use(remarkRehype, { allowDangerousHtml: false });
   const tree = await parser.run(parser.parse(markdown));
+  constrainImageSources(tree as HastNode);
   const toc = addHeadingAnchors(tree as HastNode);
   await highlightCode(tree as HastNode);
   // Raw HTML is disabled before highlighting. These attributes are therefore

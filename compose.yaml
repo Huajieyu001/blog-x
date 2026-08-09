@@ -23,6 +23,9 @@ services:
       PUBLIC_ORIGIN: http://127.0.0.1:${BLOG_X_WEB_PORT:-3100}
       API_HOST: 0.0.0.0
       API_PORT: 3001
+      MEDIA_ROOT: /var/lib/blog-x/media
+    volumes:
+      - media-data:/var/lib/blog-x/media
     depends_on:
       postgres:
         condition: service_healthy
@@ -52,3 +55,4 @@ services:
 
 volumes:
   postgres-data:
+  media-data:

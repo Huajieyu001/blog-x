@@ -12,6 +12,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import styles from "../admin.module.css";
 import ArticleActions from "./ArticleActions";
+import MediaPanel from "./MediaPanel";
 
 type EditorFields = Omit<AdminPostInput, "publishedAt"> & { publishedAt: string };
 
@@ -25,6 +26,7 @@ const emptyFields: EditorFields = {
   seoDescription: "",
   categoryId: null,
   tagIds: [],
+  coverMedia: null,
 };
 
 function toLocalDateTime(value: string | null) {
@@ -46,6 +48,7 @@ function initialFields(post?: AdminPost): EditorFields {
     seoDescription: post.seoDescription,
     categoryId: post.categoryId,
     tagIds: post.tagIds,
+    coverMedia: post.coverMedia ?? null,
   };
 }
 
@@ -81,6 +84,7 @@ export default function ArticleEditor({
   const [pendingSlugConfirmation, setPendingSlugConfirmation] = useState(false);
   const slugManuallyEdited = useRef(Boolean(post));
   const previewSequence = useRef(0);
+  const markdownRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const sequence = ++previewSequence.current;
@@ -203,6 +207,23 @@ export default function ArticleEditor({
     return errors[name]?.join("；");
   }
 
+  function insertMedia(media: NonNullable<EditorFields["coverMedia"]>) {
+    const textarea = markdownRef.current;
+    const start = textarea?.selectionStart ?? fields.markdown.length;
+    const end = textarea?.selectionEnd ?? start;
+    const escapedAlt = media.alt.replace(/([\\\]])/g, "\\$1");
+    const markdown = `![${escapedAlt}](${media.url})`;
+    update("markdown", `${fields.markdown.slice(0, start)}${markdown}${fields.markdown.slice(end)}`);
+    window.requestAnimationFrame(() => {
+      textarea?.focus();
+      textarea?.setSelectionRange(start + markdown.length, start + markdown.length);
+    });
+  }
+
+  function selectCover(media: NonNullable<EditorFields["coverMedia"]>) {
+    setFields((current) => ({ ...current, coverMedia: media, coverUrl: "" }));
+  }
+
   return (
     <main className={styles.page}>
       <div className={styles.titleRow}>
@@ -260,6 +281,8 @@ export default function ArticleEditor({
         {errorFor("seoDescription") && <p className={styles.error}>{errorFor("seoDescription")}</p>}
       </section>
 
+      <MediaPanel currentCover={fields.coverMedia ?? null} onInsert={insertMedia} onCover={selectCover} />
+
       <div className={styles.mobileTabs} aria-label="编辑器视图">
         <button type="button" aria-pressed={mobilePane === "edit"} onClick={() => setMobilePane("edit")}>编辑</button>
         <button type="button" aria-pressed={mobilePane === "preview"} onClick={() => setMobilePane("preview")}>预览</button>
@@ -267,7 +290,7 @@ export default function ArticleEditor({
       <section className={styles.editor}>
         <div className={`${styles.pane} ${mobilePane === "edit" ? styles.mobileActive : styles.mobileInactive}`} data-testid="editor-source">
           <div className={styles.paneHeader}>Markdown 源码</div>
-          <label className={styles.markdownLabel}>Markdown<textarea value={fields.markdown} onChange={(event) => update("markdown", event.target.value)} spellCheck={false} aria-invalid={Boolean(errorFor("markdown"))} /></label>
+          <label className={styles.markdownLabel}>Markdown<textarea ref={markdownRef} value={fields.markdown} onChange={(event) => update("markdown", event.target.value)} spellCheck={false} aria-invalid={Boolean(errorFor("markdown"))} /></label>
           {errorFor("markdown") && <p className={styles.error}>{errorFor("markdown")}</p>}
         </div>
         <div className={`${styles.pane} ${mobilePane === "preview" ? styles.mobileActive : styles.mobileInactive}`} data-testid="editor-preview-pane">

@@ -24,6 +24,9 @@ export const publicListSelection = {
 const publicDetailSelection = {
   ...publicListSelection,
   markdown: schema.articles.markdown,
+  coverMediaId: schema.articles.coverMediaId,
+  coverAlt: schema.articles.coverAlt,
+  coverDecorative: schema.articles.coverDecorative,
 };
 
 export function createPublicRepository(db: Database) {
@@ -87,6 +90,12 @@ export function createPublicRepository(db: Database) {
       .innerJoin(schema.tags, eq(schema.articleTags.tagId, schema.tags.id))
       .where(eq(schema.articleTags.articleId, article.id))
       .orderBy(schema.tags.name);
+    const cover = article.coverMediaId ? (await db.select({
+      id: schema.media.id,
+      width: schema.media.width,
+      height: schema.media.height,
+      mimeType: schema.media.derivativeMimeType,
+    }).from(schema.media).where(eq(schema.media.id, article.coverMediaId)).limit(1))[0] : null;
     return {
       title: article.title,
       summary: article.summary,
@@ -98,6 +107,7 @@ export function createPublicRepository(db: Database) {
         : null,
       tags,
       publishedAt: article.publishedAt.toISOString(),
+      ...(cover ? { cover: { ...cover, url: `/media/${cover.id}`, alt: article.coverAlt, decorative: article.coverDecorative } } : {}),
     };
   }
 

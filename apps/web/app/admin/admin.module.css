@@ -44,6 +44,19 @@
 .preview table { width: 100%; border-collapse: collapse; }
 .preview th, .preview td { border: 1px solid var(--line); padding: 7px 9px; }
 .status { min-height: 1.5em; color: var(--muted); font: .9rem/1.5 ui-sans-serif, system-ui, sans-serif; }
+.mediaPanel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 22px; margin-top: 28px; padding: 22px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.mediaPanel h2 { margin: 4px 0 0; font-size: 1.35rem; font-weight: 500; }
+.mediaField { display: grid; gap: 7px; color: var(--muted); font: 600 .78rem/1.3 ui-sans-serif, system-ui, sans-serif; }
+.mediaField input { box-sizing: border-box; width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 3px; padding: 9px 12px; color: var(--ink); background: #fff; }
+.decorativeToggle { display: flex; min-height: 44px; align-items: center; gap: 8px; font: 500 .85rem/1.4 ui-sans-serif, system-ui, sans-serif; }
+.mediaFilename { margin: 0; color: var(--muted); overflow-wrap: anywhere; font: .8rem/1.5 ui-sans-serif, system-ui, sans-serif; }
+.mediaActions { display: flex; flex-wrap: wrap; gap: 8px; grid-column: 1 / -1; }
+.mediaActions button { min-height: 44px; border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; background: #fff; cursor: pointer; }
+.mediaActions button:disabled { cursor: not-allowed; opacity: .55; }
+.mediaPreview { grid-column: 1 / -1; margin: 0; }
+.mediaPreview img { display: block; width: min(100%, 480px); height: auto; border-radius: 4px; }
+.mediaPreview figcaption { margin-top: 6px; color: var(--muted); font: .76rem/1.4 ui-monospace, monospace; }
+.mediaPanel > .status { grid-column: 1 / -1; margin: 0; }
 .mobileTabs { display: none; }
 .correctionToggle { display: flex !important; grid-template-columns: auto 1fr; align-items: center; margin-top: 16px; }
 .correctionToggle input { width: auto; }
@@ -74,6 +87,7 @@
   .titleRow h1 { font-size: 2.25rem; }
   .metadataGrid { grid-template-columns: 1fr; }
   .taxonomyFields { grid-template-columns: 1fr; }
+  .mediaPanel { grid-template-columns: 1fr; }
   .mobileTabs { display: grid; grid-template-columns: 1fr 1fr; margin-top: 24px; border: 1px solid var(--line); }
   .mobileTabs button { border: 0; padding: 10px; background: #fff; }
   .mobileTabs button[aria-pressed="true"] { color: #fff; background: var(--ink); }

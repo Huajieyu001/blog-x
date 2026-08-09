@@ -1,4 +1,4 @@
-import { boolean, check, index, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 export const administrators = pgTable("administrators", {
@@ -17,6 +17,26 @@ export const sessions = pgTable("sessions", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [uniqueIndex("sessions_token_digest_unique").on(table.tokenDigest), index("sessions_expiry_index").on(table.expiresAt)]);
 
+export const media = pgTable("media", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sourceKey: text("source_key").notNull(),
+  derivativeKey: text("derivative_key").notNull(),
+  sourceMimeType: text("source_mime_type").notNull(),
+  derivativeMimeType: text("derivative_mime_type").notNull(),
+  sourceBytes: integer("source_bytes").notNull(),
+  derivativeBytes: integer("derivative_bytes").notNull(),
+  width: integer("width").notNull(),
+  height: integer("height").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("media_source_key_unique").on(table.sourceKey),
+  uniqueIndex("media_derivative_key_unique").on(table.derivativeKey),
+  check("media_source_mime_check", sql`${table.sourceMimeType} in ('image/jpeg', 'image/png', 'image/webp')`),
+  check("media_derivative_mime_check", sql`${table.derivativeMimeType} in ('image/jpeg', 'image/png', 'image/webp')`),
+  check("media_dimensions_check", sql`${table.width} > 0 and ${table.height} > 0 and ${table.width} <= 2400 and ${table.height} <= 2400`),
+  check("media_bytes_check", sql`${table.sourceBytes} > 0 and ${table.sourceBytes} <= 5242880 and ${table.derivativeBytes} > 0`),
+]);
+
 export const articles = pgTable("articles", {
   id: uuid("id").defaultRandom().primaryKey(),
   title: text("title").notNull(),
@@ -31,7 +51,16 @@ export const articles = pgTable("articles", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   categoryId: uuid("category_id").references(() => categories.id, { onDelete: "restrict" }),
-}, (table) => [uniqueIndex("articles_slug_reserved_unique").on(table.slug), index("articles_public_index").on(table.status, table.publishedAt), index("articles_category_public_index").on(table.categoryId, table.status, table.publishedAt)]);
+  coverMediaId: uuid("cover_media_id").references(() => media.id, { onDelete: "restrict" }),
+  coverAlt: text("cover_alt").notNull().default(""),
+  coverDecorative: boolean("cover_decorative").notNull().default(false),
+}, (table) => [
+  uniqueIndex("articles_slug_reserved_unique").on(table.slug),
+  index("articles_public_index").on(table.status, table.publishedAt),
+  index("articles_category_public_index").on(table.categoryId, table.status, table.publishedAt),
+  index("articles_cover_media_index").on(table.coverMediaId),
+  check("articles_cover_alt_check", sql`${table.coverMediaId} is null or ${table.coverDecorative} or length(btrim(${table.coverAlt})) > 0`),
+]);
 
 export const categories = pgTable("categories", {
   id: uuid("id").defaultRandom().primaryKey(), name: text("name").notNull(), slug: text("slug").notNull(),

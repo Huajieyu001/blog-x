@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { mediaUsageReferenceSchema } from "./media";
 
 const slugPattern = /^[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*$/u;
 const publishedAtInputSchema = z.union([z.string().datetime({ offset: true }), z.null()]);
@@ -15,6 +16,7 @@ export const adminPostInputSchema = z.object({
   seoDescription: z.string().trim().max(320, "SEO 描述不能超过 320 个字符"),
   categoryId: z.uuid().nullable().optional().default(null),
   tagIds: z.array(z.uuid()).max(50).refine((ids) => new Set(ids).size === ids.length, "标签不能重复").optional().default([]),
+  coverMedia: mediaUsageReferenceSchema.nullable().optional(),
 }).strict();
 
 export const publishedSlugConfirmationSchema = z.object({
