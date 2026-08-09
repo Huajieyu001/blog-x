@@ -170,7 +170,7 @@ test("Phase 3 metadata is a managed same-origin public journey", async ({ page }
   const feed = await page.request.get(`${webOrigin}/rss.xml`);
   const feedText = await feed.text();
   expect(feed.status()).toBe(200);
-  expect(feed.headers()["content-type"]).toContain("application/xml");
+  expect(feed.headers()["content-type"]).toContain("application/rss+xml");
   expect(feedText).toContain(`${webOrigin}/posts/${article.slug}`);
   expect(feedText).not.toMatch(/(?:hidden|draft|INTERNAL_API_ORIGIN|124\.222|47\.99)/i);
   expect(requests.length).toBeGreaterThan(0);
