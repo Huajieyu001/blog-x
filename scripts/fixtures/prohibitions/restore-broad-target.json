@@ -1,0 +1,10 @@
+{
+  "format": "blog-x-restore-target",
+  "version": 1,
+  "namespace": "blogxlocal",
+  "database": "blog_x",
+  "mediaVolume": "blogxlocal_media-data",
+  "webOrigin": "http://127.0.0.1:3100",
+  "generated": false,
+  "empty": false
+}
