@@ -3,6 +3,7 @@ import test from "node:test";
 import cookie from "@fastify/cookie";
 import Fastify, { type FastifyPluginAsync } from "fastify";
 import { aboutInputSchema, adminPostInputSchema, taxonomyInputSchema } from "@blog-x/contracts";
+import { closeRuntimeResourcesOnAppClose } from "../src/app.js";
 import { authRoutes } from "../src/routes/auth.js";
 import { parseApiRuntimeConfig } from "../src/security/config.js";
 import { requireAdministratorMutation, unsafeRoutePolicies } from "../src/security/mutation-guard.js";
@@ -13,6 +14,20 @@ class ManualClock implements Clock {
   now() { return this.value; }
   advance(milliseconds: number) { this.value += milliseconds; }
 }
+
+test("serving resources remain open until the Fastify application closes", async () => {
+  const app = Fastify();
+  let closeCount = 0;
+  closeRuntimeResourcesOnAppClose(app, {
+    pool: { end: async () => { closeCount += 1; } } as never,
+  });
+  await app.ready();
+  assert.equal(closeCount, 0, "startup must not close the serving database pool");
+  await app.close();
+  assert.equal(closeCount, 1, "application shutdown owns database pool cleanup");
+  await app.close();
+  assert.equal(closeCount, 1, "cleanup remains idempotent");
+});
 
 test("runtime configuration rejects unsafe production input before resources can be created", () => {
   const base = {

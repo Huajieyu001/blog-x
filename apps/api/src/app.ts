@@ -8,7 +8,7 @@ import {
 } from "@blog-x/contracts";
 import cookie from "@fastify/cookie";
 import { drizzle } from "drizzle-orm/node-postgres";
-import Fastify, { type FastifyLoggerOptions, type FastifyPluginAsync } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyLoggerOptions, type FastifyPluginAsync } from "fastify";
 import { Pool } from "pg";
 import { administrators, articleTags, articles, categories, media, sessions, sitePages, tags } from "./db/schema.js";
 import { seedAdministrator } from "./db/seed-admin.js";
@@ -45,6 +45,18 @@ export function createRuntimeResources(config: ApiRuntimeConfig) {
 }
 
 type RuntimeResources = ReturnType<typeof createRuntimeResources>;
+
+export function closeRuntimeResourcesOnAppClose(
+  app: FastifyInstance,
+  resources: Pick<RuntimeResources, "pool">,
+) {
+  let closed = false;
+  app.addHook("onClose", async () => {
+    if (closed) return;
+    closed = true;
+    await resources.pool.end();
+  });
+}
 
 type BuildAppOptions = {
   logger?: FastifyLoggerOptions;
@@ -198,19 +210,30 @@ async function main() {
   const configCommand = command === "migrate" || command === "seed" || command === "schema:verify" ? command : "serve";
   const config = parseApiRuntimeConfig(process.env, configCommand);
   const resources = createRuntimeResources(config);
+  if (command === "migrate" || command === "seed" || command === "schema:verify") {
+    try {
+      if (command === "migrate") await migrate(resources.pool);
+      if (command === "seed") await seed(resources.db, config.administrator!);
+      if (command === "schema:verify") await schemaVerify(resources.pool);
+    } finally {
+      await resources.pool.end();
+    }
+    return;
+  }
+  let app: FastifyInstance | undefined;
   try {
-    if (command === "migrate") { await migrate(resources.pool); return; }
-    if (command === "seed") { await seed(resources.db, config.administrator!); return; }
-    if (command === "schema:verify") { await schemaVerify(resources.pool); return; }
-    const app = await buildApp({
+    app = await buildApp({
       resources,
       publicOrigin: config.publicOrigin,
       mediaRoot: config.mediaRoot,
       rateLimits: config.rateLimits,
     });
+    closeRuntimeResourcesOnAppClose(app, resources);
     await app.listen({ host: config.apiHost, port: config.apiPort });
-  } finally {
-    await resources.pool.end();
+  } catch (error) {
+    if (app) await app.close().catch(() => undefined);
+    else await resources.pool.end().catch(() => undefined);
+    throw error;
   }
 }
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main().catch((error) => { console.error(error instanceof Error ? error.message : "startup failed"); process.exitCode = 1; });
