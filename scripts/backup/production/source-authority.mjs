@@ -5,6 +5,7 @@ import { verifyCompleteBackupSetContents } from "../content-verifier.mjs";
 
 const setPattern = /^\d{8}T\d{6}Z-[a-z0-9]{8,32}$/;
 const generatedSourceBasePattern = /^blog-x-production-source-[A-Za-z0-9_-]{6,64}$/;
+const stagingPattern = /^\.\d{8}T\d{6}Z-[a-z0-9]{8,32}\.incomplete-[a-f0-9]{16,64}$/;
 
 function fail(message = "production backup source is invalid") {
   throw new Error(message);
@@ -39,13 +40,30 @@ function restrictiveDirectory(value, label) {
 }
 
 export function validateProductionBackupSource(root, authority) {
-  const parsed = parseAuthority(authority);
+  const parsed = validateProductionSourceBase(authority);
   if (typeof root !== "string" || !root || root.includes("${") || root.includes("..")) fail();
   const target = resolve(root);
   if (target === "/" || dirname(target) !== parsed.sourceBase || !setPattern.test(basename(target))) fail();
-  const canonicalBase = restrictiveDirectory(parsed.sourceBase, "base");
+  const canonicalBase = realpathSync(parsed.sourceBase);
   const canonicalTarget = restrictiveDirectory(target, "set");
   if (dirname(canonicalTarget) !== canonicalBase) fail("production backup source set must not resolve outside its authority");
+  return target;
+}
+
+export function validateProductionSourceBase(authority) {
+  const parsed = parseAuthority(authority);
+  restrictiveDirectory(parsed.sourceBase, "base");
+  return parsed;
+}
+
+export function validateProductionBackupStaging(root, authority) {
+  const parsed = validateProductionSourceBase(authority);
+  if (typeof root !== "string" || !root || root.includes("${") || root.includes("..")) fail();
+  const target = resolve(root);
+  if (dirname(target) !== parsed.sourceBase || !stagingPattern.test(basename(target))) fail();
+  const canonicalBase = realpathSync(parsed.sourceBase);
+  const canonicalTarget = restrictiveDirectory(target, "staging");
+  if (dirname(canonicalTarget) !== canonicalBase) fail("production backup source staging must not resolve outside its authority");
   return target;
 }
 

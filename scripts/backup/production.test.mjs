@@ -4,6 +4,7 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import * as filesystem from "node:fs/promises";
 import { createManifest, verifyBackupSet } from "./manifest.mjs";
 import { collectProductionBackupSet, createProductionInventory } from "./production/collector.mjs";
 import { parseProductionBackupPolicy } from "./production/policy.mjs";
@@ -46,6 +47,20 @@ function collectorDependencies(overrides = {}) {
     now: () => new Date("2026-08-09T10:00:00.000Z"),
     ...overrides,
   };
+}
+
+function failureFilesystem(failAt) {
+  return new Proxy(filesystem, {
+    get(target, property) {
+      if (property === "writeFile") return async (path, ...rest) => {
+        if (failAt === "manifest" && String(path).endsWith("/manifest.json")) throw new Error("manifest stage fault");
+        if (failAt === "complete" && String(path).endsWith("/COMPLETE")) throw new Error("COMPLETE stage fault");
+        return target.writeFile(path, ...rest);
+      };
+      if (property === "rename" && failAt === "finalization") return async () => { throw new Error("finalization stage fault"); };
+      return target[property];
+    },
+  });
 }
 
 async function writeCompleteSet(root) {
@@ -145,6 +160,7 @@ test("collector rejects policy injection and preserves known-good finals through
     { ...policy, url: "not-allowed" },
     { ...policy, collector: { ...policy.collector, project: "blogxverify_b1b2c3d4" } },
     { ...policy, collector: { ...policy.collector, database: "blog_x" } },
+    { ...policy, sourceAuthority: { kind: "service", sourceBase: process.cwd() }, collector: { project: "blog-x", database: "blog_x", mediaRoot: "/var/lib/blog-x/media" } },
   ]) assert.throws(() => parseProductionBackupPolicy(unsafe), /production backup policy/i);
 
   const good = await collectProductionBackupSet(policy, collectorDependencies());
@@ -160,4 +176,30 @@ test("collector rejects policy injection and preserves known-good finals through
   ]);
   assert.notEqual(left.finalRoot, right.finalRoot);
   await Promise.all([verifyProductionBackupSource(left.finalRoot, policy.sourceAuthority), verifyProductionBackupSource(right.finalRoot, policy.sourceAuthority)]);
+});
+
+test("collector fails closed at every collection and finalization stage without replacing a known-good set", async (context) => {
+  const sourceBase = await mkdtemp(join(tmpdir(), "blog-x-production-source-"));
+  context.after(async () => { await rm(sourceBase, { recursive: true, force: true }); });
+  const policy = productionPolicy(sourceBase, "c1b2c3d4");
+  const good = await collectProductionBackupSet(policy, collectorDependencies());
+  const goodManifest = await readFile(join(good.finalRoot, "manifest.json"), "utf8");
+  const failures = [
+    ["database", collectorDependencies({ dumpPostgresCustom: async () => { throw new Error("database stage fault"); } })],
+    ["portable", collectorDependencies({ writePortableExportV1: async () => { throw new Error("portable stage fault"); } })],
+    ["media", collectorDependencies({ copyApiMedia: async () => { throw new Error("media stage fault"); } })],
+    ["config", collectorDependencies({ readAllowlistedInventory: async () => { throw new Error("config stage fault"); } })],
+    ["migration", collectorDependencies({ readAllowlistedInventory: async () => ({ ...await collectorDependencies().readAllowlistedInventory(), migration: { count: 6, fingerprint: "a".repeat(64) } }) })],
+    ["image", collectorDependencies({ readAllowlistedInventory: async () => ({ ...await collectorDependencies().readAllowlistedInventory(), images: { api: "sha256:bad" } }) })],
+    ["manifest", { ...collectorDependencies(), filesystem: failureFilesystem("manifest") }],
+    ["COMPLETE", { ...collectorDependencies(), filesystem: failureFilesystem("complete") }],
+    ["finalization", { ...collectorDependencies(), filesystem: failureFilesystem("finalization") }],
+  ];
+  for (const [stage, dependencies] of failures) {
+    await assert.rejects(collectProductionBackupSet(policy, dependencies), new RegExp(String(stage), "i"));
+    assert.equal(await readFile(join(good.finalRoot, "manifest.json"), "utf8"), goodManifest, `${stage} must preserve the known-good final`);
+  }
+  const entries = await readdir(sourceBase);
+  assert.equal(entries.filter((name) => /^\d{8}T\d{6}Z-/.test(name)).length, 1);
+  assert.equal(entries.filter((name) => name.startsWith(".") && name.includes(".incomplete-")).length, failures.length);
 });
