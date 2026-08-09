@@ -23,7 +23,7 @@
 - [x] **CONT-03**: 管理员可维护文章标题、摘要、封面、唯一固定链接、发布时间和 SEO 描述。
 - [x] **TAXO-01**: 管理员可创建、修改、删除分类与标签，并将它们关联到文章。
 - [x] **MEDIA-01**: 管理员可上传经过类型和大小校验的图片，将其插入文章，并通过站点入口公开访问。
-- [ ] **PORT-01**: 管理员可导出文章 Markdown 原文和必要元数据，导出结果可用于迁移。
+- [x] **PORT-01**: 管理员可导出文章 Markdown 原文和必要元数据，导出结果可用于迁移。
 
 ### Discovery and Distribution
 
@@ -93,7 +93,7 @@
 | READ-07 | Phase 2 | Complete |
 | TAXO-01 | Phase 2 | Complete |
 | MEDIA-01 | Phase 2 | Complete |
-| PORT-01 | Phase 3 | Pending |
+| PORT-01 | Phase 3 | Complete |
 | SEO-01 | Phase 3 | Complete |
 | SEO-02 | Phase 3 | Complete |
 | FEED-01 | Phase 3 | Complete |
@@ -113,4 +113,4 @@
 
 ---
 *Requirements defined: 2026-08-05*  
-*Last updated: 2026-08-09 after Phase 2 verification*
+*Last updated: 2026-08-09 after Phase 3 verification*

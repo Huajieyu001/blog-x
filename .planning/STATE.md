@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 03
-current_phase_name: Distribution and Portability
-status: in_progress
-stopped_at: Completed 03-03-PLAN.md
-last_updated: "2026-08-09T06:48:40.091Z"
+current_phase: 04
+current_phase_name: Secure Operations and Release Gate
+status: ready_to_plan
+stopped_at: Completed 03-04-PLAN.md
+last_updated: "2026-08-09T12:00:00.000Z"
 last_activity: 2026-08-09
-last_activity_desc: Phase 03 canonical local distribution/origin safety acceptance completed
+last_activity_desc: Phase 03 authenticated portable export and reconstruction completed
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 18
-  completed_plans: 17
+  completed_plans: 18
 ---
 
 # Project State
@@ -23,16 +23,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-08)
 
 **Core value:** 博主能够可靠地发布和保存 Markdown 内容，访客能够持续、快速地通过博客域名阅读已发布文章。  
-**Current focus:** Phase 03 — Distribution and Portability
+**Current focus:** Phase 04 — Secure Operations and Release Gate
 
 ## Current Position
 
-Phase: 03 (Distribution and Portability) — IN PROGRESS
-Plan: 3 of 4
-Status: 03-03 completed; ready for 03-04
-Last activity: 2026-08-09 — Phase 03 canonical local distribution/origin safety acceptance completed
+Phase: 04 (Secure Operations and Release Gate) — READY TO PLAN
+Plan: 0 of 3
+Status: Phase 03 completed; ready for Phase 04 planning
+Last activity: 2026-08-09 — Phase 03 authenticated portable export and reconstruction completed
 
-Progress: [█████████░] 94%
+Progress: [██████████] 100% (current milestone phases)
 
 ## Performance Metrics
 
@@ -122,6 +122,8 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 03]: One canonical classifier governs all route families: only query-free base, exact page=1, and exact real pages 2..N are indexable; every other query shape is noindex,follow. — Prevents pagination canonical drift and duplicate index entries.
 - [Phase 03]: Next metadata files enumerate only strict public distribution facts, while generated Playwright uses a dedicated browser result contract and same-origin request listener. — Discovery output cannot disclose lifecycle or internal topology data.
 - [Phase 03]: Generated PUBLIC_ORIGIN is declared after the Web frozen dependency install layer. — Isolated verifier ports preserve dependency cache and avoid avoidable package-registry attempts.
+- [Phase 03]: Portable export is a strict `blog-x-portable-export` version-1 JSON attachment with raw Markdown and retained source metadata, but no media bytes, storage keys/paths, rendered HTML, or production import surface. — Phase 4 owns binary backup/restore.
+- [Phase 03]: Archive authorization always follows opaque session authentication then exact Origin before read-only snapshot selection. — The browser uses a native relative POST with its HttpOnly cookie authority.
 
 ### Pending Todos
 
@@ -140,6 +142,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-09T06:48:40.084Z
-Stopped at: Completed 03-03-PLAN.md
+Last session: 2026-08-09T12:00:00.000Z
+Stopped at: Completed 03-04-PLAN.md; ready for Phase 04 planning
 Resume file: None
