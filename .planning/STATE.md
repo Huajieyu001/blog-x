@@ -4,16 +4,16 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 03
 current_phase_name: Distribution and Portability
-status: ready
-stopped_at: Completed 02-06-PLAN.md and Phase 02 verification
-last_updated: "2026-08-09T03:12:55.951Z"
+status: in_progress
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-08-09T04:21:11.747Z"
 last_activity: 2026-08-09
-last_activity_desc: Phase 02 canonical acceptance passed
+last_activity_desc: Phase 03 public distribution and RSS foundation completed
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 18
-  completed_plans: 14
+  completed_plans: 15
 ---
 
 # Project State
@@ -27,12 +27,12 @@ See: .planning/PROJECT.md (updated 2026-08-08)
 
 ## Current Position
 
-Phase: 03 (Distribution and Portability) — READY
-Plan: 0 of 4
-Status: Ready to execute
-Last activity: 2026-08-09 — Phase 02 canonical acceptance passed
+Phase: 03 (Distribution and Portability) — IN PROGRESS
+Plan: 1 of 4
+Status: 03-01 completed; ready for 03-02
+Last activity: 2026-08-09 — Phase 03 public distribution and RSS foundation completed
 
-Progress: [██████░░░░] 67%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -71,6 +71,7 @@ Progress: [██████░░░░] 67%
 | Phase 02 P04 | 0min | 5 tasks | 29 files |
 | Phase 02 P05 | 0min | 2 tasks | 21 files |
 | Phase 02 P06 | 0min | 2 tasks | 10 files |
+| Phase 03 P01 | 1h 0m | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -114,6 +115,8 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 02]: Keep one public navigation order across every visitor page and progressively enhance its compact menu while excluding login/admin surfaces. — Responsive adaptation preserves all actions instead of hiding them by device class.
 - [Phase 02]: Canonical acceptance validates one exact generated media volume and preserves an existing article across concurrent migration retries before feature tests run. — Cleanup and schema retry cannot silently destroy unrelated or retained content.
 - [Phase 02]: The final browser journey uses visible UI and same-origin requests, while unavailable responses come only from a separate loopback process fixture. — Failure evidence never requires a production test endpoint or cloud dependency.
+- [Phase 03]: Semantic Node test output is explicitly TAP only when inspected for skips/zero tests; Playwright requires its own result contract. — Node 24's default reporter is not TAP.
+- [Phase 03]: Public discovery and RSS consume one strict publicPredicate projection and derive external URLs only from validated PUBLIC_ORIGIN. — Preserve non-public confidentiality and internal topology separation.
 
 ### Pending Todos
 
@@ -132,6 +135,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-09T01:59:46.000Z
-Stopped at: Completed 02-06-PLAN.md and Phase 02 verification
+Last session: 2026-08-09T04:21:11.741Z
+Stopped at: Completed 03-01-PLAN.md
 Resume file: None

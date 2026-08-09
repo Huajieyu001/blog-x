@@ -124,13 +124,13 @@ Plans:
   2. Sitemap、robots.txt 和 RSS 只包含允许公开的页面与已发布文章。
   3. 管理员可导出 Markdown 和必要元数据，并能验证导出内容可用于重建文章。
 
-**Plans**: 4 plans
+**Plans**: 1/4 plans executed
 
 Plans:
 
 **Wave 1**
 
-- [ ] 03-01-PLAN.md — 建立不可跳过的 Phase 3 本地数据库验证器，并实现公开分发投影与 RSS 合同。
+- [x] 03-01-PLAN.md — 建立不可跳过的 Phase 3 本地数据库验证器，并实现公开分发投影与 RSS 合同。
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -173,5 +173,5 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Local Publishing Slice | 8/8 | Complete    | 2026-08-08 |
 | 2. Complete Reading Experience | 6/6 | Complete | 2026-08-09 |
-| 3. Distribution and Portability | 0/4 | Not started | - |
+| 3. Distribution and Portability | 1/4 | In Progress|  |
 | 4. Secure Operations and Release Gate | 0/3 | Not started | - |
