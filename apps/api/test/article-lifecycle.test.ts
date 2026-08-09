@@ -5,8 +5,9 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { buildApp } from "../src/app.js";
 import { articleActions, articleStatuses, resolveArticleTransition } from "../src/content/article-state.js";
+import { classifyRetainedLegacyMedia } from "../src/ops/legacy-media-migration.js";
 import { seedAdministrator } from "../src/db/seed-admin.js";
-import { administrators, articles, sessions } from "../src/db/schema.js";
+import { administrators, articles, media, sessions } from "../src/db/schema.js";
 
 const databaseUrl = process.env.LIFECYCLE_TEST_DATABASE_URL;
 const publicOrigin = "http://127.0.0.1:3100";
@@ -28,6 +29,65 @@ test("the complete article state/action table allows only explicit lifecycle tra
   for (const status of articleStatuses) {
     for (const action of articleActions) assert.equal(resolveArticleTransition(status, action), expected[status][action]);
   }
+});
+
+test("legacy media classification is transactional, idempotent, and lossless", async (context) => {
+  if (!databaseUrl) {
+    context.skip("LIFECYCLE_TEST_DATABASE_URL must name a disposable migrated PostgreSQL database");
+    return;
+  }
+
+  const pool = new Pool({ connectionString: databaseUrl });
+  const db = drizzle({ client: pool, schema: { articles, media, sessions } });
+  await pool.query("truncate table sessions, articles cascade");
+  context.after(async () => {
+    await pool.query("truncate table sessions, articles cascade");
+    await pool.end();
+  });
+  const timestamp = new Date("2026-08-09T12:00:00.000Z");
+  const mediaId = "99999999-9999-4999-8999-999999999999";
+  const unsafeMarkdown = [
+    "![Remote](https://images.example.test/legacy.png)",
+    "[External documentation](https://docs.example.test/guide)",
+    "```markdown",
+    "![Code lookalike](https://images.example.test/code.png)",
+    "```",
+  ].join("\n\n");
+  await db.insert(media).values({
+    id: mediaId,
+    sourceKey: `source/${mediaId}.bin`, derivativeKey: `derivative/${mediaId}.png`,
+    sourceMimeType: "image/png", derivativeMimeType: "image/png", sourceBytes: 1, derivativeBytes: 1,
+    width: 1, height: 1, createdAt: timestamp,
+  });
+  await db.insert(articles).values([
+    { id: "77777777-7777-4777-8777-777777777777", title: "unsafe", slug: "legacy-unsafe", markdown: unsafeMarkdown, coverUrl: "https://images.example.test/legacy-cover.png", status: "published", publishedAt: timestamp, createdAt: timestamp, updatedAt: timestamp },
+    { id: "88888888-8888-4888-8888-888888888888", title: "covered", slug: "legacy-covered", markdown: "# preserved", coverUrl: "https://images.example.test/replaced-cover.png", coverMediaId: mediaId, coverAlt: "Authoritative cover", status: "published", publishedAt: timestamp, createdAt: timestamp, updatedAt: timestamp },
+    { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", title: "deleted", slug: "legacy-deleted", markdown: unsafeMarkdown, coverUrl: "https://images.example.test/deleted-cover.png", status: "published", publishedAt: timestamp, deletedAt: timestamp, createdAt: timestamp, updatedAt: timestamp },
+  ]);
+
+  const first = await classifyRetainedLegacyMedia(pool);
+  assert.equal(first.changed, 2);
+  const firstRows = await db.select().from(articles);
+  const unsafe = firstRows.find((article) => article.slug === "legacy-unsafe");
+  const covered = firstRows.find((article) => article.slug === "legacy-covered");
+  const deleted = firstRows.find((article) => article.slug === "legacy-deleted");
+  assert.equal(unsafe?.legacyMediaReview, "review_required");
+  assert.equal(unsafe?.markdown, unsafeMarkdown);
+  assert.equal(unsafe?.coverUrl, "https://images.example.test/legacy-cover.png");
+  assert.equal(unsafe?.updatedAt.toISOString(), timestamp.toISOString());
+  assert.equal(covered?.legacyMediaReview, "clear");
+  assert.equal(covered?.markdown, "# preserved");
+  assert.equal(covered?.coverUrl, "");
+  assert.equal(covered?.updatedAt.toISOString(), timestamp.toISOString());
+  assert.equal(deleted?.legacyMediaReview, "pending");
+  assert.equal(deleted?.markdown, unsafeMarkdown);
+  assert.equal(deleted?.coverUrl, "https://images.example.test/deleted-cover.png");
+
+  const beforeSecondRun = JSON.stringify(firstRows.map((article) => ({ ...article, createdAt: article.createdAt.toISOString(), updatedAt: article.updatedAt.toISOString(), publishedAt: article.publishedAt?.toISOString(), deletedAt: article.deletedAt?.toISOString() })));
+  const second = await classifyRetainedLegacyMedia(pool);
+  const secondRows = await db.select().from(articles);
+  assert.equal(second.changed, 0);
+  assert.equal(JSON.stringify(secondRows.map((article) => ({ ...article, createdAt: article.createdAt.toISOString(), updatedAt: article.updatedAt.toISOString(), publishedAt: article.publishedAt?.toISOString(), deletedAt: article.deletedAt?.toISOString() }))), beforeSecondRun);
 });
 
 test("publish, edit, slug confirmation, unpublish, republish, and soft delete are atomic and recoverable", async (context) => {

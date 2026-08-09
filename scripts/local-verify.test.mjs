@@ -10,6 +10,7 @@ import {
   cleanupGeneratedMediaRoot,
   phase3Selection,
   phase4Selection,
+  phase5MediaSelection,
   redactText,
   semanticTestCommand,
   validateDatabaseName,
@@ -72,6 +73,25 @@ test("Phase 4 operations and restore selections are explicit", () => {
     databaseSuite: "apps/api/test/backup-restore.test.ts",
     browserSuite: "apps/web/e2e/phase4-restore.spec.ts",
   });
+});
+
+test("Phase 5 media selection owns seventh-migration and legacy restore evidence", async () => {
+  assert.deepEqual(phase5MediaSelection(), {
+    databaseSuites: [
+      ["ARTICLE_TEST_DATABASE_URL", "apps/api/test/article-draft-preview.test.ts"],
+      ["LIFECYCLE_TEST_DATABASE_URL", "apps/api/test/article-lifecycle.test.ts"],
+      ["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"],
+    ],
+    apiSuites: ["apps/api/test/markdown-renderer.test.ts"],
+    nodeSuites: ["scripts/local-verify.test.mjs"],
+    databaseSuite: "apps/api/test/backup-restore.test.ts",
+    browserSuite: "apps/web/e2e/phase4-restore.spec.ts",
+  });
+  const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
+  assert.match(runner, /values\[1\] !== 7/);
+  assert.doesNotMatch(runner, /values\[1\] !== 6/);
+  assert.match(runner, /--phase5-media/);
+  assert.match(runner, /PHASE5_LEGACY_ARTICLE_ID/);
 });
 
 test("Phase 4 full selection explicitly names security, operations, restore, release, database, and browser evidence", () => {

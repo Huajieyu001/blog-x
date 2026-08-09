@@ -43,11 +43,11 @@ test("the protected export reconstructs every retained source state without bina
     width: 32, height: 18, createdAt,
   });
   const articleRows = [
-    { id: "00000000-0000-4000-8000-000000000040", title: "保留草稿", summary: "strict manifest tracer", coverUrl: "", slug: "retained-unicode-draft", markdown: "# 原文\n\n<script>alert('never render')</script>\n\n中文 ✅", seoDescription: "source authority", status: "draft", publishedAt: null, deletedAt: null, createdAt, updatedAt, categoryId, coverMediaId: mediaId, coverAlt: "封面", coverDecorative: false },
-    { id: "00000000-0000-4000-8000-000000000041", title: "已发布", summary: "published", coverUrl: "", slug: "retained-published", markdown: "# published", seoDescription: "published source", status: "published", publishedAt, deletedAt: null, createdAt, updatedAt, categoryId, coverMediaId: null, coverAlt: "", coverDecorative: false },
-    { id: "00000000-0000-4000-8000-000000000042", title: "已下线", summary: "unpublished", coverUrl: "", slug: "retained-unpublished", markdown: "# unpublished", seoDescription: "unpublished source", status: "unpublished", publishedAt, deletedAt: null, createdAt, updatedAt, categoryId: null, coverMediaId: null, coverAlt: "", coverDecorative: false },
-    { id: "00000000-0000-4000-8000-000000000043", title: "软删除", summary: "deleted", coverUrl: "", slug: "retained-deleted", markdown: "# deleted", seoDescription: "deleted source", status: "published", publishedAt, deletedAt, createdAt, updatedAt, categoryId, coverMediaId: null, coverAlt: "", coverDecorative: false },
-    { id: "00000000-0000-4000-8000-000000000044", title: "空发布时间", summary: "null publication", coverUrl: "", slug: "retained-null-publication", markdown: "# null publication", seoDescription: "null publication source", status: "published", publishedAt: null, deletedAt: null, createdAt, updatedAt, categoryId: null, coverMediaId: null, coverAlt: "", coverDecorative: false },
+    { id: "00000000-0000-4000-8000-000000000040", title: "保留草稿", summary: "strict manifest tracer", coverUrl: "https://images.example.test/historic-cover.png", slug: "retained-unicode-draft", markdown: "# 原文\n\n![历史图片](https://images.example.test/historic.png)\n\n<script>alert('never render')</script>\n\n中文 ✅", seoDescription: "source authority", status: "draft", publishedAt: null, deletedAt: null, createdAt, updatedAt, categoryId, coverMediaId: mediaId, coverAlt: "封面", coverDecorative: false, legacyMediaReview: "review_required" },
+    { id: "00000000-0000-4000-8000-000000000041", title: "已发布", summary: "published", coverUrl: "", slug: "retained-published", markdown: "# published", seoDescription: "published source", status: "published", publishedAt, deletedAt: null, createdAt, updatedAt, categoryId, coverMediaId: null, coverAlt: "", coverDecorative: false, legacyMediaReview: "clear" },
+    { id: "00000000-0000-4000-8000-000000000042", title: "已下线", summary: "unpublished", coverUrl: "", slug: "retained-unpublished", markdown: "# unpublished", seoDescription: "unpublished source", status: "unpublished", publishedAt, deletedAt: null, createdAt, updatedAt, categoryId: null, coverMediaId: null, coverAlt: "", coverDecorative: false, legacyMediaReview: "clear" },
+    { id: "00000000-0000-4000-8000-000000000043", title: "软删除", summary: "deleted", coverUrl: "", slug: "retained-deleted", markdown: "# deleted", seoDescription: "deleted source", status: "published", publishedAt, deletedAt, createdAt, updatedAt, categoryId, coverMediaId: null, coverAlt: "", coverDecorative: false, legacyMediaReview: "clear" },
+    { id: "00000000-0000-4000-8000-000000000044", title: "空发布时间", summary: "null publication", coverUrl: "", slug: "retained-null-publication", markdown: "# null publication", seoDescription: "null publication source", status: "published", publishedAt: null, deletedAt: null, createdAt, updatedAt, categoryId: null, coverMediaId: null, coverAlt: "", coverDecorative: false, legacyMediaReview: "clear" },
   ] as const;
   await db.insert(schema.articles).values(articleRows);
   await db.insert(schema.articleTags).values([
@@ -94,7 +94,20 @@ test("the protected export reconstructs every retained source state without bina
     const manifest = portableExportManifestSchema.parse(JSON.parse(JSON.stringify(exported.json())));
     assert.equal(manifest.format, "blog-x-portable-export");
     assert.equal(manifest.version, 1);
-    assert.equal(manifest.articles.find((item) => item.id === articleRows[0].id)?.markdown, "# 原文\n\n<script>alert('never render')</script>\n\n中文 ✅");
+    assert.equal(manifest.articles.find((item) => item.id === articleRows[0].id)?.markdown, "# 原文\n\n![历史图片](https://images.example.test/historic.png)\n\n<script>alert('never render')</script>\n\n中文 ✅");
+    assert.deepEqual(manifest.articles.find((item) => item.id === articleRows[0].id && item.legacyMediaReview === "review_required"), {
+      ...articleRows[0],
+      publishedAt: null,
+      deletedAt: null,
+      createdAt: createdAt.toISOString(),
+      updatedAt: updatedAt.toISOString(),
+      tagIds: [tagIds[0], tagIds[1]],
+    });
+    const oldCompatible = portableExportManifestSchema.parse({
+      ...manifest,
+      articles: manifest.articles.map(({ legacyMediaReview: _legacyMediaReview, ...article }) => article),
+    });
+    assert.equal(oldCompatible.articles[0]?.legacyMediaReview, undefined);
     assert.deepEqual(manifest.articles.map((item) => item.id), [...manifest.articles].map((item) => item.id).sort());
     const categoryIds = new Set(manifest.categories.map((item) => item.id));
     const exportedTagIds = new Set(manifest.tags.map((item) => item.id));

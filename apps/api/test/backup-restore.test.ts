@@ -12,6 +12,7 @@ import * as schema from "../src/db/schema.js";
 const databaseUrl = process.env.BACKUP_RESTORE_TEST_DATABASE_URL;
 const expectedRoot = process.env.BACKUP_RESTORE_EXPECTED_ROOT;
 const mediaRoot = process.env.MEDIA_ROOT;
+const phase5LegacyArticleId = process.env.PHASE5_LEGACY_ARTICLE_ID;
 
 function sha256(value: Buffer) {
   return createHash("sha256").update(value).digest("hex");
@@ -33,6 +34,13 @@ test("restored database authority and every media byte equal the complete source
   try {
     const actual = portableExportManifestSchema.parse(await createExportRepository(db).archive());
     assert.deepEqual(authority(actual), authority(expected), "raw Markdown, lifecycle/nullability, taxonomy, About, cover, and media metadata must be identical");
+    if (phase5LegacyArticleId) {
+      const sourceLegacy = expected.articles.find((article) => article.id === phase5LegacyArticleId);
+      const restoredLegacy = actual.articles.find((article) => article.id === phase5LegacyArticleId);
+      assert.ok(sourceLegacy, "the named Phase 5 legacy source must be included in the backup");
+      assert.deepEqual(restoredLegacy, sourceLegacy, "restored legacy raw Markdown, historic cover, and review state must remain byte-identical");
+      assert.equal(restoredLegacy.legacyMediaReview, "review_required");
+    }
     const categoryIds = new Set(actual.categories.map((item) => item.id));
     const tagIds = new Set(actual.tags.map((item) => item.id));
     const mediaIds = new Set(actual.media.map((item) => item.id));
