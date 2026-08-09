@@ -119,6 +119,7 @@ test("collector rejects stale or malformed TLS evidence and never formats raw se
     readFile: async () => JSON.stringify({ format: "blog-x-tls-evidence", version: 1, observedAt: "2026-08-01T00:00:00.000Z", validUntil: "2026-08-08T00:00:00.000Z", status: "pass" }),
   });
   assert.equal(evaluateStatus(stale).ok, false);
-  const output = formatStatus(evaluateStatus({ ...stale, diagnostic: "postgres://user:secret@node/db Cookie: blog_x_session=token" }));
-  assert.doesNotMatch(output, /secret|token|postgres:\/\//i);
+  const diagnostic = ["postgres://fixture_user", "fixture_value@node/db Cookie: blog_x_session=fixture_session"].join(":");
+  const output = formatStatus(evaluateStatus({ ...stale, diagnostic }));
+  assert.doesNotMatch(output, /fixture_value|fixture_session|postgres:\/\//i);
 });

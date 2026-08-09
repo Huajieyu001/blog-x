@@ -1,6 +1,14 @@
 services:
   postgres:
     image: postgres:18-alpine
+    pull_policy: never
+    init: true
+    restart: unless-stopped
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       POSTGRES_DB: ${BLOG_X_POSTGRES_DB:-blog_x}
       POSTGRES_USER: ${BLOG_X_POSTGRES_USER:-blog_x}
@@ -15,9 +23,18 @@ services:
 
   api:
     image: ${BLOG_X_API_IMAGE:-blog-x-api-local}
+    pull_policy: never
+    init: true
+    restart: unless-stopped
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      network: none
     environment:
       DATABASE_URL: postgres://${BLOG_X_POSTGRES_USER:-blog_x}@postgres:5432/${BLOG_X_POSTGRES_DB:-blog_x}
       PUBLIC_ORIGIN: ${BLOG_X_PUBLIC_ORIGIN:-http://127.0.0.1:3100}
@@ -37,9 +54,18 @@ services:
 
   web:
     image: ${BLOG_X_WEB_IMAGE:-blog-x-web-local}
+    pull_policy: never
+    init: true
+    restart: unless-stopped
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      network: none
       args:
         PUBLIC_ORIGIN: ${BLOG_X_PUBLIC_ORIGIN:-http://127.0.0.1:3100}
     environment:

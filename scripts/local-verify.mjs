@@ -81,6 +81,9 @@ export function phase4Selection(mode) {
         "apps/api/test/markdown-renderer.test.ts",
       ],
     },
+    operations: {
+      nodeSuites: ["scripts/ops-status.test.mjs", "scripts/local-verify.test.mjs"],
+    },
   }[mode];
   if (!selection) throw new Error(`Phase 4 selection is not recognized: ${mode}`);
   return selection;
@@ -428,6 +431,60 @@ async function runPhase4SecurityChecks(context) {
   for (const file of selection.apiSuites) await runDatabaseSuite(context, "AUTH_TEST_DATABASE_URL", file);
 }
 
+async function preflightCachedImages(context) {
+  await runStep(context, "preflight exact cached base images", "docker", ["image", "inspect", "node:24.15.0-alpine", "postgres:18-alpine"]);
+}
+
+async function exerciseApiRecovery(context) {
+  const postgresVolume = `${context.namespace}_postgres-data`;
+  const beforeVolumes = await Promise.all([postgresVolume, context.mediaVolume].map((volume) => command("docker", ["volume", "inspect", "--format", "{{.CreatedAt}}", volume])));
+  const apiContainer = await compose(context, "resolve exact API container", "ps", "-q", "api");
+  const containerId = apiContainer.stdout.trim();
+  if (!/^[a-f0-9]{12,64}$/.test(containerId)) throw new Error("exact API container could not be resolved");
+  const before = await runStep(context, "record API restart count", "docker", ["inspect", "--format", "{{.RestartCount}}", containerId]);
+  // Docker activates restart policies only after a container has stayed up for
+  // roughly ten seconds; make that daemon contract explicit before fault injection.
+  await new Promise((accept) => setTimeout(accept, 10_000));
+  const processList = await runStep(context, "resolve actual API process", "docker", ["exec", containerId, "ps", "-o", "pid,ppid,args"]);
+  const applicationLine = processList.stdout.split(/\r?\n/).find((line) => line.includes("src/app.ts") && line.includes("node --require"));
+  const applicationPid = applicationLine?.trim().split(/\s+/, 1)[0];
+  if (!applicationPid || !/^\d+$/.test(applicationPid) || applicationPid === "1") throw new Error("actual API application process could not be resolved");
+  await runStep(context, "terminate generated API process", "docker", ["exec", containerId, "kill", "-KILL", applicationPid]);
+  const deadline = Date.now() + 30_000;
+  let recovered = false;
+  let restartCount = Number(before.stdout.trim());
+  while (Date.now() < deadline) {
+    try {
+      const current = await command("docker", ["inspect", "--format", "{{.RestartCount}}", containerId], { allowFailure: true });
+      restartCount = Number(current.stdout.trim());
+      if (restartCount > Number(before.stdout.trim())) {
+        const response = await fetch(`${context.webOrigin}/api/health`);
+        if (response.ok) { recovered = true; break; }
+      }
+    } catch { /* bounded recovery is still in progress */ }
+    await new Promise((accept) => setTimeout(accept, 250));
+  }
+  if (!recovered) throw new Error("generated API did not recover through the Web origin within 30 seconds");
+  process.stdout.write(`[local-verify] confirm API restart count ${restartCount}\n`);
+  await compose(context, "wait for recovered service health", "up", "-d", "--wait", "api", "web");
+  const afterVolumes = await Promise.all([postgresVolume, context.mediaVolume].map((volume) => command("docker", ["volume", "inspect", "--format", "{{.CreatedAt}}", volume])));
+  if (beforeVolumes.some((value, index) => value.stdout.trim() !== afterVolumes[index].stdout.trim())) throw new Error("API recovery replaced a persistent volume");
+}
+
+async function runPhase4OperationsChecks(context) {
+  const selection = phase4Selection("operations");
+  process.stdout.write("[local-verify] inspect effective operations config\n");
+  const effective = await command("docker-compose", composeArgs(context, "config", "--format", "json"), { env: composeEnvironment(context) });
+  if (!effective.stdout.includes('"restart": "unless-stopped"') || !effective.stdout.includes('"driver": "local"')) throw new Error("effective operations config is missing lifecycle or log policy");
+  for (const file of selection.nodeSuites) {
+    const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
+    assertSemanticTap(result.combined);
+  }
+  await exerciseApiRecovery(context);
+  const status = await runStep(context, "run redacted local operator status", "node", ["scripts/ops-status.mjs", `--project=${context.namespace}`, `--web-origin=${context.webOrigin}`]);
+  if (!status.stdout.includes("BLOG X STATUS PASS") || !status.stdout.includes("TLS NOT_EVALUATED")) throw new Error("local operator status did not pass with TLS not evaluated");
+}
+
 async function runSingle(options) {
   const namespace = validateNamespace(options.namespace ?? generatedNamespace());
   const database = validateDatabaseName(`blog_x_${namespace.slice("blogxverify_".length)}`, namespace);
@@ -455,6 +512,7 @@ async function runSingle(options) {
   if (context.publicOrigin === context.internalApiOrigin) throw new Error("public and internal API origins must remain separate");
 
   try {
+    if (options.phase4Mode === "operations" && !options.skipBuild) await preflightCachedImages(context);
     if (!options.skipBuild) await compose(context, "build local API and Web images", "build", "api", "web");
     await compose(context, "start isolated PostgreSQL", "up", "-d", "--wait", "postgres");
     if (options.interruptionCheck) await interruptionCheck(context);
@@ -471,6 +529,9 @@ async function runSingle(options) {
     await seed(context);
     if (options.phase4Mode === "security") {
       await runPhase4SecurityChecks(context);
+    }
+    else if (options.phase4Mode === "operations") {
+      await runPhase4OperationsChecks(context);
     }
     else if (options.phase3Mode === "full") {
       await fullPhaseChecks(context, true);
@@ -512,7 +573,7 @@ function optionValue(name) {
 async function main() {
   const flags = new Set(process.argv.slice(2));
   const phase3Modes = ["api", "metadata", "full", "export-api", "export-browser"].filter((mode) => flags.has(`--phase3-${mode}`));
-  const phase4Modes = ["security"].filter((mode) => flags.has(`--phase4-${mode}`));
+  const phase4Modes = ["security", "operations"].filter((mode) => flags.has(`--phase4-${mode}`));
   if (phase3Modes.length + phase4Modes.length > 1) throw new Error("choose at most one Phase 3 or Phase 4 verification selection");
   const options = {
     namespace: optionValue("namespace"),
