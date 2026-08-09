@@ -1,0 +1,7 @@
+{
+  "format": "blog-x-release-prohibition",
+  "version": 1,
+  "state": "BLOCKED",
+  "automaticUnfreeze": true,
+  "remoteCapability": "deploy-to-cloud-host"
+}
