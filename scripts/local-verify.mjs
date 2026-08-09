@@ -60,6 +60,53 @@ export function phase3Selection(mode) {
   return selection;
 }
 
+export function phase4Selection(mode) {
+  const selection = {
+    security: {
+      databaseSuites: [
+        ["AUTH_TEST_DATABASE_URL", "apps/api/test/auth-session.test.ts"],
+        ["ARTICLE_TEST_DATABASE_URL", "apps/api/test/article-draft-preview.test.ts"],
+        ["LIFECYCLE_TEST_DATABASE_URL", "apps/api/test/article-lifecycle.test.ts"],
+        ["PUBLIC_LIST_TEST_DATABASE_URL", "apps/api/test/public-list.test.ts"],
+        ["PUBLIC_VISIBILITY_TEST_DATABASE_URL", "apps/api/test/public-visibility.test.ts"],
+        ["AUTH_TEST_DATABASE_URL", "apps/api/test/taxonomy.test.ts"],
+        ["AUTH_TEST_DATABASE_URL", "apps/api/test/pages-archive.test.ts"],
+        ["AUTH_TEST_DATABASE_URL", "apps/api/test/media.test.ts"],
+        ["PHASE2_TEST_DATABASE_URL", "apps/api/test/phase2-public-visibility.test.ts"],
+        ["PHASE3_TEST_DATABASE_URL", "apps/api/test/public-distribution.test.ts"],
+        ["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"],
+      ],
+      apiSuites: [
+        "apps/api/test/security-hardening.test.ts",
+        "apps/api/test/markdown-renderer.test.ts",
+      ],
+    },
+  }[mode];
+  if (!selection) throw new Error(`Phase 4 selection is not recognized: ${mode}`);
+  return selection;
+}
+
+export function validateTopologyPolicy(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("topology policy must be an object");
+  const policy = value;
+  if (Object.keys(policy).sort().join(",") !== "browser,format,futurePrivateLink,services,version") throw new Error("topology policy has unsupported fields");
+  if (policy.format !== "blog-x-topology-policy" || policy.version !== 1) throw new Error("topology policy format is unsupported");
+  if (!policy.browser || typeof policy.browser !== "object" || Array.isArray(policy.browser)
+    || Object.keys(policy.browser).sort().join(",") !== "directDataPlane,relativeRoutes"
+    || policy.browser.directDataPlane !== false
+    || JSON.stringify(policy.browser.relativeRoutes) !== JSON.stringify(["/api", "/media"])) throw new Error("topology policy must keep browser traffic relative");
+  if (!policy.services || typeof policy.services !== "object" || Array.isArray(policy.services)
+    || Object.keys(policy.services).sort().join(",") !== "api,postgres,web") throw new Error("topology policy services are invalid");
+  const { web, api, postgres } = policy.services;
+  if (!web || web.hostPublished !== true || web.bind !== "edge-only"
+    || !api || api.hostPublished !== false
+    || !postgres || postgres.hostPublished !== false) throw new Error("topology policy exposes a data plane");
+  if (!policy.futurePrivateLink || policy.futurePrivateLink.required !== true || policy.futurePrivateLink.status !== "unresolved") {
+    throw new Error("topology policy must retain unresolved private-link evidence");
+  }
+  return policy;
+}
+
 export function assertSemanticTap(output) {
   const tap = String(output);
   const lines = tap.split(/\r?\n/);
@@ -372,11 +419,20 @@ async function runPhase3Checks(context, mode) {
   }
 }
 
+async function runPhase4SecurityChecks(context) {
+  const selection = phase4Selection("security");
+  await runStep(context, "typecheck workspace", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
+  await runStep(context, "build workspace", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin } });
+  await runStep(context, "run operations safety fixtures", "corepack", ["pnpm", "test:ops"], { env: process.env });
+  for (const [variable, file] of selection.databaseSuites) await runDatabaseSuite(context, variable, file);
+  for (const file of selection.apiSuites) await runDatabaseSuite(context, "AUTH_TEST_DATABASE_URL", file);
+}
+
 async function runSingle(options) {
   const namespace = validateNamespace(options.namespace ?? generatedNamespace());
   const database = validateDatabaseName(`blog_x_${namespace.slice("blogxverify_".length)}`, namespace);
   const webPort = options.webPort ?? await freePort();
-  const phaseLabel = options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
+  const phaseLabel = options.phase4Mode ? "phase4-" : options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
   const runId = namespace.replace("blogxverify_", phaseLabel);
   const publicOrigin = validateLoopbackHttpOrigin(`http://127.0.0.1:${webPort}`);
   const context = {
@@ -413,7 +469,10 @@ async function runSingle(options) {
     await compose(context, "verify active schema", "exec", "-T", "-e", `DATABASE_URL=${context.databaseUrl}`,
       "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:schema:verify");
     await seed(context);
-    if (options.phase3Mode === "full") {
+    if (options.phase4Mode === "security") {
+      await runPhase4SecurityChecks(context);
+    }
+    else if (options.phase3Mode === "full") {
       await fullPhaseChecks(context, true);
       await runPhase3Checks(context, "full");
     }
@@ -453,13 +512,15 @@ function optionValue(name) {
 async function main() {
   const flags = new Set(process.argv.slice(2));
   const phase3Modes = ["api", "metadata", "full", "export-api", "export-browser"].filter((mode) => flags.has(`--phase3-${mode}`));
-  if (phase3Modes.length > 1) throw new Error("choose at most one Phase 3 verification selection");
+  const phase4Modes = ["security"].filter((mode) => flags.has(`--phase4-${mode}`));
+  if (phase3Modes.length + phase4Modes.length > 1) throw new Error("choose at most one Phase 3 or Phase 4 verification selection");
   const options = {
     namespace: optionValue("namespace"),
     webPort: optionValue("web-port") ? Number(optionValue("web-port")) : undefined,
     phase2Full: flags.has("--phase2-full"),
     phase3Mode: phase3Modes[0],
-    fullPhase: flags.has("--full-phase") || flags.has("--phase2-full") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run")),
+    phase4Mode: phase4Modes[0],
+    fullPhase: !phase4Modes.length && (flags.has("--full-phase") || flags.has("--phase2-full") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run"))),
     interruptionCheck: flags.has("--interruption-check"),
     parallelCheck: flags.has("--parallel-check"),
     skipBuild: flags.has("--skip-build"),

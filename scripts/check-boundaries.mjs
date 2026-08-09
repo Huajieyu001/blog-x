@@ -17,9 +17,61 @@ function operationalSurface(path) {
     || path === "compose.yaml"
     || path === ".env.example"
     || path === ".dockerignore"
+    || path === "ops/production-config.names.json"
+    || path === "ops/topology-policy.json"
     || path.startsWith("scripts/")
     || /^apps\/(?:api|web)\/Dockerfile$/.test(path)
     || path.startsWith("apps/web/");
+}
+
+function isExactObject(value, keys) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+    && Object.keys(value).sort().join(",") === [...keys].sort().join(",");
+}
+
+function auditProductionConfig(path, content, issues) {
+  try {
+    const value = JSON.parse(content);
+    const valid = isExactObject(value, ["format", "version", "valueSource", "variables"])
+      && value.format === "blog-x-production-config-names"
+      && value.version === 1
+      && value.valueSource === "untracked-root-or-service-owned-mechanism"
+      && Array.isArray(value.variables)
+      && value.variables.every((variable) => isExactObject(variable, ["name", "class", "consumers"])
+        && /^[A-Z][A-Z0-9_]*$/.test(variable.name)
+        && typeof variable.class === "string"
+        && Array.isArray(variable.consumers)
+        && variable.consumers.every((consumer) => ["server", "migrate", "schema-verify", "seed"].includes(consumer)));
+    if (!valid) issues.push(issue("invalid_production_config_contract", path, "production configuration must be name-only metadata"));
+  } catch {
+    issues.push(issue("invalid_production_config_contract", path, "production configuration must be valid JSON"));
+  }
+}
+
+function auditTopologyPolicy(path, content, issues) {
+  try {
+    const value = JSON.parse(content);
+    const valid = isExactObject(value, ["format", "version", "browser", "services", "futurePrivateLink"])
+      && value.format === "blog-x-topology-policy"
+      && value.version === 1
+      && isExactObject(value.browser, ["relativeRoutes", "directDataPlane"])
+      && value.browser.directDataPlane === false
+      && JSON.stringify(value.browser.relativeRoutes) === JSON.stringify(["/api", "/media"])
+      && isExactObject(value.services, ["web", "api", "postgres"])
+      && isExactObject(value.services.web, ["hostPublished", "bind"])
+      && value.services.web.hostPublished === true
+      && value.services.web.bind === "edge-only"
+      && isExactObject(value.services.api, ["hostPublished"])
+      && value.services.api.hostPublished === false
+      && isExactObject(value.services.postgres, ["hostPublished"])
+      && value.services.postgres.hostPublished === false
+      && isExactObject(value.futurePrivateLink, ["required", "status"])
+      && value.futurePrivateLink.required === true
+      && value.futurePrivateLink.status === "unresolved";
+    if (!valid) issues.push(issue("unsafe_topology_policy", path, "topology policy must expose only the Web edge"));
+  } catch {
+    issues.push(issue("unsafe_topology_policy", path, "topology policy must be valid JSON"));
+  }
 }
 
 function webRuntimeSurface(path) {
@@ -50,6 +102,9 @@ export async function auditFiles(root, files) {
       || credentialUris.length > 0) {
       issues.push(issue("tracked_secret_value", relativePath, "credential-like material is tracked"));
     }
+
+    if (relativePath === "ops/production-config.names.json") auditProductionConfig(relativePath, content, issues);
+    if (relativePath === "ops/topology-policy.json") auditTopologyPolicy(relativePath, content, issues);
 
     if (webRuntimeSurface(relativePath)) {
       if (/(?:from\s+["'](?:pg|drizzle-orm|@blog-x\/api)|DATABASE_URL|postgres(?:ql)?:\/\/|apps\/api|src\/db|auth\/sessions|article-service|content\/markdown)/.test(content)) {

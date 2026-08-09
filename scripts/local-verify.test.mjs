@@ -55,7 +55,7 @@ test("Phase 3 selections deterministically route only their named semantic suite
 
 test("Phase 4 security selection names every local API security suite", () => {
   const selection = phase4Selection("security");
-  assert.ok(selection.databaseSuites.length >= 8);
+  assert.ok(selection.databaseSuites.length >= 11);
   assert.deepEqual(selection.apiSuites, [
     "apps/api/test/security-hardening.test.ts",
     "apps/api/test/markdown-renderer.test.ts",
@@ -67,6 +67,33 @@ test("topology policy admits only a Web edge and rejects public data planes", as
   const subjectPath = process.env.GSD_PROHIB_SUBJECT ?? join(process.cwd(), "ops/topology-policy.json");
   const subject = JSON.parse(await readFile(subjectPath, "utf8"));
   assert.doesNotThrow(() => validateTopologyPolicy(subject));
+});
+
+test("Phase 4 name-only configuration and topology artifacts fail closed on values or public data planes", async (context) => {
+  const fixtureRoot = await mkdtemp(join(tmpdir(), "blog-x-phase4-boundary-"));
+  context.after(async () => { await rm(fixtureRoot, { recursive: true, force: true }); });
+  await mkdir(join(fixtureRoot, "ops"), { recursive: true });
+  await writeFile(join(fixtureRoot, "ops/production-config.names.json"), JSON.stringify({
+    format: "blog-x-production-config-names", version: 1, valueSource: "untracked-root-or-service-owned-mechanism",
+    variables: [{ name: "ADMIN_PASSWORD", class: "seed-secret", consumers: ["seed"], value: "fixture-only" }],
+  }));
+  await writeFile(join(fixtureRoot, "ops/topology-policy.json"), JSON.stringify({
+    format: "blog-x-topology-policy", version: 1,
+    browser: { relativeRoutes: ["/api", "/media"], directDataPlane: true },
+    services: { web: { hostPublished: true, bind: "wildcard" }, api: { hostPublished: true }, postgres: { hostPublished: true } },
+    futurePrivateLink: { required: true, status: "unresolved" },
+  }));
+  const issues = await auditFiles(fixtureRoot, ["ops/production-config.names.json", "ops/topology-policy.json"]);
+  assert.equal(issues.some((finding) => finding.code === "invalid_production_config_contract"), true);
+  assert.equal(issues.some((finding) => finding.code === "unsafe_topology_policy"), true);
+});
+
+test("Phase 4 security runner remains local, selected, and fail-closed", async () => {
+  const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
+  assert.match(runner, /phase4Selection\("security"\)/);
+  assert.match(runner, /--phase4-\$\{mode\}/);
+  assert.match(runner, /await runPhase4SecurityChecks\(context\)/);
+  assert.match(runner, /assertSemanticTap\(result\.combined\)/);
 });
 
 test("Phase 3 full is the extensible canonical gate for completed Phase 1/2 and current distribution semantics", async () => {
