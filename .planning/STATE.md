@@ -4,10 +4,10 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 04
 status: completed
-stopped_at: Phase 04 complete; ready for milestone verification
-last_updated: "2026-08-09T13:23:50.832Z"
+stopped_at: v1.0 milestone audit found 3 cross-phase gaps; ready for gap planning
+last_updated: "2026-08-09T13:37:20.000Z"
 last_activity: 2026-08-09
-last_activity_desc: Phase 04 complete
+last_activity_desc: v1.0 audit found OPS-01, OPS-03, and OPS-05 integration gaps
 progress:
   total_phases: 4
   completed_phases: 4
@@ -29,8 +29,8 @@ See: .planning/PROJECT.md (updated 2026-08-08)
 
 Phase: 04
 Plan: Not started
-Status: All phases complete
-Last activity: 2026-08-09 — Phase 04 complete
+Status: All planned phases complete; milestone audit found 3 gaps
+Last activity: 2026-08-09 — v1.0 audit found OPS-01, OPS-03, and OPS-05 integration gaps
 
 Progress: [██████████] 100% (4 of 4 phases implemented)
 
@@ -145,11 +145,14 @@ Decisions are logged in PROJECT.md Key Decisions table.
 
 ### Blockers/Concerns
 
+- [v1.0 audit] 发布 Markdown 仍允许外部 HTTP(S) 图片，违反正式环境浏览器媒体严格同源边界（OPS-01）。
+- [v1.0 audit] 备份/恢复仅有本地验证执行路径，生产每日异机、加密、保留与告警路径尚未实现（OPS-03/OPS-05）。
+- [v1.0 audit] READY 门禁把发布后冒烟证据作为发布前条件，必须拆分预发布与发布后状态（OPS-05）。
 - [Phase 2+] 副服务器系统、端口、历史数据与私网能力尚未只读核验。
 - [Later] 评论、统计深度、私密内容和精确 RPO/RTO 延后决策，不阻塞 v1。
 
 ## Session Continuity
 
-Last session: 2026-08-09T13:23:50.832Z
-Stopped at: Phase 04 complete; ready for milestone verification
-Resume file: .planning/ROADMAP.md
+Last session: 2026-08-09T13:37:20.000Z
+Stopped at: v1.0 milestone audit found 3 cross-phase gaps; ready for gap planning
+Resume file: .planning/v1.0-MILESTONE-AUDIT.md
