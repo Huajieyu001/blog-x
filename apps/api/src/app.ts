@@ -30,6 +30,8 @@ import { publicPageRoutes } from "./routes/public-pages.js";
 import { LocalMediaStorage } from "./media/storage.js";
 import { createMediaService } from "./content/media-service.js";
 import { mediaRoutes } from "./routes/media.js";
+import { createExportRepository } from "./content/export-repository.js";
+import { adminExportRoutes } from "./routes/admin-export.js";
 
 const databaseUrl = process.env.DATABASE_URL ?? "postgres://blog_x@127.0.0.1:5432/blog_x";
 const pool = new Pool({ connectionString: databaseUrl });
@@ -64,6 +66,11 @@ export async function buildApp(options: BuildAppOptions = {}) {
   });
   await app.register(adminPostRoutes, {
     articleService: createArticleService(createAdminPostRepository(db)),
+    sessionAuth: app.sessionAuth,
+    publicOrigin,
+  });
+  await app.register(adminExportRoutes, {
+    exportRepository: createExportRepository(db),
     sessionAuth: app.sessionAuth,
     publicOrigin,
   });

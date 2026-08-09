@@ -45,12 +45,14 @@ export function validateLoopbackHttpOrigin(value) {
 
 export function phase3Selection(mode) {
   const api = ["PHASE3_TEST_DATABASE_URL", "apps/api/test/public-distribution.test.ts"];
+  const exportApi = ["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"];
   const metadata = "apps/web/app/lib/site-metadata.test.ts";
   const browser = "apps/web/e2e/phase3-distribution.spec.ts";
   const selections = {
     api: { databaseSuites: [api], webSuites: [] },
     metadata: { databaseSuites: [], webSuites: [metadata, browser] },
     full: { databaseSuites: [api], webSuites: [metadata, browser] },
+    "export-api": { databaseSuites: [exportApi], webSuites: [] },
   };
   const selection = selections[mode];
   if (!selection) throw new Error(`Phase 3 selection is not recognized: ${mode}`);
@@ -449,7 +451,7 @@ function optionValue(name) {
 
 async function main() {
   const flags = new Set(process.argv.slice(2));
-  const phase3Modes = ["api", "metadata", "full"].filter((mode) => flags.has(`--phase3-${mode}`));
+  const phase3Modes = ["api", "metadata", "full", "export-api"].filter((mode) => flags.has(`--phase3-${mode}`));
   if (phase3Modes.length > 1) throw new Error("choose at most one Phase 3 verification selection");
   const options = {
     namespace: optionValue("namespace"),
