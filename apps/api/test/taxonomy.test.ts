@@ -42,7 +42,7 @@ test("taxonomy mutations are guarded and public discovery is published-only", as
   const apiEditedCategory = await app.inject({ method: "PUT", url: `/admin/categories/${apiCreatedCategory.json().id}`, headers, payload: { name: "生活随笔", slug: "life-notes" } });
   assert.equal(apiEditedCategory.statusCode, 200, apiEditedCategory.body);
   assert.equal(apiEditedCategory.json().name, "生活随笔");
-  const apiDeletedCategory = await app.inject({ method: "DELETE", url: `/admin/categories/${apiCreatedCategory.json().id}`, headers, payload: {} });
+  const apiDeletedCategory = await app.inject({ method: "DELETE", url: `/admin/categories/${apiCreatedCategory.json().id}`, headers: { origin, cookie } });
   assert.equal(apiDeletedCategory.statusCode, 204, apiDeletedCategory.body);
 
   const category = await db.insert(categories).values({ name: "技术", slug: "tech" }).returning();
@@ -92,7 +92,7 @@ test("taxonomy mutations are guarded and public discovery is published-only", as
   assert.deepEqual(categoriesResponse.json().items, [{ name: "技术", slug: "tech", articleCount: 1 }], "published-only category index");
   const unknown = await app.inject({ method: "GET", url: "/public/categories/missing/articles" });
   assert.equal(unknown.statusCode, 404);
-  const blockedDelete = await app.inject({ method: "DELETE", url: `/admin/categories/${category[0]!.id}`, headers, payload: {} });
+  const blockedDelete = await app.inject({ method: "DELETE", url: `/admin/categories/${category[0]!.id}`, headers: { origin, cookie } });
   assert.equal(blockedDelete.statusCode, 409, blockedDelete.body);
   assert.equal(blockedDelete.json().error, "associated_delete");
   assert.ok(blockedDelete.json().articleCount >= 1);
