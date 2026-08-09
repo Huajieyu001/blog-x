@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import { portableExportManifestSchema } from "@blog-x/contracts";
+import { readFile } from "node:fs/promises";
 
 const username = process.env.E2E_ADMIN_USERNAME;
 const password = process.env.E2E_ADMIN_PASSWORD;
@@ -105,6 +107,20 @@ test("Phase 3 metadata is a managed same-origin public journey", async ({ page }
   await publishAbout(page);
   await createHiddenDraft(page);
   const article = articles[0]!;
+
+  await page.goto(`${webOrigin}/admin`);
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "导出文章 Markdown" }).click(),
+  ]);
+  expect(download.suggestedFilename()).toBe("blog-x-export-v1.json");
+  const archivePath = testInfo.outputPath("blog-x-export-v1.json");
+  await download.saveAs(archivePath);
+  const archive = portableExportManifestSchema.parse(JSON.parse(await readFile(archivePath, "utf8")));
+  expect(archive.format).toBe("blog-x-portable-export");
+  expect(archive.version).toBe(1);
+  expect(archive.articles.some((item) => item.slug === article.slug)).toBe(true);
+  expect(archive.articles.some((item) => item.slug === `phase-3-hidden-${runId}`)).toBe(true);
 
   await page.goto(webOrigin);
   await expectCompleteHead(page, { title: "最新文章", description: "记录代码、系统与长期实践。", url: webOrigin, type: "website" });
