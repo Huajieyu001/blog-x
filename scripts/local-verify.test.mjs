@@ -37,7 +37,10 @@ test("Phase 3 selections deterministically route only their named semantic suite
     databaseSuites: [["PHASE3_TEST_DATABASE_URL", "apps/api/test/public-distribution.test.ts"]],
     webSuites: ["apps/web/app/lib/site-metadata.test.ts", "apps/web/e2e/phase3-distribution.spec.ts"],
   });
-  assert.throws(() => phase3Selection("export-api"), /Phase 3 selection/i);
+  assert.deepEqual(phase3Selection("export-api"), {
+    databaseSuites: [["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"]],
+    webSuites: [],
+  });
   assert.throws(() => phase3Selection("export-browser"), /Phase 3 selection/i);
   assert.throws(() => phase3Selection("unknown"), /Phase 3 selection/i);
 });
