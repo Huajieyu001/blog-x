@@ -91,11 +91,11 @@ status: complete
 
 ## Acceptance Evidence
 
-- `corepack pnpm db:generate:check` — passed; no schema drift.
-- `corepack pnpm -r typecheck` — passed for contracts, API, and Web.
-- `node --test scripts/prohibitions/media-policy.test.mjs scripts/local-verify.test.mjs` — 22 passed, zero skipped/TODO.
-- `GSD_PROHIB_SUBJECT=scripts/fixtures/prohibitions/external-published-media.json node --test scripts/prohibitions/media-policy.test.mjs` — failed as required for the known-bad fixture.
-- `corepack pnpm local:verify -- --phase5-media --interruption-check` — passed, including interrupted/concurrent migration, fresh upload/publish image-request proof, deterministic legacy fixture, backup/restore equality, and restored browser proof.
+- Command: corepack pnpm db:generate:check — passed; no schema drift.
+- Command: corepack pnpm -r typecheck — passed for contracts, API, and Web.
+- Command: node --test scripts/prohibitions/media-policy.test.mjs scripts/local-verify.test.mjs — 22 passed, zero skipped/TODO.
+- Negative fixture command with GSD_PROHIB_SUBJECT set to the external-published-media fixture — failed as required.
+- Command: corepack pnpm local:verify -- --phase5-media --interruption-check — passed, including interrupted/concurrent migration, fresh upload/publish image-request proof, deterministic legacy fixture, backup/restore equality, and restored browser proof.
 
 ## Decisions Made
 
@@ -128,6 +128,12 @@ None - no external service configuration required.
 
 - OPS-01 is locally proven and ready for the production-backup work in 05-02.
 - OPS-03 and OPS-05 remain pending; the canonical production release stays `BLOCKED`, and neither cloud server was contacted or modified.
+
+## Self-Check: PASSED
+
+- All plan artifacts and key links were verified against the repository.
+- Type checking and the focused Phase 5 media verification passed without skipped or TODO tests.
+- The worktree was clean after generated verification containers were removed.
 
 ---
 *Phase: 05-v1-0-integration-gap-closure*
