@@ -120,6 +120,7 @@ export function createArticleService(repository: AdminPostRepository) {
         coverMediaId: input.coverMedia?.id ?? null,
         coverAlt: input.coverMedia?.alt ?? "",
         coverDecorative: input.coverMedia?.decorative ?? false,
+        legacyMediaReview: "clear",
         updatedAt: nextVersion(current),
       }, input.tagIds);
       return { ok: true, post: serialize(updated) };
@@ -166,6 +167,7 @@ export function createArticleService(repository: AdminPostRepository) {
       const updated = await update({
         status: target,
         publishedAt: action === "publish" ? (current.publishedAt ?? new Date()) : current.publishedAt,
+        ...(action === "publish" || action === "republish" ? { legacyMediaReview: "clear" } : {}),
         updatedAt: nextVersion(current),
       });
       return { ok: true, post: serialize(updated) };

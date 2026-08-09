@@ -3,6 +3,7 @@ import { publicTaxonomyTermSchema } from "./taxonomy";
 
 const isoDateTimeSchema = z.string().datetime({ offset: true });
 const portableArticleStatusSchema = z.enum(["draft", "published", "unpublished"]);
+const legacyMediaReviewSchema = z.enum(["pending", "clear", "review_required"]);
 const portableTaxonomyTermSchema = z.object({
   id: z.uuid(),
   name: z.string(),
@@ -37,6 +38,8 @@ const portableArticleSchema = z.object({
   coverMediaId: z.uuid().nullable(),
   coverAlt: z.string(),
   coverDecorative: z.boolean(),
+  // Older portable v1 exports predate this lossless review disposition.
+  legacyMediaReview: legacyMediaReviewSchema.optional(),
 }).strict();
 
 const portableAboutSchema = z.object({

@@ -1,4 +1,4 @@
-import { mediaReferenceSchema, type AdminPostInput, type MediaReference } from "@blog-x/contracts";
+import { legacyMediaReviewSchema, mediaReferenceSchema, type AdminPostInput, type MediaReference } from "@blog-x/contracts";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "../db/schema.js";
@@ -19,6 +19,7 @@ const selectedPost = {
   coverMediaId: schema.articles.coverMediaId,
   coverAlt: schema.articles.coverAlt,
   coverDecorative: schema.articles.coverDecorative,
+  legacyMediaReview: schema.articles.legacyMediaReview,
 };
 
 export type StoredAdminPost = {
@@ -35,6 +36,7 @@ export type StoredAdminPost = {
   categoryId: string | null;
   tagIds: string[];
   coverMedia: MediaReference | null;
+  legacyMediaReview: "pending" | "clear" | "review_required";
 };
 
 export type RetainedArticleChanges = Partial<{
@@ -52,6 +54,7 @@ export type RetainedArticleChanges = Partial<{
   coverMediaId: string | null;
   coverAlt: string;
   coverDecorative: boolean;
+  legacyMediaReview: "pending" | "clear" | "review_required";
 }>;
 
 type RetainedArticleUpdate = (
@@ -68,6 +71,7 @@ function values(input: AdminPostInput) {
       coverMediaId: coverMedia?.id ?? null,
       coverAlt: coverMedia?.alt ?? "",
       coverDecorative: coverMedia?.decorative ?? false,
+      legacyMediaReview: "clear" as const,
     },
     tagIds,
   };
@@ -82,8 +86,8 @@ export function createAdminPostRepository(db: Database) {
       if (!asset) throw new Error("cover media reference is missing");
       coverMedia = mediaReferenceSchema.parse({ ...asset, url: `/media/${asset.id}`, alt: post.coverAlt, decorative: post.coverDecorative });
     }
-    const { coverMediaId: _coverMediaId, coverAlt: _coverAlt, coverDecorative: _coverDecorative, ...stored } = post;
-    return { ...stored, tagIds: resolvedTags, coverMedia };
+    const { coverMediaId: _coverMediaId, coverAlt: _coverAlt, coverDecorative: _coverDecorative, legacyMediaReview, ...stored } = post;
+    return { ...stored, legacyMediaReview: legacyMediaReviewSchema.parse(legacyMediaReview), tagIds: resolvedTags, coverMedia };
   }
 
   async function createDraft(input: AdminPostInput) {

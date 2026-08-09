@@ -37,6 +37,7 @@ import { parseApiRuntimeConfig, type ApiRuntimeConfig, type RateLimitConfig } fr
 import { BoundedRateLimitStore, createRateLimitKey } from "./security/rate-limiter.js";
 import { requireAdministratorMutation, requireContentType, type MutationGuardOptions } from "./security/mutation-guard.js";
 import { writePortableExport } from "./ops/portable-export.js";
+import { classifyRetainedLegacyMedia } from "./ops/legacy-media-migration.js";
 
 const databaseSchema = { administrators, articles, sessions, categories, tags, articleTags, sitePages, media };
 
@@ -159,7 +160,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
     }
     try {
       const now = new Date();
-      const inserted = await db.insert(articles).values({ ...parsed.data, status: "published", publishedAt: now, updatedAt: now }).returning({ slug: articles.slug, title: articles.title, publishedAt: articles.publishedAt });
+      const inserted = await db.insert(articles).values({ ...parsed.data, status: "published", legacyMediaReview: "clear", publishedAt: now, updatedAt: now }).returning({ slug: articles.slug, title: articles.title, publishedAt: articles.publishedAt });
       const article = inserted[0];
       if (!article?.publishedAt) throw new Error("published article was not persisted");
       return publishedArticleSchema.parse({ ...article, publishedAt: article.publishedAt.toISOString() });
@@ -195,6 +196,14 @@ async function migrate(pool: Pool) {
         }
       }
     }
+    await client.query("begin");
+    try {
+      await classifyRetainedLegacyMedia(client);
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      throw error;
+    }
     await client.query("create table if not exists blog_x_schema_ledger (scope text primary key, migration_count integer not null, migration_fingerprint text not null, applied_at timestamp with time zone not null default now())");
     await client.query("insert into blog_x_schema_ledger (scope, migration_count, migration_fingerprint) values ('phase1', $1, $2) on conflict (scope) do update set migration_count = excluded.migration_count, migration_fingerprint = excluded.migration_fingerprint, applied_at = now()", [migrationFiles.length, fingerprint.digest("hex")]);
   } finally { await client.query("select pg_advisory_unlock(hashtext('blog-x-phase1-migration'))").catch(() => undefined); client.release(); }
@@ -206,13 +215,19 @@ async function schemaVerify(pool: Pool) {
   const result = await pool.query("select tablename from pg_tables where schemaname = 'public' and tablename = any($1)", [["administrators", "sessions", "articles", "categories", "tags", "article_tags", "site_pages", "media"]]);
   if (result.rowCount !== 8) throw new Error("media schema is not active; run pnpm db:migrate first");
   const ledger = await pool.query("select migration_count from blog_x_schema_ledger where scope = 'phase1'");
-  if (ledger.rowCount !== 1 || Number(ledger.rows[0]?.migration_count) !== 6) throw new Error("media migration ledger is incomplete; run pnpm db:migrate first");
+  if (ledger.rowCount !== 1 || Number(ledger.rows[0]?.migration_count) !== 7) throw new Error("media migration ledger is incomplete; run pnpm db:migrate first");
   const indices = await pool.query("select indexname from pg_indexes where schemaname = 'public' and indexname = any($1)", [["taxonomy_category_slug_unique", "taxonomy_tag_slug_unique", "article_tags_article_tag_unique", "articles_category_public_index", "site_pages_key_unique", "media_source_key_unique", "media_derivative_key_unique", "articles_cover_media_index"]]);
   if (indices.rowCount !== 8) throw new Error("required indexes are incomplete; run pnpm db:migrate first");
   const constraints = await pool.query("select conname from pg_constraint where conrelid = 'site_pages'::regclass and conname = any($1)", [["site_pages_key_about_check", "site_pages_status_check"]]);
   if (constraints.rowCount !== 2) throw new Error("site_pages singleton constraints are incomplete; run pnpm db:migrate first");
   const mediaConstraints = await pool.query("select conname from pg_constraint where conname = any($1)", [["media_source_mime_check", "media_derivative_mime_check", "media_dimensions_check", "media_bytes_check", "articles_cover_alt_check", "articles_cover_media_id_media_id_fk"]]);
   if (mediaConstraints.rowCount !== 6) throw new Error("media constraints are incomplete; run pnpm db:migrate first");
+  const legacyMedia = await pool.query("select column_name from information_schema.columns where table_schema = 'public' and table_name = 'articles' and column_name = 'legacy_media_review'");
+  if (legacyMedia.rowCount !== 1) throw new Error("legacy media review column is incomplete; run pnpm db:migrate first");
+  const legacyConstraint = await pool.query("select conname from pg_constraint where conrelid = 'articles'::regclass and conname = 'articles_legacy_media_review_check'");
+  if (legacyConstraint.rowCount !== 1) throw new Error("legacy media review constraint is incomplete; run pnpm db:migrate first");
+  const pending = await pool.query("select count(*)::int as count from articles where deleted_at is null and legacy_media_review = 'pending'");
+  if (Number(pending.rows[0]?.count) !== 0) throw new Error("retained articles still await legacy media classification; run pnpm db:migrate first");
 }
 async function main() {
   const command = process.argv[2];

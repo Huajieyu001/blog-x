@@ -54,12 +54,14 @@ export const articles = pgTable("articles", {
   coverMediaId: uuid("cover_media_id").references(() => media.id, { onDelete: "restrict" }),
   coverAlt: text("cover_alt").notNull().default(""),
   coverDecorative: boolean("cover_decorative").notNull().default(false),
+  legacyMediaReview: text("legacy_media_review").notNull().default("pending"),
 }, (table) => [
   uniqueIndex("articles_slug_reserved_unique").on(table.slug),
   index("articles_public_index").on(table.status, table.publishedAt),
   index("articles_category_public_index").on(table.categoryId, table.status, table.publishedAt),
   index("articles_cover_media_index").on(table.coverMediaId),
   check("articles_cover_alt_check", sql`${table.coverMediaId} is null or ${table.coverDecorative} or length(btrim(${table.coverAlt})) > 0`),
+  check("articles_legacy_media_review_check", sql`${table.legacyMediaReview} in ('pending', 'clear', 'review_required')`),
 ]);
 
 export const categories = pgTable("categories", {

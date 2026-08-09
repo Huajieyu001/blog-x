@@ -105,6 +105,20 @@ export function phase4Selection(mode) {
   return selection;
 }
 
+export function phase5MediaSelection() {
+  return {
+    databaseSuites: [
+      ["ARTICLE_TEST_DATABASE_URL", "apps/api/test/article-draft-preview.test.ts"],
+      ["LIFECYCLE_TEST_DATABASE_URL", "apps/api/test/article-lifecycle.test.ts"],
+      ["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"],
+    ],
+    apiSuites: ["apps/api/test/markdown-renderer.test.ts"],
+    nodeSuites: ["scripts/local-verify.test.mjs"],
+    databaseSuite: "apps/api/test/backup-restore.test.ts",
+    browserSuite: "apps/web/e2e/phase4-restore.spec.ts",
+  };
+}
+
 export function validateTopologyPolicy(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("topology policy must be an object");
   const policy = value;
@@ -264,11 +278,11 @@ async function inspectSchema(context) {
     "select (select count(*) from blog_x_schema_ledger),",
     "(select migration_count from blog_x_schema_ledger where scope = 'phase1'),",
     "(select count(*) from pg_tables where schemaname = 'public' and tablename = any(array['administrators','articles','sessions','categories','tags','article_tags','site_pages','media'])),",
-    "(select count(*) from pg_constraint where conname = any(array['site_pages_key_about_check','site_pages_status_check','articles_cover_alt_check'])),",
+    "(select count(*) from pg_constraint where conname = any(array['site_pages_key_about_check','site_pages_status_check','articles_cover_alt_check','articles_legacy_media_review_check'])),",
     "(select count(*) from pg_indexes where schemaname = 'public' and indexname = any(array['taxonomy_category_slug_unique','taxonomy_tag_slug_unique','article_tags_article_tag_unique','site_pages_key_unique','media_source_key_unique','media_derivative_key_unique']));",
   ].join(" ")));
   const values = result.stdout.trim().split("|").map(Number);
-  if (values.length !== 5 || values[0] !== 1 || values[1] !== 6 || values[2] !== 8 || values[3] !== 3 || values[4] !== 6) {
+  if (values.length !== 5 || values[0] !== 1 || values[1] !== 7 || values[2] !== 8 || values[3] !== 4 || values[4] !== 6) {
     throw new Error(`unexpected schema inspection result: ${result.stdout.trim()}`);
   }
 }
@@ -554,7 +568,7 @@ function generatedBackupPolicy(context, backupRoot) {
   };
 }
 
-async function seedRestoreFixture(context) {
+async function seedRestoreFixture(context, includePhase5Legacy = false) {
   await resetAcceptanceData(context, "clear restore source fixture data");
   const mediaId = "44444444-4444-4444-8444-444444444444";
   const categoryId = "11111111-1111-4111-8111-111111111111";
@@ -565,6 +579,8 @@ async function seedRestoreFixture(context) {
     "33333333-3333-4333-8333-333333333335",
   ];
   const publishedSlug = `${context.runId}-restore-published`;
+  const legacyArticleId = "66666666-6666-4666-8666-666666666666";
+  const legacyArticleSlug = `${context.runId}-legacy-review-required`;
   const hiddenSlugs = ["draft", "offline", "deleted", "null-publication"].map((state) => `${context.runId}-restore-${state}`);
   const publishedTitle = `恢复演练公开文章 ${context.runId}`;
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
@@ -593,20 +609,23 @@ async function seedRestoreFixture(context) {
     `insert into articles (id,title,summary,slug,markdown,status,published_at,created_at,updated_at) values ('${articleIds[2]}','恢复下线','offline-secret','${hiddenSlugs[1]}','# offline-secret','unpublished','${timestamp}','${timestamp}','${timestamp}');`,
     `insert into articles (id,title,summary,slug,markdown,status,published_at,deleted_at,created_at,updated_at) values ('${articleIds[3]}','恢复删除','deleted-secret','${hiddenSlugs[2]}','# deleted-secret','published','${timestamp}','${timestamp}','${timestamp}','${timestamp}');`,
     `insert into articles (id,title,summary,slug,markdown,status,published_at,created_at,updated_at) values ('${articleIds[4]}','恢复空发布时间','null-secret','${hiddenSlugs[3]}','# null-secret','published',null,'${timestamp}','${timestamp}');`,
+    ...(includePhase5Legacy ? [`insert into articles (id,title,summary,cover_url,slug,markdown,status,published_at,created_at,updated_at) values ('${legacyArticleId}','遗留媒体复原文章','保留原始遗留媒体数据','https://images.example.test/legacy-cover.png','${legacyArticleSlug}','# 遗留媒体\\n\\n![历史图片](https://images.example.test/legacy-image.png)\\n\\n[外部文档](https://docs.example.test/legacy)','published','${timestamp}','${timestamp}','${timestamp}');`] : []),
     `insert into article_tags (article_id,tag_id) values ('${articleIds[0]}','${tagId}'),('${articleIds[1]}','${tagId}');`,
     `insert into site_pages (id,key,title,markdown,status,version,created_at,updated_at) values ('55555555-5555-4555-8555-555555555555','about','恢复后的关于页','# 关于恢复','published','${timestamp}','${timestamp}','${timestamp}');`,
   ].join(" ");
   await compose(context, "seed retained restore authority fixture", ...psqlArgs(context, query));
-  return { mediaId, publishedSlug, publishedTitle, hiddenSlugs };
+  await runMigration(context, "classify retained restore media state");
+  await inspectSchema(context);
+  return { mediaId, publishedSlug, publishedTitle, hiddenSlugs, ...(includePhase5Legacy ? { legacyArticleId, legacyArticleSlug } : {}) };
 }
 
-async function runPhase4RestoreChecks(context) {
+async function runPhase4RestoreChecks(context, includePhase5Legacy = false) {
   const selection = phase4Selection("restore");
   for (const file of selection.nodeSuites) {
     const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
     assertSemanticTap(result.combined);
   }
-  const fixture = await seedRestoreFixture(context);
+  const fixture = await seedRestoreFixture(context, includePhase5Legacy);
   const backupRoot = await mkdtemp(resolve(tmpdir(), "blog-x-backup-verify-"));
   const restoreNamespace = generatedRestoreNamespace();
   const suffix = restoreNamespace.slice("blogxrestore_".length);
@@ -643,7 +662,8 @@ async function runPhase4RestoreChecks(context) {
       ["pnpm", "exec", "playwright", "test", selection.browserSuite, "--workers=1"], {
         env: { ...process.env, E2E_WEB_ORIGIN: restoreContext.webOrigin, E2E_RESTORE_WEB_ORIGIN: restoreContext.webOrigin,
           E2E_RESTORE_PUBLISHED_SLUG: fixture.publishedSlug, E2E_RESTORE_PUBLISHED_TITLE: fixture.publishedTitle,
-          E2E_RESTORE_MEDIA_ID: fixture.mediaId, E2E_RESTORE_HIDDEN_SLUGS: fixture.hiddenSlugs.join(",") },
+          E2E_RESTORE_MEDIA_ID: fixture.mediaId, E2E_RESTORE_HIDDEN_SLUGS: fixture.hiddenSlugs.join(","),
+          ...(includePhase5Legacy ? { PHASE5_LEGACY_ARTICLE_ID: fixture.legacyArticleId, PHASE5_LEGACY_ARTICLE_SLUG: fixture.legacyArticleSlug } : {}) },
       });
     assertPlaywrightJourney(browser.combined);
     await verifyBackupSet(backup.finalRoot);
@@ -689,11 +709,25 @@ async function runPhase4FullChecks(context) {
   process.stdout.write("[local-verify] LOCAL PHASE 4 READINESS PASS; RELEASE BLOCKED\n");
 }
 
+async function runPhase5MediaChecks(context) {
+  const selection = phase5MediaSelection();
+  for (const [variable, file] of selection.databaseSuites) await runDatabaseSuite(context, variable, file);
+  for (const file of selection.apiSuites) {
+    const result = await compose(context, `run ${file}`, "exec", "-T", "api", ...semanticTestCommand(file));
+    assertSemanticTap(result.combined);
+  }
+  for (const file of selection.nodeSuites) {
+    const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
+    assertSemanticTap(result.combined);
+  }
+  await runPhase4RestoreChecks(context, true);
+}
+
 async function runSingle(options) {
   const namespace = validateNamespace(options.namespace ?? generatedNamespace());
   const database = validateDatabaseName(`blog_x_${namespace.slice("blogxverify_".length)}`, namespace);
   const webPort = options.webPort ?? await freePort();
-  const phaseLabel = options.phase4Mode ? "phase4-" : options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
+  const phaseLabel = options.phase5Media ? "phase5-" : options.phase4Mode ? "phase4-" : options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
   const runId = namespace.replace("blogxverify_", phaseLabel);
   const publicOrigin = validateLoopbackHttpOrigin(`http://127.0.0.1:${webPort}`);
   const context = {
@@ -716,7 +750,7 @@ async function runSingle(options) {
   if (context.publicOrigin === context.internalApiOrigin) throw new Error("public and internal API origins must remain separate");
 
   try {
-    if (options.phase4Mode === "full" && !options.skipBuild) await preflightOfflinePrerequisites(context);
+    if ((options.phase4Mode === "full" || options.phase5Media) && !options.skipBuild) await preflightOfflinePrerequisites(context);
     else if (["operations", "restore"].includes(options.phase4Mode) && !options.skipBuild) await preflightCachedImages(context);
     if (!options.skipBuild) await compose(context, "build local API and Web images", "build", "api", "web");
     await compose(context, "start isolated PostgreSQL", "up", "-d", "--wait", "postgres");
@@ -743,6 +777,9 @@ async function runSingle(options) {
     }
     else if (options.phase4Mode === "full") {
       await runPhase4FullChecks(context);
+    }
+    else if (options.phase5Media) {
+      await runPhase5MediaChecks(context);
     }
     else if (options.phase3Mode === "full") {
       await fullPhaseChecks(context, true);
@@ -792,14 +829,16 @@ async function main() {
   const flags = new Set(process.argv.slice(2));
   const phase3Modes = ["api", "metadata", "full", "export-api", "export-browser"].filter((mode) => flags.has(`--phase3-${mode}`));
   const phase4Modes = ["security", "operations", "restore", "full"].filter((mode) => flags.has(`--phase4-${mode}`));
-  if (phase3Modes.length + phase4Modes.length > 1) throw new Error("choose at most one Phase 3 or Phase 4 verification selection");
+  const phase5Media = flags.has("--phase5-media");
+  if (phase3Modes.length + phase4Modes.length + Number(phase5Media) > 1) throw new Error("choose at most one Phase 3, Phase 4, or Phase 5 verification selection");
   const options = {
     namespace: optionValue("namespace"),
     webPort: optionValue("web-port") ? Number(optionValue("web-port")) : undefined,
     phase2Full: flags.has("--phase2-full"),
     phase3Mode: phase3Modes[0],
     phase4Mode: phase4Modes[0],
-    fullPhase: !phase4Modes.length && (flags.has("--full-phase") || flags.has("--phase2-full") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run"))),
+    phase5Media,
+    fullPhase: !phase4Modes.length && !phase5Media && (flags.has("--full-phase") || flags.has("--phase2-full") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run"))),
     interruptionCheck: flags.has("--interruption-check"),
     parallelCheck: flags.has("--parallel-check"),
     skipBuild: flags.has("--skip-build"),

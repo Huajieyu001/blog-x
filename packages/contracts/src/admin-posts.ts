@@ -30,11 +30,13 @@ export const adminPostUpdateSchema = adminPostInputSchema.extend({
 }).strict();
 
 export const articleStatusSchema = z.enum(["draft", "published", "unpublished"]);
+export const legacyMediaReviewSchema = z.enum(["pending", "clear", "review_required"]);
 
 export const adminPostSchema = adminPostInputSchema.omit({ coverUrl: true }).extend({
   coverUrl: z.string(),
   id: z.uuid(),
   status: articleStatusSchema,
+  legacyMediaReview: legacyMediaReviewSchema,
   version: z.string().datetime({ offset: true }),
 }).strict();
 
@@ -89,5 +91,6 @@ export type AdminPostUpdateInput = z.infer<typeof adminPostUpdateSchema>;
 export type AdminPost = z.infer<typeof adminPostSchema>;
 export type ArticleAction = z.infer<typeof articleActionSchema>;
 export type ArticleStatus = z.infer<typeof articleStatusSchema>;
+export type LegacyMediaReview = z.infer<typeof legacyMediaReviewSchema>;
 export type PublishedSlugConfirmation = z.infer<typeof publishedSlugConfirmationSchema>;
 export type FieldErrorResponse = z.infer<typeof fieldErrorResponseSchema>;

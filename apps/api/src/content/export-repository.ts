@@ -25,6 +25,7 @@ export function createExportRepository(db: Database) {
           createdAt: schema.articles.createdAt, updatedAt: schema.articles.updatedAt,
           categoryId: schema.articles.categoryId, coverMediaId: schema.articles.coverMediaId,
           coverAlt: schema.articles.coverAlt, coverDecorative: schema.articles.coverDecorative,
+          legacyMediaReview: schema.articles.legacyMediaReview,
         }).from(schema.articles).orderBy(asc(schema.articles.id)),
         tx.select().from(schema.categories).orderBy(asc(schema.categories.id)),
         tx.select().from(schema.tags).orderBy(asc(schema.tags.id)),
