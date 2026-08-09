@@ -138,3 +138,35 @@ test("release prohibition descriptor rejects automatic capability and tracked RE
   assert.equal("remoteCapability" in subject, false);
   releaseEvidenceSchema.parse(subject);
 });
+
+test("rollback evidence cannot pass without immutable artifacts, owner, preservation, stop criteria, and validation", async (context) => {
+  const mutations = [
+    (details) => { details.priorWebDigest = "mutable-latest"; },
+    (details) => { details.priorApiDigest = ""; },
+    (details) => { details.ownerRef = ""; },
+    (details) => { details.migrationCompatible = false; },
+    (details) => { details.mediaPreserved = false; },
+    (details) => { details.stopCriteria = []; },
+    (details) => { details.validationPassed = false; },
+  ];
+  for (const mutate of mutations) {
+    const bundle = await makeBundle(context, async ({ root, catalog, references }) => {
+      const changed = structuredClone(catalog["rollback.json"]);
+      mutate(changed.details);
+      const text = `${JSON.stringify(changed)}\n`;
+      await writeFile(join(root, "rollback.json"), text);
+      references["rollback.json"].sha256 = sha(text);
+    });
+    const decision = await evaluateReleaseReadiness(bundle.evidence, { bundleRoot: bundle.root, evidencePath: "evidence.json", now: () => now });
+    assert.notEqual(decision.status, "READY");
+  }
+});
+
+test("release and rollback runbooks remain BLOCKED evidence workflows rather than deployment programs", async () => {
+  const release = await readFile(join(process.cwd(), "docs/RELEASE-GATE.md"), "utf8");
+  const rollback = await readFile(join(process.cwd(), "docs/ROLLBACK.md"), "utf8");
+  assert.match(release, /当前状态[：:]\s*BLOCKED/);
+  for (const term of ["明确解除冻结", "授权的只读基线", "同源", "私有链路", "完整备份", "隔离恢复", "证书", "回滚", "发布后", "STOP"]) assert.match(release, new RegExp(term));
+  for (const term of ["不可变", "Web", "API", "边缘配置", "迁移兼容", "媒体", "已知良好备份", "责任人", "停止条件", "独立验证"]) assert.match(rollback, new RegExp(term));
+  assert.doesNotMatch(`${release}\n${rollback}`, /(?:ssh|scp|rsync|sftp|curl|wget)\s+[^`\n]+|\b(?:47\.99\.80\.8|124\.222\.91\.230)\b/i);
+});

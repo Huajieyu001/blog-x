@@ -258,3 +258,20 @@ test("boundary audit rejects database/media ownership, forbidden public origins,
   assert.equal(issues.some((issue) => issue.code === "frozen_host_command"), true);
   assert.equal(issues.some((issue) => issue.code === "tracked_secret_file"), true);
 });
+
+test("release artifact audit rejects automatic remote capability, tracked READY, public data planes, address leakage, and false live claims", async (context) => {
+  const fixtureRoot = await mkdtemp(join(tmpdir(), "blog-x-release-boundary-"));
+  context.after(async () => { await rm(fixtureRoot, { recursive: true, force: true }); });
+  await mkdir(join(fixtureRoot, "scripts/release-gate"), { recursive: true });
+  await mkdir(join(fixtureRoot, "ops"), { recursive: true });
+  await mkdir(join(fixtureRoot, "docs"), { recursive: true });
+  const files = ["scripts/release-gate/deploy.mjs", "ops/release-evidence.blocked.json", "docs/RELEASE-GATE.md", "docs/ROLLBACK.md"];
+  await writeFile(join(fixtureRoot, files[0]), 'import { execFile } from "node:child_process"; execFile("ssh", ["cloud-node", "deploy"]);\n');
+  await writeFile(join(fixtureRoot, files[1]), JSON.stringify({ format: "blog-x-release-evidence", version: 1, state: "READY" }));
+  await writeFile(join(fixtureRoot, files[2]), 'Production READY; TLS verified; RPO 1h; browser calls http://api:3001; API port "3001:3001".\n');
+  await writeFile(join(fixtureRoot, files[3]), 'Run curl against node authority, then automatic deploy and unfreeze.\n');
+  const issues = await auditFiles(fixtureRoot, files);
+  for (const code of ["release_remote_capability", "tracked_release_ready", "release_internal_authority", "release_public_data_plane", "false_production_claim", "automatic_release_action"]) {
+    assert.equal(issues.some((finding) => finding.code === code), true, code);
+  }
+});
