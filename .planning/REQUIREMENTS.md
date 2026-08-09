@@ -33,8 +33,8 @@
 
 ### Security and Operations
 
-- [ ] **SEC-01**: 管理写接口要求认证，并具备登录失败限制、请求限流和适当的 CSRF 防护。
-- [ ] **SEC-02**: 服务端校验所有输入和上传，渲染内容不会执行不可信脚本，数据访问不接受 SQL 注入。
+- [x] **SEC-01**: 管理写接口要求认证，并具备登录失败限制、请求限流和适当的 CSRF 防护。
+- [x] **SEC-02**: 服务端校验所有输入和上传，渲染内容不会执行不可信脚本，数据访问不接受 SQL 注入。
 - [ ] **SEC-03**: 密码只以安全哈希保存，应用密钥和数据库凭据通过环境配置提供且不会提交到 Git。
 - [ ] **OPS-01**: 浏览器的页面、API 和媒体请求在正式环境中只使用博客 HTTPS 域名，副服务器 API 和数据库不直接暴露公网。
 - [ ] **OPS-02**: 应用进程异常后可自动恢复，日志会轮转，并可检查服务存活、CPU、内存、磁盘和证书状态。
@@ -97,8 +97,8 @@
 | SEO-01 | Phase 3 | Complete |
 | SEO-02 | Phase 3 | Complete |
 | FEED-01 | Phase 3 | Complete |
-| SEC-01 | Phase 4 | Pending |
-| SEC-02 | Phase 4 | Pending |
+| SEC-01 | Phase 4 | Complete |
+| SEC-02 | Phase 4 | Complete |
 | SEC-03 | Phase 4 | Pending |
 | OPS-01 | Phase 4 | Pending |
 | OPS-02 | Phase 4 | Pending |

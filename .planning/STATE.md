@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 4
 current_phase_name: Secure Operations and Release Gate
 status: executing
-stopped_at: Phase 04 planned and independently verified; ready to execute 04-01
-last_updated: "2026-08-09T09:28:45.405Z"
+stopped_at: Completed 04-01-PLAN.md
+last_updated: "2026-08-09T11:42:40.309Z"
 last_activity: 2026-08-09
-last_activity_desc: Phase 04 research and three-plan execution contract verified
+last_activity_desc: Phase 04 Plan 01 security hardening verified; ready for 04-02
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 21
-  completed_plans: 18
+  completed_plans: 19
 ---
 
 # Project State
@@ -28,17 +28,17 @@ See: .planning/PROJECT.md (updated 2026-08-08)
 ## Current Position
 
 Phase: 4 — Secure Operations and Release Gate
-Plan: 0 of 3
-Status: Ready to execute
-Last activity: 2026-08-09 — Phase 04 research and three-plan execution contract verified
+Plan: 1 of 3
+Status: Ready to execute 04-02
+Last activity: 2026-08-09 — Phase 04 Plan 01 security hardening verified
 
-Progress: [████████░░] 75% (3 of 4 phases complete)
+Progress: [█████████░] 90% (3 of 4 phases complete)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 18
+- Total plans completed: 19
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -77,6 +77,7 @@ Progress: [████████░░] 75% (3 of 4 phases complete)
 | Phase 03 P02 | 1h 18m | 3 tasks | 19 files |
 | Phase 03 P03 | 1h 8m | 2 tasks | 6 files |
 | Phase 03 P04 | 3h 30m | 3 tasks | 9 files |
+| Phase 04 P01 | 1h 52m | 3 tasks | 24 files |
 
 ## Accumulated Context
 
@@ -127,24 +128,18 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 03]: Generated PUBLIC_ORIGIN is declared after the Web frozen dependency install layer. — Isolated verifier ports preserve dependency cache and avoid avoidable package-registry attempts.
 - [Phase 03]: Portable export is a strict `blog-x-portable-export` version-1 JSON attachment with raw Markdown and retained source metadata, but no media bytes, storage keys/paths, rendered HTML, or production import surface. — Phase 4 owns binary backup/restore.
 - [Phase 03]: Archive authorization always follows opaque session authentication then exact Origin before read-only snapshot selection. — The browser uses a native relative POST with its HttpOnly cookie authority.
-
-### Pending Todos
-
-None yet.
+- [Phase 04]: Rate limiting remains bounded and explicitly single-process with trustProxy disabled. — Socket authority and honest scope avoid forwarded-address spoofing or false distributed guarantees.
+- [Phase 04]: Protected mutations authenticate before exact-Origin and rate/body/service work. — Session-first ordering prevents authorization disclosure and rejected side effects.
+- [Phase 04]: Serving database resources follow Fastify application lifetime; one-shot commands close immediately. — A listening server must retain its Pool, while migration, seed, and schema commands release theirs deterministically.
+- [Phase 04]: Production topology and configuration evidence stays symbolic and value-free. — Local gates can prove Web-edge-only intent without embedding credentials or contacting frozen/cloud hosts.
 
 ### Blockers/Concerns
 
 - [Phase 2+] 副服务器系统、端口、历史数据与私网能力尚未只读核验。
 - [Later] 评论、统计深度、私密内容和精确 RPO/RTO 延后决策，不阻塞 v1。
 
-## Deferred Items
-
-| Category | Item | Status | Deferred At |
-|----------|------|--------|-------------|
-| v2 | 搜索、相关文章、自动保存、定时发布、审计、统计 | Deferred | Initialization |
-
 ## Session Continuity
 
-Last session: 2026-08-09T12:00:00.000Z
-Stopped at: Phase 04 planned and independently verified; ready to execute 04-01
-Resume file: .planning/phases/04-secure-operations-and-release-gate/04-01-PLAN.md
+Last session: 2026-08-09T11:42:09.908Z
+Stopped at: Completed 04-01-PLAN.md
+Resume file: .planning/phases/04-secure-operations-and-release-gate/04-02-PLAN.md

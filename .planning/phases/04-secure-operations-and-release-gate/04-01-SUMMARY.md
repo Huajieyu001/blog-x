@@ -107,10 +107,10 @@ status: complete
 3. **Task 3: Hostile input and canonical security gate** — `4ad386c` (RED), `43aba22` (GREEN)
 4. **Integration recovery** — `c05a023`, `bd1f95c`, `6eba74f` (fixes)
 
-## Verification
+## Acceptance Evidence
 
 - `corepack pnpm --filter @blog-x/api typecheck` — passed.
-- `corepack pnpm --filter @blog-x/api exec tsx --test test/security-hardening.test.ts` — 9 passed, 0 failed/skipped/todo.
+- corepack pnpm --filter @blog-x/api exec tsx --test test/security-hardening.test.ts — 9 passed, 0 failed/skipped/todo.
 - `corepack pnpm local:verify -- --phase4-security` — exit 0: `[local-verify] blogxverify_252ebbd1674c passed` and `[local-verify] all requested checks passed`.
 - Canonical verifier covered workspace typecheck/build, operations prohibitions, 11 generated-database API suites, security/Markdown suites, clean logs, and exact namespace teardown.
 
