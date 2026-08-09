@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 02
 current_phase_name: Complete Reading Experience
 status: executing
-stopped_at: Completed 02-04-PLAN.md
-last_updated: "2026-08-09T01:05:07.000Z"
+stopped_at: Completed 02-05-PLAN.md
+last_updated: "2026-08-09T01:26:46.000Z"
 last_activity: 2026-08-09
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 14
-  completed_plans: 12
+  completed_plans: 13
 ---
 
 # Project State
@@ -28,17 +28,17 @@ See: .planning/PROJECT.md (updated 2026-08-08)
 ## Current Position
 
 Phase: 02 (Complete Reading Experience) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
-Last activity: 2026-08-09 — Completed safe same-origin media workflow
+Last activity: 2026-08-09 — Completed responsive public shell and honest recovery
 
-Progress: [█████████░] 86%
+Progress: [█████████░] 93%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 12
+- Total plans completed: 13
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -69,6 +69,7 @@ Progress: [█████████░] 86%
 | Phase 02 P02 | 0min | 4 tasks | 20 files |
 | Phase 02 P03 | 0min | 2 tasks | 12 files |
 | Phase 02 P04 | 0min | 5 tasks | 29 files |
+| Phase 02 P05 | 0min | 2 tasks | 21 files |
 
 ## Accumulated Context
 
@@ -107,6 +108,9 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 02]: Resolve public media only through database-authorized UUID paths while retaining protected source assets outside the served tree. — Public filenames and storage paths cannot become durable contracts or disclosure channels.
 - [Phase 02]: Generate metadata-free, orientation-corrected derivatives with a 2400px no-upscale bound after strict MIME, decode, animation, dimension and pixel validation. — The low-resource deployment receives predictable public assets without trusting browser decoding.
 - [Phase 02]: Require purposeful cover alt text in the shared server contract, with explicit decorative intent as the only empty-alt path. — Accessibility remains enforceable beyond the editor UI.
+- [Phase 02]: Treat public API outcomes as strict ok/not-found/upstream-error values and require a parsed absence DTO before invoking Next notFound(). — Temporary outages and malformed responses must never become misleading 404 or empty states.
+- [Phase 02]: Apply only light/dark/system preferences through a synchronous pre-paint resolver with CSS OS and no-JavaScript fallbacks. — Theme persistence cannot become an injection surface or a prerequisite for readable content.
+- [Phase 02]: Keep one public navigation order across every visitor page and progressively enhance its compact menu while excluding login/admin surfaces. — Responsive adaptation preserves all actions instead of hiding them by device class.
 
 ### Pending Todos
 
@@ -125,6 +129,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-09T01:05:07.000Z
-Stopped at: Completed 02-04-PLAN.md
+Last session: 2026-08-09T01:26:46.000Z
+Stopped at: Completed 02-05-PLAN.md
 Resume file: None
