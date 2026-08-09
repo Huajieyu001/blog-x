@@ -93,7 +93,9 @@ export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async 
     const parsed = adminPostInputSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send(fieldErrors(parsed.error));
     try {
-      const post = await options.articleService.createDraft(parsed.data);
+      const result = await options.articleService.createDraft(parsed.data);
+      if (!result.ok) return sendServiceResult(result, reply);
+      const post = result.post;
       reply.header("location", `/admin/posts/${post.id}`);
       return reply.code(201).send(post);
     } catch (error) {

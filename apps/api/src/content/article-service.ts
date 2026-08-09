@@ -10,6 +10,7 @@ import {
 } from "@blog-x/contracts";
 import type { AdminPostRepository, StoredAdminPost } from "./admin-repository.js";
 import { resolveRetainedTransition } from "./article-state.js";
+import { classifyArticleMedia } from "./media-reference-policy.js";
 
 export type ArticleServiceError =
   | { error: "not_found" }
@@ -39,6 +40,18 @@ function validationFields(error: { issues: Array<{ path: PropertyKey[]; message:
   return fields;
 }
 
+function mediaValidationFields({ markdown, coverUrl }: { markdown: string; coverUrl: string }) {
+  const classification = classifyArticleMedia({ markdown, coverUrl });
+  const fields: Record<string, string[]> = {};
+  if (classification.invalidMarkdownSources.length) {
+    fields.markdown = ["图片只能使用已上传媒体的 /media/<uuid> 地址"];
+  }
+  if (classification.invalidCoverUrl) {
+    fields.coverUrl = ["封面只能选择已上传媒体；请清空历史封面 URL"];
+  }
+  return Object.keys(fields).length ? fields : null;
+}
+
 function statusOf(post: StoredAdminPost) {
   return articleStatusSchema.parse(post.status);
 }
@@ -55,9 +68,11 @@ function confirmationMatches(id: string, current: StoredAdminPost, input: AdminP
 
 export function createArticleService(repository: AdminPostRepository) {
   async function createDraft(input: AdminPostInput) {
+    const fields = mediaValidationFields(input);
+    if (fields) return { ok: false, detail: { error: "validation_failed", fields } } as const;
     const post = await repository.createDraft(input);
     if (!post) throw new Error("draft was not persisted");
-    return serialize(post);
+    return { ok: true, post: serialize(post) } as const;
   }
 
   async function getDraft(id: string) {
@@ -73,6 +88,8 @@ export function createArticleService(repository: AdminPostRepository) {
     const result = await repository.transactRetained<ArticleServiceResult>(id, async (current, update) => {
       const status = statusOf(current);
       if (!resolveRetainedTransition(status, "edit")) return { ok: false, detail: { error: "not_found" } };
+      const mediaFields = mediaValidationFields(input);
+      if (mediaFields) return { ok: false, detail: { error: "validation_failed", fields: mediaFields } };
       if (status === "published" && input.slug !== current.slug && !confirmationMatches(id, current, input)) {
         return {
           ok: false,
@@ -135,10 +152,16 @@ export function createArticleService(repository: AdminPostRepository) {
           ...(current.coverMedia ? { coverMedia: current.coverMedia } : {}),
         });
         if (!valid.success) return { ok: false, detail: { error: "validation_failed", fields: validationFields(valid.error) } };
+        const mediaFields = mediaValidationFields(current);
+        if (mediaFields) return { ok: false, detail: { error: "validation_failed", fields: mediaFields } };
       }
 
       if (action === "republish" && !current.publishedAt) {
         return { ok: false, detail: { error: "validation_failed", fields: { publishedAt: ["重新发布需要保留首次发布时间"] } } };
+      }
+      if (action === "republish") {
+        const mediaFields = mediaValidationFields(current);
+        if (mediaFields) return { ok: false, detail: { error: "validation_failed", fields: mediaFields } };
       }
       const updated = await update({
         status: target,

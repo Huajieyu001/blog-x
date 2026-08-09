@@ -16,6 +16,7 @@ import { authRoutes } from "./routes/auth.js";
 import { createSessionService } from "./auth/sessions.js";
 import { createAdminPostRepository } from "./content/admin-repository.js";
 import { createArticleService } from "./content/article-service.js";
+import { classifyArticleMedia } from "./content/media-reference-policy.js";
 import { adminPostRoutes } from "./routes/admin-posts.js";
 import { createPublicRepository } from "./content/public-repository.js";
 import { publicPostRoutes } from "./routes/public-posts.js";
@@ -149,6 +150,13 @@ export async function buildApp(options: BuildAppOptions = {}) {
     if (!requireContentType(request, reply, "application/json")) return;
     const parsed = publishInputSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid article" });
+    const media = classifyArticleMedia({ markdown: parsed.data.markdown, coverUrl: "" });
+    if (media.invalidMarkdownSources.length) {
+      return reply.code(400).send({
+        error: "validation_failed",
+        fields: { markdown: ["图片只能使用已上传媒体的 /media/<uuid> 地址"] },
+      });
+    }
     try {
       const now = new Date();
       const inserted = await db.insert(articles).values({ ...parsed.data, status: "published", publishedAt: now, updatedAt: now }).returning({ slug: articles.slug, title: articles.title, publishedAt: articles.publishedAt });

@@ -6,6 +6,7 @@ import remarkRehype from "remark-rehype";
 import { createHighlighter, type BundledLanguage } from "shiki";
 import { unified } from "unified";
 import type { TocEntry } from "@blog-x/contracts";
+import { isMediaPath } from "./media-reference-policy.js";
 
 const highlightedLanguages = [
   "bash",
@@ -68,7 +69,6 @@ const markdownSanitizeSchema: SanitizeSchema = {
   protocols: {
     ...defaultSchema.protocols,
     href: ["http", "https"],
-    src: ["http", "https"],
   },
 };
 
@@ -84,21 +84,8 @@ function textContent(node: HastNode): string {
   return node.value ?? node.children?.map(textContent).join("") ?? "";
 }
 
-const mediaSourcePattern = /^\/media\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function allowedImageSource(value: unknown) {
-  if (typeof value !== "string") return false;
-  if (mediaSourcePattern.test(value)) return true;
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
 function constrainImageSources(node: HastNode) {
-  if (node.tagName === "img" && !allowedImageSource(node.properties?.src)) {
+  if (node.tagName === "img" && !isMediaPath(node.properties?.src)) {
     if (node.properties) delete node.properties.src;
   }
   node.children?.forEach(constrainImageSources);
