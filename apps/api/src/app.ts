@@ -11,7 +11,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import Fastify, { type FastifyLoggerOptions, type FastifyPluginAsync } from "fastify";
 import { Pool } from "pg";
 import { administrators, articleTags, articles, categories, media, sessions, sitePages, tags } from "./db/schema.js";
-import { seedAdministratorFromEnvironment } from "./db/seed-admin.js";
+import { seedAdministrator } from "./db/seed-admin.js";
 import { authRoutes } from "./routes/auth.js";
 import { createSessionService, sessionCookieName } from "./auth/sessions.js";
 import { createAdminPostRepository } from "./content/admin-repository.js";
@@ -32,21 +32,39 @@ import { createMediaService } from "./content/media-service.js";
 import { mediaRoutes } from "./routes/media.js";
 import { createExportRepository } from "./content/export-repository.js";
 import { adminExportRoutes } from "./routes/admin-export.js";
+import { parseApiRuntimeConfig, type ApiRuntimeConfig, type RateLimitConfig } from "./security/config.js";
+import { BoundedRateLimitStore } from "./security/rate-limiter.js";
 
-const databaseUrl = process.env.DATABASE_URL ?? "postgres://blog_x@127.0.0.1:5432/blog_x";
-const pool = new Pool({ connectionString: databaseUrl });
-const db = drizzle({ client: pool, schema: { administrators, articles, sessions, categories, tags, articleTags, sitePages, media } });
+const databaseSchema = { administrators, articles, sessions, categories, tags, articleTags, sitePages, media };
+
+export function createRuntimeResources(config: ApiRuntimeConfig) {
+  const pool = new Pool({ connectionString: config.databaseUrl });
+  const db = drizzle({ client: pool, schema: databaseSchema });
+  return { pool, db };
+}
+
+type RuntimeResources = ReturnType<typeof createRuntimeResources>;
 
 type BuildAppOptions = {
   logger?: FastifyLoggerOptions;
   publicOrigin?: string;
   mediaRoot?: string;
+  resources?: RuntimeResources;
+  rateLimits?: RateLimitConfig;
+  rateStore?: BoundedRateLimitStore;
 };
 
 export async function buildApp(options: BuildAppOptions = {}) {
+  // buildApp remains the test seam. Production entry always passes resources
+  // created only after parseApiRuntimeConfig has accepted its environment.
+  const resources = options.resources ?? createRuntimeResources(parseApiRuntimeConfig(process.env, "migrate"));
+  const db = resources.db;
   const publicOrigin = options.publicOrigin ?? process.env.PUBLIC_ORIGIN;
   const secureCookies = process.env.NODE_ENV === "production" || publicOrigin?.startsWith("https://") === true;
+  const rateLimits = options.rateLimits ?? parseApiRuntimeConfig(process.env, "migrate").rateLimits;
+  const rateStore = options.rateStore ?? new BoundedRateLimitStore(undefined, rateLimits.storeCapacity);
   const app = Fastify({
+    trustProxy: false,
     logger: {
       level: options.logger?.level ?? (process.env.NODE_ENV === "production" ? "info" : "silent"),
       ...options.logger,
@@ -63,6 +81,8 @@ export async function buildApp(options: BuildAppOptions = {}) {
     sessionAuth: app.sessionAuth,
     publicOrigin,
     secureCookies,
+    loginRatePolicy: rateLimits.login,
+    rateStore,
   });
   await app.register(adminPostRoutes, {
     articleService: createArticleService(createAdminPostRepository(db)),
@@ -109,7 +129,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   return app;
 }
 
-async function migrate() {
+async function migrate(pool: Pool) {
   const migrationDirectory = fileURLToPath(new URL("../drizzle/", import.meta.url));
   const migrationFiles = (await readdir(migrationDirectory)).filter((name) => /^\d+.*\.sql$/.test(name)).sort();
   const fingerprint = createHash("sha256");
@@ -137,10 +157,10 @@ async function migrate() {
     await client.query("insert into blog_x_schema_ledger (scope, migration_count, migration_fingerprint) values ('phase1', $1, $2) on conflict (scope) do update set migration_count = excluded.migration_count, migration_fingerprint = excluded.migration_fingerprint, applied_at = now()", [migrationFiles.length, fingerprint.digest("hex")]);
   } finally { await client.query("select pg_advisory_unlock(hashtext('blog-x-phase1-migration'))").catch(() => undefined); client.release(); }
 }
-async function seed() {
-  await seedAdministratorFromEnvironment(db);
+async function seed(db: RuntimeResources["db"], administrator: { username: string; password: string }) {
+  await seedAdministrator(db, administrator);
 }
-async function schemaVerify() {
+async function schemaVerify(pool: Pool) {
   const result = await pool.query("select tablename from pg_tables where schemaname = 'public' and tablename = any($1)", [["administrators", "sessions", "articles", "categories", "tags", "article_tags", "site_pages", "media"]]);
   if (result.rowCount !== 8) throw new Error("media schema is not active; run pnpm db:migrate first");
   const ledger = await pool.query("select migration_count from blog_x_schema_ledger where scope = 'phase1'");
@@ -154,10 +174,22 @@ async function schemaVerify() {
 }
 async function main() {
   const command = process.argv[2];
-  if (command === "migrate") { await migrate(); await pool.end(); return; }
-  if (command === "seed") { await seed(); await pool.end(); return; }
-  if (command === "schema:verify") { await schemaVerify(); await pool.end(); return; }
-  if (!process.env.PUBLIC_ORIGIN) throw new Error("PUBLIC_ORIGIN is required when starting the API server");
-  const app = await buildApp(); await app.listen({ host: process.env.API_HOST ?? "127.0.0.1", port: Number(process.env.API_PORT ?? 3001) });
+  const configCommand = command === "migrate" || command === "seed" || command === "schema:verify" ? command : "serve";
+  const config = parseApiRuntimeConfig(process.env, configCommand);
+  const resources = createRuntimeResources(config);
+  try {
+    if (command === "migrate") { await migrate(resources.pool); return; }
+    if (command === "seed") { await seed(resources.db, config.administrator!); return; }
+    if (command === "schema:verify") { await schemaVerify(resources.pool); return; }
+    const app = await buildApp({
+      resources,
+      publicOrigin: config.publicOrigin,
+      mediaRoot: config.mediaRoot,
+      rateLimits: config.rateLimits,
+    });
+    await app.listen({ host: config.apiHost, port: config.apiPort });
+  } finally {
+    await resources.pool.end();
+  }
 }
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main().catch(async (error) => { console.error(error instanceof Error ? error.message : "startup failed"); await pool.end(); process.exitCode = 1; });
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main().catch((error) => { console.error(error instanceof Error ? error.message : "startup failed"); process.exitCode = 1; });

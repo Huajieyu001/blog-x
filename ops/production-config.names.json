@@ -1,1 +1,22 @@
-{"format":"blog-x-production-config-names","version":1,"variables":[]}
+{
+  "format": "blog-x-production-config-names",
+  "version": 1,
+  "valueSource": "untracked-root-or-service-owned-mechanism",
+  "variables": [
+    { "name": "NODE_ENV", "class": "runtime-mode", "consumers": ["server"] },
+    { "name": "DATABASE_URL", "class": "secret-runtime", "consumers": ["server", "migrate", "schema-verify", "seed"] },
+    { "name": "PUBLIC_ORIGIN", "class": "public-identity", "consumers": ["server"] },
+    { "name": "API_HOST", "class": "runtime-bind", "consumers": ["server"] },
+    { "name": "API_PORT", "class": "runtime-bind", "consumers": ["server"] },
+    { "name": "MEDIA_ROOT", "class": "runtime-storage", "consumers": ["server"] },
+    { "name": "ADMIN_USERNAME", "class": "seed-secret", "consumers": ["seed"] },
+    { "name": "ADMIN_PASSWORD", "class": "seed-secret", "consumers": ["seed"] },
+    { "name": "BLOG_X_LOGIN_LIMIT", "class": "runtime-limit", "consumers": ["server"] },
+    { "name": "BLOG_X_LOGIN_WINDOW_MS", "class": "runtime-limit", "consumers": ["server"] },
+    { "name": "BLOG_X_REQUEST_LIMIT", "class": "runtime-limit", "consumers": ["server"] },
+    { "name": "BLOG_X_REQUEST_WINDOW_MS", "class": "runtime-limit", "consumers": ["server"] },
+    { "name": "BLOG_X_ADMIN_MUTATION_LIMIT", "class": "runtime-limit", "consumers": ["server"] },
+    { "name": "BLOG_X_ADMIN_MUTATION_WINDOW_MS", "class": "runtime-limit", "consumers": ["server"] },
+    { "name": "BLOG_X_RATE_STORE_CAPACITY", "class": "runtime-limit", "consumers": ["server"] }
+  ]
+}

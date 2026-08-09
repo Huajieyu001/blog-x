@@ -5,6 +5,7 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { sessionCookieName, sessionCookieOptions, type SessionService } from "../auth/sessions.js";
 import * as schema from "../db/schema.js";
+import { BoundedRateLimitStore, createRateLimitKey, type RateLimitPolicy } from "../security/rate-limiter.js";
 
 type Database = NodePgDatabase<typeof schema>;
 declare module "fastify" {
@@ -18,6 +19,8 @@ type AuthRouteOptions = {
   sessionAuth: SessionService;
   publicOrigin?: string;
   secureCookies: boolean;
+  loginRatePolicy: RateLimitPolicy;
+  rateStore: BoundedRateLimitStore;
 };
 
 function noStore(reply: { header: (name: string, value: string) => unknown }) {
@@ -38,6 +41,16 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
     if (!trustedOrigin(request, options.publicOrigin)) return reply.code(403).send({ error: "forbidden" });
     const parsed = loginInputSchema.safeParse(request.body);
     if (!parsed.success) return unauthorized(reply);
+    // Fastify's socket-backed request.ip is authoritative because buildApp sets
+    // trustProxy false; forwarded headers cannot alter this limiter key.
+    const decision = options.rateStore.consume(
+      createRateLimitKey("login", request.ip, parsed.data.username),
+      options.loginRatePolicy,
+    );
+    if (!decision.allowed) {
+      reply.header("retry-after", String(decision.retryAfterSeconds));
+      return reply.code(429).send({ error: "too_many_requests" });
+    }
     const administrator = await options.db.select().from(schema.administrators)
       .where(eq(schema.administrators.username, parsed.data.username))
       .limit(1);
