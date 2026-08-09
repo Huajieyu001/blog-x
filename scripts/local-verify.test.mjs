@@ -51,7 +51,7 @@ test("Phase 3 selections deterministically route only their named semantic suite
 test("Phase 3 full is the extensible canonical gate for completed Phase 1/2 and current distribution semantics", async () => {
   const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
   assert.match(runner, /if \(options\.phase3Mode === "full"\) \{\s*await fullPhaseChecks\(context, true\);\s*await runPhase3Checks\(context, "full"\);/s);
-  assert.match(runner, /const phase3Modes = \["api", "metadata", "full", "export-api"\]/);
+  assert.match(runner, /const phase3Modes = \["api", "metadata", "full", "export-api", "export-browser"\]/);
   assert.match(runner, /"export-api": \{ databaseSuites: \[exportApi\], webSuites: \[\] \}/);
   assert.match(runner, /runStep\(context, "build workspace", "corepack", \["pnpm", "-r", "build"\], \{ env: \{ \.\.\.process\.env, PUBLIC_ORIGIN: context\.publicOrigin \} \}\)/);
   assert.match(runner, /INTERNAL_API_ORIGIN: fixtureOrigin, PUBLIC_ORIGIN: errorWebOrigin/);

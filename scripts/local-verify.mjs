@@ -53,6 +53,7 @@ export function phase3Selection(mode) {
     metadata: { databaseSuites: [], webSuites: [metadata, browser] },
     full: { databaseSuites: [api], webSuites: [metadata, browser] },
     "export-api": { databaseSuites: [exportApi], webSuites: [] },
+    "export-browser": { databaseSuites: [], webSuites: [browser] },
   };
   const selection = selections[mode];
   if (!selection) throw new Error(`Phase 3 selection is not recognized: ${mode}`);
@@ -451,7 +452,7 @@ function optionValue(name) {
 
 async function main() {
   const flags = new Set(process.argv.slice(2));
-  const phase3Modes = ["api", "metadata", "full", "export-api"].filter((mode) => flags.has(`--phase3-${mode}`));
+  const phase3Modes = ["api", "metadata", "full", "export-api", "export-browser"].filter((mode) => flags.has(`--phase3-${mode}`));
   if (phase3Modes.length > 1) throw new Error("choose at most one Phase 3 verification selection");
   const options = {
     namespace: optionValue("namespace"),
