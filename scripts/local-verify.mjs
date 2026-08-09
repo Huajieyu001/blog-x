@@ -68,6 +68,14 @@ export function assertSemanticTap(output) {
   if (!total.length || total.every((count) => count === 0)) throw new Error("semantic test output reported zero semantic tests");
 }
 
+export function assertPlaywrightJourney(output) {
+  const text = String(output);
+  const skipped = [...text.matchAll(/\b(\d+)\s+skipped\b/gi)].some((match) => Number(match[1]) > 0);
+  const passed = [...text.matchAll(/\b(\d+)\s+passed\b/gi)].some((match) => Number(match[1]) > 0);
+  if (skipped) throw new Error("Playwright journey reported skipped tests");
+  if (!passed) throw new Error("Playwright journey reported zero completed tests");
+}
+
 export function semanticTestCommand(file) {
   return ["node", "--import", "tsx", "--test", "--test-reporter=tap", file];
 }
@@ -347,6 +355,7 @@ async function runPhase3Checks(context, mode) {
         E2E_RUN_ID: context.runId,
       },
     });
+    assertPlaywrightJourney(result.combined);
   }
 }
 

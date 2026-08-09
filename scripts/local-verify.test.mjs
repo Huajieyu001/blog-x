@@ -6,6 +6,7 @@ import test from "node:test";
 import { auditFiles } from "./check-boundaries.mjs";
 import {
   assertSemanticTap,
+  assertPlaywrightJourney,
   cleanupGeneratedMediaRoot,
   phase3Selection,
   redactText,
@@ -65,6 +66,12 @@ test("Phase 3 semantic TAP output fails closed on skip or zero tests", () => {
     "--test-reporter=tap",
     "apps/api/test/public-distribution.test.ts",
   ]);
+});
+
+test("Phase 3 Playwright journeys have their own fail-closed result contract", () => {
+  assert.doesNotThrow(() => assertPlaywrightJourney("Running 1 test using 1 worker\n  1 passed"));
+  assert.throws(() => assertPlaywrightJourney("Running 1 test using 1 worker\n  1 skipped"), /skipped/i);
+  assert.throws(() => assertPlaywrightJourney("Running 0 tests using 1 worker"), /zero/i);
 });
 
 test("Phase 3 generated public origins are loopback-only and separate from internal API routing", () => {
