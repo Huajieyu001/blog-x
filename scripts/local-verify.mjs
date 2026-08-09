@@ -37,15 +37,12 @@ export function validateLoopbackHttpOrigin(value) {
 
 export function phase3Selection(mode) {
   const api = ["PHASE3_TEST_DATABASE_URL", "apps/api/test/public-distribution.test.ts"];
-  const exportApi = ["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"];
   const metadata = "apps/web/app/lib/site-metadata.test.ts";
-  const exportBrowser = "apps/web/e2e/phase3-distribution.spec.ts";
+  const browser = "apps/web/e2e/phase3-distribution.spec.ts";
   const selections = {
     api: { databaseSuites: [api], webSuites: [] },
-    metadata: { databaseSuites: [], webSuites: [metadata, exportBrowser] },
-    "export-api": { databaseSuites: [exportApi], webSuites: [] },
-    "export-browser": { databaseSuites: [], webSuites: [exportBrowser] },
-    full: { databaseSuites: [api, exportApi], webSuites: [metadata, exportBrowser] },
+    metadata: { databaseSuites: [], webSuites: [metadata, browser] },
+    full: { databaseSuites: [api], webSuites: [metadata, browser] },
   };
   const selection = selections[mode];
   if (!selection) throw new Error(`Phase 3 selection is not recognized: ${mode}`);
@@ -250,6 +247,12 @@ async function seed(context) {
     "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:seed");
 }
 
+async function resetAcceptanceData(context, label) {
+  await compose(context, label, "exec", "-T", "postgres", "psql", "-U", "blog_x", "-d", context.database,
+    "-c", "truncate table sessions, article_tags, articles, categories, tags, site_pages, media, administrators cascade");
+  await seed(context);
+}
+
 async function runDatabaseSuite(context, variable, file) {
   const result = await compose(context, `run ${file}`, "exec", "-T",
     "-e", `DATABASE_URL=${context.databaseUrl}`,
@@ -288,17 +291,17 @@ async function runFailureRecoveryJourney(context) {
   await waitForHttp(`${fixtureOrigin}/health`);
   startManaged(context, "start local recovery Web", process.execPath,
     ["apps/web/node_modules/next/dist/bin/next", "start", "apps/web", "-p", String(errorWebPort)],
-    { ...process.env, INTERNAL_API_ORIGIN: fixtureOrigin });
+    { ...process.env, INTERNAL_API_ORIGIN: fixtureOrigin, PUBLIC_ORIGIN: errorWebOrigin });
   await waitForHttp(errorWebOrigin);
   await runStep(context, "run Phase 2 unavailable/retry browser journey", "corepack",
     ["pnpm", "exec", "playwright", "test", "apps/web/e2e/public-errors.spec.ts", "--workers=1"],
-    { env: { ...process.env, E2E_ERROR_WEB_ORIGIN: errorWebOrigin } });
+    { env: { ...process.env, E2E_ERROR_WEB_ORIGIN: errorWebOrigin, E2E_ERROR_FIXTURE_ORIGIN: fixtureOrigin } });
   await stopManaged(context);
 }
 
 async function fullPhaseChecks(context, phase2Full) {
   await runStep(context, "typecheck workspace", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
-  await runStep(context, "build workspace", "corepack", ["pnpm", "-r", "build"], { env: process.env });
+  await runStep(context, "build workspace", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin } });
   await runStep(context, "run operations safety fixtures", "corepack", ["pnpm", "test:ops"], { env: process.env });
   const databaseSuites = [
     ["AUTH_TEST_DATABASE_URL", "apps/api/test/auth-session.test.ts"],
@@ -316,9 +319,7 @@ async function fullPhaseChecks(context, phase2Full) {
   for (const [variable, file] of databaseSuites) {
     await runDatabaseSuite(context, variable, file);
   }
-  await compose(context, "clear acceptance data", "exec", "-T", "postgres", "psql", "-U", "blog_x", "-d", context.database,
-    "-c", "truncate table sessions, article_tags, articles, categories, tags, site_pages, media, administrators cascade");
-  await seed(context);
+  await resetAcceptanceData(context, "clear Phase acceptance data");
   const playwrightEnvironment = {
     ...process.env,
     E2E_WEB_ORIGIN: context.webOrigin,
@@ -340,6 +341,7 @@ async function fullPhaseChecks(context, phase2Full) {
 async function runPhase3Checks(context, mode) {
   const selection = phase3Selection(mode);
   for (const [variable, file] of selection.databaseSuites) await runDatabaseSuite(context, variable, file);
+  if (selection.webSuites.length) await resetAcceptanceData(context, "clear Phase 3 browser acceptance data");
   for (const file of selection.webSuites) {
     if (file.endsWith(".test.ts")) {
       const result = await runStep(context, `run ${file}`, "corepack", ["pnpm", "exec", "tsx", "--test", "--test-reporter=tap", file], { env: process.env });
@@ -400,7 +402,11 @@ async function runSingle(options) {
     await compose(context, "verify active schema", "exec", "-T", "-e", `DATABASE_URL=${context.databaseUrl}`,
       "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:schema:verify");
     await seed(context);
-    if (options.phase3Mode) await runPhase3Checks(context, options.phase3Mode);
+    if (options.phase3Mode === "full") {
+      await fullPhaseChecks(context, true);
+      await runPhase3Checks(context, "full");
+    }
+    else if (options.phase3Mode) await runPhase3Checks(context, options.phase3Mode);
     else if (options.fullPhase) await fullPhaseChecks(context, options.phase2Full);
     await assertCleanLogs(context);
     process.stdout.write(`[local-verify] ${namespace} passed\n`);
@@ -433,7 +439,7 @@ function optionValue(name) {
 
 async function main() {
   const flags = new Set(process.argv.slice(2));
-  const phase3Modes = ["api", "metadata", "export-api", "export-browser", "full"].filter((mode) => flags.has(`--phase3-${mode}`));
+  const phase3Modes = ["api", "metadata", "full"].filter((mode) => flags.has(`--phase3-${mode}`));
   if (phase3Modes.length > 1) throw new Error("choose at most one Phase 3 verification selection");
   const options = {
     namespace: optionValue("namespace"),

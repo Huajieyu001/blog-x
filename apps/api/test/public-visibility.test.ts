@@ -112,7 +112,7 @@ test("public detail exposes only published content, uses one renderer, and gives
     deleted: `detail-deleted-${Date.now()}`,
   };
   await db.insert(articles).values([
-    { title: "Published detail", summary: "Public summary", slug: slugs.published, markdown, status: "published", publishedAt: now },
+    { title: "Published detail", summary: "Public summary", slug: slugs.published, markdown, seoDescription: "Public SEO description", status: "published", publishedAt: now },
     { title: "Draft detail", summary: "Secret draft", slug: slugs.draft, markdown, status: "draft", publishedAt: null },
     { title: "Unpublished detail", summary: "Secret unpublished", slug: slugs.unpublished, markdown, status: "unpublished", publishedAt: now },
     { title: "Deleted detail", summary: "Secret deleted", slug: slugs.deleted, markdown, status: "published", publishedAt: now, deletedAt: now },
@@ -120,11 +120,12 @@ test("public detail exposes only published content, uses one renderer, and gives
 
   const published = await app.inject({ method: "GET", url: `/public/articles/${slugs.published}` });
   assert.equal(published.statusCode, 200);
-  assert.deepEqual(Object.keys(published.json()).sort(), ["category", "publishedAt", "renderedHtml", "slug", "status", "summary", "tags", "title", "toc"]);
+  assert.deepEqual(Object.keys(published.json()).sort(), ["category", "publishedAt", "renderedHtml", "seoDescription", "slug", "status", "summary", "tags", "title", "toc"]);
   assert.equal(published.json().category, null);
   assert.deepEqual(published.json().tags, []);
   assert.equal(published.json().status, "published");
   assert.equal(published.json().summary, "Public summary");
+  assert.equal(published.json().seoDescription, "Public SEO description");
   assert.deepEqual(published.json().toc, [{ id: "中文-api", depth: 2, text: "中文 API" }]);
   assert.match(published.json().renderedHtml, /<h2 id="中文-api">/);
   assert.match(published.json().renderedHtml, /<table>/);

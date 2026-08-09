@@ -32,22 +32,23 @@ test("Phase 3 selections deterministically route only their named semantic suite
     databaseSuites: [],
     webSuites: ["apps/web/app/lib/site-metadata.test.ts", "apps/web/e2e/phase3-distribution.spec.ts"],
   });
-  assert.deepEqual(phase3Selection("export-api"), {
-    databaseSuites: [["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"]],
-    webSuites: [],
-  });
-  assert.deepEqual(phase3Selection("export-browser"), {
-    databaseSuites: [],
-    webSuites: ["apps/web/e2e/phase3-distribution.spec.ts"],
-  });
   assert.deepEqual(phase3Selection("full"), {
-    databaseSuites: [
-      ["PHASE3_TEST_DATABASE_URL", "apps/api/test/public-distribution.test.ts"],
-      ["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"],
-    ],
+    databaseSuites: [["PHASE3_TEST_DATABASE_URL", "apps/api/test/public-distribution.test.ts"]],
     webSuites: ["apps/web/app/lib/site-metadata.test.ts", "apps/web/e2e/phase3-distribution.spec.ts"],
   });
+  assert.throws(() => phase3Selection("export-api"), /Phase 3 selection/i);
+  assert.throws(() => phase3Selection("export-browser"), /Phase 3 selection/i);
   assert.throws(() => phase3Selection("unknown"), /Phase 3 selection/i);
+});
+
+test("Phase 3 full is the extensible canonical gate for completed Phase 1/2 and current distribution semantics", async () => {
+  const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
+  assert.match(runner, /if \(options\.phase3Mode === "full"\) \{\s*await fullPhaseChecks\(context, true\);\s*await runPhase3Checks\(context, "full"\);/s);
+  assert.match(runner, /const phase3Modes = \["api", "metadata", "full"\]/);
+  assert.doesNotMatch(runner, /distribution-export\.test\.ts/);
+  assert.match(runner, /runStep\(context, "build workspace", "corepack", \["pnpm", "-r", "build"\], \{ env: \{ \.\.\.process\.env, PUBLIC_ORIGIN: context\.publicOrigin \} \}\)/);
+  assert.match(runner, /INTERNAL_API_ORIGIN: fixtureOrigin, PUBLIC_ORIGIN: errorWebOrigin/);
+  assert.match(runner, /E2E_ERROR_WEB_ORIGIN: errorWebOrigin, E2E_ERROR_FIXTURE_ORIGIN: fixtureOrigin/);
 });
 
 test("Phase 3 semantic TAP output fails closed on skip or zero tests", () => {

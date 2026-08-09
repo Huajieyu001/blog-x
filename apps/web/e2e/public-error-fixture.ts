@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 
 const port = Number(process.env.ERROR_FIXTURE_PORT ?? 3399);
-let aboutAttempts = 0;
+let aboutAvailable = false;
 
 function json(response: import("node:http").ServerResponse, status: number, body: unknown) {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -22,9 +22,16 @@ const server = createServer((request, response) => {
   if (url.pathname === "/public/categories") return json(response, 200, { items: [] });
   if (url.pathname === "/public/tags") return json(response, 200, { items: [] });
   if (url.pathname === "/public/archives") return json(response, 200, { years: [] });
+  if (url.pathname === "/control/about/reset") {
+    aboutAvailable = false;
+    return json(response, 200, { ok: true });
+  }
+  if (url.pathname === "/control/about/recover") {
+    aboutAvailable = true;
+    return json(response, 200, { ok: true });
+  }
   if (url.pathname === "/public/about") {
-    aboutAttempts += 1;
-    if (aboutAttempts === 1) return json(response, 500, { error: "temporary internal detail" });
+    if (!aboutAvailable) return json(response, 500, { error: "temporary internal detail" });
     return json(response, 200, {
       title: "关于错误恢复",
       renderedHtml: "<p>恢复后的公开内容</p>",

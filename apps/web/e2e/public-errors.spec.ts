@@ -1,6 +1,12 @@
 import { expect, test } from "@playwright/test";
 
 const webOrigin = process.env.E2E_ERROR_WEB_ORIGIN ?? "http://127.0.0.1:3300";
+const fixtureOrigin = process.env.E2E_ERROR_FIXTURE_ORIGIN ?? "http://127.0.0.1:3399";
+
+async function controlAbout(path: "reset" | "recover") {
+  const response = await fetch(`${fixtureOrigin}/control/about/${path}`);
+  expect(response.ok).toBe(true);
+}
 
 async function expectUnavailable(page: import("@playwright/test").Page, path: string) {
   await page.goto(`${webOrigin}${path}`);
@@ -32,9 +38,11 @@ test("only a valid API absence becomes 404 while 500, refusal, and malformed DTO
 });
 
 test("retry can recover a transient About failure without exposing internals", async ({ page }) => {
+  await controlAbout("reset");
   await page.goto(`${webOrigin}/about`);
   const boundary = page.getByTestId("service-unavailable");
   await expect(boundary).toBeVisible();
+  await controlAbout("recover");
   await boundary.getByRole("button", { name: "重试" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "关于错误恢复" })).toBeVisible();
   await expect(page.getByTestId("article-body")).toContainText("恢复后的公开内容");
