@@ -7,6 +7,7 @@ import test from "node:test";
 import { parseBackupPolicy } from "./policy.mjs";
 import { cleanupBackupStaging, validateBackupRoot, validateBackupSetId } from "./paths.mjs";
 import { hashFile, verifyBackupSet } from "./manifest.mjs";
+import { verifyCompleteBackupSetContents } from "./content-verifier.mjs";
 import { createBackupSet } from "./create.mjs";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -95,6 +96,17 @@ test("manifest verification accepts exact complete bytes and rejects tamper, ext
   await mkdir(linkRoot);
   await symlink(join(root, "20260809T100002Z-c1b2c3d4", "manifest.json"), join(linkRoot, "manifest.json"));
   await assert.rejects(verifyBackupSet(linkRoot), /link|complete/i);
+});
+
+test("the rehearsal wrapper rejects a production-shaped root before shared member reads", async (context) => {
+  const sourceBase = await mkdtemp(join(tmpdir(), "blog-x-production-source-"));
+  context.after(async () => { await rm(sourceBase, { recursive: true, force: true }); });
+  const productionRoot = join(sourceBase, "20260809T100004Z-a1b2c3d4");
+  await mkdir(productionRoot, { mode: 0o700 });
+  await writeFile(join(productionRoot, "sentinel-before-members"), "must-not-read");
+
+  await assert.rejects(verifyBackupSet(productionRoot), /backup root|staging/i);
+  await assert.rejects(verifyCompleteBackupSetContents(productionRoot), /root validator is required/i);
 });
 
 test("atomic creation writes COMPLETE last, preserves prior sets, and leaves a bounded staging root on failure", async (context) => {
