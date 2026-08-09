@@ -4,15 +4,15 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 05
 status: executing
-stopped_at: Phase 05 Plan 01 executed; ready for Plan 02
-last_updated: "2026-08-09T23:54:00+08:00"
-last_activity: 2026-08-09
-last_activity_desc: Executed Phase 05 Plan 01 same-origin media closure
+stopped_at: Phase 05 Plan 02 executed; ready for Plan 03
+last_updated: "2026-08-10T01:53:58+08:00"
+last_activity: 2026-08-10
+last_activity_desc: Executed Phase 05 Plan 02 production backup adapter
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 24
-  completed_plans: 22
+  completed_plans: 23
 current_phase_name: Integration Gap Closure
 ---
 
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-08-08)
 ## Current Position
 
 Phase: 05 — Integration Gap Closure
-Plan: 1 of 3
-Status: Plan 01 complete; ready for Plan 02
-Last activity: 2026-08-09 — completed same-origin media closure
+Plan: 2 of 3
+Status: Plan 02 complete; ready for Plan 03
+Last activity: 2026-08-10 — completed production backup adapter
 
 Progress: [████████░░] 80% (4 of 5 phases implemented)
 
@@ -38,7 +38,7 @@ Progress: [████████░░] 80% (4 of 5 phases implemented)
 
 **Velocity:**
 
-- Total plans completed: 22
+- Total plans completed: 23
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -50,7 +50,7 @@ Progress: [████████░░] 80% (4 of 5 phases implemented)
 | 02 | 6 | - | - |
 | 03 | 4 | - | - |
 | 04 | 3 | - | - |
-| 05 | 1 | 3 | 31min |
+| 05 | 2 | 3 | 25min |
 
 **Recent Trend:**
 
@@ -83,6 +83,7 @@ Progress: [████████░░] 80% (4 of 5 phases implemented)
 | Phase 04 P02 | 42min | 3 tasks | 26 files |
 | Phase 04 P03 | 32min | 3 tasks | 16 files |
 | Phase 05 P01 | 31min | 3 tasks | 31 files |
+| Phase 05 P02 | 19min | 4 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -150,13 +151,13 @@ Decisions are logged in PROJECT.md Key Decisions table.
 
 ### Blockers/Concerns
 
-- [v1.0 audit] 备份/恢复仅有本地验证执行路径，生产每日异机、加密、保留与告警路径尚未实现（OPS-03/OPS-05）。
+- [v1.0 audit] 已具备本地生成夹具的生产采集与挂载适配器；真实每日异机、真实挂载、激活告警仍无 live evidence（OPS-03/OPS-05）。
 - [v1.0 audit] READY 门禁把发布后冒烟证据作为发布前条件，必须拆分预发布与发布后状态（OPS-05）。
 - [Phase 2+] 副服务器系统、端口、历史数据与私网能力尚未只读核验。
 - [Later] 评论、统计深度、私密内容和精确 RPO/RTO 延后决策，不阻塞 v1。
 
 ## Session Continuity
 
-Last session: 2026-08-09T23:54:00+08:00
-Stopped at: Phase 05 Plan 01 complete; do not begin Plan 02 in this task
-Resume file: .planning/phases/05-v1-0-integration-gap-closure/05-02-PLAN.md
+Last session: 2026-08-10T01:53:58+08:00
+Stopped at: Phase 05 Plan 02 complete; ready for Plan 03
+Resume file: .planning/phases/05-v1-0-integration-gap-closure/05-03-PLAN.md
