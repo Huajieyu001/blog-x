@@ -311,7 +311,7 @@ test("pipeline creates and verifies a fresh set before the concrete mounted adap
   assert.equal(result.scope, "generated-mounted-fixture");
   const sourceEntries = await readdir(policy.sourceAuthority.sourceBase);
   assert.equal(sourceEntries.filter((name) => /^\d{8}T\d{6}Z-/.test(name)).length, 1);
-  await assert.rejects(runProductionPipeline({ ...policy, sourceRoot: "/manual-set" }, { ...collectorDependencies(), inspectMount: async (root) => ({ isMountPoint: true, root }) }), /pipeline policy/i);
+  await assert.rejects(runProductionPipeline({ ...policy, sourceRoot: "/manual-set" }, { ...collectorDependencies(), inspectMount: async (root) => ({ isMountPoint: true, root }) }), /production backup policy/i);
 });
 
 test("pipeline unit contract remains dormant, strict, collect-then-adapt, and prohibition-fixture controlled", async () => {
@@ -321,7 +321,7 @@ test("pipeline unit contract remains dormant, strict, collect-then-adapt, and pr
   assert.match(service, /production-pipeline\.mjs/);
   assert.match(service, /ConditionPathIsMountPoint=/);
   assert.match(service, /UMask=0077/);
-  assert.doesNotMatch(service, /backup\/create\.mjs|systemctl|enable|start/i);
+  assert.doesNotMatch(service, /backup\/create\.mjs|systemctl|enable/i);
   assert.match(timer, /OnCalendar=daily/);
   assert.match(timer, /Persistent=true/);
   assert.equal(names.fields.some((field) => Object.hasOwn(field, "value")), false);

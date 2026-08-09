@@ -1,6 +1,15 @@
 [Unit]
-Description=Blog X complete backup set
-ConditionPathExists=/etc/blog-x/backup-policy.json
+Description=Blog X collect-then-mounted backup pipeline (dormant until separately configured)
+ConditionPathExists=/etc/blog-x/production-backup-policy.json
+ConditionPathExists=/etc/blog-x/production-backup.key
+ConditionPathExists=/var/lib/blog-x/backup-source
+ConditionPathExists=/var/lib/blog-x/backup-database
+ConditionPathExists=/var/lib/blog-x/media
+ConditionPathExists=/etc/blog-x/backup-config-names.json
+ConditionPathExists=/etc/blog-x/backup-image-digests.json
+ConditionPathExists=/var/lib/blog-x/backup-results
+ConditionPathExists=/var/lib/blog-x/backup-alerts
+ConditionPathIsMountPoint=/mnt/blog-x-backup
 
 [Service]
 Type=oneshot
@@ -8,8 +17,16 @@ User=blog-x
 Group=blog-x
 UMask=0077
 WorkingDirectory=/opt/blog-x
-ExecStart=/usr/bin/node /opt/blog-x/scripts/backup/create.mjs --policy=/etc/blog-x/backup-policy.json
+ExecStart=/usr/bin/node /opt/blog-x/scripts/backup/production-pipeline.mjs --policy=/etc/blog-x/production-backup-policy.json
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/var/lib/blog-x/backup-source /var/lib/blog-x/backup-results /var/lib/blog-x/backup-alerts /mnt/blog-x-backup
+StandardOutput=journal
+StandardError=journal
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=100

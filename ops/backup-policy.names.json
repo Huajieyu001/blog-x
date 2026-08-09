@@ -1,18 +1,16 @@
 {
   "format": "blog-x-backup-policy-names",
-  "version": 1,
+  "version": 2,
   "activation": "blocked-until-external-references",
   "fields": [
-    { "name": "destination_root", "class": "protected-path", "source": "untracked-service-owned-policy" },
-    { "name": "off_host_destination_ref", "class": "external-decision-reference", "source": "untracked-service-owned-policy" },
-    { "name": "retention_decision_ref", "class": "external-decision-reference", "source": "untracked-service-owned-policy" },
-    { "name": "encryption_key_ref", "class": "secret-authority-reference", "source": "untracked-service-owned-policy" },
-    { "name": "alert_recipient_ref", "class": "external-decision-reference", "source": "untracked-service-owned-policy" },
-    { "name": "secret_authority_ref", "class": "secret-authority-reference", "source": "untracked-service-owned-policy" },
-    { "name": "schedule", "class": "daily-policy", "source": "tracked-contract" },
-    { "name": "compose_project", "class": "generated-local-authority", "source": "runtime" },
-    { "name": "database_name", "class": "generated-local-authority", "source": "runtime" },
-    { "name": "media_root", "class": "api-owned-path", "source": "runtime" },
-    { "name": "config_inventory_sources", "class": "name-only-artifact-list", "source": "tracked-contract" }
+    { "name": "sourceAuthority", "class": "service-owned-complete-set-authority", "source": "untracked-service-owned-policy" },
+    { "name": "collector", "class": "fixed-postgres-portable-media-config-image-migration-authority", "source": "untracked-service-owned-policy" },
+    { "name": "destination", "class": "mounted-directory-profile-and-identity", "source": "untracked-service-owned-policy" },
+    { "name": "keyAuthority", "class": "service-owned-aes-256-gcm-key-authority", "source": "untracked-service-owned-policy" },
+    { "name": "retention", "class": "minimum-known-good-retention-policy", "source": "untracked-service-owned-policy" },
+    { "name": "resultAuthority", "class": "redacted-append-only-result-authority", "source": "untracked-service-owned-policy" },
+    { "name": "alertAuthority", "class": "append-only-alert-outcome-authority", "source": "untracked-service-owned-policy" },
+    { "name": "serviceIdentity", "class": "non-root-service-identity", "source": "untracked-service-owned-policy" },
+    { "name": "schedule", "class": "daily-persistent-contract", "source": "tracked-contract" }
   ]
 }
