@@ -570,6 +570,7 @@ function generatedBackupPolicy(context, backupRoot) {
 
 async function seedRestoreFixture(context, includePhase5Legacy = false) {
   await resetAcceptanceData(context, "clear restore source fixture data");
+  await resetGeneratedAcceptanceMedia(context);
   const mediaId = "44444444-4444-4444-8444-444444444444";
   const categoryId = "11111111-1111-4111-8111-111111111111";
   const tagId = "22222222-2222-4222-8222-222222222222";
