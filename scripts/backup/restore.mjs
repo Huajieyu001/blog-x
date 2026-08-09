@@ -138,7 +138,7 @@ async function defaultMutate(plan, dependencies) {
   const run = dependencies.run ?? command;
   const env = restoreEnvironment(plan, dependencies.env);
   const compose = (...args) => run("docker-compose", composeArgs(plan, ...args), { env });
-  await mkdir(plan.restoreRoot, { recursive: false, mode: 0o700 });
+  await mkdir(plan.restoreRoot, { recursive: true, mode: 0o700 });
   await compose("up", "-d", "--wait", "postgres");
   await run("docker-compose", composeArgs(plan, "exec", "-T", "postgres", "pg_restore", "-U", "blog_x", "-d", plan.database, "--exit-on-error", "--no-owner", "--no-privileges"), {
     env, inputPath: resolve(plan.backupRoot, "database.dump"),

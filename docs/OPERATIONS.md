@@ -47,3 +47,26 @@ verify.mjs --backup-root=<精确生成的最终集合>
 ```
 
 `ops/systemd/blog-x-backup.service` 与 `.timer` 是未启用的结构合同。只有 04-03 发布门禁确认外部引用、权限、目的地和恢复证据后，才具备讨论启用条件。
+
+## 隔离恢复演练
+
+恢复分为不可绕过的两个阶段。`preflightRestore` 先只读验证 `COMPLETE`、manifest、全部文件哈希与媒体清单，再验证目标是全新的 `blogxrestore_*` Compose 命名空间、对应的 `blog_x_restore_*` 数据库、精确媒体卷、回环 Web 地址和空的生成临时目录。备份损坏、目标已存在/活动、目录非空或符号链接时，在启动容器、`pg_restore` 或写媒体之前失败。
+
+只有前置检查全部通过，恢复阶段才会：
+
+1. 启动独立 PostgreSQL；
+2. 使用自定义格式 dump 执行非破坏性 `pg_restore`；
+3. 运行正常迁移与 schema 验证，不执行 reset/truncate；
+4. 恢复 source 与 derivative 媒体字节并启动 API/Web；
+5. 对比严格 v1 导出、所有保留生命周期/分类标签/About/封面字段和每个媒体 SHA-256；
+6. 通过恢复后的唯一回环 Web 地址验证公开文章与图片可读、草稿/下线/删除/空发布时间内容仍为 404，最后仅清理本次生成目标。
+
+本地规范门禁为：
+
+```bash
+corepack pnpm local:verify -- --phase4-restore --interruption-check --parallel-check
+```
+
+该门禁会保留完整备份直到数据库、媒体和浏览器三类对比都完成，并验证迁移中断恢复及两个并行演练不会交叉覆盖或清理。它不接受活动环境覆盖参数，也不提供 HTTP import/restore 接口。
+
+真实生产恢复仍需另行人工授权，并至少先完成：停止写入、证明目标数据库和媒体目录为空、确认准确的主机/命名空间、异机备份可达、秘密权威可用、维护窗口与回滚责任人明确。主服务器冻结期间不得将本地演练命令改写为远程命令。

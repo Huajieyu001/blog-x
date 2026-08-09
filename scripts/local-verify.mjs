@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { basename, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -9,6 +9,7 @@ import { auditRepository } from "./check-boundaries.mjs";
 import { createBackupSet } from "./backup/create.mjs";
 import { verifyBackupSet } from "./backup/manifest.mjs";
 import { cleanupGeneratedBackupRoot } from "./backup/paths.mjs";
+import { cleanupGeneratedRestoreRoot, restoreBackupSet } from "./backup/restore.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = fileURLToPath(import.meta.url);
@@ -87,6 +88,11 @@ export function phase4Selection(mode) {
     operations: {
       nodeSuites: ["scripts/ops-status.test.mjs", "scripts/backup/backup.test.mjs", "scripts/local-verify.test.mjs"],
     },
+    restore: {
+      nodeSuites: ["scripts/backup/restore.test.mjs", "scripts/local-verify.test.mjs"],
+      databaseSuite: "apps/api/test/backup-restore.test.ts",
+      browserSuite: "apps/web/e2e/phase4-restore.spec.ts",
+    },
   }[mode];
   if (!selection) throw new Error(`Phase 4 selection is not recognized: ${mode}`);
   return selection;
@@ -163,6 +169,10 @@ export function redactText(text, secrets = []) {
 
 function generatedNamespace() {
   return validateNamespace(`blogxverify_${randomBytes(6).toString("hex")}`);
+}
+
+function generatedRestoreNamespace() {
+  return `blogxrestore_${randomBytes(6).toString("hex")}`;
 }
 
 async function freePort() {
@@ -504,6 +514,117 @@ async function runPhase4OperationsChecks(context) {
   }
 }
 
+function generatedBackupPolicy(context, backupRoot) {
+  return {
+    format: "blog-x-backup-policy", version: 1, destination_root: backupRoot,
+    off_host_destination_ref: "external:off-host-destination", retention_decision_ref: "external:retention-decision",
+    encryption_key_ref: "external:encryption-authority", alert_recipient_ref: "external:alert-recipient",
+    secret_authority_ref: "external:service-secret-authority", schedule: "daily",
+    compose_project: context.namespace, database_name: context.database, media_root: "/var/lib/blog-x/media",
+    config_inventory_sources: ["compose.yaml", "ops/production-config.names.json", "ops/topology-policy.json"],
+  };
+}
+
+async function seedRestoreFixture(context) {
+  await resetAcceptanceData(context, "clear restore source fixture data");
+  const mediaId = "44444444-4444-4444-8444-444444444444";
+  const categoryId = "11111111-1111-4111-8111-111111111111";
+  const tagId = "22222222-2222-4222-8222-222222222222";
+  const articleIds = [
+    "33333333-3333-4333-8333-333333333331", "33333333-3333-4333-8333-333333333332",
+    "33333333-3333-4333-8333-333333333333", "33333333-3333-4333-8333-333333333334",
+    "33333333-3333-4333-8333-333333333335",
+  ];
+  const publishedSlug = `${context.runId}-restore-published`;
+  const hiddenSlugs = ["draft", "offline", "deleted", "null-publication"].map((state) => `${context.runId}-restore-${state}`);
+  const publishedTitle = `恢复演练公开文章 ${context.runId}`;
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+  const mediaRoot = await mkdtemp(resolve(tmpdir(), "blog-x-media-verify-"));
+  try {
+    const sourcePath = resolve(mediaRoot, `${mediaId}.bin`);
+    const derivativePath = resolve(mediaRoot, `${mediaId}.png`);
+    await writeFile(sourcePath, png);
+    await writeFile(derivativePath, png);
+    const api = await compose(context, "resolve source API for media fixture", "ps", "-q", "api");
+    const containerId = api.stdout.trim();
+    if (!/^[a-f0-9]{12,64}$/.test(containerId)) throw new Error("source API container is unavailable for restore fixture");
+    await runStep(context, "create source media fixture directories", "docker", ["exec", containerId, "mkdir", "-p", "/var/lib/blog-x/media/source", "/var/lib/blog-x/media/derivative"]);
+    await runStep(context, "copy source media fixture", "docker", ["cp", sourcePath, `${containerId}:/var/lib/blog-x/media/source/${mediaId}.bin`]);
+    await runStep(context, "copy derivative media fixture", "docker", ["cp", derivativePath, `${containerId}:/var/lib/blog-x/media/derivative/${mediaId}.png`]);
+  } finally {
+    await cleanupGeneratedMediaRoot(mediaRoot);
+  }
+  const timestamp = "2026-08-09T12:00:00.000Z";
+  const query = [
+    `insert into categories (id,name,slug,created_at,updated_at) values ('${categoryId}','恢复分类','restore-category','${timestamp}','${timestamp}');`,
+    `insert into tags (id,name,slug,created_at,updated_at) values ('${tagId}','恢复标签','restore-tag','${timestamp}','${timestamp}');`,
+    `insert into media (id,source_key,derivative_key,source_mime_type,derivative_mime_type,source_bytes,derivative_bytes,width,height,created_at) values ('${mediaId}','source/${mediaId}.bin','derivative/${mediaId}.png','image/png','image/png',${png.length},${png.length},1,1,'${timestamp}');`,
+    `insert into articles (id,title,summary,slug,markdown,seo_description,status,published_at,created_at,updated_at,category_id,cover_media_id,cover_alt,cover_decorative) values ('${articleIds[0]}','${publishedTitle}','完整恢复后的公开摘要','${publishedSlug}','# 恢复正文\\n\\n![恢复图片](/media/${mediaId})','恢复演练','published','${timestamp}','${timestamp}','${timestamp}','${categoryId}','${mediaId}','恢复演练封面',false);`,
+    `insert into articles (id,title,summary,slug,markdown,status,created_at,updated_at,category_id) values ('${articleIds[1]}','恢复草稿','draft-secret','${hiddenSlugs[0]}','# draft-secret','draft','${timestamp}','${timestamp}','${categoryId}');`,
+    `insert into articles (id,title,summary,slug,markdown,status,published_at,created_at,updated_at) values ('${articleIds[2]}','恢复下线','offline-secret','${hiddenSlugs[1]}','# offline-secret','unpublished','${timestamp}','${timestamp}','${timestamp}');`,
+    `insert into articles (id,title,summary,slug,markdown,status,published_at,deleted_at,created_at,updated_at) values ('${articleIds[3]}','恢复删除','deleted-secret','${hiddenSlugs[2]}','# deleted-secret','published','${timestamp}','${timestamp}','${timestamp}','${timestamp}');`,
+    `insert into articles (id,title,summary,slug,markdown,status,published_at,created_at,updated_at) values ('${articleIds[4]}','恢复空发布时间','null-secret','${hiddenSlugs[3]}','# null-secret','published',null,'${timestamp}','${timestamp}');`,
+    `insert into article_tags (article_id,tag_id) values ('${articleIds[0]}','${tagId}'),('${articleIds[1]}','${tagId}');`,
+    `insert into site_pages (id,key,title,markdown,status,version,created_at,updated_at) values ('55555555-5555-4555-8555-555555555555','about','恢复后的关于页','# 关于恢复','published','${timestamp}','${timestamp}','${timestamp}');`,
+  ].join(" ");
+  await compose(context, "seed retained restore authority fixture", ...psqlArgs(context, query));
+  return { mediaId, publishedSlug, publishedTitle, hiddenSlugs };
+}
+
+async function runPhase4RestoreChecks(context) {
+  const selection = phase4Selection("restore");
+  for (const file of selection.nodeSuites) {
+    const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
+    assertSemanticTap(result.combined);
+  }
+  const fixture = await seedRestoreFixture(context);
+  const backupRoot = await mkdtemp(resolve(tmpdir(), "blog-x-backup-verify-"));
+  const restoreNamespace = generatedRestoreNamespace();
+  const suffix = restoreNamespace.slice("blogxrestore_".length);
+  const restorePort = await freePort();
+  const restoreContext = {
+    namespace: restoreNamespace, database: `blog_x_restore_${suffix}`, webPort: restorePort,
+    publicOrigin: `http://127.0.0.1:${restorePort}`, webOrigin: `http://127.0.0.1:${restorePort}`,
+    mediaVolume: `${restoreNamespace}_media-data`, logs: context.logs, secrets: context.secrets,
+  };
+  const restoreRoot = resolve(tmpdir(), `blog-x-restore-verify-${randomBytes(6).toString("hex")}`);
+  try {
+    process.stdout.write("[local-verify] create source backup for isolated restore\n");
+    const backup = await createBackupSet(generatedBackupPolicy(context, backupRoot), { env: composeEnvironment(context) });
+    await verifyBackupSet(backup.finalRoot);
+    process.stdout.write("[local-verify] preflight and restore into generated namespace\n");
+    const restored = await restoreBackupSet({
+      backupRoot: backup.finalRoot, restoreRoot, namespace: restoreContext.namespace,
+      database: restoreContext.database, mediaVolume: restoreContext.mediaVolume, webOrigin: restoreContext.webOrigin,
+    }, { env: composeEnvironment(restoreContext) });
+    if (restored.message !== `RESTORE READY ${restoreContext.namespace}`) throw new Error("restore did not report its exact generated namespace");
+    await waitForHttp(restoreContext.webOrigin);
+    const api = await compose(restoreContext, "resolve restored API for authority comparison", "ps", "-q", "api");
+    const containerId = api.stdout.trim();
+    if (!/^[a-f0-9]{12,64}$/.test(containerId)) throw new Error("restored API container is unavailable");
+    await runStep(context, "create restored comparison root", "docker", ["exec", containerId, "mkdir", "-p", "/tmp/blog-x-restore-expected"]);
+    await runStep(context, "copy immutable backup evidence for comparison", "docker", ["cp", `${backup.finalRoot}/.`, `${containerId}:/tmp/blog-x-restore-expected`]);
+    const authority = await compose(restoreContext, `run ${selection.databaseSuite}`, "exec", "-T",
+      "-e", `DATABASE_URL=postgres://blog_x@postgres:5432/${restoreContext.database}`,
+      "-e", `BACKUP_RESTORE_TEST_DATABASE_URL=postgres://blog_x@postgres:5432/${restoreContext.database}`,
+      "-e", "BACKUP_RESTORE_EXPECTED_ROOT=/tmp/blog-x-restore-expected", "-e", "MEDIA_ROOT=/var/lib/blog-x/media",
+      "api", ...semanticTestCommand(selection.databaseSuite));
+    assertSemanticTap(authority.combined);
+    const browser = await runStep(context, `run ${selection.browserSuite}`, "corepack",
+      ["pnpm", "exec", "playwright", "test", selection.browserSuite, "--workers=1"], {
+        env: { ...process.env, E2E_WEB_ORIGIN: restoreContext.webOrigin, E2E_RESTORE_WEB_ORIGIN: restoreContext.webOrigin,
+          E2E_RESTORE_PUBLISHED_SLUG: fixture.publishedSlug, E2E_RESTORE_PUBLISHED_TITLE: fixture.publishedTitle,
+          E2E_RESTORE_MEDIA_ID: fixture.mediaId, E2E_RESTORE_HIDDEN_SLUGS: fixture.hiddenSlugs.join(",") },
+      });
+    assertPlaywrightJourney(browser.combined);
+    await verifyBackupSet(backup.finalRoot);
+  } finally {
+    await command("docker-compose", composeArgs(restoreContext, "down", "--remove-orphans", "--volumes"), { env: composeEnvironment(restoreContext), allowFailure: true });
+    await cleanupGeneratedRestoreRoot(restoreRoot);
+    await cleanupGeneratedBackupRoot(backupRoot);
+  }
+}
+
 async function runSingle(options) {
   const namespace = validateNamespace(options.namespace ?? generatedNamespace());
   const database = validateDatabaseName(`blog_x_${namespace.slice("blogxverify_".length)}`, namespace);
@@ -531,7 +652,7 @@ async function runSingle(options) {
   if (context.publicOrigin === context.internalApiOrigin) throw new Error("public and internal API origins must remain separate");
 
   try {
-    if (options.phase4Mode === "operations" && !options.skipBuild) await preflightCachedImages(context);
+    if (["operations", "restore"].includes(options.phase4Mode) && !options.skipBuild) await preflightCachedImages(context);
     if (!options.skipBuild) await compose(context, "build local API and Web images", "build", "api", "web");
     await compose(context, "start isolated PostgreSQL", "up", "-d", "--wait", "postgres");
     if (options.interruptionCheck) await interruptionCheck(context);
@@ -551,6 +672,9 @@ async function runSingle(options) {
     }
     else if (options.phase4Mode === "operations") {
       await runPhase4OperationsChecks(context);
+    }
+    else if (options.phase4Mode === "restore") {
+      await runPhase4RestoreChecks(context);
     }
     else if (options.phase3Mode === "full") {
       await fullPhaseChecks(context, true);
@@ -576,7 +700,8 @@ async function parallelCheck(options) {
   const second = generatedNamespace();
   if (first === second) throw new Error("parallel verification namespaces collided");
   const [firstPort, secondPort] = await Promise.all([freePort(), freePort()]);
-  const child = (namespace, webPort) => command(process.execPath, [scriptPath, "--internal-run", "--infrastructure-only", "--skip-build", `--namespace=${namespace}`, `--web-port=${webPort}`], { env: process.env });
+  const childMode = options.phase4Mode === "restore" ? "--phase4-restore" : "--infrastructure-only";
+  const child = (namespace, webPort) => command(process.execPath, [scriptPath, "--internal-run", childMode, "--skip-build", `--namespace=${namespace}`, `--web-port=${webPort}`], { env: process.env });
   process.stdout.write("[local-verify] run two isolated namespaces in parallel\n");
   const results = await Promise.all([child(first, firstPort), child(second, secondPort)]);
   if (!results[0].stdout.includes(`${first} passed`) || !results[1].stdout.includes(`${second} passed`)) {
@@ -592,7 +717,7 @@ function optionValue(name) {
 async function main() {
   const flags = new Set(process.argv.slice(2));
   const phase3Modes = ["api", "metadata", "full", "export-api", "export-browser"].filter((mode) => flags.has(`--phase3-${mode}`));
-  const phase4Modes = ["security", "operations"].filter((mode) => flags.has(`--phase4-${mode}`));
+  const phase4Modes = ["security", "operations", "restore"].filter((mode) => flags.has(`--phase4-${mode}`));
   if (phase3Modes.length + phase4Modes.length > 1) throw new Error("choose at most one Phase 3 or Phase 4 verification selection");
   const options = {
     namespace: optionValue("namespace"),
