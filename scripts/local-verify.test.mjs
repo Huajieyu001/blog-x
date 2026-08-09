@@ -93,6 +93,8 @@ test("Phase 5 media selection owns seventh-migration and legacy restore evidence
   assert.match(runner, /--phase5-media/);
   assert.match(runner, /PHASE5_LEGACY_ARTICLE_ID/);
   assert.match(runner, /phase1-publishing\.spec\.ts/);
+  const restoreFixture = runner.slice(runner.indexOf("async function seedRestoreFixture"), runner.indexOf("async function runPhase4RestoreChecks"));
+  assert.match(restoreFixture, /await resetGeneratedAcceptanceMedia\(context\)/);
 });
 
 test("Phase 4 full selection explicitly names security, operations, restore, release, database, and browser evidence", () => {
