@@ -8,6 +8,7 @@ import * as filesystem from "node:fs/promises";
 import { createManifest, verifyBackupSet } from "./manifest.mjs";
 import { collectProductionBackupSet, createProductionInventory } from "./production/collector.mjs";
 import { runProductionBackup } from "./production/adapter.mjs";
+import { runProductionPipeline } from "./production-pipeline.mjs";
 import { createMountedDirectoryTransport } from "./production/mounted-directory.mjs";
 import { applySafeRetention } from "./production/retention.mjs";
 import { createGeneratedFakeTransport } from "./production/transport.mjs";
@@ -93,6 +94,30 @@ async function adapterFixture(context, suffix = "d1b2c3d4") {
     resultAuthority: { kind: "generated-test", root: resultRoot },
     alertAuthority: { kind: "generated-test", root: alertRoot },
     createdAt: "2026-08-09T10:00:00.000Z",
+  };
+}
+
+async function pipelineFixture(context, suffix = "j1b2c3d4") {
+  const sourceBase = await mkdtemp(join(tmpdir(), "blog-x-production-source-"));
+  const mountRoot = await mkdtemp(join(tmpdir(), "blog-x-production-mount-"));
+  const keyRoot = await mkdtemp(join(tmpdir(), "blog-x-production-key-"));
+  const resultRoot = await mkdtemp(join(tmpdir(), "blog-x-production-result-"));
+  const alertRoot = await mkdtemp(join(tmpdir(), "blog-x-production-alert-"));
+  context.after(async () => {
+    await Promise.all([sourceBase, mountRoot, keyRoot, resultRoot, alertRoot].map((path) => rm(path, { recursive: true, force: true })));
+  });
+  await Promise.all([chmod(mountRoot, 0o700), chmod(keyRoot, 0o700), chmod(resultRoot, 0o700), chmod(alertRoot, 0o700)]);
+  const profileId = "blog-x-mounted-directory-v1";
+  await writeFile(join(mountRoot, "identity.json"), JSON.stringify({ format: "blog-x-mounted-directory", version: 1, profileId }), { mode: 0o600 });
+  const keyPath = join(keyRoot, "data.key");
+  await writeFile(keyPath, Buffer.alloc(32, 9), { mode: 0o600 });
+  const collector = productionPolicy(sourceBase, suffix);
+  return {
+    format: "blog-x-production-pipeline-policy", version: 1,
+    sourceAuthority: collector.sourceAuthority, collector: collector.collector,
+    destination: { kind: "generated-test", mountRoot, profileId }, keyAuthority: { kind: "generated-test", keyPath },
+    retention: { policyId: "daily-v1", minimumKnownGood: 1 },
+    resultAuthority: { kind: "generated-test", root: resultRoot }, alertAuthority: { kind: "generated-test", root: alertRoot },
   };
 }
 
@@ -278,4 +303,31 @@ test("receipt-gated retention preserves the minimum known-good ciphertext and de
   await writeFile(join(input.destination.mountRoot, "objects", "unexpected.txt"), "ambiguous", { mode: 0o600 });
   await assert.rejects(applySafeRetention({ transport, retentionPolicyId: "daily-v1", minimumKnownGood: 1 }), /catalog|unexpected/i);
   assert.equal((await readdir(join(input.destination.mountRoot, "objects"))).filter((name) => name.endsWith(".aesgcm")).length, 2);
+});
+
+test("pipeline creates and verifies a fresh set before the concrete mounted adapter", async (context) => {
+  const policy = await pipelineFixture(context);
+  const result = await runProductionPipeline(policy, { ...collectorDependencies(), inspectMount: async (root) => ({ isMountPoint: true, root }) });
+  assert.equal(result.scope, "generated-mounted-fixture");
+  const sourceEntries = await readdir(policy.sourceAuthority.sourceBase);
+  assert.equal(sourceEntries.filter((name) => /^\d{8}T\d{6}Z-/.test(name)).length, 1);
+  await assert.rejects(runProductionPipeline({ ...policy, sourceRoot: "/manual-set" }, { ...collectorDependencies(), inspectMount: async (root) => ({ isMountPoint: true, root }) }), /pipeline policy/i);
+});
+
+test("pipeline unit contract remains dormant, strict, collect-then-adapt, and prohibition-fixture controlled", async () => {
+  const service = await readFile(new URL("../../ops/systemd/blog-x-backup.service", import.meta.url), "utf8");
+  const timer = await readFile(new URL("../../ops/systemd/blog-x-backup.timer", import.meta.url), "utf8");
+  const names = JSON.parse(await readFile(new URL("../../ops/backup-policy.names.json", import.meta.url), "utf8"));
+  assert.match(service, /production-pipeline\.mjs/);
+  assert.match(service, /ConditionPathIsMountPoint=/);
+  assert.match(service, /UMask=0077/);
+  assert.doesNotMatch(service, /backup\/create\.mjs|systemctl|enable|start/i);
+  assert.match(timer, /OnCalendar=daily/);
+  assert.match(timer, /Persistent=true/);
+  assert.equal(names.fields.some((field) => Object.hasOwn(field, "value")), false);
+  const subjectPath = process.env.GSD_PROHIB_SUBJECT ?? new URL("../fixtures/prohibitions/production-backup-safe.json", import.meta.url);
+  const subject = JSON.parse(await readFile(subjectPath, "utf8"));
+  assert.equal(subject.format, "blog-x-production-backup-prohibition");
+  assert.equal(subject.collectThenMounted, true);
+  for (const key of ["allowsFake", "allowsManualSet", "allowsPlaintext", "allowsRehearsalAuthority", "allowsRemoteCommand", "hasReceipt", "hasAlertOutcome"]) assert.equal(subject[key], key.startsWith("has") ? true : false);
 });
