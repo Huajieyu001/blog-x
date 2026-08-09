@@ -4,6 +4,7 @@ import cookie from "@fastify/cookie";
 import Fastify, { type FastifyPluginAsync } from "fastify";
 import { authRoutes } from "../src/routes/auth.js";
 import { parseApiRuntimeConfig } from "../src/security/config.js";
+import { requireAdministratorMutation, unsafeRoutePolicies } from "../src/security/mutation-guard.js";
 import { BoundedRateLimitStore, createRateLimitKey, type Clock } from "../src/security/rate-limiter.js";
 
 class ManualClock implements Clock {
@@ -77,4 +78,68 @@ test("five generic failed logins are followed by a no-store bounded retry respon
   clock.advance(60_000);
   const recovered = await app.inject({ method: "POST", url: "/auth/login", headers, payload: { username: "ADMIN", password: "wrong" } });
   assert.equal(recovered.statusCode, 401);
+});
+
+test("auth logout and legacy publish have named unsafe route policies", () => {
+  const named = unsafeRoutePolicies.map((policy) => `${policy.method} ${policy.url}`);
+  assert.deepEqual(named, [
+    "POST /auth/login",
+    "POST /auth/logout",
+    "POST /admin/posts/preview",
+    "POST /admin/posts",
+    "PUT /admin/posts/:id",
+    "POST /admin/posts/:id/:action",
+    "POST /admin/export",
+    "POST /admin/categories",
+    "POST /admin/tags",
+    "PUT /admin/:kind(categories|tags)/:id",
+    "DELETE /admin/:kind(categories|tags)/:id",
+    "POST /admin/about",
+    "POST /admin/about/preview",
+    "POST /admin/about/publish",
+    "POST /admin/media",
+    "POST /articles/publish",
+  ]);
+  for (const policy of unsafeRoutePolicies) {
+    assert.ok(["login", "administrator"].includes(policy.limiter));
+    assert.ok(["json", "empty-form", "multipart"].includes(policy.contentType));
+    assert.ok(policy.bodyLimit > 0);
+  }
+});
+
+test("admin posts and export mutation policy is session-first, Origin-second, and service-free on rejection", async (context) => {
+  const clock = new ManualClock();
+  const app = Fastify({ trustProxy: false });
+  let calls = 0;
+  await app.register(cookie as unknown as FastifyPluginAsync);
+  app.post("/mutation", async (request, reply) => {
+    const administratorId = await requireAdministratorMutation(request, reply, {
+      sessionAuth: { administratorIdForToken: async (token) => token === "valid" ? "administrator-id" : null, issue: async () => "", revoke: async () => undefined },
+      publicOrigin: "http://127.0.0.1:3100",
+      rateStore: new BoundedRateLimitStore(clock, 4_096),
+      ratePolicy: { limit: 1, windowMs: 60_000 },
+    });
+    if (!administratorId) return;
+    calls += 1;
+    return { ok: true };
+  });
+  context.after(() => app.close());
+  const wrongOrigin = await app.inject({ method: "POST", url: "/mutation", headers: { origin: "https://wrong.invalid" } });
+  assert.equal(wrongOrigin.statusCode, 401);
+  assert.equal(wrongOrigin.headers["cache-control"], "no-store");
+  assert.equal(calls, 0);
+  const forbidden = await app.inject({ method: "POST", url: "/mutation", headers: { cookie: "blog_x_session=valid", origin: "https://wrong.invalid" } });
+  assert.equal(forbidden.statusCode, 403);
+  assert.equal(calls, 0);
+  const allowed = await app.inject({ method: "POST", url: "/mutation", headers: { cookie: "blog_x_session=valid", origin: "http://127.0.0.1:3100" } });
+  assert.equal(allowed.statusCode, 200);
+  const limited = await app.inject({ method: "POST", url: "/mutation", headers: { cookie: "blog_x_session=valid", origin: "http://127.0.0.1:3100" } });
+  assert.equal(limited.statusCode, 429);
+  assert.equal(limited.headers["cache-control"], "no-store");
+  assert.equal(limited.headers["retry-after"], "60");
+  assert.equal(calls, 1);
+});
+
+test("taxonomy pages and media policy inventory has no unclassified unsafe route", () => {
+  assert.equal(unsafeRoutePolicies.filter((policy) => !policy.contentType || !policy.limiter).length, 0);
 });
