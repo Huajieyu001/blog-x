@@ -173,5 +173,5 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Local Publishing Slice | 8/8 | Complete    | 2026-08-08 |
 | 2. Complete Reading Experience | 6/6 | Complete | 2026-08-09 |
-| 3. Distribution and Portability | 4/4 | Complete | 2026-08-09 |
+| 3. Distribution and Portability | 4/4 | Complete    | 2026-08-09 |
 | 4. Secure Operations and Release Gate | 0/3 | Not started | - |
