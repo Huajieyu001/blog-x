@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -79,6 +79,14 @@ test("Phase 3 generated public origins are loopback-only and separate from inter
   for (const candidate of ["https://example.com", "http://localhost:3100", "http://127.0.0.1/path", "http://127.0.0.1:3100/?q=1", "http://127.0.0.1:3100/#hash"]) {
     assert.throws(() => validateLoopbackHttpOrigin(candidate), /loopback/i);
   }
+});
+
+test("Web Dockerfile preserves the dependency cache when the generated public origin changes", async () => {
+  const dockerfile = await readFile(join(process.cwd(), "apps/web/Dockerfile"), "utf8");
+  const install = dockerfile.indexOf("RUN corepack pnpm install --frozen-lockfile");
+  assert.ok(install >= 0, "the Web Dockerfile must install from the lockfile");
+  assert.ok(dockerfile.indexOf("ARG PUBLIC_ORIGIN", install) > install, "PUBLIC_ORIGIN must be declared after the dependency install cache layer");
+  assert.ok(dockerfile.indexOf("ENV PUBLIC_ORIGIN=${PUBLIC_ORIGIN}", install) > install, "PUBLIC_ORIGIN must be exported only after dependencies are installed");
 });
 
 test("media cleanup accepts only the exact generated root and namespace volume", async () => {
