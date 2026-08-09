@@ -15,15 +15,17 @@ import {
   slugSuggestionSchema,
   suggestSlug,
 } from "@blog-x/contracts";
-import type { FastifyPluginAsync, FastifyRequest } from "fastify";
-import { sessionCookieName, type SessionService } from "../auth/sessions.js";
+import type { FastifyPluginAsync } from "fastify";
+import type { SessionService } from "../auth/sessions.js";
 import type { ArticleService, ArticleServiceResult, DeleteServiceResult } from "../content/article-service.js";
 import { renderMarkdown } from "../content/markdown.js";
+import { requireAdministrator, requireAdministratorMutation, requireContentType, type MutationGuardOptions } from "../security/mutation-guard.js";
 
 type AdminPostRouteOptions = {
   articleService: ArticleService;
   sessionAuth: SessionService;
   publicOrigin?: string;
+  mutationGuard: MutationGuardOptions;
 };
 
 function fieldErrors(error: { issues: Array<{ path: PropertyKey[]; message: string }> }) {
@@ -72,35 +74,22 @@ function sendServiceResult(result: ArticleServiceResult | DeleteServiceResult, r
 }
 
 export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async (app, options) => {
-  async function guard(request: FastifyRequest, reply: { code: (statusCode: number) => { send: (payload: unknown) => unknown }; header: (name: string, value: string) => unknown }) {
-    reply.header("cache-control", "no-store");
-    if (!await options.sessionAuth.administratorIdForToken(request.cookies[sessionCookieName])) {
-      reply.code(401).send({ error: "unauthorized" });
-      return false;
-    }
-    return true;
-  }
-
-  function trustedOrigin(request: FastifyRequest) {
-    return Boolean(options.publicOrigin) && request.headers.origin === options.publicOrigin;
-  }
-
   app.get<{ Querystring: { title?: string } }>("/admin/posts/slug-suggestion", async (request, reply) => {
-    if (!await guard(request, reply)) return;
+    if (!await requireAdministrator(request, reply, options.mutationGuard)) return;
     return slugSuggestionSchema.parse({ slug: suggestSlug(request.query.title ?? "") });
   });
 
-  app.post("/admin/posts/preview", async (request, reply) => {
-    if (!await guard(request, reply)) return;
-    if (!trustedOrigin(request)) return reply.code(403).send({ error: "forbidden" });
+  app.post("/admin/posts/preview", { bodyLimit: 256 * 1024 }, async (request, reply) => {
+    if (!await requireAdministratorMutation(request, reply, options.mutationGuard)) return;
+    if (!requireContentType(request, reply, "application/json")) return;
     const parsed = adminPostPreviewInputSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send(fieldErrors(parsed.error));
     return adminPostPreviewSchema.parse({ html: (await renderMarkdown(parsed.data.markdown)).html });
   });
 
-  app.post("/admin/posts", async (request, reply) => {
-    if (!await guard(request, reply)) return;
-    if (!trustedOrigin(request)) return reply.code(403).send({ error: "forbidden" });
+  app.post("/admin/posts", { bodyLimit: 256 * 1024 }, async (request, reply) => {
+    if (!await requireAdministratorMutation(request, reply, options.mutationGuard)) return;
+    if (!requireContentType(request, reply, "application/json")) return;
     const parsed = adminPostInputSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send(fieldErrors(parsed.error));
     try {
@@ -115,12 +104,12 @@ export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async 
   });
 
   app.get("/admin/posts", async (request, reply) => {
-    if (!await guard(request, reply)) return;
+    if (!await requireAdministrator(request, reply, options.mutationGuard)) return;
     return adminPostListSchema.parse(await options.articleService.listDrafts());
   });
 
   app.get<{ Params: { id: string } }>("/admin/posts/:id", async (request, reply) => {
-    if (!await guard(request, reply)) return;
+    if (!await requireAdministrator(request, reply, options.mutationGuard)) return;
     const id = adminPostIdSchema.safeParse(request.params.id);
     if (!id.success) return reply.code(404).send({ error: "not_found" });
     const post = await options.articleService.getDraft(id.data);
@@ -128,9 +117,9 @@ export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async 
     return post;
   });
 
-  app.put<{ Params: { id: string } }>("/admin/posts/:id", async (request, reply) => {
-    if (!await guard(request, reply)) return;
-    if (!trustedOrigin(request)) return reply.code(403).send({ error: "forbidden" });
+  app.put<{ Params: { id: string } }>("/admin/posts/:id", { bodyLimit: 256 * 1024 }, async (request, reply) => {
+    if (!await requireAdministratorMutation(request, reply, options.mutationGuard)) return;
+    if (!requireContentType(request, reply, "application/json")) return;
     const id = adminPostIdSchema.safeParse(request.params.id);
     if (!id.success) return reply.code(404).send({ error: "not_found" });
     const parsed = adminPostUpdateSchema.safeParse(request.body);
@@ -145,9 +134,9 @@ export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async 
   });
 
   for (const action of articleActionSchema.options) {
-    app.post<{ Params: { id: string } }>(`/admin/posts/:id/${action}`, async (request, reply) => {
-      if (!await guard(request, reply)) return;
-      if (!trustedOrigin(request)) return reply.code(403).send({ error: "forbidden" });
+    app.post<{ Params: { id: string } }>(`/admin/posts/:id/${action}`, { bodyLimit: 64 * 1024 }, async (request, reply) => {
+      if (!await requireAdministratorMutation(request, reply, options.mutationGuard)) return;
+      if (!requireContentType(request, reply, "application/json")) return;
       const id = adminPostIdSchema.safeParse(request.params.id);
       if (!id.success) return reply.code(404).send({ error: "not_found" });
       const input = lifecycleActionInputSchema.safeParse(request.body);

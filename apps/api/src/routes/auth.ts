@@ -6,6 +6,7 @@ import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { sessionCookieName, sessionCookieOptions, type SessionService } from "../auth/sessions.js";
 import * as schema from "../db/schema.js";
 import { BoundedRateLimitStore, createRateLimitKey, type RateLimitPolicy } from "../security/rate-limiter.js";
+import { requireAdministratorMutation, requireContentType, type MutationGuardOptions } from "../security/mutation-guard.js";
 
 type Database = NodePgDatabase<typeof schema>;
 declare module "fastify" {
@@ -21,6 +22,7 @@ type AuthRouteOptions = {
   secureCookies: boolean;
   loginRatePolicy: RateLimitPolicy;
   rateStore: BoundedRateLimitStore;
+  mutationGuard: MutationGuardOptions;
 };
 
 function noStore(reply: { header: (name: string, value: string) => unknown }) {
@@ -36,9 +38,10 @@ function trustedOrigin(request: FastifyRequest, publicOrigin: string | undefined
 }
 
 export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, options) => {
-  app.post("/auth/login", async (request, reply) => {
+  app.post("/auth/login", { bodyLimit: 64 * 1024 }, async (request, reply) => {
     noStore(reply);
     if (!trustedOrigin(request, options.publicOrigin)) return reply.code(403).send({ error: "forbidden" });
+    if (!requireContentType(request, reply, "application/json")) return;
     const parsed = loginInputSchema.safeParse(request.body);
     if (!parsed.success) return unauthorized(reply);
     // Fastify's socket-backed request.ip is authoritative because buildApp sets
@@ -67,13 +70,8 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
   });
 
   app.post("/auth/logout", async (request, reply) => {
-    noStore(reply);
-    if (!trustedOrigin(request, options.publicOrigin)) return reply.code(403).send({ error: "forbidden" });
+    if (!await requireAdministratorMutation(request, reply, options.mutationGuard)) return;
     const token = request.cookies[sessionCookieName];
-    if (!await options.sessionAuth.administratorIdForToken(token)) {
-      reply.setCookie(sessionCookieName, "", { ...sessionCookieOptions(options.secureCookies), maxAge: 0 });
-      return unauthorized(reply);
-    }
     await options.sessionAuth.revoke(token);
     reply.setCookie(sessionCookieName, "", { ...sessionCookieOptions(options.secureCookies), maxAge: 0 });
     return logoutResponseSchema.parse({ ok: true });

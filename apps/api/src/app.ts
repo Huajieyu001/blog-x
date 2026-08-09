@@ -13,7 +13,7 @@ import { Pool } from "pg";
 import { administrators, articleTags, articles, categories, media, sessions, sitePages, tags } from "./db/schema.js";
 import { seedAdministrator } from "./db/seed-admin.js";
 import { authRoutes } from "./routes/auth.js";
-import { createSessionService, sessionCookieName } from "./auth/sessions.js";
+import { createSessionService } from "./auth/sessions.js";
 import { createAdminPostRepository } from "./content/admin-repository.js";
 import { createArticleService } from "./content/article-service.js";
 import { adminPostRoutes } from "./routes/admin-posts.js";
@@ -33,7 +33,8 @@ import { mediaRoutes } from "./routes/media.js";
 import { createExportRepository } from "./content/export-repository.js";
 import { adminExportRoutes } from "./routes/admin-export.js";
 import { parseApiRuntimeConfig, type ApiRuntimeConfig, type RateLimitConfig } from "./security/config.js";
-import { BoundedRateLimitStore } from "./security/rate-limiter.js";
+import { BoundedRateLimitStore, createRateLimitKey } from "./security/rate-limiter.js";
+import { requireAdministratorMutation, requireContentType, type MutationGuardOptions } from "./security/mutation-guard.js";
 
 const databaseSchema = { administrators, articles, sessions, categories, tags, articleTags, sitePages, media };
 
@@ -75,6 +76,23 @@ export async function buildApp(options: BuildAppOptions = {}) {
   // `export =` declaration as an ESM Fastify plugin, though the runtime shape is compatible.
   await app.register(cookie as unknown as FastifyPluginAsync);
   app.decorate("sessionAuth", createSessionService(db));
+  app.addHook("onRequest", async (request, reply) => {
+    // Protected mutations deliberately defer to the shared guard so an
+    // unauthenticated request is always answered before any Origin/rate detail.
+    if (request.method !== "GET" && request.method !== "HEAD") return;
+    const decision = rateStore.consume(createRateLimitKey("request", request.ip), rateLimits.request);
+    if (!decision.allowed) {
+      reply.header("cache-control", "no-store");
+      reply.header("retry-after", String(decision.retryAfterSeconds));
+      return reply.code(429).send({ error: "too_many_requests" });
+    }
+  });
+  const mutationGuard: MutationGuardOptions = {
+    sessionAuth: app.sessionAuth,
+    publicOrigin,
+    rateStore,
+    ratePolicy: rateLimits.administratorMutation,
+  };
   app.get("/health", async () => ({ ok: true }));
   await app.register(authRoutes, {
     db,
@@ -83,36 +101,39 @@ export async function buildApp(options: BuildAppOptions = {}) {
     secureCookies,
     loginRatePolicy: rateLimits.login,
     rateStore,
+    mutationGuard,
   });
   await app.register(adminPostRoutes, {
     articleService: createArticleService(createAdminPostRepository(db)),
     sessionAuth: app.sessionAuth,
     publicOrigin,
+    mutationGuard,
   });
   await app.register(adminExportRoutes, {
     exportRepository: createExportRepository(db),
     sessionAuth: app.sessionAuth,
     publicOrigin,
+    mutationGuard,
   });
   await app.register(publicPostRoutes, {
     publicRepository: createPublicRepository(db),
   });
   const taxonomyRepository = createTaxonomyRepository(db);
-  await app.register(taxonomyRoutes, { taxonomyService: createTaxonomyService(taxonomyRepository), sessionAuth: app.sessionAuth, publicOrigin });
+  await app.register(taxonomyRoutes, { taxonomyService: createTaxonomyService(taxonomyRepository), sessionAuth: app.sessionAuth, publicOrigin, mutationGuard });
   await app.register(publicTaxonomyRoutes, { taxonomyRepository });
   const pageRepository = createPageRepository(db);
-  await app.register(pageRoutes, { pageService: createPageService(pageRepository), sessionAuth: app.sessionAuth, publicOrigin });
+  await app.register(pageRoutes, { pageService: createPageService(pageRepository), sessionAuth: app.sessionAuth, publicOrigin, mutationGuard });
   await app.register(publicPageRoutes, { pageRepository });
   const mediaStorage = new LocalMediaStorage(options.mediaRoot ?? process.env.MEDIA_ROOT ?? resolve(process.cwd(), "uploads"));
   await app.register(mediaRoutes, {
     mediaService: createMediaService(db, mediaStorage),
     sessionAuth: app.sessionAuth,
     publicOrigin,
+    mutationGuard,
   });
-  app.post("/articles/publish", async (request, reply) => {
-    reply.header("cache-control", "no-store");
-    if (request.headers.origin !== publicOrigin) return reply.code(403).send({ error: "forbidden" });
-    if (!await app.sessionAuth.administratorIdForToken(request.cookies[sessionCookieName])) return reply.code(401).send({ error: "unauthorized" });
+  app.post("/articles/publish", { bodyLimit: 256 * 1024 }, async (request, reply) => {
+    if (!await requireAdministratorMutation(request, reply, mutationGuard)) return;
+    if (!requireContentType(request, reply, "application/json")) return;
     const parsed = publishInputSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid article" });
     try {

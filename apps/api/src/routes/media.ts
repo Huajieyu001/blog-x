@@ -6,8 +6,9 @@ import {
 import multipart from "@fastify/multipart";
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import type { Multipart } from "@fastify/multipart";
-import { sessionCookieName, type SessionService } from "../auth/sessions.js";
+import type { SessionService } from "../auth/sessions.js";
 import type { MediaService } from "../content/media-service.js";
+import { requireAdministratorMutation, requireContentType, type MutationGuardOptions } from "../security/mutation-guard.js";
 
 const maximumSourceBytes = 5 * 1024 * 1024;
 
@@ -15,19 +16,15 @@ export const mediaRoutes: FastifyPluginAsync<{
   mediaService: MediaService;
   sessionAuth: SessionService;
   publicOrigin?: string;
+  mutationGuard: MutationGuardOptions;
 }> = async (app, options) => {
   await app.register(multipart, {
     limits: { files: 1, fields: 2, fieldSize: 500, fileSize: maximumSourceBytes, parts: 3 },
   });
 
-  async function authenticated(request: FastifyRequest) {
-    return Boolean(await options.sessionAuth.administratorIdForToken(request.cookies[sessionCookieName]));
-  }
-
   app.post("/admin/media", { bodyLimit: maximumSourceBytes + 64 * 1024 }, async (request, reply) => {
-    reply.header("cache-control", "no-store");
-    if (!await authenticated(request)) return reply.code(401).send({ error: "unauthorized" });
-    if (!options.publicOrigin || request.headers.origin !== options.publicOrigin) return reply.code(403).send({ error: "forbidden" });
+    if (!await requireAdministratorMutation(request, reply, options.mutationGuard)) return;
+    if (!requireContentType(request, reply, "multipart/form-data")) return;
     try {
       let received: { buffer: Buffer; mimeType: string } | null = null;
       let alt = "";

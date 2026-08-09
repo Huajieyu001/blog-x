@@ -61,6 +61,12 @@ test("five generic failed logins are followed by a no-store bounded retry respon
     secureCookies: false,
     loginRatePolicy: { limit: 5, windowMs: 60_000 },
     rateStore: new BoundedRateLimitStore(clock, 4_096),
+    mutationGuard: {
+      sessionAuth: { administratorIdForToken: async () => null, issue: async () => "", revoke: async () => undefined },
+      publicOrigin: "http://127.0.0.1:3100",
+      rateStore: new BoundedRateLimitStore(clock, 4_096),
+      ratePolicy: { limit: 1, windowMs: 60_000 },
+    },
   });
   context.after(() => app.close());
   const headers = { origin: "http://127.0.0.1:3100", "content-type": "application/json", "x-forwarded-for": "198.51.100.7" };
@@ -102,7 +108,7 @@ test("auth logout and legacy publish have named unsafe route policies", () => {
   ]);
   for (const policy of unsafeRoutePolicies) {
     assert.ok(["login", "administrator"].includes(policy.limiter));
-    assert.ok(["json", "empty-form", "multipart"].includes(policy.contentType));
+    assert.ok(["json", "empty-form", "multipart", "none"].includes(policy.contentType));
     assert.ok(policy.bodyLimit > 0);
   }
 });
@@ -111,12 +117,13 @@ test("admin posts and export mutation policy is session-first, Origin-second, an
   const clock = new ManualClock();
   const app = Fastify({ trustProxy: false });
   let calls = 0;
+  const rateStore = new BoundedRateLimitStore(clock, 4_096);
   await app.register(cookie as unknown as FastifyPluginAsync);
   app.post("/mutation", async (request, reply) => {
     const administratorId = await requireAdministratorMutation(request, reply, {
       sessionAuth: { administratorIdForToken: async (token) => token === "valid" ? "administrator-id" : null, issue: async () => "", revoke: async () => undefined },
       publicOrigin: "http://127.0.0.1:3100",
-      rateStore: new BoundedRateLimitStore(clock, 4_096),
+      rateStore,
       ratePolicy: { limit: 1, windowMs: 60_000 },
     });
     if (!administratorId) return;
