@@ -63,11 +63,15 @@ test("Phase 4 security selection names every local API security suite", () => {
   assert.throws(() => phase4Selection("unknown"), /Phase 4 selection/i);
 });
 
-test("Phase 4 operations selection is explicit and keeps restore separate", () => {
+test("Phase 4 operations and restore selections are explicit", () => {
   assert.deepEqual(phase4Selection("operations"), {
     nodeSuites: ["scripts/ops-status.test.mjs", "scripts/backup/backup.test.mjs", "scripts/local-verify.test.mjs"],
   });
-  assert.throws(() => phase4Selection("restore"), /not recognized/i);
+  assert.deepEqual(phase4Selection("restore"), {
+    nodeSuites: ["scripts/backup/restore.test.mjs", "scripts/local-verify.test.mjs"],
+    databaseSuite: "apps/api/test/backup-restore.test.ts",
+    browserSuite: "apps/web/e2e/phase4-restore.spec.ts",
+  });
 });
 
 test("topology policy admits only a Web edge and rejects public data planes", async () => {
@@ -111,6 +115,16 @@ test("Phase 4 operations runner names effective config, restart, status, and cac
   assert.match(runner, /ops-status\.mjs/);
   assert.match(runner, /config.*--format.*json/s);
   assert.match(runner, /30_000/);
+});
+
+test("Phase 4 restore runner preserves backup evidence through authority and browser comparison", async () => {
+  const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
+  assert.match(runner, /runPhase4RestoreChecks/);
+  assert.match(runner, /restoreBackupSet/);
+  assert.match(runner, /backup-restore\.test\.ts/);
+  assert.match(runner, /phase4-restore\.spec\.ts/);
+  assert.match(runner, /E2E_RESTORE_WEB_ORIGIN/);
+  assert.match(runner, /cleanupGeneratedRestoreRoot/);
 });
 
 test("Phase 3 full is the extensible canonical gate for completed Phase 1/2 and current distribution semantics", async () => {
