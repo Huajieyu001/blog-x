@@ -159,13 +159,13 @@ Plans:
   4. 数据库、内容、媒体和配置备份可按文档恢复，并通过一次恢复演练。
   5. 主服务器只有在用户明确解冻并通过备份、回滚、安全链路检查后才可进入部署步骤。
 
-**Plans**: 2/3 plans executed
+**Plans**: 3/3 plans executed
 
 Plans:
 
 - [x] 04-01-PLAN.md
 - [x] 04-02-PLAN.md
-- [ ] 04-03-PLAN.md
+- [x] 04-03-PLAN.md
 
 **Wave 1**
 
@@ -177,7 +177,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 04-03: 建立不触碰冻结主机的发布清单、回滚方案和上线门禁验证。
+- [x] 04-03: 建立不触碰冻结主机的发布清单、回滚方案和上线门禁验证。
 
 ## Progress
 
@@ -186,4 +186,4 @@ Plans:
 | 1. Local Publishing Slice | 8/8 | Complete    | 2026-08-08 |
 | 2. Complete Reading Experience | 6/6 | Complete | 2026-08-09 |
 | 3. Distribution and Portability | 4/4 | Complete    | 2026-08-09 |
-| 4. Secure Operations and Release Gate | 2/3 | In Progress|  |
+| 4. Secure Operations and Release Gate | 3/3 | In Progress|  |
