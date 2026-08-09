@@ -19,9 +19,45 @@ function operationalSurface(path) {
     || path === ".dockerignore"
     || path === "ops/production-config.names.json"
     || path === "ops/topology-policy.json"
+    || path === "ops/release-evidence.blocked.json"
     || path.startsWith("scripts/")
     || /^apps\/(?:api|web)\/Dockerfile$/.test(path)
     || path.startsWith("apps/web/");
+}
+
+function releaseArtifactSurface(path) {
+  return path === "ops/release-evidence.blocked.json"
+    || ["docs/RELEASE-GATE.md", "docs/ROLLBACK.md", "docs/OPERATIONS.md"].includes(path)
+    || path === "scripts/release-gate.mjs"
+    || (path.startsWith("scripts/release-gate/") && !path.endsWith(".test.mjs"));
+}
+
+function auditReleaseArtifact(path, content, issues) {
+  if (/node:child_process|\b(?:execFile|execSync|spawn|spawnSync)\s*\(|\b(?:ssh|scp|rsync|sftp|curl|wget)\s+[^`\n]+/i.test(content)) {
+    issues.push(issue("release_remote_capability", path, "release artifacts must not execute remote or deployment commands"));
+  }
+  if (/\b(?:automatic|auto)[-_ ]?(?:unfreeze|deploy|release|rollback)\b|\bautomatic\s+(?:deploy|unfreeze)\b/i.test(content)) {
+    issues.push(issue("automatic_release_action", path, "release artifacts must not automate authorization or deployment"));
+  }
+  if (/(?:https?:\/\/(?:api|postgres)(?::\d+)?\b)|(?:47\.99\.80\.8|124\.222\.91\.230)/i.test(content)) {
+    issues.push(issue("release_internal_authority", path, "release artifacts contain internal or node authority"));
+  }
+  if (/(?:["'](?:3001|5432):(?:3001|5432)["']|(?:api|postgres)[^\n]{0,40}(?:hostPublished\s*[=:]\s*true|public\s*[=:]\s*true))/i.test(content)) {
+    issues.push(issue("release_public_data_plane", path, "release artifacts expose an API or PostgreSQL data plane"));
+  }
+  if (/\bProduction\s+READY\b|\bTLS\s+verified\b|\b(?:RPO|RTO)\s*(?:=|:)?\s*\d+\s*(?:m|h|d|min|hour|day)s?\b/i.test(content)) {
+    issues.push(issue("false_production_claim", path, "release artifacts claim unverified production readiness or objectives"));
+  }
+  if (path === "ops/release-evidence.blocked.json") {
+    try {
+      const value = JSON.parse(content);
+      if (value.state !== "BLOCKED" || /"artifact"\s*:|"synthetic"\s*:/i.test(content)) {
+        issues.push(issue("tracked_release_ready", path, "canonical release evidence must remain locator-free and BLOCKED"));
+      }
+    } catch {
+      issues.push(issue("tracked_release_ready", path, "canonical release evidence must be valid BLOCKED JSON"));
+    }
+  }
 }
 
 function isExactObject(value, keys) {
@@ -105,6 +141,7 @@ export async function auditFiles(root, files) {
 
     if (relativePath === "ops/production-config.names.json") auditProductionConfig(relativePath, content, issues);
     if (relativePath === "ops/topology-policy.json") auditTopologyPolicy(relativePath, content, issues);
+    if (releaseArtifactSurface(relativePath)) auditReleaseArtifact(relativePath, content, issues);
 
     if (webRuntimeSurface(relativePath)) {
       if (/(?:from\s+["'](?:pg|drizzle-orm|@blog-x\/api)|DATABASE_URL|postgres(?:ql)?:\/\/|apps\/api|src\/db|auth\/sessions|article-service|content\/markdown)/.test(content)) {
