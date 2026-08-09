@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: Distribution and Portability
 status: in_progress
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-08-09T04:21:11.747Z"
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-08-09T05:39:19Z"
 last_activity: 2026-08-09
-last_activity_desc: Phase 03 public distribution and RSS foundation completed
+last_activity_desc: Phase 03 metadata, robots, Sitemap, and managed browser verification completed
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 18
-  completed_plans: 15
+  completed_plans: 16
 ---
 
 # Project State
@@ -28,17 +28,17 @@ See: .planning/PROJECT.md (updated 2026-08-08)
 ## Current Position
 
 Phase: 03 (Distribution and Portability) — IN PROGRESS
-Plan: 1 of 4
-Status: 03-01 completed; ready for 03-02
-Last activity: 2026-08-09 — Phase 03 public distribution and RSS foundation completed
+Plan: 2 of 4
+Status: 03-02 completed; ready for 03-03
+Last activity: 2026-08-09 — Phase 03 metadata, robots, Sitemap, and managed browser verification completed
 
-Progress: [████████░░] 83%
+Progress: [█████████░] 89%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 14
+- Total plans completed: 16
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -72,6 +72,7 @@ Progress: [████████░░] 83%
 | Phase 02 P05 | 0min | 2 tasks | 21 files |
 | Phase 02 P06 | 0min | 2 tasks | 10 files |
 | Phase 03 P01 | 1h 0m | 3 tasks | 13 files |
+| Phase 03 P02 | 1h 18m | 3 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -117,6 +118,9 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 02]: The final browser journey uses visible UI and same-origin requests, while unavailable responses come only from a separate loopback process fixture. — Failure evidence never requires a production test endpoint or cloud dependency.
 - [Phase 03]: Semantic Node test output is explicitly TAP only when inspected for skips/zero tests; zero-valued TAP footer counters are not directives, while actual skip/TODO and nonzero counters still fail. — Playwright requires its own result contract.
 - [Phase 03]: Public discovery and RSS consume one strict publicPredicate projection and derive external URLs only from validated PUBLIC_ORIGIN. — Preserve non-public confidentiality and internal topology separation.
+- [Phase 03]: One canonical classifier governs all route families: only query-free base, exact page=1, and exact real pages 2..N are indexable; every other query shape is noindex,follow. — Prevents pagination canonical drift and duplicate index entries.
+- [Phase 03]: Next metadata files enumerate only strict public distribution facts, while generated Playwright uses a dedicated browser result contract and same-origin request listener. — Discovery output cannot disclose lifecycle or internal topology data.
+- [Phase 03]: Generated PUBLIC_ORIGIN is declared after the Web frozen dependency install layer. — Isolated verifier ports preserve dependency cache and avoid avoidable package-registry attempts.
 
 ### Pending Todos
 
@@ -135,6 +139,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-09T04:21:11.741Z
-Stopped at: Completed 03-01-PLAN.md
+Last session: 2026-08-09T05:39:19Z
+Stopped at: Completed 03-02-PLAN.md
 Resume file: None
