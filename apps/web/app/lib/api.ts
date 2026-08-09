@@ -17,6 +17,8 @@ import {
   publicPostDetailSchema,
   publicPostNotFoundResponseSchema,
   type PublicPostDetail,
+  publicDistributionSchema,
+  type PublicDistribution,
 } from "@blog-x/contracts";
 
 const internalApiOrigin = process.env.INTERNAL_API_ORIGIN ?? "http://127.0.0.1:3001";
@@ -117,6 +119,10 @@ export function getPublicPosts(page: number): Promise<PublicResult<PublicPostLis
 
 export function getPublicPost(slug: string): Promise<PublicResult<PublicPostDetail>> {
   return getPublic(`/public/articles/${encodeURIComponent(slug)}`, publicPostDetailSchema, true);
+}
+
+export function getPublicDistribution(): Promise<PublicResult<PublicDistribution>> {
+  return getPublic("/public/distribution", publicDistributionSchema);
 }
 
 export function getPublicTaxonomy(kind: "categories" | "tags") {
