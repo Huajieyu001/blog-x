@@ -10,6 +10,7 @@ Blog X 采用四个纵向 MVP 阶段交付。第一阶段在本地建立完整�
 - [x] **Phase 2: Complete Reading Experience** - 补齐分类标签、归档、关于页、图片、目录、主题和错误体验。 (completed 2026-08-09)
 - [x] **Phase 3: Distribution and Portability** - 提供 SEO、Sitemap、RSS 和可迁移内容导出。 (completed 2026-08-09)
 - [x] **Phase 4: Secure Operations and Release Gate** - 完成安全加固、备份恢复、监控和受控生产部署准备。 (completed 2026-08-09)
+- [ ] **Phase 5: Integration Gap Closure** - 关闭同源媒体、生产备份和发布门禁顺序的 v1.0 里程碑阻塞缺口。
 
 ## Phase Details
 
@@ -179,6 +180,29 @@ Plans:
 
 - [x] 04-03: 建立不触碰冻结主机的发布清单、回滚方案和上线门禁验证。
 
+### Phase 5: Integration Gap Closure
+
+**Goal:** 修复 v1.0 里程碑审计发现的三项跨阶段矛盾，使浏览器媒体严格同源、生产备份路径可执行、发布前后门禁顺序可达，并在不接触冻结主机的前提下重新通过完整验收。
+**Mode:** mvp
+**Depends on:** Phase 4
+**Requirements:** OPS-01, OPS-03, OPS-05
+**Gap Closure:** Closes requirement, integration, and flow gaps from `.planning/v1.0-MILESTONE-AUDIT.md`.
+**UI hint:** no
+**Success Criteria** (what must be TRUE):
+
+  1. 已发布 Markdown 与封面图片只能产生博客同源 `/media` 请求，外部及混合内容图片被迁移或拒绝，普通外部超链接仍可使用。
+  2. 本地恢复演练与生产备份适配层权责分离；生产路径能够安全执行每日完整备份、加密异机传输、保留及告警结果记录，且在未配置时失败关闭。
+  3. 发布状态机明确区分 `PRE_RELEASE_READY` 与 `POST_RELEASE_VERIFIED`，发布后证据不再成为发布前 GO 的循环条件，且任何状态都不提供自动部署能力。
+  4. Phase 1–5 全量本地验收、跨阶段集成审计和三个已知错误夹具全部通过，真实生产发布状态仍保持 `BLOCKED`。
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] 05-01（待规划）：收紧已发布图片同源边界并处理历史外部图片输入。
+- [ ] 05-02（待规划）：建立安全、失败关闭的生产备份适配层与证据合同。
+- [ ] 05-03（待规划）：拆分发布前/后门禁并完成 Phase 1–5 回归与重新审计。
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -187,3 +211,4 @@ Plans:
 | 2. Complete Reading Experience | 6/6 | Complete | 2026-08-09 |
 | 3. Distribution and Portability | 4/4 | Complete    | 2026-08-09 |
 | 4. Secure Operations and Release Gate | 3/3 | Complete    | 2026-08-09 |
+| 5. Integration Gap Closure | 0/0 | Planned | |
