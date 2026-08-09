@@ -1,6 +1,6 @@
 # Blog X
 
-Blog X 是一个面向个人写作的全栈博客。当前 Phase 2 已覆盖管理员登录与发布生命周期、分类和标签、归档与关于页、同源图片、文章目录，以及自动适配电脑、平板和手机的公开阅读界面与主题。
+Blog X 是一个面向个人写作的全栈博客。当前本地 v1 已覆盖管理员登录与发布生命周期、分类和标签、归档与关于页、同源图片、文章目录、响应式公开阅读、分发与 Markdown 导出，以及完整备份和隔离恢复。
 
 ## 本地前置条件
 
@@ -18,18 +18,18 @@ cp .env.example .env
 
 `.env` 只用于普通本地开发，不得提交真实凭据。完整验收会自行生成随机管理员密码、数据库名、Compose 命名空间和 Web 端口，并且不会打印这些秘密。
 
-## 一条命令完成 Phase 2 验收
+## 一条命令完成本地 Phase 1–4 验收
+
+```bash
+corepack pnpm local:verify -- --phase4-full --interruption-check --parallel-check
+```
+
+该命令先检查本地依赖树、固定基础镜像、已有验证镜像和依赖安装缓存，不完整时离线失败，不尝试 registry 回退。随后在生成的数据库、Compose 命名空间、媒体卷、管理员密码和回环 Web 端口中执行 Phase 1–3 数据库/API/浏览器回归、Phase 4 安全与进程恢复、原子完整备份、隔离恢复数据库/媒体/浏览器等价性，以及发布证据门禁。无论成功、失败或中断，清理都只允许命中本次已校验的生成目标。
+
+较窄的 Phase 2 阅读体验回归仍可单独运行：
 
 ```bash
 corepack pnpm local:verify -- --phase2-full
-```
-
-该命令生成独立的数据库、Compose 命名空间、媒体卷、管理员密码和 Web 端口；随后验证并发迁移与数据保留、最终数据库约束、API/安全回归，以及单一 Chromium 管理员到访客旅程。浏览器语义检查和补充截图覆盖 `375×812`、`768×1024` 与 `1280×900`，并额外启动仅监听本机回环地址的故障夹具验证 404、上游故障和重试恢复。无论成功或失败，清理都只允许命中本次校验过的命名空间与媒体卷。
-
-需要同时模拟迁移中断并验证两个隔离项目并行运行时：
-
-```bash
-corepack pnpm local:verify -- --phase2-full --interruption-check --parallel-check
 ```
 
 只验证容器、迁移恢复和并行隔离时：
@@ -38,7 +38,7 @@ corepack pnpm local:verify -- --phase2-full --interruption-check --parallel-chec
 corepack pnpm local:verify -- --infrastructure-only --interruption-check --parallel-check
 ```
 
-Phase 2 的规范验收完全使用本地基础设施：不会连接、探测或部署到任何云服务器，不会请求 CDN 或第三方服务，也没有远程回退路径。当前开发期间两台服务器均不属于验收执行面。
+Phase 4 的规范验收完全使用 Docker/Colima、文件系统和回环流量：不会连接、探测或部署到任何云服务器，不会请求 CDN、证书服务或第三方监控，也没有远程回退路径。最终输出中的本地通过不代表生产授权；仓库发布状态必须继续为 `RELEASE BLOCKED`，直到未来用户明确解除冻结并提供全部新鲜生产证据。
 
 ## 手动启动与检查
 
@@ -81,4 +81,4 @@ corepack pnpm test:ops
 - `3100` 被占用：规范验收会自动选择空闲端口；手动模式可设置 `BLOG_X_WEB_PORT` 后重新启动。
 - 上次验收被中断：直接重跑规范命令。每次运行使用独立命名空间，清理范围不会扩展到其他 Compose 项目。
 
-生产拓扑与冻结约束记录在 [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md)，但不属于 Phase 2 的执行路径。
+本地运维与恢复见 [docs/OPERATIONS.md](docs/OPERATIONS.md)，未来 STOP/GO 证据流程见 [docs/RELEASE-GATE.md](docs/RELEASE-GATE.md)，回滚决策见 [docs/ROLLBACK.md](docs/ROLLBACK.md)。[docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) 仅保留历史与目标上下文，不能作为当前生产证据。

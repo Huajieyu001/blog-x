@@ -74,3 +74,11 @@ corepack pnpm local:verify -- --phase4-restore --interruption-check --parallel-c
 ## 发布与回滚边界
 
 生产发布当前为 **BLOCKED**。未来证据顺序、责任人与 STOP/GO 判断见 [发布门禁](./RELEASE-GATE.md)，数据/媒体保全和回滚决策点见 [回滚手册](./ROLLBACK.md)。这两份文档不包含远程执行步骤；本地状态、备份演练或合成 READY 结果均不能解除冻结或证明生产证书、网络、资源、告警及恢复目标已经就绪。
+
+最终本地门禁为：
+
+```bash
+corepack pnpm local:verify -- --phase4-full --interruption-check --parallel-check
+```
+
+它要求所有 Phase 1–4 语义测试无跳过、完整备份/恢复与恢复后浏览器旅程通过，并在最后机器确认仓库发布证据仍为 BLOCKED。命令只适用于已经准备好依赖和镜像缓存的本地工作区；缺失离线前置条件即失败。

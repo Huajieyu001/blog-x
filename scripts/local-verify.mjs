@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { basename, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -65,9 +65,8 @@ export function phase3Selection(mode) {
 }
 
 export function phase4Selection(mode) {
-  const selection = {
-    security: {
-      databaseSuites: [
+  const security = {
+    databaseSuites: [
         ["AUTH_TEST_DATABASE_URL", "apps/api/test/auth-session.test.ts"],
         ["ARTICLE_TEST_DATABASE_URL", "apps/api/test/article-draft-preview.test.ts"],
         ["LIFECYCLE_TEST_DATABASE_URL", "apps/api/test/article-lifecycle.test.ts"],
@@ -79,19 +78,27 @@ export function phase4Selection(mode) {
         ["PHASE2_TEST_DATABASE_URL", "apps/api/test/phase2-public-visibility.test.ts"],
         ["PHASE3_TEST_DATABASE_URL", "apps/api/test/public-distribution.test.ts"],
         ["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"],
-      ],
-      apiSuites: [
+    ],
+    apiSuites: [
         "apps/api/test/security-hardening.test.ts",
         "apps/api/test/markdown-renderer.test.ts",
-      ],
-    },
-    operations: {
-      nodeSuites: ["scripts/ops-status.test.mjs", "scripts/backup/backup.test.mjs", "scripts/local-verify.test.mjs"],
-    },
-    restore: {
-      nodeSuites: ["scripts/backup/restore.test.mjs", "scripts/local-verify.test.mjs"],
-      databaseSuite: "apps/api/test/backup-restore.test.ts",
-      browserSuite: "apps/web/e2e/phase4-restore.spec.ts",
+    ],
+  };
+  const operations = { nodeSuites: ["scripts/ops-status.test.mjs", "scripts/backup/backup.test.mjs", "scripts/local-verify.test.mjs"] };
+  const restore = {
+    nodeSuites: ["scripts/backup/restore.test.mjs", "scripts/local-verify.test.mjs"],
+    databaseSuite: "apps/api/test/backup-restore.test.ts",
+    browserSuite: "apps/web/e2e/phase4-restore.spec.ts",
+  };
+  const selection = {
+    security,
+    operations,
+    restore,
+    full: {
+      databaseSuites: security.databaseSuites,
+      apiSuites: security.apiSuites,
+      nodeSuites: [...new Set([...operations.nodeSuites, ...restore.nodeSuites, "scripts/release-gate.test.mjs"])],
+      browserSuites: ["apps/web/e2e/phase2-reading.spec.ts", "apps/web/e2e/phase3-distribution.spec.ts", restore.browserSuite],
     },
   }[mode];
   if (!selection) throw new Error(`Phase 4 selection is not recognized: ${mode}`);
@@ -435,17 +442,39 @@ async function runPhase3Checks(context, mode) {
   }
 }
 
-async function runPhase4SecurityChecks(context) {
+async function runPhase4SecurityChecks(context, options = {}) {
   const selection = phase4Selection("security");
-  await runStep(context, "typecheck workspace", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
-  await runStep(context, "build workspace", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin } });
-  await runStep(context, "run operations safety fixtures", "corepack", ["pnpm", "test:ops"], { env: process.env });
-  for (const [variable, file] of selection.databaseSuites) await runDatabaseSuite(context, variable, file);
+  if (!options.skipWorkspace) {
+    await runStep(context, "typecheck workspace", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
+    await runStep(context, "build workspace", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin } });
+    await runStep(context, "run operations safety fixtures", "corepack", ["pnpm", "test:ops"], { env: process.env });
+  }
+  if (!options.skipPriorDatabase) for (const [variable, file] of selection.databaseSuites) await runDatabaseSuite(context, variable, file);
   for (const file of selection.apiSuites) await runDatabaseSuite(context, "AUTH_TEST_DATABASE_URL", file);
 }
 
 async function preflightCachedImages(context) {
   await runStep(context, "preflight exact cached base images", "docker", ["image", "inspect", "node:24.15.0-alpine", "postgres:18-alpine"]);
+}
+
+async function preflightOfflinePrerequisites(context) {
+  process.stdout.write("[local-verify] preflight complete offline dependency and image authority\n");
+  try {
+    for (const path of ["package.json", "pnpm-lock.yaml", "node_modules", "node_modules/.pnpm"]) {
+      const info = await lstat(resolve(root, path));
+      if (path.startsWith("node_modules") ? !info.isDirectory() : !info.isFile()) throw new Error("dependency authority type mismatch");
+    }
+    await command("corepack", ["pnpm", "-r", "list", "--depth", "0"], { env: process.env });
+    const images = await command("docker", ["image", "inspect", "--format", "{{.Id}}", "node:24.15.0-alpine", "postgres:18-alpine", apiImage, webImage]);
+    const ids = images.stdout.trim().split(/\r?\n/);
+    if (ids.length !== 4 || ids.some((id) => !/^sha256:[a-f0-9]{64}$/.test(id))) throw new Error("cached image identity is unavailable");
+    for (const image of [apiImage, webImage]) {
+      const history = await command("docker", ["history", "--no-trunc", image]);
+      if (!/pnpm install --frozen-lockfile/.test(history.combined)) throw new Error("dependency installation cache record is unavailable");
+    }
+  } catch {
+    throw new Error("OFFLINE PREREQUISITE MISSING: prepared dependency tree, pinned base images, verifier images, and install cache are required");
+  }
 }
 
 async function exerciseApiRecovery(context) {
@@ -625,6 +654,41 @@ async function runPhase4RestoreChecks(context) {
   }
 }
 
+async function runPhase4ReleaseChecks(context) {
+  const result = await runStep(context, "run scripts/release-gate.test.mjs", "node", ["--test", "--test-reporter=tap", "scripts/release-gate.test.mjs"], { env: process.env });
+  assertSemanticTap(result.combined);
+  const blocked = await runStep(context, "confirm canonical production release remains BLOCKED", "node",
+    ["scripts/release-gate.mjs", "--evidence=ops/release-evidence.blocked.json", "--expect-blocked"], { env: process.env });
+  if (!blocked.stdout.startsWith("RELEASE BLOCKED ")) throw new Error("canonical release evidence did not remain explicitly BLOCKED");
+}
+
+async function resetGeneratedAcceptanceMedia(context) {
+  validateNamespace(context.namespace);
+  validateMediaVolume(context.mediaVolume, context.namespace);
+  const api = await compose(context, "resolve exact generated API for media fixture reset", "ps", "-q", "api");
+  const containerId = api.stdout.trim();
+  if (!/^[a-f0-9]{12,64}$/.test(containerId)) throw new Error("generated API container is unavailable for media fixture reset");
+  const program = [
+    "const fs=require('node:fs');",
+    "const root=process.env.MEDIA_ROOT;",
+    "if(root!=='/var/lib/blog-x/media')process.exit(2);",
+    "for(const name of ['source','derivative']){const target=root+'/'+name;fs.rmSync(target,{recursive:true,force:true});fs.mkdirSync(target,{recursive:true,mode:0o700});}",
+  ].join("");
+  await runStep(context, "reset only generated acceptance media fixtures", "docker", ["exec", containerId, "node", "-e", program]);
+}
+
+async function runPhase4FullChecks(context) {
+  phase4Selection("full");
+  await fullPhaseChecks(context, true);
+  await runPhase3Checks(context, "full");
+  await runPhase4SecurityChecks(context, { skipWorkspace: true, skipPriorDatabase: true });
+  await resetGeneratedAcceptanceMedia(context);
+  await runPhase4OperationsChecks(context);
+  await runPhase4RestoreChecks(context);
+  await runPhase4ReleaseChecks(context);
+  process.stdout.write("[local-verify] LOCAL PHASE 4 READINESS PASS; RELEASE BLOCKED\n");
+}
+
 async function runSingle(options) {
   const namespace = validateNamespace(options.namespace ?? generatedNamespace());
   const database = validateDatabaseName(`blog_x_${namespace.slice("blogxverify_".length)}`, namespace);
@@ -652,7 +716,8 @@ async function runSingle(options) {
   if (context.publicOrigin === context.internalApiOrigin) throw new Error("public and internal API origins must remain separate");
 
   try {
-    if (["operations", "restore"].includes(options.phase4Mode) && !options.skipBuild) await preflightCachedImages(context);
+    if (options.phase4Mode === "full" && !options.skipBuild) await preflightOfflinePrerequisites(context);
+    else if (["operations", "restore"].includes(options.phase4Mode) && !options.skipBuild) await preflightCachedImages(context);
     if (!options.skipBuild) await compose(context, "build local API and Web images", "build", "api", "web");
     await compose(context, "start isolated PostgreSQL", "up", "-d", "--wait", "postgres");
     if (options.interruptionCheck) await interruptionCheck(context);
@@ -675,6 +740,9 @@ async function runSingle(options) {
     }
     else if (options.phase4Mode === "restore") {
       await runPhase4RestoreChecks(context);
+    }
+    else if (options.phase4Mode === "full") {
+      await runPhase4FullChecks(context);
     }
     else if (options.phase3Mode === "full") {
       await fullPhaseChecks(context, true);
@@ -700,10 +768,16 @@ async function parallelCheck(options) {
   const second = generatedNamespace();
   if (first === second) throw new Error("parallel verification namespaces collided");
   const [firstPort, secondPort] = await Promise.all([freePort(), freePort()]);
-  const childMode = options.phase4Mode === "restore" ? "--phase4-restore" : "--infrastructure-only";
+  const childMode = ["restore", "full"].includes(options.phase4Mode) ? "--phase4-restore" : "--infrastructure-only";
   const child = (namespace, webPort) => command(process.execPath, [scriptPath, "--internal-run", childMode, "--skip-build", `--namespace=${namespace}`, `--web-port=${webPort}`], { env: process.env });
   process.stdout.write("[local-verify] run two isolated namespaces in parallel\n");
-  const results = await Promise.all([child(first, firstPort), child(second, secondPort)]);
+  const settled = await Promise.allSettled([child(first, firstPort), child(second, secondPort)]);
+  const failed = settled.find((item) => item.status === "rejected");
+  if (failed) {
+    const output = failed.reason?.result?.combined ?? failed.reason?.message ?? "parallel child failed";
+    throw new Error(`parallel verification child failed\n${redactText(output)}`);
+  }
+  const results = settled.map((item) => item.value);
   if (!results[0].stdout.includes(`${first} passed`) || !results[1].stdout.includes(`${second} passed`)) {
     throw new Error("parallel verification did not preserve namespace identity");
   }
@@ -717,7 +791,7 @@ function optionValue(name) {
 async function main() {
   const flags = new Set(process.argv.slice(2));
   const phase3Modes = ["api", "metadata", "full", "export-api", "export-browser"].filter((mode) => flags.has(`--phase3-${mode}`));
-  const phase4Modes = ["security", "operations", "restore"].filter((mode) => flags.has(`--phase4-${mode}`));
+  const phase4Modes = ["security", "operations", "restore", "full"].filter((mode) => flags.has(`--phase4-${mode}`));
   if (phase3Modes.length + phase4Modes.length > 1) throw new Error("choose at most one Phase 3 or Phase 4 verification selection");
   const options = {
     namespace: optionValue("namespace"),

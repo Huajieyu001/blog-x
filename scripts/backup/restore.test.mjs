@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -58,7 +58,7 @@ async function collectComplete(stage) {
 
 async function fixture(context) {
   const backupRoot = await mkdtemp(join(tmpdir(), "blog-x-backup-verify-"));
-  const restoreRoot = join(tmpdir(), `blog-x-restore-verify-${Date.now()}-a1b2c3`);
+  const restoreRoot = join(tmpdir(), `blog-x-restore-verify-${randomBytes(8).toString("hex")}`);
   context.after(async () => { await rm(backupRoot, { recursive: true, force: true }); await rm(restoreRoot, { recursive: true, force: true }); });
   const backup = await createBackupSet(policy(backupRoot), { setId: "20260809T100000Z-a1b2c3d4", collect: collectComplete });
   return { backupRoot: backup.finalRoot, restoreRoot };

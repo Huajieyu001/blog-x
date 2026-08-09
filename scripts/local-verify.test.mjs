@@ -130,6 +130,7 @@ test("Phase 4 operations runner names effective config, restart, status, and cac
 test("Phase 4 restore runner preserves backup evidence through authority and browser comparison", async () => {
   const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
   assert.match(runner, /runPhase4RestoreChecks/);
+  assert.match(runner, /resetGeneratedAcceptanceMedia/);
   assert.match(runner, /restoreBackupSet/);
   assert.match(runner, /backup-restore\.test\.ts/);
   assert.match(runner, /phase4-restore\.spec\.ts/);
