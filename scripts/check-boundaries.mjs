@@ -55,6 +55,15 @@ export async function auditFiles(root, files) {
       if (/(?:from\s+["'](?:pg|drizzle-orm|@blog-x\/api)|DATABASE_URL|postgres(?:ql)?:\/\/|apps\/api|src\/db|auth\/sessions|article-service|content\/markdown)/.test(content)) {
         issues.push(issue("web_database_ownership", relativePath, "Web runtime crosses the API/database ownership boundary"));
       }
+      if (/(?:from\s+["'](?:node:fs|fs|node:path|path)["']|require\(["'](?:node:fs|fs|node:path|path)["']\))/.test(content)) {
+        issues.push(issue("web_filesystem_ownership", relativePath, "Web runtime must not own media filesystem access"));
+      }
+      if (/(?:from\s+["'](?:sharp|@fastify\/multipart)["']|require\(["'](?:sharp|@fastify\/multipart)["']\))/.test(content)) {
+        issues.push(issue("web_media_processor_ownership", relativePath, "Web runtime must not decode or process media"));
+      }
+      if (/(?:sourceKey|derivativeKey|source_key|derivative_key|MEDIA_ROOT|\/var\/lib\/blog-x\/media)/.test(content)) {
+        issues.push(issue("web_media_storage_leak", relativePath, "Web runtime exposes an API-owned media storage key or root"));
+      }
     }
 
     if (operationalSurface(relativePath)) {

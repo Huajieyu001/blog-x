@@ -1,21 +1,37 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { rm } from "node:fs/promises";
 import { createServer } from "node:net";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { auditRepository } from "./check-boundaries.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = fileURLToPath(import.meta.url);
 const composeFile = resolve(root, "compose.yaml");
-const apiImage = "blog-x-api-verify:phase1";
-const webImage = "blog-x-web-verify:phase1";
+const apiImage = "blog-x-api-verify:phase2";
+const webImage = "blog-x-web-verify:phase2";
 
 export function validateNamespace(value) {
   if (!/^blogxverify_[a-z0-9]{8,32}$/.test(value ?? "")) {
     throw new Error("verification namespace must match blogxverify_[a-z0-9]{8,32}");
   }
   return value;
+}
+
+export function validateMediaVolume(value, namespace) {
+  validateNamespace(namespace);
+  if (value !== `${namespace}_media-data`) throw new Error("verification media volume must exactly match its generated namespace");
+  return value;
+}
+
+export async function cleanupGeneratedMediaRoot(value) {
+  const resolved = resolve(value ?? "");
+  if (dirname(resolved) !== resolve(tmpdir()) || !/^blog-x-media-verify-[A-Za-z0-9_-]{6,64}$/.test(basename(resolved))) {
+    throw new Error("cleanup target is not an exact generated media root");
+  }
+  await rm(resolved, { recursive: true, force: true });
 }
 
 export function redactText(text, secrets = []) {
@@ -114,10 +130,12 @@ async function inspectSchema(context) {
   const result = await compose(context, "inspect migration ledger and schema", ...psqlArgs(context, [
     "select (select count(*) from blog_x_schema_ledger),",
     "(select migration_count from blog_x_schema_ledger where scope = 'phase1'),",
-    "(select count(*) from pg_tables where schemaname = 'public' and tablename = any(array['administrators','articles','sessions']));",
+    "(select count(*) from pg_tables where schemaname = 'public' and tablename = any(array['administrators','articles','sessions','categories','tags','article_tags','site_pages','media'])),",
+    "(select count(*) from pg_constraint where conname = any(array['site_pages_key_about_check','site_pages_status_check','articles_cover_alt_check'])),",
+    "(select count(*) from pg_indexes where schemaname = 'public' and indexname = any(array['taxonomy_category_slug_unique','taxonomy_tag_slug_unique','article_tags_article_tag_unique','site_pages_key_unique','media_source_key_unique','media_derivative_key_unique']));",
   ].join(" ")));
   const values = result.stdout.trim().split("|").map(Number);
-  if (values.length !== 3 || values[0] !== 1 || values[1] !== 2 || values[2] !== 3) {
+  if (values.length !== 5 || values[0] !== 1 || values[1] !== 6 || values[2] !== 8 || values[3] !== 3 || values[4] !== 6) {
     throw new Error(`unexpected schema inspection result: ${result.stdout.trim()}`);
   }
 }
@@ -149,6 +167,17 @@ async function interruptionCheck(context) {
   if (before.stdout.trim() !== after.stdout.trim()) throw new Error("interruption recovery replaced the PostgreSQL volume");
 }
 
+async function migrationRetryPreservation(context) {
+  const slug = `${context.runId}-migration-retained`;
+  await compose(context, "insert migration retry sentinel", ...psqlArgs(context,
+    `insert into articles (title, slug, markdown, status) values ('Migration retry sentinel', '${slug}', 'retained source', 'draft');`));
+  await Promise.all([runMigration(context, "preservation retry migration A"), runMigration(context, "preservation retry migration B")]);
+  await inspectSchema(context);
+  const retained = await compose(context, "confirm migration retry preserved article", ...psqlArgs(context,
+    `select count(*) from articles where slug = '${slug}' and markdown = 'retained source';`));
+  if (retained.stdout.trim() !== "1") throw new Error("migration retry did not preserve the existing article");
+}
+
 async function assertCleanLogs(context) {
   const result = await compose(context, "capture service logs", "logs", "--no-color", "postgres", "api", "web");
   const raw = `${context.logs.join("")}\n${result.combined}`;
@@ -173,21 +202,66 @@ async function runDatabaseSuite(context, variable, file) {
     "api", "node", "--import", "tsx", "--test", file);
 }
 
-async function fullPhaseChecks(context) {
+function startManaged(context, label, commandName, args, env) {
+  process.stdout.write(`[local-verify] ${label}\n`);
+  const child = spawn(commandName, args, { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
+  const collect = (chunk) => { context.logs.push(String(chunk)); };
+  child.stdout.on("data", collect);
+  child.stderr.on("data", collect);
+  context.children.push(child);
+  return child;
+}
+
+async function stopManaged(context) {
+  const children = context.children.splice(0).reverse();
+  await Promise.all(children.map((child) => new Promise((accept) => {
+    if (child.exitCode !== null || child.signalCode !== null) return accept();
+    child.once("close", accept);
+    child.kill("SIGTERM");
+    const timer = setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); }, 3_000);
+    timer.unref();
+  })));
+}
+
+async function runFailureRecoveryJourney(context) {
+  const [fixturePort, errorWebPort] = await Promise.all([freePort(), freePort()]);
+  const fixtureOrigin = `http://127.0.0.1:${fixturePort}`;
+  const errorWebOrigin = `http://127.0.0.1:${errorWebPort}`;
+  startManaged(context, "start local unavailable-response fixture", process.execPath,
+    ["--import", "tsx", "apps/web/e2e/public-error-fixture.ts"], { ...process.env, ERROR_FIXTURE_PORT: String(fixturePort) });
+  await waitForHttp(`${fixtureOrigin}/health`);
+  startManaged(context, "start local recovery Web", process.execPath,
+    ["apps/web/node_modules/next/dist/bin/next", "start", "apps/web", "-p", String(errorWebPort)],
+    { ...process.env, INTERNAL_API_ORIGIN: fixtureOrigin });
+  await waitForHttp(errorWebOrigin);
+  await runStep(context, "run Phase 2 unavailable/retry browser journey", "corepack",
+    ["pnpm", "exec", "playwright", "test", "apps/web/e2e/public-errors.spec.ts", "--workers=1"],
+    { env: { ...process.env, E2E_ERROR_WEB_ORIGIN: errorWebOrigin } });
+  await stopManaged(context);
+}
+
+async function fullPhaseChecks(context, phase2Full) {
   await runStep(context, "typecheck workspace", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
   await runStep(context, "build workspace", "corepack", ["pnpm", "-r", "build"], { env: process.env });
   await runStep(context, "run operations safety fixtures", "corepack", ["pnpm", "test:ops"], { env: process.env });
-  for (const [variable, file] of [
+  const databaseSuites = [
     ["AUTH_TEST_DATABASE_URL", "apps/api/test/auth-session.test.ts"],
     ["ARTICLE_TEST_DATABASE_URL", "apps/api/test/article-draft-preview.test.ts"],
     ["LIFECYCLE_TEST_DATABASE_URL", "apps/api/test/article-lifecycle.test.ts"],
     ["PUBLIC_LIST_TEST_DATABASE_URL", "apps/api/test/public-list.test.ts"],
     ["PUBLIC_VISIBILITY_TEST_DATABASE_URL", "apps/api/test/public-visibility.test.ts"],
-  ]) {
+    ...(phase2Full ? [
+      ["AUTH_TEST_DATABASE_URL", "apps/api/test/taxonomy.test.ts"],
+      ["AUTH_TEST_DATABASE_URL", "apps/api/test/pages-archive.test.ts"],
+      ["AUTH_TEST_DATABASE_URL", "apps/api/test/media.test.ts"],
+      ["PHASE2_TEST_DATABASE_URL", "apps/api/test/phase2-public-visibility.test.ts"],
+    ] : []),
+  ];
+  for (const [variable, file] of databaseSuites) {
     await runDatabaseSuite(context, variable, file);
   }
   await compose(context, "clear acceptance data", "exec", "-T", "postgres", "psql", "-U", "blog_x", "-d", context.database,
-    "-c", "truncate table sessions, articles, administrators cascade");
+    "-c", "truncate table sessions, article_tags, articles, categories, tags, site_pages, media, administrators cascade");
   await seed(context);
   const playwrightEnvironment = {
     ...process.env,
@@ -196,18 +270,22 @@ async function fullPhaseChecks(context) {
     E2E_ADMIN_PASSWORD: context.password,
     E2E_RUN_ID: context.runId,
   };
-  await runStep(context, "run whole Phase 1 browser journey", "corepack", ["pnpm", "exec", "playwright", "test", "apps/web/e2e/phase1-publishing.spec.ts", "--workers=1"], { env: playwrightEnvironment });
-  const retainedSlug = `${context.runId}-changed`;
-  const retained = await compose(context, "verify soft-deleted source retention", ...psqlArgs(context,
-    `select count(*) from articles where slug = '${retainedSlug}' and deleted_at is not null and length(markdown) > 0;`));
-  if (retained.stdout.trim() !== "1") throw new Error("soft-deleted source/slug retention diagnostic failed");
+  const journey = phase2Full ? "apps/web/e2e/phase2-reading.spec.ts" : "apps/web/e2e/phase1-publishing.spec.ts";
+  await runStep(context, `run whole ${phase2Full ? "Phase 2" : "Phase 1"} browser journey`, "corepack", ["pnpm", "exec", "playwright", "test", journey, "--workers=1"], { env: playwrightEnvironment });
+  if (phase2Full) await runFailureRecoveryJourney(context);
+  if (!phase2Full) {
+    const retainedSlug = `${context.runId}-changed`;
+    const retained = await compose(context, "verify soft-deleted source retention", ...psqlArgs(context,
+      `select count(*) from articles where slug = '${retainedSlug}' and deleted_at is not null and length(markdown) > 0;`));
+    if (retained.stdout.trim() !== "1") throw new Error("soft-deleted source/slug retention diagnostic failed");
+  }
 }
 
 async function runSingle(options) {
   const namespace = validateNamespace(options.namespace ?? generatedNamespace());
   const database = `blog_x_${namespace.slice("blogxverify_".length)}`;
   const webPort = options.webPort ?? await freePort();
-  const runId = namespace.replace("blogxverify_", "phase1-");
+  const runId = namespace.replace("blogxverify_", options.phase2Full ? "phase2-" : "phase1-");
   const context = {
     namespace,
     database,
@@ -217,8 +295,10 @@ async function runSingle(options) {
     databaseUrl: `postgres://blog_x@postgres:5432/${database}`,
     username: `admin-${runId}`,
     password: randomBytes(24).toString("base64url"),
+    mediaVolume: validateMediaVolume(`${namespace}_media-data`, namespace),
     logs: [],
     secrets: [],
+    children: [],
   };
   context.secrets.push(context.password, context.databaseUrl);
 
@@ -230,15 +310,19 @@ async function runSingle(options) {
       await Promise.all([runMigration(context, "concurrent migration A"), runMigration(context, "concurrent migration B")]);
       await inspectSchema(context);
     }
+    await migrationRetryPreservation(context);
     await compose(context, "start isolated API and Web", "up", "-d", "--wait", "api", "web");
+    await runStep(context, "confirm exact generated media volume", "docker", ["volume", "inspect", context.mediaVolume]);
     await waitForHttp(context.webOrigin);
     await compose(context, "verify active schema", "exec", "-T", "-e", `DATABASE_URL=${context.databaseUrl}`,
       "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:schema:verify");
     await seed(context);
-    if (options.fullPhase) await fullPhaseChecks(context);
+    if (options.fullPhase) await fullPhaseChecks(context, options.phase2Full);
     await assertCleanLogs(context);
     process.stdout.write(`[local-verify] ${namespace} passed\n`);
   } finally {
+    await stopManaged(context);
+    validateMediaVolume(context.mediaVolume, context.namespace);
     await command("docker-compose", composeArgs(context, "down", "--remove-orphans", "--volumes"), {
       env: composeEnvironment(context), allowFailure: true,
     });
@@ -268,7 +352,8 @@ async function main() {
   const options = {
     namespace: optionValue("namespace"),
     webPort: optionValue("web-port") ? Number(optionValue("web-port")) : undefined,
-    fullPhase: flags.has("--full-phase") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run")),
+    phase2Full: flags.has("--phase2-full"),
+    fullPhase: flags.has("--full-phase") || flags.has("--phase2-full") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run")),
     interruptionCheck: flags.has("--interruption-check"),
     parallelCheck: flags.has("--parallel-check"),
     skipBuild: flags.has("--skip-build"),

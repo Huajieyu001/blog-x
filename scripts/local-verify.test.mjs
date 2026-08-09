@@ -1,15 +1,31 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { auditFiles } from "./check-boundaries.mjs";
-import { redactText, validateNamespace } from "./local-verify.mjs";
+import { cleanupGeneratedMediaRoot, redactText, validateMediaVolume, validateNamespace } from "./local-verify.mjs";
 
 test("verification namespaces are narrow and safe cleanup targets", () => {
   assert.equal(validateNamespace("blogxverify_a1b2c3d4"), "blogxverify_a1b2c3d4");
   for (const candidate of ["", "/", ".", "blogxverify", "blogxverify_A1B2C3D4", "blogxverify_a;rm", "other_a1b2c3d4"]) {
     assert.throws(() => validateNamespace(candidate), /namespace/i);
+  }
+});
+
+test("media cleanup accepts only the exact generated root and namespace volume", async () => {
+  const namespace = "blogxverify_a1b2c3d4";
+  assert.equal(validateMediaVolume("blogxverify_a1b2c3d4_media-data", namespace), "blogxverify_a1b2c3d4_media-data");
+  for (const candidate of ["", "/", "media-data", "blogxverify_other_media-data", `${namespace}_postgres-data`]) {
+    assert.throws(() => validateMediaVolume(candidate, namespace), /media volume/i);
+  }
+
+  const root = await mkdtemp(join(tmpdir(), "blog-x-media-verify-"));
+  await writeFile(join(root, "proof.txt"), "bounded");
+  await cleanupGeneratedMediaRoot(root);
+  await assert.rejects(stat(root), /ENOENT/);
+  for (const candidate of ["/", tmpdir(), join(tmpdir(), "blog-x-media"), process.cwd()]) {
+    await assert.rejects(cleanupGeneratedMediaRoot(candidate), /generated media root/i);
   }
 });
 
@@ -30,7 +46,7 @@ test("captured output redacts credentials, session material, and database URLs",
   assert.match(redacted, /\[REDACTED\]/);
 });
 
-test("boundary audit rejects database ownership in Web, public server addresses, frozen-host commands, and tracked secrets", async (context) => {
+test("boundary audit rejects database/media ownership in Web, public server addresses, frozen-host commands, and tracked secrets", async (context) => {
   const fixtureRoot = await mkdtemp(join(tmpdir(), "blog-x-boundary-"));
   context.after(async () => { await rm(fixtureRoot, { recursive: true, force: true }); });
   await mkdir(join(fixtureRoot, "apps/web/app"), { recursive: true });
@@ -40,16 +56,23 @@ test("boundary audit rejects database ownership in Web, public server addresses,
   const files = [
     "apps/web/app/leak.ts",
     "apps/web/app/direct-client.ts",
+    "apps/web/app/media-processor.ts",
+    "apps/web/app/media-key.ts",
     "scripts/deploy.sh",
     ".env.production",
   ];
   await writeFile(join(fixtureRoot, files[0]), 'import { Pool } from "pg";\n');
   await writeFile(join(fixtureRoot, files[1]), `fetch("http://${secondaryAddress}:3001/health");\n`);
-  await writeFile(join(fixtureRoot, files[2]), `ssh root@${frozenAddress} true\n`);
-  await writeFile(join(fixtureRoot, files[3]), "ADMIN_PASSWORD=committed-secret\n");
+  await writeFile(join(fixtureRoot, files[2]), 'import fs from "node:fs"; import sharp from "sharp";\n');
+  await writeFile(join(fixtureRoot, files[3]), 'const sourceKey = "source/private.bin";\n');
+  await writeFile(join(fixtureRoot, files[4]), `ssh root@${frozenAddress} true\n`);
+  await writeFile(join(fixtureRoot, files[5]), "ADMIN_PASSWORD=committed-secret\n");
 
   const issues = await auditFiles(fixtureRoot, files);
   assert.equal(issues.some((issue) => issue.code === "web_database_ownership"), true);
+  assert.equal(issues.some((issue) => issue.code === "web_filesystem_ownership"), true);
+  assert.equal(issues.some((issue) => issue.code === "web_media_processor_ownership"), true);
+  assert.equal(issues.some((issue) => issue.code === "web_media_storage_leak"), true);
   assert.equal(issues.some((issue) => issue.code === "browser_server_address"), true);
   assert.equal(issues.some((issue) => issue.code === "frozen_host_command"), true);
   assert.equal(issues.some((issue) => issue.code === "tracked_secret_file"), true);
