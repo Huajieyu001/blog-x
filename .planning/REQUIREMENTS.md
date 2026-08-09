@@ -27,9 +27,9 @@
 
 ### Discovery and Distribution
 
-- [ ] **SEO-01**: 每个公开页面具有正确的唯一标题、描述、规范链接和 Open Graph 分享元数据。
-- [ ] **SEO-02**: 站点提供可抓取的 `robots.txt` 和仅包含公开页面及已发布文章的 Sitemap。
-- [ ] **FEED-01**: 访客可订阅包含最新已发布文章及永久链接的 RSS 或 Atom 源。
+- [x] **SEO-01**: 每个公开页面具有正确的唯一标题、描述、规范链接和 Open Graph 分享元数据。
+- [x] **SEO-02**: 站点提供可抓取的 `robots.txt` 和仅包含公开页面及已发布文章的 Sitemap。
+- [x] **FEED-01**: 访客可订阅包含最新已发布文章及永久链接的 RSS 或 Atom 源。
 
 ### Security and Operations
 
@@ -94,9 +94,9 @@
 | TAXO-01 | Phase 2 | Complete |
 | MEDIA-01 | Phase 2 | Complete |
 | PORT-01 | Phase 3 | Pending |
-| SEO-01 | Phase 3 | Pending |
-| SEO-02 | Phase 3 | Pending |
-| FEED-01 | Phase 3 | Pending |
+| SEO-01 | Phase 3 | Complete |
+| SEO-02 | Phase 3 | Complete |
+| FEED-01 | Phase 3 | Complete |
 | SEC-01 | Phase 4 | Pending |
 | SEC-02 | Phase 4 | Pending |
 | SEC-03 | Phase 4 | Pending |
