@@ -109,10 +109,16 @@ test("Phase 3 metadata is a managed same-origin public journey", async ({ page }
   const article = articles[0]!;
 
   await page.goto(`${webOrigin}/admin`);
-  const [download] = await Promise.all([
+  const [download, exportRequest, exportResponse] = await Promise.all([
     page.waitForEvent("download"),
+    page.waitForRequest((request) => request.method() === "POST" && request.url() === `${webOrigin}/api/admin/export`),
+    page.waitForResponse((response) => response.request().method() === "POST" && response.url() === `${webOrigin}/api/admin/export`),
     page.getByRole("button", { name: "导出文章 Markdown" }).click(),
   ]);
+  expect(exportRequest.headers()["origin"]).toBe(webOrigin);
+  expect(exportResponse.status()).toBe(200);
+  expect(exportResponse.headers()["content-disposition"]).toBe('attachment; filename="blog-x-export-v1.json"');
+  expect(exportResponse.headers()["content-type"]).toContain("application/json");
   expect(download.suggestedFilename()).toBe("blog-x-export-v1.json");
   const archivePath = testInfo.outputPath("blog-x-export-v1.json");
   await download.saveAs(archivePath);
