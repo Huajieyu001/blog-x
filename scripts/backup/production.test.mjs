@@ -8,6 +8,8 @@ import * as filesystem from "node:fs/promises";
 import { createManifest, verifyBackupSet } from "./manifest.mjs";
 import { collectProductionBackupSet, createProductionInventory } from "./production/collector.mjs";
 import { runProductionBackup } from "./production/adapter.mjs";
+import { createMountedDirectoryTransport } from "./production/mounted-directory.mjs";
+import { applySafeRetention } from "./production/retention.mjs";
 import { createGeneratedFakeTransport } from "./production/transport.mjs";
 import { parseProductionReleaseEvidence } from "./production/results.mjs";
 import { parseProductionBackupPolicy } from "./production/policy.mjs";
@@ -248,10 +250,32 @@ test("concrete generated mount receives only authenticated ciphertext, receipt, 
 });
 
 test("adapter fails closed for mount, receipt, catalog, retention, result, alert, and fake transport faults", async (context) => {
-  const input = await adapterFixture(context, "e1b2c3d4");
-  await assert.rejects(runProductionBackup(input, { inspectMount: async () => ({ isMountPoint: false }) }), /mount/i);
+  const mountFault = await adapterFixture(context, "e1b2c3d4");
+  await assert.rejects(runProductionBackup(mountFault, { inspectMount: async () => ({ isMountPoint: false }) }), /mount/i);
+  const receiptFault = await adapterFixture(context, "f1b2c3d4");
   const fake = createGeneratedFakeTransport({ failAt: "receipt" });
-  await assert.rejects(runProductionBackup(input, { inspectMount: async (root) => ({ isMountPoint: true, root }), transport: fake }), /receipt/i);
-  await assert.rejects(runProductionBackup(input, { inspectMount: async (root) => ({ isMountPoint: true, root }), recordResult: async () => { throw new Error("result stage fault"); } }), /result/i);
-  await assert.rejects(runProductionBackup(input, { inspectMount: async (root) => ({ isMountPoint: true, root }), recordAlert: async () => ({ status: "unconfirmed" }) }), /alert/i);
+  await assert.rejects(runProductionBackup(receiptFault, { inspectMount: async (root) => ({ isMountPoint: true, root }), transport: fake }), /receipt/i);
+  const resultFault = await adapterFixture(context, "g1b2c3d4");
+  await assert.rejects(runProductionBackup(resultFault, { inspectMount: async (root) => ({ isMountPoint: true, root }), recordResult: async () => { throw new Error("result stage fault"); } }), /result/i);
+  const alertFault = await adapterFixture(context, "h1b2c3d4");
+  await assert.rejects(runProductionBackup(alertFault, { inspectMount: async (root) => ({ isMountPoint: true, root }), recordAlert: async () => ({ status: "unconfirmed" }) }), /alert/i);
+});
+
+test("receipt-gated retention preserves the minimum known-good ciphertext and deletes nothing on catalog ambiguity", async (context) => {
+  const input = await adapterFixture(context, "i1b2c3d4");
+  const transport = await createMountedDirectoryTransport(input.destination, { inspectMount: async (root) => ({ isMountPoint: true, root }) });
+  const transfer = async (setId) => {
+    const ciphertext = Buffer.from(`ciphertext-${setId}`);
+    const digest = sha(ciphertext);
+    await transport.transfer({ setId, ciphertext, ciphertextSha256: digest, manifestSha256: "a".repeat(64), aadSha256: "b".repeat(64), createdAt: "2026-08-09T10:00:00.000Z" });
+  };
+  await transfer("20260809T100000Z-a1b2c3d4");
+  await transfer("20260809T100001Z-b1b2c3d4");
+  await transfer("20260809T100002Z-c1b2c3d4");
+  const retained = await applySafeRetention({ transport, retentionPolicyId: "daily-v1", minimumKnownGood: 2 });
+  assert.deepEqual(retained.deletedSetIds, ["20260809T100000Z-a1b2c3d4"]);
+  assert.equal((await transport.catalog()).length, 2);
+  await writeFile(join(input.destination.mountRoot, "objects", "unexpected.txt"), "ambiguous", { mode: 0o600 });
+  await assert.rejects(applySafeRetention({ transport, retentionPolicyId: "daily-v1", minimumKnownGood: 1 }), /catalog|unexpected/i);
+  assert.equal((await readdir(join(input.destination.mountRoot, "objects"))).filter((name) => name.endsWith(".aesgcm")).length, 2);
 });
