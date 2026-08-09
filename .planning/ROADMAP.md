@@ -162,9 +162,16 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
+**Wave 1**
 
 - [ ] 04-01: 完成认证、输入、上传、密钥和网络边界安全加固。
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 04-02: 建立副服务器进程管理、日志、监控、备份和恢复演练。
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 04-03: 建立不触碰冻结主机的发布清单、回滚方案和上线门禁验证。
 
 ## Progress
