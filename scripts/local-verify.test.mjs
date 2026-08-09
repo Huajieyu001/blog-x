@@ -50,10 +50,12 @@ test("Phase 3 selections deterministically route only their named semantic suite
 });
 
 test("Phase 3 semantic TAP output fails closed on skip or zero tests", () => {
-  assert.doesNotThrow(() => assertSemanticTap("TAP version 13\n# tests 2\n# pass 2\n# fail 0\n# skipped 0\n"));
+  assert.doesNotThrow(() => assertSemanticTap("TAP version 13\n# tests 2\n# pass 2\n# fail 0\n# skipped 0\n# todo 0\n"));
   assert.throws(() => assertSemanticTap("TAP version 13\n# tests 1\n# pass 0\n# skipped 1\n"), /skip/i);
+  assert.throws(() => assertSemanticTap("TAP version 13\n# tests 1\n# pass 0\n# todo 1\n"), /todo/i);
   assert.throws(() => assertSemanticTap("TAP version 13\n# tests 0\n# pass 0\n# skipped 0\n"), /zero semantic tests/i);
-  assert.throws(() => assertSemanticTap("TAP version 13\n# SKIP missing database\n"), /skip/i);
+  assert.throws(() => assertSemanticTap("TAP version 13\nok 1 - skipped case # SKIP missing database\n"), /skip\/todo directive/i);
+  assert.throws(() => assertSemanticTap("TAP version 13\nok 1 - deferred case # TODO pending contract\n"), /skip\/todo directive/i);
   assert.throws(() => assertSemanticTap("ℹ tests 7\nℹ pass 7\n"), /zero semantic tests/i);
   assert.deepEqual(semanticTestCommand("apps/api/test/public-distribution.test.ts"), [
     "node",

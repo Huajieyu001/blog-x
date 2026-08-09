@@ -54,8 +54,15 @@ export function phase3Selection(mode) {
 
 export function assertSemanticTap(output) {
   const tap = String(output);
-  if (/(?:^|\n)#\s*(?:SKIP|TODO)\b/i.test(tap) || /# skipped [1-9]\d*/i.test(tap)) {
-    throw new Error("semantic test output contains a skip");
+  const lines = tap.split(/\r?\n/);
+  const directive = lines.find((line) => /#\s*(?:SKIP|TODO)\b/i.test(line)
+    && !/^\s*#\s*(?:skipped|todo)\s+\d+\s*$/i.test(line));
+  if (directive) {
+    throw new Error(`semantic test output contains a skip/todo directive: ${redactText(directive)}`);
+  }
+  const nonzeroSummary = lines.find((line) => /^\s*#\s*(?:skipped|todo)\s+[1-9]\d*\s*$/i.test(line));
+  if (nonzeroSummary) {
+    throw new Error(`semantic test output contains a nonzero skip/todo summary: ${redactText(nonzeroSummary)}`);
   }
   const total = [...tap.matchAll(/^# tests (\d+)$/gmi)].map((match) => Number(match[1]));
   if (!total.length || total.every((count) => count === 0)) throw new Error("semantic test output reported zero semantic tests");
