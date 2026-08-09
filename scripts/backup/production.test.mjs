@@ -7,6 +7,9 @@ import test from "node:test";
 import * as filesystem from "node:fs/promises";
 import { createManifest, verifyBackupSet } from "./manifest.mjs";
 import { collectProductionBackupSet, createProductionInventory } from "./production/collector.mjs";
+import { runProductionBackup } from "./production/adapter.mjs";
+import { createGeneratedFakeTransport } from "./production/transport.mjs";
+import { parseProductionReleaseEvidence } from "./production/results.mjs";
 import { parseProductionBackupPolicy } from "./production/policy.mjs";
 import { validateProductionBackupSource, verifyProductionBackupSource } from "./production/source-authority.mjs";
 
@@ -61,6 +64,34 @@ function failureFilesystem(failAt) {
       return target[property];
     },
   });
+}
+
+async function adapterFixture(context, suffix = "d1b2c3d4") {
+  const sourceBase = await mkdtemp(join(tmpdir(), "blog-x-production-source-"));
+  const mountRoot = await mkdtemp(join(tmpdir(), "blog-x-production-mount-"));
+  const keyRoot = await mkdtemp(join(tmpdir(), "blog-x-production-key-"));
+  const resultRoot = await mkdtemp(join(tmpdir(), "blog-x-production-result-"));
+  const alertRoot = await mkdtemp(join(tmpdir(), "blog-x-production-alert-"));
+  context.after(async () => {
+    await Promise.all([sourceBase, mountRoot, keyRoot, resultRoot, alertRoot].map((path) => rm(path, { recursive: true, force: true })));
+  });
+  await Promise.all([chmod(mountRoot, 0o700), chmod(keyRoot, 0o700), chmod(resultRoot, 0o700), chmod(alertRoot, 0o700)]);
+  const profileId = "blog-x-mounted-directory-v1";
+  await writeFile(join(mountRoot, "identity.json"), JSON.stringify({ format: "blog-x-mounted-directory", version: 1, profileId }), { mode: 0o600 });
+  const keyPath = join(keyRoot, "data.key");
+  await writeFile(keyPath, Buffer.alloc(32, 7), { mode: 0o600 });
+  const policy = productionPolicy(sourceBase, suffix);
+  const collected = await collectProductionBackupSet(policy, collectorDependencies());
+  return {
+    sourceRoot: collected.finalRoot,
+    sourceAuthority: policy.sourceAuthority,
+    keyAuthority: { kind: "generated-test", keyPath },
+    destination: { kind: "generated-test", mountRoot, profileId },
+    retention: { policyId: "daily-v1", minimumKnownGood: 1 },
+    resultAuthority: { kind: "generated-test", root: resultRoot },
+    alertAuthority: { kind: "generated-test", root: alertRoot },
+    createdAt: "2026-08-09T10:00:00.000Z",
+  };
 }
 
 async function writeCompleteSet(root) {
@@ -202,4 +233,25 @@ test("collector fails closed at every collection and finalization stage without 
   const entries = await readdir(sourceBase);
   assert.equal(entries.filter((name) => /^\d{8}T\d{6}Z-/.test(name)).length, 1);
   assert.equal(entries.filter((name) => name.startsWith(".") && name.includes(".incomplete-")).length, failures.length);
+});
+
+test("concrete generated mount receives only authenticated ciphertext, receipt, result, and alert outcome", async (context) => {
+  const input = await adapterFixture(context);
+  const result = await runProductionBackup(input, { inspectMount: async (root) => ({ isMountPoint: true, root }) });
+  assert.equal(result.scope, "generated-mounted-fixture");
+  assert.match(result.ciphertextSha256, /^[a-f0-9]{64}$/);
+  const mountEntries = await readdir(input.destination.mountRoot, { recursive: true });
+  assert.equal(mountEntries.some((name) => /database\.dump|portable-export|media\/source|media\/derivative/.test(name)), false);
+  assert.equal(mountEntries.some((name) => name.endsWith(".aesgcm")), true);
+  assert.equal(mountEntries.some((name) => name.endsWith(".receipt.json")), true);
+  assert.throws(() => parseProductionReleaseEvidence(result), /generated|live/i);
+});
+
+test("adapter fails closed for mount, receipt, catalog, retention, result, alert, and fake transport faults", async (context) => {
+  const input = await adapterFixture(context, "e1b2c3d4");
+  await assert.rejects(runProductionBackup(input, { inspectMount: async () => ({ isMountPoint: false }) }), /mount/i);
+  const fake = createGeneratedFakeTransport({ failAt: "receipt" });
+  await assert.rejects(runProductionBackup(input, { inspectMount: async (root) => ({ isMountPoint: true, root }), transport: fake }), /receipt/i);
+  await assert.rejects(runProductionBackup(input, { inspectMount: async (root) => ({ isMountPoint: true, root }), recordResult: async () => { throw new Error("result stage fault"); } }), /result/i);
+  await assert.rejects(runProductionBackup(input, { inspectMount: async (root) => ({ isMountPoint: true, root }), recordAlert: async () => ({ status: "unconfirmed" }) }), /alert/i);
 });
