@@ -115,7 +115,7 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 02]: Keep one public navigation order across every visitor page and progressively enhance its compact menu while excluding login/admin surfaces. — Responsive adaptation preserves all actions instead of hiding them by device class.
 - [Phase 02]: Canonical acceptance validates one exact generated media volume and preserves an existing article across concurrent migration retries before feature tests run. — Cleanup and schema retry cannot silently destroy unrelated or retained content.
 - [Phase 02]: The final browser journey uses visible UI and same-origin requests, while unavailable responses come only from a separate loopback process fixture. — Failure evidence never requires a production test endpoint or cloud dependency.
-- [Phase 03]: Semantic Node test output is explicitly TAP only when inspected for skips/zero tests; Playwright requires its own result contract. — Node 24's default reporter is not TAP.
+- [Phase 03]: Semantic Node test output is explicitly TAP only when inspected for skips/zero tests; zero-valued TAP footer counters are not directives, while actual skip/TODO and nonzero counters still fail. — Playwright requires its own result contract.
 - [Phase 03]: Public discovery and RSS consume one strict publicPredicate projection and derive external URLs only from validated PUBLIC_ORIGIN. — Preserve non-public confidentiality and internal topology separation.
 
 ### Pending Todos

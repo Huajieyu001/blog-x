@@ -14,7 +14,7 @@ affects: [03-02, sitemap, robots, metadata, export]
 actuals:
   tokens: 14000
   tasks: 3
-  commits: 3
+  commits: 4
 tech-stack:
   added: []
   patterns: [fail-closed semantic test reports, publicPredicate distribution projection, validated public-origin RSS]
@@ -22,11 +22,11 @@ key-files:
   created: [packages/contracts/src/distribution.ts, apps/web/app/lib/site-metadata.ts, apps/web/app/rss.xml/route.ts]
   modified: [scripts/local-verify.mjs, apps/api/src/content/public-repository.ts, apps/web/app/lib/api.ts]
 key-decisions:
-  - "Force TAP only for Node/tsx suites inspected by the semantic verifier; do not parse Playwright's non-TAP output as TAP."
+  - "Force TAP only for Node/tsx suites inspected by the semantic verifier, allowing zero-valued footer counters while rejecting real skip/TODO directives and nonzero counters; do not parse Playwright's non-TAP output as TAP."
   - "One repeatable-read publicPredicate projection supplies all public discovery consumers and returns only a strict allowlist."
   - "Every RSS URL derives from validated PUBLIC_ORIGIN while INTERNAL_API_ORIGIN remains server-fetch-only."
 patterns-established:
-  - "Phase 3 selections name their owned suites and reject skipped or zero-test Node semantic output."
+  - "Phase 3 selections name their owned suites and reject skipped/TODO or zero-test Node semantic output without mistaking TAP footer counters for directives."
   - "RSS serializes escaped summaries only, strips forbidden XML controls, and never reads Markdown/rendered HTML."
 requirements-completed: [SEO-02, FEED-01]
 coverage:
@@ -82,7 +82,7 @@ status: complete
 
 ## Task Commits
 
-1. **Task 1: Trace a generated Phase 3 database through one non-skippable semantic test** - `3225fc4` (feat)
+1. **Task 1: Trace a generated Phase 3 database through one non-skippable semantic test** - `3225fc4`, `4490b30` (feat, fix)
 2. **Task 2: Expand the sentinel to the strict public distribution contract** - `498fdb8` (feat)
 3. **Task 3: Render the distribution contract as safe same-origin RSS** - `4d855f8` (feat)
 
@@ -98,7 +98,7 @@ status: complete
 
 ## Decisions Made
 
-- Explicitly request TAP for Node/tsx suites whose output is semantically inspected, because Node 24's default reporter is not TAP.
+- Explicitly request TAP for Node/tsx suites whose output is semantically inspected, then distinguish zero-valued TAP footer counters from test-level skip/TODO directives.
 - Keep Playwright output outside the TAP parser until a dedicated structured Playwright result checker is introduced by the later browser slice.
 - Keep the external `PUBLIC_ORIGIN` and server-only `INTERNAL_API_ORIGIN` as distinct configuration authorities.
 
@@ -106,13 +106,13 @@ status: complete
 
 ### Auto-fixed Issues
 
-**1. [Rule 1 - Bug] Node 24 default reporter looked like zero semantic tests**
+**1. [Rule 1 - Bug] TAP footer counters were mistaken for TODO directives**
 - **Found during:** Task 1 (generated verification recovery)
-- **Issue:** `assertSemanticTap()` correctly rejected Node 24's default `ℹ tests N` reporter as non-TAP, causing a false failure after the actual semantic suite passed.
-- **Fix:** Added `--test-reporter=tap` to the inspected Node/tsx suite invocations and regression coverage while leaving skip/zero failures intact; Playwright is no longer sent through the TAP parser.
+- **Issue:** After switching inspected Node/tsx tests to TAP, Node's valid `# todo 0` footer was incorrectly treated as a test-level TODO directive, causing the successful semantic suite to fail.
+- **Fix:** Added `--test-reporter=tap`, then distinguish zero-valued TAP footer counters from actual test-level skip/TODO directives while continuing to reject nonzero skipped/todo counters and zero tests; Playwright is not sent through the TAP parser.
 - **Files modified:** `scripts/local-verify.mjs`, `scripts/local-verify.test.mjs`
 - **Verification:** `corepack pnpm test:ops`; `corepack pnpm local:verify -- --phase3-api`
-- **Committed in:** `3225fc4`
+- **Committed in:** `3225fc4`, `4490b30`
 
 **Total deviations:** 1 auto-fixed (Rule 1: 1)
 **Impact on plan:** Necessary verifier compatibility repair; no scope expansion or dependency change.
