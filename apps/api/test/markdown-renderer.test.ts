@@ -129,3 +129,16 @@ test("keeps generated heading anchors safe when heading Markdown is hostile", as
   assert.match(html, /href="#safe-label"/);
   assert.doesNotMatch(html, /javascript:|<script|<img|<[^>]*\s(?:onerror|onmouseover)="[^"]*"[^>]*>/i);
 });
+
+test("hostile raw Markdown cannot escape supported highlighter output", async () => {
+  const { html } = await renderMarkdown([
+    "<iframe src=javascript:alert(1)></iframe>",
+    "<svg><a href=javascript:alert(1)>bad</a></svg>",
+    "[vbscript](vbscript:msgbox(1))",
+    "```ts",
+    "</span><img src=x onerror=alert(1)>",
+    "```",
+  ].join("\n\n"));
+  assert.match(html, /class="shiki github-light"/);
+  assert.doesNotMatch(html, /<iframe|<svg|<img|javascript:|vbscript:|onerror=/i);
+});

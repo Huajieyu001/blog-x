@@ -9,12 +9,14 @@ import {
   assertPlaywrightJourney,
   cleanupGeneratedMediaRoot,
   phase3Selection,
+  phase4Selection,
   redactText,
   semanticTestCommand,
   validateDatabaseName,
   validateLoopbackHttpOrigin,
   validateMediaVolume,
   validateNamespace,
+  validateTopologyPolicy,
 } from "./local-verify.mjs";
 
 test("verification namespaces are narrow and safe cleanup targets", () => {
@@ -49,6 +51,22 @@ test("Phase 3 selections deterministically route only their named semantic suite
     webSuites: ["apps/web/e2e/phase3-distribution.spec.ts"],
   });
   assert.throws(() => phase3Selection("unknown"), /Phase 3 selection/i);
+});
+
+test("Phase 4 security selection names every local API security suite", () => {
+  const selection = phase4Selection("security");
+  assert.ok(selection.databaseSuites.length >= 8);
+  assert.deepEqual(selection.apiSuites, [
+    "apps/api/test/security-hardening.test.ts",
+    "apps/api/test/markdown-renderer.test.ts",
+  ]);
+  assert.throws(() => phase4Selection("unknown"), /Phase 4 selection/i);
+});
+
+test("topology policy admits only a Web edge and rejects public data planes", async () => {
+  const subjectPath = process.env.GSD_PROHIB_SUBJECT ?? join(process.cwd(), "ops/topology-policy.json");
+  const subject = JSON.parse(await readFile(subjectPath, "utf8"));
+  assert.doesNotThrow(() => validateTopologyPolicy(subject));
 });
 
 test("Phase 3 full is the extensible canonical gate for completed Phase 1/2 and current distribution semantics", async () => {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import cookie from "@fastify/cookie";
 import Fastify, { type FastifyPluginAsync } from "fastify";
+import { aboutInputSchema, adminPostInputSchema, taxonomyInputSchema } from "@blog-x/contracts";
 import { authRoutes } from "../src/routes/auth.js";
 import { parseApiRuntimeConfig } from "../src/security/config.js";
 import { requireAdministratorMutation, unsafeRoutePolicies } from "../src/security/mutation-guard.js";
@@ -149,4 +150,17 @@ test("admin posts and export mutation policy is session-first, Origin-second, an
 
 test("taxonomy pages and media policy inventory has no unclassified unsafe route", () => {
   assert.equal(unsafeRoutePolicies.filter((policy) => !policy.contentType || !policy.limiter).length, 0);
+});
+
+test("SQL-shaped Unicode content remains literal strict input rather than executable authority", () => {
+  const shaped = "ＯＲ 1=1; -- 𝒖𝒏𝒊𝒄𝒐𝒅𝒆";
+  const article = adminPostInputSchema.safeParse({ title: shaped, summary: shaped, coverUrl: "", slug: "sql-shaped", markdown: shaped, publishedAt: null, seoDescription: shaped });
+  const taxonomy = taxonomyInputSchema.safeParse({ name: shaped, slug: "sql-shaped" });
+  const about = aboutInputSchema.safeParse({ title: shaped, markdown: shaped, version: null });
+  assert.equal(article.success, true);
+  assert.equal(taxonomy.success, true);
+  assert.equal(about.success, true);
+  if (article.success) assert.equal(article.data.markdown, shaped);
+  if (taxonomy.success) assert.equal(taxonomy.data.name, shaped);
+  if (about.success) assert.equal(about.data.markdown, shaped);
 });

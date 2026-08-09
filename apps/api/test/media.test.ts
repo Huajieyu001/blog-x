@@ -12,6 +12,7 @@ import { seedAdministrator } from "../src/db/seed-admin.js";
 import { administrators, media, sessions } from "../src/db/schema.js";
 import { processMedia } from "../src/media/processor.js";
 import { LocalMediaStorage } from "../src/media/storage.js";
+import { createMediaService } from "../src/content/media-service.js";
 
 const databaseUrl = process.env.AUTH_TEST_DATABASE_URL;
 const origin = "http://127.0.0.1:3100";
@@ -66,6 +67,28 @@ test("local storage accepts only generated exact keys and blocks traversal", asy
   assert.equal((await storage.openDerivative("derivative/00000000-0000-4000-8000-000000000001.png")).toString(), "derivative");
   await assert.rejects(storage.openDerivative("../secret"), /invalid storage key/i);
   await assert.rejects(storage.putSource("source/../../secret.bin", Buffer.from("bad")), /invalid storage key/i);
+});
+
+test("upload failure cleanup removes only the generated source and derivative keys", async () => {
+  const image = await png();
+  for (const failure of ["source", "derivative", "database"] as const) {
+    const objects = new Map<string, Buffer>();
+    const removed: string[] = [];
+    const storage = {
+      async putSource(key: string, value: Buffer) { if (failure === "source") throw new Error("source write failed"); objects.set(key, value); },
+      async putDerivative(key: string, value: Buffer) { if (failure === "derivative") throw new Error("derivative write failed"); objects.set(key, value); },
+      async openDerivative(key: string) { return objects.get(key) ?? Buffer.alloc(0); },
+      streamDerivative() { throw new Error("not used"); },
+      async removeExact(key: string) { removed.push(key); objects.delete(key); },
+    };
+    const db = { insert: () => ({ values: async () => { if (failure === "database") throw new Error("database write failed"); } }) };
+    const service = createMediaService(db as never, storage as never);
+    await assert.rejects(service.upload(image, "image/png"));
+    assert.equal(objects.size, 0, `${failure} failure leaves no stored media`);
+    assert.equal(removed.length, 2, `${failure} failure attempts exact cleanup for both generated keys`);
+    assert.match(removed[0]!, /^source\/[0-9a-f-]{36}\.bin$/);
+    assert.match(removed[1]!, /^derivative\/[0-9a-f-]{36}\.(?:png|jpg|webp)$/);
+  }
 });
 
 test("authenticated upload stores protected source and serves only the immutable derivative", async (context) => {
