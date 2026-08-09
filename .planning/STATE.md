@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 02
 current_phase_name: Complete Reading Experience
 status: executing
-stopped_at: Completed 02-03-PLAN.md
-last_updated: "2026-08-08T14:18:17.000Z"
-last_activity: 2026-08-08
+stopped_at: Completed 02-04-PLAN.md
+last_updated: "2026-08-09T01:05:07.000Z"
+last_activity: 2026-08-09
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 14
-  completed_plans: 11
+  completed_plans: 12
 ---
 
 # Project State
@@ -28,17 +28,17 @@ See: .planning/PROJECT.md (updated 2026-08-08)
 ## Current Position
 
 Phase: 02 (Complete Reading Experience) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
-Last activity: 2026-08-08 — Phase 02 execution started
+Last activity: 2026-08-09 — Completed safe same-origin media workflow
 
-Progress: [████████░░] 79%
+Progress: [█████████░] 86%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 11
+- Total plans completed: 12
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -68,6 +68,7 @@ Progress: [████████░░] 79%
 | Phase 02 P01 | 0min | 4 tasks | 27 files |
 | Phase 02 P02 | 0min | 4 tasks | 20 files |
 | Phase 02 P03 | 0min | 2 tasks | 12 files |
+| Phase 02 P04 | 0min | 5 tasks | 29 files |
 
 ## Accumulated Context
 
@@ -103,6 +104,9 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Transition 01→02]: Phase 1 closed with 29/29 UAT checks, canonical verification passed, and 33/33 modeled threats resolved or explicitly accepted.
 - [Phase 02]: Generate durable h2/h3 anchors only in the server Markdown AST, using NFKC Unicode slugs and collision-safe deterministic suffixes. — Published hash links must never depend on browser parsing or random IDs.
 - [Phase 02]: Render the same server-owned ToC as a desktop sticky nav or narrow native details using CSS, while omitting both when no qualifying headings exist. — Ordinary hash navigation and keyboard access remain functional without JavaScript.
+- [Phase 02]: Resolve public media only through database-authorized UUID paths while retaining protected source assets outside the served tree. — Public filenames and storage paths cannot become durable contracts or disclosure channels.
+- [Phase 02]: Generate metadata-free, orientation-corrected derivatives with a 2400px no-upscale bound after strict MIME, decode, animation, dimension and pixel validation. — The low-resource deployment receives predictable public assets without trusting browser decoding.
+- [Phase 02]: Require purposeful cover alt text in the shared server contract, with explicit decorative intent as the only empty-alt path. — Accessibility remains enforceable beyond the editor UI.
 
 ### Pending Todos
 
@@ -111,7 +115,6 @@ None yet.
 ### Blockers/Concerns
 
 - [Phase 2+] 副服务器系统、端口、历史数据与私网能力尚未只读核验。
-- [Phase 2] 图片存储上限、允许格式及本地开发存储策略需要在媒体方案中确定。
 - [Later] 评论、统计深度、私密内容和精确 RPO/RTO 延后决策，不阻塞 v1。
 
 ## Deferred Items
@@ -122,6 +125,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-08T14:18:17.000Z
-Stopped at: Completed 02-03-PLAN.md
+Last session: 2026-08-09T01:05:07.000Z
+Stopped at: Completed 02-04-PLAN.md
 Resume file: None
