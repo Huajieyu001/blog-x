@@ -64,6 +64,18 @@ export async function auditFiles(root, files) {
       if (/(?:sourceKey|derivativeKey|source_key|derivative_key|MEDIA_ROOT|\/var\/lib\/blog-x\/media)/.test(content)) {
         issues.push(issue("web_media_storage_leak", relativePath, "Web runtime exposes an API-owned media storage key or root"));
       }
+      if (/https?:\/\/api:\d+(?:\/|["'])/.test(content)) {
+        issues.push(issue("web_internal_origin_disclosure", relativePath, "Web runtime embeds an internal API origin in public-facing code"));
+      }
+      if (/\bfetch\s*\(\s*["']https?:\/\//.test(content)) {
+        issues.push(issue("web_outbound_request", relativePath, "Web runtime contains an outbound browser request"));
+      }
+      if (/huajieyu001\.top/i.test(content)) {
+        issues.push(issue("web_hardcoded_public_origin", relativePath, "Web runtime hardcodes the production public hostname"));
+      }
+      if (/^apps\/web\/app\/api\/(?:diagnostic|test-only|test-fixture)(?:\/|$)/.test(relativePath)) {
+        issues.push(issue("web_public_diagnostic_route", relativePath, "public test-only diagnostic routes are forbidden"));
+      }
     }
 
     if (operationalSurface(relativePath)) {

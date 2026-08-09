@@ -26,6 +26,14 @@ export function validateMediaVolume(value, namespace) {
   return value;
 }
 
+export function validateDatabaseName(value, namespace) {
+  validateNamespace(namespace);
+  if (value !== `blog_x_${namespace.slice("blogxverify_".length)}`) {
+    throw new Error("verification database must exactly match its generated namespace");
+  }
+  return value;
+}
+
 export function validateLoopbackHttpOrigin(value) {
   let url;
   try { url = new URL(value); } catch { throw new Error("verification public origin must be an absolute loopback HTTP origin"); }
@@ -363,7 +371,7 @@ async function runPhase3Checks(context, mode) {
 
 async function runSingle(options) {
   const namespace = validateNamespace(options.namespace ?? generatedNamespace());
-  const database = `blog_x_${namespace.slice("blogxverify_".length)}`;
+  const database = validateDatabaseName(`blog_x_${namespace.slice("blogxverify_".length)}`, namespace);
   const webPort = options.webPort ?? await freePort();
   const phaseLabel = options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
   const runId = namespace.replace("blogxverify_", phaseLabel);
@@ -412,6 +420,8 @@ async function runSingle(options) {
     process.stdout.write(`[local-verify] ${namespace} passed\n`);
   } finally {
     await stopManaged(context);
+    validateNamespace(context.namespace);
+    validateDatabaseName(context.database, context.namespace);
     validateMediaVolume(context.mediaVolume, context.namespace);
     await command("docker-compose", composeArgs(context, "down", "--remove-orphans", "--volumes"), {
       env: composeEnvironment(context), allowFailure: true,

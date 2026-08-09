@@ -11,6 +11,7 @@ import {
   phase3Selection,
   redactText,
   semanticTestCommand,
+  validateDatabaseName,
   validateLoopbackHttpOrigin,
   validateMediaVolume,
   validateNamespace,
@@ -92,6 +93,10 @@ test("Web Dockerfile preserves the dependency cache when the generated public or
 
 test("media cleanup accepts only the exact generated root and namespace volume", async () => {
   const namespace = "blogxverify_a1b2c3d4";
+  assert.equal(validateDatabaseName("blog_x_a1b2c3d4", namespace), "blog_x_a1b2c3d4");
+  for (const candidate of ["", "postgres", "blog_x_other", "blog_x_a1b2c3d4;drop", "blog_x_a1b2c3d4_extra"]) {
+    assert.throws(() => validateDatabaseName(candidate, namespace), /database/i);
+  }
   assert.equal(validateMediaVolume("blogxverify_a1b2c3d4_media-data", namespace), "blogxverify_a1b2c3d4_media-data");
   for (const candidate of ["", "/", "media-data", "blogxverify_other_media-data", `${namespace}_postgres-data`]) {
     assert.throws(() => validateMediaVolume(candidate, namespace), /media volume/i);
@@ -123,10 +128,11 @@ test("captured output redacts credentials, session material, and database URLs",
   assert.match(redacted, /\[REDACTED\]/);
 });
 
-test("boundary audit rejects database/media ownership in Web, public server addresses, frozen-host commands, and tracked secrets", async (context) => {
+test("boundary audit rejects database/media ownership, forbidden public origins, test routes, server addresses, frozen-host commands, and tracked secrets", async (context) => {
   const fixtureRoot = await mkdtemp(join(tmpdir(), "blog-x-boundary-"));
   context.after(async () => { await rm(fixtureRoot, { recursive: true, force: true }); });
   await mkdir(join(fixtureRoot, "apps/web/app"), { recursive: true });
+  await mkdir(join(fixtureRoot, "apps/web/app/api/diagnostic"), { recursive: true });
   await mkdir(join(fixtureRoot, "scripts"), { recursive: true });
   const frozenAddress = [47, 99, 80, 8].join(".");
   const secondaryAddress = [124, 222, 91, 230].join(".");
@@ -135,6 +141,10 @@ test("boundary audit rejects database/media ownership in Web, public server addr
     "apps/web/app/direct-client.ts",
     "apps/web/app/media-processor.ts",
     "apps/web/app/media-key.ts",
+    "apps/web/app/leaked-origin.ts",
+    "apps/web/app/outbound-request.ts",
+    "apps/web/app/production-host.ts",
+    "apps/web/app/api/diagnostic/route.ts",
     "scripts/deploy.sh",
     ".env.production",
   ];
@@ -142,14 +152,22 @@ test("boundary audit rejects database/media ownership in Web, public server addr
   await writeFile(join(fixtureRoot, files[1]), `fetch("http://${secondaryAddress}:3001/health");\n`);
   await writeFile(join(fixtureRoot, files[2]), 'import fs from "node:fs"; import sharp from "sharp";\n');
   await writeFile(join(fixtureRoot, files[3]), 'const sourceKey = "source/private.bin";\n');
-  await writeFile(join(fixtureRoot, files[4]), `ssh root@${frozenAddress} true\n`);
-  await writeFile(join(fixtureRoot, files[5]), "ADMIN_PASSWORD=committed-secret\n");
+  await writeFile(join(fixtureRoot, files[4]), 'export const canonical = "http://api:3001/posts/private";\n');
+  await writeFile(join(fixtureRoot, files[5]), 'fetch("https://example.com/collect");\n');
+  await writeFile(join(fixtureRoot, files[6]), 'export const host = "https://huajieyu001.top";\n');
+  await writeFile(join(fixtureRoot, files[7]), 'export async function GET() { return Response.json({ diagnostic: true }); }\n');
+  await writeFile(join(fixtureRoot, files[8]), `ssh root@${frozenAddress} true\n`);
+  await writeFile(join(fixtureRoot, files[9]), "ADMIN_PASSWORD=committed-secret\n");
 
   const issues = await auditFiles(fixtureRoot, files);
   assert.equal(issues.some((issue) => issue.code === "web_database_ownership"), true);
   assert.equal(issues.some((issue) => issue.code === "web_filesystem_ownership"), true);
   assert.equal(issues.some((issue) => issue.code === "web_media_processor_ownership"), true);
   assert.equal(issues.some((issue) => issue.code === "web_media_storage_leak"), true);
+  assert.equal(issues.some((issue) => issue.code === "web_internal_origin_disclosure"), true);
+  assert.equal(issues.some((issue) => issue.code === "web_outbound_request"), true);
+  assert.equal(issues.some((issue) => issue.code === "web_hardcoded_public_origin"), true);
+  assert.equal(issues.some((issue) => issue.code === "web_public_diagnostic_route"), true);
   assert.equal(issues.some((issue) => issue.code === "browser_server_address"), true);
   assert.equal(issues.some((issue) => issue.code === "frozen_host_command"), true);
   assert.equal(issues.some((issue) => issue.code === "tracked_secret_file"), true);
