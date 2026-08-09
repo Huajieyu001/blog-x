@@ -63,6 +63,13 @@ test("Phase 4 security selection names every local API security suite", () => {
   assert.throws(() => phase4Selection("unknown"), /Phase 4 selection/i);
 });
 
+test("Phase 4 operations selection is explicit and keeps restore separate", () => {
+  assert.deepEqual(phase4Selection("operations"), {
+    nodeSuites: ["scripts/ops-status.test.mjs", "scripts/local-verify.test.mjs"],
+  });
+  assert.throws(() => phase4Selection("restore"), /not recognized/i);
+});
+
 test("topology policy admits only a Web edge and rejects public data planes", async () => {
   const subjectPath = process.env.GSD_PROHIB_SUBJECT ?? join(process.cwd(), "ops/topology-policy.json");
   const subject = JSON.parse(await readFile(subjectPath, "utf8"));
@@ -94,6 +101,16 @@ test("Phase 4 security runner remains local, selected, and fail-closed", async (
   assert.match(runner, /--phase4-\$\{mode\}/);
   assert.match(runner, /await runPhase4SecurityChecks\(context\)/);
   assert.match(runner, /assertSemanticTap\(result\.combined\)/);
+});
+
+test("Phase 4 operations runner names effective config, restart, status, and cached-image gates", async () => {
+  const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
+  assert.match(runner, /runPhase4OperationsChecks/);
+  assert.match(runner, /preflightCachedImages/);
+  assert.match(runner, /exerciseApiRecovery/);
+  assert.match(runner, /ops-status\.mjs/);
+  assert.match(runner, /config.*--format.*json/s);
+  assert.match(runner, /30_000/);
 });
 
 test("Phase 3 full is the extensible canonical gate for completed Phase 1/2 and current distribution semantics", async () => {
