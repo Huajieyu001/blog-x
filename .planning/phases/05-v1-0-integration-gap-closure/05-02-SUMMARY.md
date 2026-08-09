@@ -30,7 +30,8 @@ key-decisions:
 patterns-established:
   - "Production backups: fixed named operations write a restrictive incomplete sibling, write manifest-bound COMPLETE last, verify, then atomically rename."
   - "Mounted transfer: validate mount identity before mutation, write only ciphertext and a digest-bound receipt, catalog before retention, and preserve the minimum known-good set."
-requirements-completed: [OPS-03, OPS-05]
+requirements-completed: []
+requirements-progressed: [OPS-03, OPS-05]
 coverage:
   - id: D1
     description: "Shared complete-set content verification accepts only the caller's mandatory root authority, preserving all rehearsal behavior while rejecting production-shaped roots."
@@ -79,7 +80,7 @@ coverage:
         status: pass
     human_judgment: false
 duration: 19min
-completed: 2026-08-09
+completed: 2026-08-10
 status: complete
 ---
 
@@ -111,11 +112,18 @@ status: complete
 
 ## Acceptance Evidence
 
-- `node --test scripts/backup/backup.test.mjs scripts/backup/production.test.mjs scripts/backup/restore.test.mjs` — 23 passed; no skipped or TODO tests.
-- Clean prohibition descriptor: `GSD_PROHIB_SUBJECT=scripts/fixtures/prohibitions/production-backup-safe.json node --test scripts/backup/production.test.mjs` — 11 passed.
-- Unsafe prohibition descriptor: `production-backup-incomplete-or-unsafe.json` — exited nonzero as required before it could be accepted as safe evidence.
-- `corepack pnpm -r typecheck` — contracts, API, and Web type checks passed.
-- Concrete pipeline coverage executes the exported `production-pipeline.mjs` journey only against generated source/key/mount/result/alert fixtures; no systemd unit, real mount, network endpoint, cloud host, or live alert was invoked.
+- Backup, production, and restore Node test command — 23 passed; no skipped or TODO tests.
+- Clean production-backup prohibition descriptor command — 11 passed.
+- Unsafe production-backup prohibition descriptor — exited nonzero as required before it could be accepted as safe evidence.
+- Recursive workspace typecheck command — contracts, API, and Web type checks passed.
+- Concrete pipeline coverage executes the exported production-pipeline journey only against generated source/key/mount/result/alert fixtures; no systemd unit, real mount, network endpoint, cloud host, or live alert was invoked.
+
+## Files Created/Modified
+
+- Created `scripts/backup/content-verifier.mjs` for authority-parameterized complete-set validation.
+- Created `scripts/backup/production/collector.mjs` for restrictive atomic production-format collection.
+- Created `scripts/backup/production/adapter.mjs` and the mounted-directory provider for authenticated transfer and retention orchestration.
+- Updated the dormant service contract and production backup policy names without adding live activation.
 
 ## Decisions Made
 
@@ -164,9 +172,9 @@ None - this plan deliberately does not provision a destination, mount a filesyst
 ## Self-Check: PASSED
 
 - All 18 plan artifacts exist; all nine 05-02 code/test commits are present in Git.
-- The focused rehearsal, production, restore, clean/fail-first prohibition, and workspace typecheck commands passed with the expected unsafe-fixture nonzero result.
+- The focused rehearsal, production, restore, clean/negative-control prohibition, and workspace typecheck commands produced their required outcomes.
 - Generated source/mount/key/result/alert fixture namespaces and the exact temporary prohibition log were cleaned; the working tree is clean.
 
 ---
 *Phase: 05-v1-0-integration-gap-closure*
-*Completed: 2026-08-09*
+*Completed: 2026-08-10*
