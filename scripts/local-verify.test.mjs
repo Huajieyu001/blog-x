@@ -74,6 +74,16 @@ test("Phase 4 operations and restore selections are explicit", () => {
   });
 });
 
+test("Phase 4 full selection explicitly names security, operations, restore, release, database, and browser evidence", () => {
+  const selection = phase4Selection("full");
+  assert.ok(selection.databaseSuites.length >= 11);
+  assert.ok(selection.apiSuites.includes("apps/api/test/security-hardening.test.ts"));
+  for (const file of ["scripts/ops-status.test.mjs", "scripts/backup/backup.test.mjs", "scripts/backup/restore.test.mjs", "scripts/release-gate.test.mjs", "scripts/local-verify.test.mjs"]) {
+    assert.ok(selection.nodeSuites.includes(file), file);
+  }
+  assert.deepEqual(selection.browserSuites, ["apps/web/e2e/phase2-reading.spec.ts", "apps/web/e2e/phase3-distribution.spec.ts", "apps/web/e2e/phase4-restore.spec.ts"]);
+});
+
 test("topology policy admits only a Web edge and rejects public data planes", async () => {
   const subjectPath = process.env.GSD_PROHIB_SUBJECT ?? join(process.cwd(), "ops/topology-policy.json");
   const subject = JSON.parse(await readFile(subjectPath, "utf8"));
@@ -125,6 +135,20 @@ test("Phase 4 restore runner preserves backup evidence through authority and bro
   assert.match(runner, /phase4-restore\.spec\.ts/);
   assert.match(runner, /E2E_RESTORE_WEB_ORIGIN/);
   assert.match(runner, /cleanupGeneratedRestoreRoot/);
+});
+
+test("Phase 4 full runner is offline-preflighted, exhaustive, and ends in machine-checked BLOCKED state", async () => {
+  const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
+  assert.match(runner, /preflightOfflinePrerequisites/);
+  assert.match(runner, /OFFLINE PREREQUISITE MISSING/);
+  assert.match(runner, /docker.*history.*--no-trunc/s);
+  assert.match(runner, /runPhase4FullChecks/);
+  assert.match(runner, /runPhase4SecurityChecks/);
+  assert.match(runner, /runPhase4OperationsChecks/);
+  assert.match(runner, /runPhase4RestoreChecks/);
+  assert.match(runner, /release-gate\.mjs.*--expect-blocked/s);
+  assert.match(runner, /LOCAL PHASE 4 READINESS PASS; RELEASE BLOCKED/);
+  assert.match(runner, /"security", "operations", "restore", "full"/);
 });
 
 test("Phase 3 full is the extensible canonical gate for completed Phase 1/2 and current distribution semantics", async () => {
