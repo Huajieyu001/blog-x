@@ -34,7 +34,10 @@ test("Phase 3 selections deterministically route only their named semantic suite
     webSuites: ["apps/web/app/lib/site-metadata.test.ts", "apps/web/e2e/phase3-distribution.spec.ts"],
   });
   assert.deepEqual(phase3Selection("full"), {
-    databaseSuites: [["PHASE3_TEST_DATABASE_URL", "apps/api/test/public-distribution.test.ts"]],
+    databaseSuites: [
+      ["PHASE3_TEST_DATABASE_URL", "apps/api/test/public-distribution.test.ts"],
+      ["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"],
+    ],
     webSuites: ["apps/web/app/lib/site-metadata.test.ts", "apps/web/e2e/phase3-distribution.spec.ts"],
   });
   assert.deepEqual(phase3Selection("export-api"), {
