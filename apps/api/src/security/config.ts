@@ -104,7 +104,9 @@ export function parseApiRuntimeConfig(environment: Environment, command: ApiComm
   };
   if (command === "serve") {
     result.publicOrigin = parsePublicOrigin(required(environment, "PUBLIC_ORIGIN"), production);
-    result.apiHost = environment.API_HOST ?? "127.0.0.1";
+    // The API has no Compose host port. Binding all container interfaces keeps
+    // the Web-to-API private Docker network reachable without publishing it.
+    result.apiHost = environment.API_HOST ?? "0.0.0.0";
     result.apiPort = boundedInteger(environment, "API_PORT", 3001, 1, 65_535);
     result.rateLimits = parseRateLimits(environment);
     const mediaRoot = required(environment, "MEDIA_ROOT");

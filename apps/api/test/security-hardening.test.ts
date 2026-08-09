@@ -29,6 +29,17 @@ test("runtime configuration rejects unsafe production input before resources can
   assert.throws(() => parseApiRuntimeConfig(base, "seed"), /ADMIN_USERNAME/);
 });
 
+test("serve configuration defaults to an internal-container-reachable API listener without publishing a host port", () => {
+  const config = parseApiRuntimeConfig({
+    NODE_ENV: "development",
+    DATABASE_URL: "postgres://database.example/blog",
+    PUBLIC_ORIGIN: "http://127.0.0.1:3100",
+    MEDIA_ROOT: "/var/lib/blog-x/media",
+  }, "serve");
+  assert.equal(config.apiHost, "0.0.0.0");
+  assert.equal(config.apiPort, 3001);
+});
+
 test("single-process login limiter normalizes keys, recovers exactly at its boundary, and is bounded", () => {
   const clock = new ManualClock();
   const store = new BoundedRateLimitStore(clock, 2);
