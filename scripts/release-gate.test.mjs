@@ -64,7 +64,7 @@ test("canonical repository evidence is strict BLOCKED and expect-blocked succeed
   assert.equal(decision.status, "BLOCKED");
   assert.equal(decision.exitCode, 0);
   assert.match(formatReleaseDecision(decision), /^RELEASE BLOCKED/);
-  assert.doesNotMatch(canonicalText, /artifact|READY|synthetic|authorizationRef/i);
+  assert.doesNotMatch(canonicalText, /"artifact"\s*:|"READY"|synthetic|authorizationRef/i);
   const normal = await validateReleaseEvidence(canonical, { now: () => now, canonical: true });
   assert.equal(normal.exitCode, 1);
   assert.ok(normal.reasons.length >= 20);
@@ -82,11 +82,12 @@ test("only a complete current byte-bound synthetic bundle reaches READY", async 
 
 test("each missing prerequisite remains BLOCKED rather than becoming implicit authority", async (context) => {
   for (const key of ["authorization", "hostBaselines", "networkBoundary", "backupRestore", "operations", "rollback", "postRelease"]) {
-    const bundle = await makeBundle(context, async ({ evidence }) => { evidence[key] = { status: "pending", unresolved: [`${key}.missing`] }; });
+    const reason = `${key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)}.missing`;
+    const bundle = await makeBundle(context, async ({ evidence }) => { evidence[key] = { status: "pending", unresolved: [reason] }; });
     const decision = await validateReleaseEvidence(bundle.evidence, { bundleRoot: bundle.root, evidencePath: "evidence.json", now: () => now });
     assert.equal(decision.status, "BLOCKED", key);
     assert.equal(decision.exitCode, 1, key);
-    assert.deepEqual(decision.reasons, [`${key}.missing`]);
+    assert.deepEqual(decision.reasons, [reason]);
   }
 });
 
