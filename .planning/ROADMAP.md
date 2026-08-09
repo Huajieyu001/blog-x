@@ -195,13 +195,20 @@ Plans:
   3. 发布状态机明确区分 `PRE_RELEASE_READY` 与 `POST_RELEASE_VERIFIED`，发布后证据不再成为发布前 GO 的循环条件，且任何状态都不提供自动部署能力。
   4. Phase 1–5 全量本地验收、跨阶段集成审计和三个已知错误夹具全部通过，真实生产发布状态仍保持 `BLOCKED`。
 
-**Plans:** 0 plans
+**Plans:** 0/3 plans executed
 
 Plans:
+**Wave 1**
 
-- [ ] 05-01（待规划）：收紧已发布图片同源边界并处理历史外部图片输入。
-- [ ] 05-02（待规划）：建立安全、失败关闭的生产备份适配层与证据合同。
-- [ ] 05-03（待规划）：拆分发布前/后门禁并完成 Phase 1–5 回归与重新审计。
+- [ ] 05-01-PLAN.md — 收紧已发布图片同源边界，完成无损遗留数据标记、迁移和恢复验证。
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 05-02-PLAN.md — 建立生产完整集采集、加密挂载目录传输、安全保留、结果与告警管线。
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 05-03-PLAN.md — 拆分发布前/后门禁，生成提交绑定验收收据并完成 Phase 1–5 回归与重新审计。
 
 ## Progress
 
@@ -211,4 +218,4 @@ Plans:
 | 2. Complete Reading Experience | 6/6 | Complete | 2026-08-09 |
 | 3. Distribution and Portability | 4/4 | Complete    | 2026-08-09 |
 | 4. Secure Operations and Release Gate | 3/3 | Complete    | 2026-08-09 |
-| 5. Integration Gap Closure | 0/0 | Planned | |
+| 5. Integration Gap Closure | 0/3 | Planned    |  |
