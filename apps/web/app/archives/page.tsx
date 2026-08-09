@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { getArchives } from "../lib/api";
+import { pageMetadata } from "../lib/site-metadata";
 import styles from "../public.module.css";
 export const dynamic = "force-dynamic";
+export const metadata = pageMetadata({ title: "归档", description: "按时间浏览已发布文章。", path: "/archives" });
 
 export default async function ArchivesPage() {
   const result = await getArchives();
