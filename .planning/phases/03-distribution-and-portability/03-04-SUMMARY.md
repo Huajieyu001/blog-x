@@ -14,17 +14,17 @@ affects: [04-secure-operations-and-release-gate, backup, restore]
 actuals:
   tokens: 12000
   tasks: 3
-  commits: 6
+  commits: 8
 tech-stack:
   added: []
   patterns: [strict portable manifest allowlist, read-only repeatable-read export snapshot, native same-origin POST download]
 key-files:
   created: [apps/api/src/content/export-repository.ts, apps/api/src/routes/admin-export.ts, apps/api/test/distribution-export.test.ts]
-  modified: [packages/contracts/src/distribution.ts, apps/api/src/app.ts, apps/web/app/admin/page.tsx, apps/web/e2e/phase3-distribution.spec.ts, scripts/local-verify.mjs, scripts/local-verify.test.mjs]
+  modified: [packages/contracts/src/distribution.ts, apps/api/src/app.ts, apps/api/src/routes/admin-export.ts, apps/web/app/admin/page.tsx, apps/web/e2e/phase3-distribution.spec.ts, scripts/local-verify.mjs, scripts/local-verify.test.mjs]
 key-decisions:
   - "Logical export is exactly blog-x-portable-export version 1 and excludes binary media, storage keys, paths, rendered HTML, authentication, configuration, and infrastructure authority."
   - "The export selection is a dedicated read-only repeatable-read repository so retained soft-deleted source remains portable without broadening admin list semantics."
-  - "A native relative POST form preserves browser-managed HttpOnly cookies and the browser Origin without SSR archive handling or URL secrets."
+  - "A native relative POST form preserves browser-managed HttpOnly cookies and the browser Origin without SSR archive handling or URL secrets; its scoped parser accepts only an empty form body."
 patterns-established:
   - "Sensitive archives authenticate before exact-Origin authorization, then access the repository."
   - "Portable reconstruction compares an independent normalized database snapshot to stringify/reparse schema-validated archive maps."
@@ -66,12 +66,13 @@ status: complete
 1. **Task 1: Protected export tracer** — `9327ce4` (RED), `f296367` (GREEN)
 2. **Task 2: Same-origin browser download** — `4de0e41` (RED), `9b50cae` (GREEN)
 3. **Task 3: Retained-source reconstruction and canonical gate** — `10a1603` (RED), `2739b63` (GREEN)
+4. **Browser recovery: native form parser and response assertions** — `e5c6690` (fix), `6882bc6` (test)
 
 ## Verification
 
 - `corepack pnpm test:ops` — 10 passed, 0 failed/skipped/todo.
 - `corepack pnpm check:boundaries` — `Boundary checks passed.`
-- Focused `--phase3-export-api`, `--phase3-export-browser`, and final `--phase3-full` invocations used only generated local Docker/loopback topology. The execution harness returned after their setup transcript without forwarding the commands' final tail; rerun them from the preserved canonical command before release if an explicit captured tail is required.
+- `corepack pnpm local:verify -- --phase3-export-browser` — exit 0: `[local-verify] blogxverify_8b90c180da0e passed` and `[local-verify] all requested checks passed`.
 
 ## Deviations from Plan
 
@@ -84,8 +85,18 @@ status: complete
 - **Files modified:** `scripts/local-verify.mjs`, `scripts/local-verify.test.mjs`
 - **Verification:** operations tests, typechecks, boundary audit, generated verifier invocations.
 
-**Total deviations:** 1 auto-fixed (Rule 2: 1).
-**Impact:** No dependency, service, cloud target, or production surface was added.
+### Auto-fixed Browser Recovery
+
+**2. [Rule 1 - Native form compatibility] Scoped export form parsing after real-browser 415 evidence.**
+- **Found during:** Post-plan focused browser verification
+- **Issue:** The native empty `application/x-www-form-urlencoded` POST was rejected by Fastify's content-type parser before the route ran (`415 FST_ERR_CTP_INVALID_MEDIA_TYPE`), so no attachment/download event could occur.
+- **Fix:** Registered an encapsulated URL-encoded string parser only in `adminExportRoutes`; accepts only an empty/absent body and rejects unexpected form data with 400 before repository access. Added API and Playwright response assertions for exact same-origin Origin, 200, JSON content type, and fixed disposition.
+- **Files modified:** `apps/api/src/routes/admin-export.ts`, `apps/api/test/distribution-export.test.ts`, `apps/web/e2e/phase3-distribution.spec.ts`
+- **Verification:** focused managed browser verifier exited 0; static operations/type/boundary checks passed.
+- **Committed in:** `e5c6690`, `6882bc6`
+
+**Total deviations:** 2 auto-fixed (Rule 1: 1, Rule 2: 1).
+**Impact:** The recovery makes the previously specified native form work without accepting arbitrary form data, weakening authorization, or adding browser storage/token/internal-origin access.
 
 ## User Setup Required
 
@@ -101,6 +112,7 @@ No cloud server, external API, registry, CDN, deployment target, or external hos
 
 - Task commits exist and all task artifacts are tracked.
 - The manifest excludes binary bytes, storage keys/paths, rendered HTML, auth/config data, and no import/public/GET counterpart is registered.
+- The focused managed browser verifier exited 0 with the exact same-origin POST and fixed attachment contract.
 
 ---
 *Phase: 03-distribution-and-portability*
