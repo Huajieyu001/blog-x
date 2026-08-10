@@ -10,6 +10,7 @@ import {
   cleanupGeneratedMediaRoot,
   phase3Selection,
   phase4Selection,
+  phase5Selection,
   phase5MediaSelection,
   redactText,
   semanticTestCommand,
@@ -95,6 +96,33 @@ test("Phase 5 media selection owns seventh-migration and legacy restore evidence
   assert.match(runner, /phase1-publishing\.spec\.ts/);
   const restoreFixture = runner.slice(runner.indexOf("async function seedRestoreFixture"), runner.indexOf("async function runPhase4RestoreChecks"));
   assert.match(restoreFixture, /await resetGeneratedAcceptanceMedia\(context\)/);
+});
+
+test("Phase 5 full selection is an exact once-only Phase 1-5 superset with a terminal receipt boundary", async () => {
+  const selection = phase5Selection("full");
+  assert.ok(selection.databaseSuites.length >= phase4Selection("full").databaseSuites.length);
+  for (const file of [
+    "scripts/backup/production.test.mjs",
+    "scripts/phase5-receipt.test.mjs",
+    "scripts/release-gate.test.mjs",
+    "scripts/prohibitions/media-policy.test.mjs",
+  ]) assert.ok(selection.nodeSuites.includes(file), file);
+  for (const file of ["apps/web/e2e/phase1-publishing.spec.ts", "apps/web/e2e/phase2-reading.spec.ts", "apps/web/e2e/phase3-distribution.spec.ts", "apps/web/e2e/phase4-restore.spec.ts"]) {
+    assert.ok(selection.browserSuites.includes(file), file);
+  }
+  const all = [...selection.databaseSuites.map((item) => item[1]), ...selection.apiSuites, ...selection.nodeSuites, ...selection.browserSuites, selection.databaseSuite];
+  assert.equal(new Set(all).size, all.length, "every selected suite is registered exactly once");
+  const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
+  assert.match(runner, /function phase5Selection/);
+  assert.match(runner, /--phase5-full/);
+  assert.match(runner, /blogxprodverify_/);
+  assert.match(runner, /generated-production-pipeline/);
+  const full = runner.slice(runner.indexOf("async function runPhase5FullChecks"), runner.indexOf("async function runSingle"));
+  assert.match(full, /createPhase5SuiteManifest/);
+  assert.match(full, /runPhase4ReleaseChecks/);
+  assert.match(full, /writePhase5ReceiptAtomic/);
+  assert.ok(full.indexOf("runPhase4ReleaseChecks") < full.indexOf("writePhase5ReceiptAtomic"));
+  assert.ok(full.indexOf("cleanupPhase5ProductionAuthorities") < full.indexOf("writePhase5ReceiptAtomic"));
 });
 
 test("Phase 4 full selection explicitly names security, operations, restore, release, database, and browser evidence", () => {
