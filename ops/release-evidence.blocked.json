@@ -1,12 +1,11 @@
 {
   "format": "blog-x-release-evidence",
-  "version": 1,
+  "version": 2,
   "state": "BLOCKED",
   "authorization": { "status": "pending", "unresolved": ["authorization.change_window", "authorization.user_unfreeze"] },
   "hostBaselines": { "status": "pending", "unresolved": ["host.main_baseline", "host.secondary_baseline"] },
   "networkBoundary": { "status": "pending", "unresolved": ["network.private_link", "network.same_origin"] },
-  "backupRestore": { "status": "pending", "unresolved": ["backup.daily", "backup.off_host", "backup.retention", "recovery.rpo", "recovery.rto", "restore.recent"] },
+  "backupRestore": { "status": "pending", "unresolved": ["backup.collector", "backup.off_host", "backup.retention", "backup.alert", "restore.recent"] },
   "operations": { "status": "pending", "unresolved": ["operations.alert_recipient", "operations.resource_limits", "operations.tls", "operations.tls_renewal"] },
-  "rollback": { "status": "pending", "unresolved": ["rollback.immutable_artifacts", "rollback.owner", "rollback.stop_criteria"] },
-  "postRelease": { "status": "pending", "unresolved": ["post_release.decision", "post_release.smoke_checks"] }
+  "rollback": { "status": "pending", "unresolved": ["rollback.immutable_artifacts", "rollback.owner", "rollback.stop_criteria"] }
 }

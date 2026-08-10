@@ -19,7 +19,7 @@ function artifact(format, details, outcome = "pass") {
 }
 
 function reference(name, value, text) {
-  return { id: name.replace(/\.json$/, ""), artifact: name, type: value.format, sha256: sha(text), observedAt, validUntil, outcome: value.outcome };
+  return { id: name.replace(/\.json$/, ""), artifact: name, type: value.format, sha256: sha(text), observedAt, validUntil, outcome: value.outcome ?? "pass" };
 }
 
 function section(references) {
@@ -178,13 +178,21 @@ test("post verification blocks without a predecessor and rejects wrong, tampered
   for (const mutatePost of [
     ({ evidence }) => { evidence.predecessor.decision.sha256 = "0".repeat(64); },
     ({ evidence }) => { evidence.predecessor.decision.validUntil = "2026-08-10T10:00:00.000Z"; },
-    ({ decision }) => { decision.decisionId = "pre-release-wrong-decision-id"; },
   ]) {
     const bundle = await makePostBundle(context, { mutatePost });
     const decision = await evaluatePostReleaseVerification(bundle.evidence, { bundleRoot: bundle.root, evidencePath: "post-evidence.json", now: () => now });
     assert.equal(decision.status, "INVALID");
     assert.equal(decision.exitCode, 2);
   }
+  const mismatched = await makePostBundle(context);
+  mismatched.decision.decisionId = "pre-release-000000000000000000000000";
+  const decisionText = `${JSON.stringify(mismatched.decision)}\n`;
+  await writeFile(join(mismatched.root, "pre-decision.json"), decisionText, { mode: 0o600 });
+  mismatched.evidence.predecessor.decision = reference("pre-decision.json", mismatched.decision, decisionText);
+  await writeFile(join(mismatched.root, "post-evidence.json"), `${JSON.stringify(mismatched.evidence)}\n`, { mode: 0o600 });
+  const mismatchDecision = await evaluatePostReleaseVerification(mismatched.evidence, { bundleRoot: mismatched.root, evidencePath: "post-evidence.json", now: () => now });
+  assert.equal(mismatchDecision.status, "INVALID");
+  assert.equal(mismatchDecision.exitCode, 2);
 });
 
 test("failed HTTPS-domain smoke is a recorded post-release non-success, not an invalid predecessor", async (context) => {
@@ -197,7 +205,9 @@ test("failed HTTPS-domain smoke is a recorded post-release non-success, not an i
   await writeFile(join(bundle.root, "post-release.json"), `${JSON.stringify(bundle.post)}\n`, { mode: 0o600 });
   postReleaseEvidenceSchema.parse(bundle.evidence);
   const decision = await evaluatePostReleaseVerification(bundle.evidence, { bundleRoot: bundle.root, evidencePath: "post-evidence.json", now: () => now });
-  assert.deepEqual(decision, { status: "POST_RELEASE_FAILED", exitCode: 1, reasons: ["postRelease.smoke"] });
+  assert.equal(decision.status, "POST_RELEASE_FAILED");
+  assert.equal(decision.exitCode, 1);
+  assert.deepEqual(decision.reasons, ["postRelease.smoke"]);
 });
 
 test("exact byte-bound predecessor, deployed digests, HTTPS smoke, and continue decision reach POST_RELEASE_VERIFIED", async (context) => {
