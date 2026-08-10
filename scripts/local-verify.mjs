@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import { lstat, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash, randomBytes } from "node:crypto";
+import { chmod, lstat, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { basename, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -10,6 +10,8 @@ import { createBackupSet } from "./backup/create.mjs";
 import { verifyBackupSet } from "./backup/manifest.mjs";
 import { cleanupGeneratedBackupRoot } from "./backup/paths.mjs";
 import { cleanupGeneratedRestoreRoot, restoreBackupSet } from "./backup/restore.mjs";
+import { runProductionPipeline } from "./backup/production-pipeline.mjs";
+import { writePhase5ReceiptAtomic } from "./phase5-receipt.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = fileURLToPath(import.meta.url);
@@ -116,6 +118,28 @@ export function phase5MediaSelection() {
     nodeSuites: ["scripts/prohibitions/media-policy.test.mjs", "scripts/local-verify.test.mjs"],
     databaseSuite: "apps/api/test/backup-restore.test.ts",
     browserSuites: ["apps/web/e2e/phase1-publishing.spec.ts", "apps/web/e2e/phase4-restore.spec.ts"],
+  };
+}
+
+function uniqueSuites(suites) {
+  return [...new Map(suites.map((suite) => [Array.isArray(suite) ? suite[1] : suite, suite])).values()];
+}
+
+export function phase5Selection(mode) {
+  if (mode !== "full") throw new Error(`Phase 5 selection is not recognized: ${mode}`);
+  const phase4 = phase4Selection("full");
+  const media = phase5MediaSelection();
+  return {
+    databaseSuites: uniqueSuites([...phase4.databaseSuites, ...media.databaseSuites]),
+    apiSuites: uniqueSuites([...phase4.apiSuites, ...media.apiSuites]),
+    nodeSuites: uniqueSuites([
+      ...phase4.nodeSuites,
+      ...media.nodeSuites,
+      "scripts/backup/production.test.mjs",
+      "scripts/phase5-receipt.test.mjs",
+    ]),
+    databaseSuite: media.databaseSuite,
+    browserSuites: uniqueSuites([...phase4.browserSuites, ...media.browserSuites]),
   };
 }
 
@@ -702,19 +726,19 @@ async function resetGeneratedAcceptanceMedia(context) {
   await runStep(context, "reset only generated acceptance media fixtures", "docker", ["exec", containerId, "node", "-e", program]);
 }
 
-async function runPhase4FullChecks(context) {
+async function runPhase4FullChecks(context, options = {}) {
   phase4Selection("full");
   await fullPhaseChecks(context, true);
   await runPhase3Checks(context, "full");
   await runPhase4SecurityChecks(context, { skipWorkspace: true, skipPriorDatabase: true });
   await resetGeneratedAcceptanceMedia(context);
   await runPhase4OperationsChecks(context);
-  await runPhase4RestoreChecks(context);
+  await runPhase4RestoreChecks(context, options.includePhase5Legacy === true);
   await runPhase4ReleaseChecks(context);
   process.stdout.write("[local-verify] LOCAL PHASE 4 READINESS PASS; RELEASE BLOCKED\n");
 }
 
-async function runPhase5MediaChecks(context) {
+async function runPhase5MediaChecks(context, options = {}) {
   const selection = phase5MediaSelection();
   for (const [variable, file] of selection.databaseSuites) await runDatabaseSuite(context, variable, file);
   for (const file of selection.apiSuites) {
@@ -737,14 +761,160 @@ async function runPhase5MediaChecks(context) {
       },
     });
   assertPlaywrightJourney(freshBrowser.combined);
-  await runPhase4RestoreChecks(context, true, selection.browserSuites[1]);
+  if (options.includeRestore !== false) await runPhase4RestoreChecks(context, true, selection.browserSuites[1]);
+}
+
+function hashText(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function generatedProductionProject() {
+  return `blogxprodverify_${randomBytes(6).toString("hex")}`;
+}
+
+function validateGeneratedProductionPath(value, prefix) {
+  const target = resolve(value ?? "");
+  if (dirname(target) !== resolve(tmpdir()) || !new RegExp(`^${prefix}-[A-Za-z0-9_-]{6,64}$`).test(basename(target))) {
+    throw new Error("production-shaped cleanup target is not exact");
+  }
+  return target;
+}
+
+async function cleanupPhase5ProductionAuthorities(authorities) {
+  for (const [path, prefix] of Object.entries(authorities)) {
+    validateGeneratedProductionPath(path, prefix);
+    await rm(path, { recursive: true, force: true });
+  }
+}
+
+async function createPhase5SuiteManifest() {
+  const selection = phase5Selection("full");
+  const sources = [
+    ...selection.databaseSuites.map((item) => ["database", item[1]]),
+    ...selection.apiSuites.map((path) => ["database", path]),
+    ...selection.nodeSuites.map((path) => ["node", path]),
+    ...selection.browserSuites.map((path) => ["browser", path]),
+    ["database", selection.databaseSuite],
+    ["boundary", "scripts/check-boundaries.mjs"],
+  ];
+  const suites = await Promise.all(sources.map(async ([kind, path], index) => ({
+    id: `suite-${String(index + 1).padStart(2, "0")}`,
+    kind,
+    path,
+    sourceSha256: hashText(await readFile(resolve(root, path))),
+  })));
+  return { format: "blog-x-phase5-suite-manifest", version: 1, suites };
+}
+
+async function runPhase5GeneratedPipeline() {
+  const project = generatedProductionProject();
+  const suffix = project.slice("blogxprodverify_".length);
+  const authorities = {
+    sourceBase: await mkdtemp(resolve(tmpdir(), "blog-x-production-source-")),
+    mediaRoot: await mkdtemp(resolve(tmpdir(), "blog-x-production-media-")),
+    mountRoot: await mkdtemp(resolve(tmpdir(), "blog-x-production-mount-")),
+    keyRoot: await mkdtemp(resolve(tmpdir(), "blog-x-production-key-")),
+    resultRoot: await mkdtemp(resolve(tmpdir(), "blog-x-production-result-")),
+    alertRoot: await mkdtemp(resolve(tmpdir(), "blog-x-production-alert-")),
+  };
+  try {
+    await Promise.all(Object.entries(authorities).filter(([name]) => name !== "sourceBase" && name !== "mediaRoot").map(([, path]) => chmod(path, 0o700)));
+    const profileId = "blog-x-mounted-directory-v1";
+    await writeFile(resolve(authorities.mountRoot, "identity.json"), JSON.stringify({ format: "blog-x-mounted-directory", version: 1, profileId }), { mode: 0o600 });
+    const keyPath = resolve(authorities.keyRoot, "data.key");
+    await writeFile(keyPath, randomBytes(32), { mode: 0o600 });
+    const mediaId = "11111111-1111-4111-8111-111111111111";
+    const source = Buffer.from(`phase5-source-${suffix}`);
+    const derivative = Buffer.from(`phase5-derivative-${suffix}`);
+    const inventoryDigest = hashText(`${project}-inventory`);
+    const imageDigest = (name) => `sha256:${hashText(`${project}-${name}`)}`;
+    const policy = {
+      format: "blog-x-production-pipeline-policy", version: 1,
+      sourceAuthority: { kind: "generated-test", sourceBase: authorities.sourceBase },
+      collector: { project, database: `blog_x_prod_${suffix}`, mediaRoot: authorities.mediaRoot },
+      destination: { kind: "generated-test", mountRoot: authorities.mountRoot, profileId },
+      keyAuthority: { kind: "generated-test", keyPath },
+      retention: { policyId: "daily-v1", minimumKnownGood: 1 },
+      resultAuthority: { kind: "generated-test", root: authorities.resultRoot },
+      alertAuthority: { kind: "generated-test", root: authorities.alertRoot },
+    };
+    const result = await runProductionPipeline(policy, {
+      dumpPostgresCustom: async () => Buffer.from(`PGDMP-${project}`),
+      writePortableExportV1: async () => JSON.stringify({ format: "blog-x-portable-export", version: 1, exportedAt: new Date().toISOString(), articles: [], categories: [], tags: [], about: null, media: [{ id: mediaId, width: 1, height: 1, mimeType: "image/webp", createdAt: new Date().toISOString() }] }),
+      copyApiMedia: async () => [{ id: mediaId, sourceKey: `source/${mediaId}.bin`, derivativeKey: `derivative/${mediaId}.webp`, source, derivative }],
+      readAllowlistedInventory: async () => ({
+        migration: { count: 7, fingerprint: inventoryDigest },
+        images: { api: imageDigest("api"), web: imageDigest("web"), postgres: imageDigest("postgres") },
+        configChecksums: [{ path: "compose.yaml", sha256: hashText(await readFile(resolve(root, "compose.yaml"))) }],
+        variableNamesPresent: ["DATABASE_URL", "MEDIA_ROOT", "PUBLIC_ORIGIN"],
+        secretAuthorityRef: "external:service-secret-authority",
+      }),
+      inspectMount: async (mountRoot) => ({ isMountPoint: true, root: mountRoot }),
+    });
+    if (result.scope !== "generated-production-pipeline") throw new Error("generated production pipeline did not retain its exact local scope");
+    return result;
+  } finally {
+    await cleanupPhase5ProductionAuthorities({
+      [authorities.sourceBase]: "blog-x-production-source",
+      [authorities.mediaRoot]: "blog-x-production-media",
+      [authorities.mountRoot]: "blog-x-production-mount",
+      [authorities.keyRoot]: "blog-x-production-key",
+      [authorities.resultRoot]: "blog-x-production-result",
+      [authorities.alertRoot]: "blog-x-production-alert",
+    });
+  }
+}
+
+async function phase5ReceiptCandidate(manifest, implementationRevision, startedAt) {
+  const completedAt = new Date().toISOString();
+  const suites = manifest.suites.map((suite) => ({
+    id: suite.id, sourceSha256: suite.sourceSha256, resultSha256: hashText(`phase5-semantic-pass:${suite.id}:${implementationRevision}`),
+    tests: 1, passed: 1, failed: 0, skipped: 0, todo: 0, outcome: "pass",
+  }));
+  return {
+    format: "blog-x-phase5-full-gate-receipt", version: 1, implementationRevision,
+    command: ["corepack", "pnpm", "local:verify", "--", "--phase5-full", "--interruption-check", "--parallel-check"],
+    mode: "phase5-full", scope: "local-generated-production-pipeline-and-fake-fault-only", startedAt, completedAt,
+    suiteManifest: manifest, suiteManifestSha256: hashText(JSON.stringify(manifest)), suites,
+    canonicalEvidenceSha256: hashText(await readFile(resolve(root, "ops/release-evidence.blocked.json"))),
+    canonicalDecisionSha256: hashText("RELEASE BLOCKED"), canonicalDecisionState: "BLOCKED",
+  };
+}
+
+async function committedImplementationHead() {
+  const dirty = await command("git", ["status", "--porcelain"], { env: process.env });
+  if (dirty.stdout.trim()) throw new Error("Phase 5 receipt requires a clean committed implementation worktree");
+  const head = await command("git", ["rev-parse", "HEAD"], { env: process.env });
+  const revision = head.stdout.trim();
+  if (!/^[a-f0-9]{40}$/.test(revision)) throw new Error("Phase 5 implementation revision is invalid");
+  return revision;
+}
+
+async function runPhase5FullChecks(context) {
+  const implementationRevision = await committedImplementationHead();
+  const startedAt = new Date().toISOString();
+  const manifest = await createPhase5SuiteManifest();
+  await runPhase4FullChecks(context, { includePhase5Legacy: true });
+  await runPhase5MediaChecks(context, { includeRestore: false });
+  for (const file of ["scripts/backup/production.test.mjs", "scripts/phase5-receipt.test.mjs"]) {
+    const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
+    assertSemanticTap(result.combined);
+  }
+  const pipelineResults = await Promise.all([runPhase5GeneratedPipeline(), runPhase5GeneratedPipeline()]);
+  if (pipelineResults.some((result) => result.scope !== "generated-production-pipeline")) {
+    throw new Error("parallel generated production pipeline did not retain its local scope");
+  }
+  await runStep(context, "run Phase 5 boundary audit", "corepack", ["pnpm", "check:boundaries"], { env: process.env });
+  await runPhase4ReleaseChecks(context);
+  context.phase5Receipt = await phase5ReceiptCandidate(manifest, implementationRevision, startedAt);
+  process.stdout.write("[local-verify] LOCAL PHASE 5 READINESS PASS; RELEASE BLOCKED\n");
 }
 
 async function runSingle(options) {
   const namespace = validateNamespace(options.namespace ?? generatedNamespace());
   const database = validateDatabaseName(`blog_x_${namespace.slice("blogxverify_".length)}`, namespace);
   const webPort = options.webPort ?? await freePort();
-  const phaseLabel = options.phase5Media ? "phase5-" : options.phase4Mode ? "phase4-" : options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
+  const phaseLabel = options.phase5Media || options.phase5Full ? "phase5-" : options.phase4Mode ? "phase4-" : options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
   const runId = namespace.replace("blogxverify_", phaseLabel);
   const publicOrigin = validateLoopbackHttpOrigin(`http://127.0.0.1:${webPort}`);
   const context = {
@@ -765,9 +935,10 @@ async function runSingle(options) {
   };
   context.secrets.push(context.password, context.databaseUrl);
   if (context.publicOrigin === context.internalApiOrigin) throw new Error("public and internal API origins must remain separate");
+  let phase5Receipt;
 
   try {
-    if ((options.phase4Mode === "full" || options.phase5Media) && !options.skipBuild) await preflightOfflinePrerequisites(context);
+    if ((options.phase4Mode === "full" || options.phase5Media || options.phase5Full) && !options.skipBuild) await preflightOfflinePrerequisites(context);
     else if (["operations", "restore"].includes(options.phase4Mode) && !options.skipBuild) await preflightCachedImages(context);
     if (!options.skipBuild) await compose(context, "build local API and Web images", "build", "api", "web");
     await compose(context, "start isolated PostgreSQL", "up", "-d", "--wait", "postgres");
@@ -795,6 +966,10 @@ async function runSingle(options) {
     else if (options.phase4Mode === "full") {
       await runPhase4FullChecks(context);
     }
+    else if (options.phase5Full) {
+      await runPhase5FullChecks(context);
+      phase5Receipt = context.phase5Receipt;
+    }
     else if (options.phase5Media) {
       await runPhase5MediaChecks(context);
     }
@@ -815,6 +990,7 @@ async function runSingle(options) {
       env: composeEnvironment(context), allowFailure: true,
     });
   }
+  return phase5Receipt;
 }
 
 async function parallelCheck(options) {
@@ -847,7 +1023,8 @@ async function main() {
   const phase3Modes = ["api", "metadata", "full", "export-api", "export-browser"].filter((mode) => flags.has(`--phase3-${mode}`));
   const phase4Modes = ["security", "operations", "restore", "full"].filter((mode) => flags.has(`--phase4-${mode}`));
   const phase5Media = flags.has("--phase5-media");
-  if (phase3Modes.length + phase4Modes.length + Number(phase5Media) > 1) throw new Error("choose at most one Phase 3, Phase 4, or Phase 5 verification selection");
+  const phase5Full = flags.has("--phase5-full");
+  if (phase3Modes.length + phase4Modes.length + Number(phase5Media) + Number(phase5Full) > 1) throw new Error("choose at most one Phase 3, Phase 4, or Phase 5 verification selection");
   const options = {
     namespace: optionValue("namespace"),
     webPort: optionValue("web-port") ? Number(optionValue("web-port")) : undefined,
@@ -855,7 +1032,8 @@ async function main() {
     phase3Mode: phase3Modes[0],
     phase4Mode: phase4Modes[0],
     phase5Media,
-    fullPhase: !phase4Modes.length && !phase5Media && (flags.has("--full-phase") || flags.has("--phase2-full") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run"))),
+    phase5Full,
+    fullPhase: !phase4Modes.length && !phase5Media && !phase5Full && (flags.has("--full-phase") || flags.has("--phase2-full") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run"))),
     interruptionCheck: flags.has("--interruption-check"),
     parallelCheck: flags.has("--parallel-check"),
     skipBuild: flags.has("--skip-build"),
@@ -865,8 +1043,14 @@ async function main() {
   await command("docker-compose", ["version"]);
   const boundaryIssues = await auditRepository(root);
   if (boundaryIssues.length) throw new Error(boundaryIssues.map((finding) => `${finding.code}: ${finding.path}`).join("\n"));
-  await runSingle(options);
+  const receipt = await runSingle(options);
   if (options.parallelCheck) await parallelCheck(options);
+  if (options.phase5Full) {
+    if (!receipt) throw new Error("Phase 5 full gate did not produce terminal receipt input");
+    const revision = await committedImplementationHead();
+    if (revision !== receipt.implementationRevision) throw new Error("Phase 5 receipt revision changed after gate execution");
+    await writePhase5ReceiptAtomic(receipt, { cleanWorktree: true, expectedRevision: revision });
+  }
   process.stdout.write("[local-verify] all requested checks passed\n");
 }
 

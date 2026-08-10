@@ -30,11 +30,15 @@ export async function runProductionPipeline(value, dependencies = {}) {
   }, dependencies);
   const source = await verifyProductionBackupSource(collected.finalRoot, policy.sourceAuthority);
   const createdAt = source.manifest.createdAt;
-  return runProductionBackup({
+  const result = await runProductionBackup({
     sourceRoot: collected.finalRoot, sourceAuthority: policy.sourceAuthority, keyAuthority: policy.keyAuthority,
     destination: policy.destination, retention: policy.retention, resultAuthority: policy.resultAuthority,
     alertAuthority: policy.alertAuthority, createdAt,
   }, { inspectMount: dependencies.inspectMount ?? inspectLocalMount });
+  if (policy.sourceAuthority.kind === "generated-test" && result.scope === "generated-mounted-fixture") {
+    return { ...result, scope: "generated-production-pipeline" };
+  }
+  return result;
 }
 
 function option(name) {

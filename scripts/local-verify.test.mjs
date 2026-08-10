@@ -120,9 +120,12 @@ test("Phase 5 full selection is an exact once-only Phase 1-5 superset with a ter
   const full = runner.slice(runner.indexOf("async function runPhase5FullChecks"), runner.indexOf("async function runSingle"));
   assert.match(full, /createPhase5SuiteManifest/);
   assert.match(full, /runPhase4ReleaseChecks/);
-  assert.match(full, /writePhase5ReceiptAtomic/);
-  assert.ok(full.indexOf("runPhase4ReleaseChecks") < full.indexOf("writePhase5ReceiptAtomic"));
-  assert.ok(full.indexOf("cleanupPhase5ProductionAuthorities") < full.indexOf("writePhase5ReceiptAtomic"));
+  assert.match(full, /runPhase5GeneratedPipeline/);
+  assert.match(full, /Promise\.all\(\[runPhase5GeneratedPipeline\(\), runPhase5GeneratedPipeline\(\)\]\)/);
+  assert.match(runner, /await writePhase5ReceiptAtomic/);
+  assert.match(runner, /await runSingle\(options\);[\s\S]*await parallelCheck\(options\);[\s\S]*await writePhase5ReceiptAtomic/);
+  assert.ok(full.indexOf("runPhase4ReleaseChecks") < runner.indexOf("await writePhase5ReceiptAtomic"));
+  assert.match(runner, /cleanupPhase5ProductionAuthorities/);
 });
 
 test("Phase 4 full selection explicitly names security, operations, restore, release, database, and browser evidence", () => {

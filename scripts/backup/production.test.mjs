@@ -318,7 +318,7 @@ test("receipt-gated retention preserves the minimum known-good ciphertext and de
 test("pipeline creates and verifies a fresh set before the concrete mounted adapter", async (context) => {
   const policy = await pipelineFixture(context);
   const result = await runProductionPipeline(policy, { ...collectorDependencies(), inspectMount: async (root) => ({ isMountPoint: true, root }) });
-  assert.equal(result.scope, "generated-mounted-fixture");
+  assert.equal(result.scope, "generated-production-pipeline");
   const sourceEntries = await readdir(policy.sourceAuthority.sourceBase);
   assert.equal(sourceEntries.filter((name) => /^\d{8}T\d{6}Z-/.test(name)).length, 1);
   await assert.rejects(runProductionPipeline({ ...policy, sourceRoot: "/manual-set" }, { ...collectorDependencies(), inspectMount: async (root) => ({ isMountPoint: true, root }) }), /production backup policy/i);
