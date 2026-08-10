@@ -911,6 +911,12 @@ async function runPhase5FullChecks(context) {
   process.stdout.write("[local-verify] LOCAL PHASE 5 READINESS PASS; RELEASE BLOCKED\n");
 }
 
+async function restoreVerifierOwnedNextEnvironment(before) {
+  const path = resolve(root, "apps/web/next-env.d.ts");
+  const current = await readFile(path, "utf8");
+  if (current !== before) await writeFile(path, before);
+}
+
 async function runSingle(options) {
   const namespace = validateNamespace(options.namespace ?? generatedNamespace());
   const database = validateDatabaseName(`blog_x_${namespace.slice("blogxverify_".length)}`, namespace);
@@ -936,6 +942,7 @@ async function runSingle(options) {
   };
   context.secrets.push(context.password, context.databaseUrl);
   if (context.publicOrigin === context.internalApiOrigin) throw new Error("public and internal API origins must remain separate");
+  const nextEnvironmentBefore = await readFile(resolve(root, "apps/web/next-env.d.ts"), "utf8");
   let phase5Receipt;
 
   try {
@@ -990,6 +997,7 @@ async function runSingle(options) {
     await command("docker-compose", composeArgs(context, "down", "--remove-orphans", "--volumes"), {
       env: composeEnvironment(context), allowFailure: true,
     });
+    await restoreVerifierOwnedNextEnvironment(nextEnvironmentBefore);
   }
   return phase5Receipt;
 }

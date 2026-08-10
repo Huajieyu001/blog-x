@@ -126,6 +126,7 @@ test("Phase 5 full selection is an exact once-only Phase 1-5 superset with a ter
   assert.match(runner, /await runSingle\(options\);[\s\S]*await parallelCheck\(options\);[\s\S]*await writePhase5ReceiptAtomic/);
   assert.ok(full.indexOf("runPhase4ReleaseChecks") < runner.indexOf("await writePhase5ReceiptAtomic"));
   assert.match(runner, /cleanupPhase5ProductionAuthorities/);
+  assert.match(runner, /restoreVerifierOwnedNextEnvironment/);
 });
 
 test("Phase 4 full selection explicitly names security, operations, restore, release, database, and browser evidence", () => {
