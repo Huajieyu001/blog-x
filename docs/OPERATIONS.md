@@ -39,6 +39,8 @@ Blog X 备份格式版本 1 将四类恢复权威放在同一个原子集合中�
 
 生产策略文件不进入 Git。跟踪的 [backup-policy.names.json](../ops/backup-policy.names.json) 只列字段名和权威来源。创建命令在以下外部引用全部存在前拒绝运行：异机目的地、保留决策、加密密钥权威、告警接收人和服务秘密权威。仅在同一主机复制不构成灾难恢复；`daily` 定时器也不代表已经选择或测量 RPO/RTO。
 
+已交付的生产适配层会用固定的本地 collector 创建完整的数据库、导出、source/derivative 媒体和配置/镜像/迁移清单集合，再以认证加密、已验证的挂载目录、收据、目录、保留、结果和告警结果串接处理。Phase 5 的生成生产形状流程实际执行这些文件系统步骤，假适配器只用于故障测试；两者都只是本地实现证据。它们没有证明真实 collector 服务权威、真实挂载或异机身份、调度启用、告警投递、目的地可达性或恢复目标。
+
 本地生成策略准备完成后，操作顺序为：
 
 ```text
@@ -46,7 +48,7 @@ create.mjs --policy=<未跟踪的生成策略>
 verify.mjs --backup-root=<精确生成的最终集合>
 ```
 
-`ops/systemd/blog-x-backup.service` 与 `.timer` 是未启用的结构合同。只有 04-03 发布门禁确认外部引用、权限、目的地和恢复证据后，才具备讨论启用条件。
+`ops/systemd/blog-x-backup.service` 与 `.timer` 是未启用的结构合同。它们不能在本地验收中安装、启用或启动；只有未来授权流程确认外部引用、权限、目的地和恢复证据后，才具备讨论启用条件。
 
 ## 隔离恢复演练
 
@@ -75,10 +77,10 @@ corepack pnpm local:verify -- --phase4-restore --interruption-check --parallel-c
 
 生产发布当前为 **BLOCKED**。未来证据顺序、责任人与 STOP/GO 判断见 [发布门禁](./RELEASE-GATE.md)，数据/媒体保全和回滚决策点见 [回滚手册](./ROLLBACK.md)。这两份文档不包含远程执行步骤；本地状态、备份演练或合成 READY 结果均不能解除冻结或证明生产证书、网络、资源、告警及恢复目标已经就绪。
 
-最终本地门禁为：
+完整 Phase 1–5 实现门禁在其实现提交之后才运行，且在所有套件和 canonical `BLOCKED` 成功前不得创建成功收据：
 
 ```bash
-corepack pnpm local:verify -- --phase4-full --interruption-check --parallel-check
+corepack pnpm local:verify -- --phase5-full --interruption-check --parallel-check
 ```
 
-它要求所有 Phase 1–4 语义测试无跳过、完整备份/恢复与恢复后浏览器旅程通过，并在最后机器确认仓库发布证据仍为 BLOCKED。命令只适用于已经准备好依赖和镜像缓存的本地工作区；缺失离线前置条件即失败。
+它要求所有 Phase 1–5 语义测试无跳过、完整备份/恢复与恢复后浏览器旅程通过，并在最后机器确认仓库发布证据仍为 BLOCKED。成功后产生的收据和随后审计是后续单独的证据文档提交，不可折回实现提交。命令只适用于已经准备好依赖和镜像缓存的本地工作区；缺失离线前置条件即失败。

@@ -102,7 +102,7 @@ test("success fsyncs, readback-validates, and exposes one stable receipt digest"
   assert.equal(written.sha256, await hashPhase5Receipt(target.receiptPath));
   const cli = spawnSync(process.execPath, ["scripts/phase5-receipt.mjs", "verify", `--receipt=${target.receiptPath}`], { cwd: process.cwd(), encoding: "utf8" });
   assert.equal(cli.status, 0);
-  assert.match(cli.stdout, /^[a-f0-9]{64}$/);
+  assert.match(cli.stdout.trim(), /^[a-f0-9]{64}$/);
 });
 
 test("premature passed audit fails without an exact verified receipt while the clean fixture passes", async (context) => {

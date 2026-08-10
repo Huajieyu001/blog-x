@@ -18,13 +18,13 @@ cp .env.example .env
 
 `.env` 只用于普通本地开发，不得提交真实凭据。完整验收会自行生成随机管理员密码、数据库名、Compose 命名空间和 Web 端口，并且不会打印这些秘密。
 
-## 一条命令完成本地 Phase 1–4 验收
+## 一条命令完成本地 Phase 1–5 验收
 
 ```bash
-corepack pnpm local:verify -- --phase4-full --interruption-check --parallel-check
+corepack pnpm local:verify -- --phase5-full --interruption-check --parallel-check
 ```
 
-该命令先检查本地依赖树、固定基础镜像、已有验证镜像和依赖安装缓存，不完整时离线失败，不尝试 registry 回退。随后在生成的数据库、Compose 命名空间、媒体卷、管理员密码和回环 Web 端口中执行 Phase 1–3 数据库/API/浏览器回归、Phase 4 安全与进程恢复、原子完整备份、隔离恢复数据库/媒体/浏览器等价性，以及发布证据门禁。无论成功、失败或中断，清理都只允许命中本次已校验的生成目标。
+该命令先检查本地依赖树、固定基础镜像、已有验证镜像和依赖安装缓存，不完整时离线失败，不尝试 registry 回退。随后在生成的数据库、Compose 命名空间、媒体卷、管理员密码和回环 Web 端口中执行 Phase 1–4 回归、Phase 5 同源媒体/恢复兼容性、完整生产形状 collector-to-mounted 流程和单独的假故障覆盖、发布证据门禁。无论成功、失败或中断，清理都只允许命中本次已校验的生成目标。
 
 较窄的 Phase 2 阅读体验回归仍可单独运行：
 
@@ -38,7 +38,7 @@ corepack pnpm local:verify -- --phase2-full
 corepack pnpm local:verify -- --infrastructure-only --interruption-check --parallel-check
 ```
 
-Phase 4 的规范验收完全使用 Docker/Colima、文件系统和回环流量：不会连接、探测或部署到任何云服务器，不会请求 CDN、证书服务或第三方监控，也没有远程回退路径。最终输出中的本地通过不代表生产授权；仓库发布状态必须继续为 `RELEASE BLOCKED`，直到未来用户明确解除冻结并提供全部新鲜生产证据。
+Phase 5 的规范验收完全使用 Docker/Colima、文件系统和回环流量：不会连接、探测或部署到任何云服务器，不会请求 CDN、证书服务或第三方监控，也没有远程回退路径。最终输出中的本地通过不代表生产授权；成功收据只绑定干净的实现提交与本地生成范围，且仓库发布状态必须继续为 `RELEASE BLOCKED`，直到未来用户明确解除冻结并提供全部新鲜生产证据。收据与其后的审计属于实现提交之后的单独证据文档提交。
 
 ## 手动启动与检查
 

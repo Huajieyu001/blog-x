@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { hashPhase5Receipt, verifyPhase5Receipt } from "./phase5-receipt.mjs";
 
 const execFileAsync = promisify(execFile);
 const serverAddresses = [
@@ -27,9 +28,47 @@ function operationalSurface(path) {
 
 function releaseArtifactSurface(path) {
   return path === "ops/release-evidence.blocked.json"
+    || path === "ops/phase5-full-gate-receipt.json"
     || ["docs/RELEASE-GATE.md", "docs/ROLLBACK.md", "docs/OPERATIONS.md"].includes(path)
     || path === "scripts/release-gate.mjs"
     || (path.startsWith("scripts/release-gate/") && !path.endsWith(".test.mjs"));
+}
+
+function auditFrontmatter(content) {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(content);
+  if (!match) return null;
+  return Object.fromEntries(match[1].split(/\r?\n/).flatMap((line) => {
+    const index = line.indexOf(":");
+    return index > 0 ? [[line.slice(0, index).trim(), line.slice(index + 1).trim().replace(/^['"]|['"]$/g, "")]] : [];
+  }));
+}
+
+export async function auditMilestoneReceipt(root, content, options = {}) {
+  const frontmatter = auditFrontmatter(content);
+  if (!frontmatter || frontmatter.status !== "passed") return [];
+  const issues = [];
+  const expectedPath = "ops/phase5-full-gate-receipt.json";
+  if (frontmatter.full_gate_receipt_path !== expectedPath) return [issue("phase5_audit_receipt_missing", ".planning/v1.0-MILESTONE-AUDIT.md", "passed audit requires the fixed Phase 5 receipt path")];
+  const receiptPath = options.receiptPath ?? resolve(root, expectedPath);
+  let verified;
+  try { verified = await verifyPhase5Receipt(receiptPath); } catch { return [issue("phase5_audit_receipt_missing", ".planning/v1.0-MILESTONE-AUDIT.md", "passed audit requires a strict verified Phase 5 receipt")]; }
+  if (frontmatter.full_gate_receipt_sha256 !== verified.sha256 || frontmatter.implementation_revision !== verified.receipt.implementationRevision) {
+    issues.push(issue("phase5_audit_receipt_mismatch", ".planning/v1.0-MILESTONE-AUDIT.md", "passed audit receipt digest and implementation revision must match verified bytes"));
+  }
+  if (!isIsoAuditTimestamp(frontmatter.audited) || Date.parse(frontmatter.audited) < Date.parse(verified.receipt.completedAt)) {
+    issues.push(issue("phase5_audit_timestamp", ".planning/v1.0-MILESTONE-AUDIT.md", "passed audit must follow receipt completion"));
+  }
+  const isAncestor = options.isAncestor ?? (async (revision) => {
+    try { await execFileAsync("git", ["merge-base", "--is-ancestor", revision, "HEAD"], { cwd: root }); return true; } catch { return false; }
+  });
+  if (!await isAncestor(verified.receipt.implementationRevision)) issues.push(issue("phase5_audit_revision", ".planning/v1.0-MILESTONE-AUDIT.md", "receipt implementation revision must be an ancestor of audit HEAD"));
+  const actualSha256 = await hashPhase5Receipt(receiptPath);
+  if (actualSha256 !== verified.sha256) issues.push(issue("phase5_audit_receipt_mismatch", ".planning/v1.0-MILESTONE-AUDIT.md", "receipt bytes changed during audit"));
+  return issues;
+}
+
+function isIsoAuditTimestamp(value) {
+  return typeof value === "string" && Number.isFinite(Date.parse(value)) && /[zZ]|[+-]\d\d:\d\d$/.test(value);
 }
 
 function auditReleaseArtifact(path, content, issues) {
@@ -179,6 +218,9 @@ export async function auditFiles(root, files) {
         issues.push(issue("frozen_host_command", relativePath, "a command targets the frozen production host"));
       }
     }
+  }
+  if (files.includes(".planning/v1.0-MILESTONE-AUDIT.md")) {
+    try { issues.push(...await auditMilestoneReceipt(root, await readFile(resolve(root, ".planning/v1.0-MILESTONE-AUDIT.md"), "utf8"))); } catch { issues.push(issue("phase5_audit_receipt_missing", ".planning/v1.0-MILESTONE-AUDIT.md", "passed audit receipt could not be checked")); }
   }
   return issues;
 }
