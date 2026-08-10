@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { chmod, lstat, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { basename, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -811,13 +811,14 @@ async function runPhase5GeneratedPipeline() {
   const suffix = project.slice("blogxprodverify_".length);
   const authorities = {
     sourceBase: await mkdtemp(resolve(tmpdir(), "blog-x-production-source-")),
-    mediaRoot: await mkdtemp(resolve(tmpdir(), "blog-x-production-media-")),
+    mediaRoot: resolve(tmpdir(), `blog-x-production-media-${suffix}`),
     mountRoot: await mkdtemp(resolve(tmpdir(), "blog-x-production-mount-")),
     keyRoot: await mkdtemp(resolve(tmpdir(), "blog-x-production-key-")),
     resultRoot: await mkdtemp(resolve(tmpdir(), "blog-x-production-result-")),
     alertRoot: await mkdtemp(resolve(tmpdir(), "blog-x-production-alert-")),
   };
   try {
+    await mkdir(authorities.mediaRoot, { mode: 0o700 });
     await Promise.all(Object.entries(authorities).filter(([name]) => name !== "sourceBase" && name !== "mediaRoot").map(([, path]) => chmod(path, 0o700)));
     const profileId = "blog-x-mounted-directory-v1";
     await writeFile(resolve(authorities.mountRoot, "identity.json"), JSON.stringify({ format: "blog-x-mounted-directory", version: 1, profileId }), { mode: 0o600 });
