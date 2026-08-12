@@ -40,7 +40,7 @@
 - [x] **OPS-02**: 应用进程异常后可自动恢复，日志会轮转，并可检查服务存活、CPU、内存、磁盘和证书状态。
 - [x] **OPS-03**: 数据库、Markdown 内容、媒体和关键配置至少每日备份，并可通过恢复演练验证内容重新可访问。
 - [x] **OPS-04**: 开发者可在本地通过隔离的开发配置启动并验证前台、后台、API 和数据库，不依赖主服务器。
-- [x] **OPS-05**: 只有在用户明确解除主服务器冻结，且生产备份、回滚和节点间安全链路均验证通过后，系统才允许部署到主服务器。
+- [ ] **OPS-05**: 只有在用户明确解除主服务器冻结，且生产备份、回滚和节点间安全链路均验证通过后，系统才允许部署到主服务器。
 
 ## v2 Requirements
 
@@ -103,16 +103,16 @@
 | OPS-01 | Phase 5 | Complete |
 | OPS-02 | Phase 4 | Complete |
 | OPS-03 | Phase 5 | Complete |
-| OPS-05 | Phase 5 | Complete |
+| OPS-05 | Phase 5 | Verification gap |
 
 **Coverage:**
 
 - v1 requirements: 25 total
 - Mapped to phases: 25
-- Complete: 25
-- Pending gap closure: 0
+- Complete: 24
+- Pending gap closure: 1
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-08-05*  
-*Last updated: 2026-08-10 after Phase 05 Plan 03 receipt-bound integration closure; live release remains BLOCKED pending future authorization and evidence*
+*Last updated: 2026-08-10 after independent Phase 05 verification found that the retained receipt does not bind actual suite output; live release remains BLOCKED*

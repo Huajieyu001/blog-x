@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 05
-status: ready_for_verification
-stopped_at: Phase 05 Plan 03 implementation and receipt evidence committed; ready for separate phase verification
+status: gaps_found
+stopped_at: Phase 05 verification found synthetic receipt result digests; ready for gap planning
 last_updated: "2026-08-10T22:31:10+08:00"
 last_activity: 2026-08-10
-last_activity_desc: Executed Phase 05 Plan 03 full gate and receipt-bound integration audit
+last_activity_desc: Independent Phase 05 verification found one receipt outcome-binding gap
 progress:
   total_phases: 5
   completed_phases: 4
@@ -23,16 +23,16 @@ current_phase_name: Integration Gap Closure
 See: .planning/PROJECT.md (updated 2026-08-08)
 
 **Core value:** 博主能够可靠地发布和保存 Markdown 内容，访客能够持续、快速地通过博客域名阅读已发布文章。  
-**Current focus:** Phase 05 — Integration Gap Closure (ready for separate verification)
+**Current focus:** Phase 05 — Integration Gap Closure (receipt evidence gap)
 
 ## Current Position
 
 Phase: 05 — Integration Gap Closure
 Plan: 3 of 3
-Status: Plan implementation and receipt evidence complete; ready for separate Phase 05 verification
-Last activity: 2026-08-10 — completed full local gate and receipt-bound integration audit
+Status: Verification found one gap; actual suite outputs are not bound into the retained receipt
+Last activity: 2026-08-10 — independent verification recorded the receipt outcome-binding gap
 
-Progress: [██████████] 100% (5 of 5 phases implemented; Phase 05 verification remains pending)
+Progress: [████████░░] 80% (4 of 5 phases verified; all Phase 05 plans executed with one gap open)
 
 ## Performance Metrics
 
@@ -154,6 +154,7 @@ Decisions are logged in PROJECT.md Key Decisions table.
 
 ### Blockers/Concerns
 
+- [Phase 05 verification] 当前收据的 27 个结果摘要来自固定公式和固定 1/1 计数，没有绑定真实 TAP、Playwright 与管线输出；必须修复后重跑完整门禁、生成新收据并重新审计（OPS-05）。
 - [Phase 05] 真实解冻授权、主机基线、安全节点链路、异机目的地/挂载、定时任务与告警激活、TLS、部署和发布后事实仍缺失；canonical release 保持 BLOCKED。
 - [Phase 2+] 副服务器系统、端口、历史数据与私网能力尚未只读核验。
 - [Later] 评论、统计深度、私密内容和精确 RPO/RTO 延后决策，不阻塞 v1。
@@ -161,5 +162,5 @@ Decisions are logged in PROJECT.md Key Decisions table.
 ## Session Continuity
 
 Last session: 2026-08-10T22:31:10+08:00
-Stopped at: Phase 05 Plan 03 implementation and receipt evidence committed; ready for separate phase verification
-Resume file: .planning/phases/05-v1-0-integration-gap-closure/05-03-PLAN.md
+Stopped at: Phase 05 independent verification found a receipt outcome-binding gap
+Resume file: .planning/phases/05-v1-0-integration-gap-closure/05-VERIFICATION.md
