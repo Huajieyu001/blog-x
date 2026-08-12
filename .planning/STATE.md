@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 05
-status: executing
-stopped_at: Phase 05 Plan 02 executed; ready for Plan 03
-last_updated: "2026-08-10T01:53:58+08:00"
+status: ready_for_verification
+stopped_at: Phase 05 Plan 03 implementation and receipt evidence committed; ready for separate phase verification
+last_updated: "2026-08-10T22:31:10+08:00"
 last_activity: 2026-08-10
-last_activity_desc: Executed Phase 05 Plan 02 production backup adapter
+last_activity_desc: Executed Phase 05 Plan 03 full gate and receipt-bound integration audit
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 24
-  completed_plans: 23
+  completed_plans: 24
 current_phase_name: Integration Gap Closure
 ---
 
@@ -23,22 +23,22 @@ current_phase_name: Integration Gap Closure
 See: .planning/PROJECT.md (updated 2026-08-08)
 
 **Core value:** 博主能够可靠地发布和保存 Markdown 内容，访客能够持续、快速地通过博客域名阅读已发布文章。  
-**Current focus:** Phase 05 — Integration Gap Closure
+**Current focus:** Phase 05 — Integration Gap Closure (ready for separate verification)
 
 ## Current Position
 
 Phase: 05 — Integration Gap Closure
-Plan: 2 of 3
-Status: Plan 02 complete; ready for Plan 03
-Last activity: 2026-08-10 — completed production backup adapter
+Plan: 3 of 3
+Status: Plan implementation and receipt evidence complete; ready for separate Phase 05 verification
+Last activity: 2026-08-10 — completed full local gate and receipt-bound integration audit
 
-Progress: [████████░░] 80% (4 of 5 phases implemented)
+Progress: [██████████] 100% (5 of 5 phases implemented; Phase 05 verification remains pending)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 23
+- Total plans completed: 24
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -50,7 +50,7 @@ Progress: [████████░░] 80% (4 of 5 phases implemented)
 | 02 | 6 | - | - |
 | 03 | 4 | - | - |
 | 04 | 3 | - | - |
-| 05 | 2 | 3 | 25min |
+| 05 | 3 | 3 | 29min |
 
 **Recent Trend:**
 
@@ -84,6 +84,7 @@ Progress: [████████░░] 80% (4 of 5 phases implemented)
 | Phase 04 P03 | 32min | 3 tasks | 16 files |
 | Phase 05 P01 | 31min | 3 tasks | 31 files |
 | Phase 05 P02 | 19min | 4 tasks | 18 files |
+| Phase 05 P03 | 36min | 4 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -148,16 +149,17 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 05]: Published image sources accept only literal root-relative lowercase UUID media paths, while HTTP(S) anchors remain a separate allowed capability. — One AST-based predicate prevents third-party or mixed-content image requests without breaking ordinary links.
 - [Phase 05]: Legacy media is dispositioned transactionally and idempotently without source rewrite or network retrieval. — Export/restore retains raw Markdown and historic cover data for repair.
 - [Phase 05]: Restore fixtures reset only generated media directories before deterministic seeding. — Fresh-browser uploads cannot leave untracked bytes that invalidate complete-backup inventory evidence.
+- [Phase 05]: Pre-release readiness and post-release verification are separate pure decisions; any post result byte-binds an exact predecessor and never authorizes deployment. — The canonical state remains BLOCKED until independently authorized live facts exist.
+- [Phase 05]: A Phase 5 receipt is written only after terminal cleanup and parallel proof from a clean committed implementation, and a passed milestone audit must cite its verified digest and ancestor revision. — Local generated pipeline evidence cannot become release authority.
 
 ### Blockers/Concerns
 
-- [v1.0 audit] 已具备本地生成夹具的生产采集与挂载适配器；真实每日异机、真实挂载、激活告警仍无 live evidence（OPS-03/OPS-05）。
-- [v1.0 audit] READY 门禁把发布后冒烟证据作为发布前条件，必须拆分预发布与发布后状态（OPS-05）。
+- [Phase 05] 真实解冻授权、主机基线、安全节点链路、异机目的地/挂载、定时任务与告警激活、TLS、部署和发布后事实仍缺失；canonical release 保持 BLOCKED。
 - [Phase 2+] 副服务器系统、端口、历史数据与私网能力尚未只读核验。
 - [Later] 评论、统计深度、私密内容和精确 RPO/RTO 延后决策，不阻塞 v1。
 
 ## Session Continuity
 
-Last session: 2026-08-10T01:53:58+08:00
-Stopped at: Phase 05 Plan 02 complete; ready for Plan 03
+Last session: 2026-08-10T22:31:10+08:00
+Stopped at: Phase 05 Plan 03 implementation and receipt evidence committed; ready for separate phase verification
 Resume file: .planning/phases/05-v1-0-integration-gap-closure/05-03-PLAN.md

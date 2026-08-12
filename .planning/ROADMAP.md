@@ -195,7 +195,7 @@ Plans:
   3. 发布状态机明确区分 `PRE_RELEASE_READY` 与 `POST_RELEASE_VERIFIED`，发布后证据不再成为发布前 GO 的循环条件，且任何状态都不提供自动部署能力。
   4. Phase 1–5 全量本地验收、跨阶段集成审计和三个已知错误夹具全部通过，真实生产发布状态仍保持 `BLOCKED`。
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans executed; ready for separate phase verification
 
 Plans:
 **Wave 1**
@@ -208,7 +208,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 05-03-PLAN.md — 拆分发布前/后门禁，生成提交绑定验收收据并完成 Phase 1–5 回归与重新审计。
+- [x] 05-03-PLAN.md — 拆分发布前/后门禁，生成提交绑定验收收据并完成 Phase 1–5 回归与重新审计。
 
 ## Progress
 
@@ -218,4 +218,4 @@ Plans:
 | 2. Complete Reading Experience | 6/6 | Complete | 2026-08-09 |
 | 3. Distribution and Portability | 4/4 | Complete    | 2026-08-09 |
 | 4. Secure Operations and Release Gate | 3/3 | Complete    | 2026-08-09 |
-| 5. Integration Gap Closure | 2/3 | In Progress |  |
+| 5. Integration Gap Closure | 3/3 | Ready for Verification |  |
