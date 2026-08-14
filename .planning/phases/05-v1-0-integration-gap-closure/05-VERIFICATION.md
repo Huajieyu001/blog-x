@@ -1,6 +1,6 @@
 ---
 phase: 05-v1-0-integration-gap-closure
-verified: 2026-08-12T15:46:25Z
+verified: 2026-08-14T15:46:43Z
 status: gaps_found
 score: 3/4 roadmap success criteria verified
 behavior_unverified: 0
@@ -11,101 +11,138 @@ decision_coverage:
   total: 4
   not_honored: []
 gaps:
-  - "The retained Phase 5 receipt has synthetic result digests and fixed one-test counts, so it does not bind the reported full-gate suite outcomes to actual semantic test output."
+  - "The v2 receipt closes the former synthetic-result gap, but 05-04's required synthetic/actual prohibition fixtures and committed stale-owner/two-parent writer tests are absent."
+  - "The passed milestone audit frontmatter cites d3a27b3, while its Receipt-Bound Full Gate body still cites the obsolete 68b9178 implementation revision."
 ---
 
 # Phase 05: Integration Gap Closure Verification Report
 
 **Phase Goal:** 修复 v1.0 里程碑审计发现的三项跨阶段矛盾，使浏览器媒体严格同源、生产备份路径可执行、发布前后门禁顺序可达，并在不接触冻结主机的前提下重新通过完整验收。
-**Verified:** 2026-08-12T15:46:25Z
+**Verified:** 2026-08-14T15:46:43Z
 **Status:** gaps_found
 
-## Goal Achievement
+## Executive Result
 
-### Observable Truths
+The deterministic receipt defect reported on 2026-08-12 is closed. Receipt v2 contains 28 embedded canonical execution-result records derived by the runner from captured TAP/database, Playwright, structured generated-pipeline, and machine-readable boundary outcomes. Independent reconstruction matched every source and result digest, and none of the retained result digests matches the former synthetic formula.
 
-| # | Truth | Status | Evidence |
+Phase 5 still cannot be marked complete because two high-severity 05-04 evidence controls are not represented by committed regression tests/fixtures, and the passed milestone audit contains a contradictory stale implementation revision in its body. Canonical production release remains `BLOCKED`.
+
+## Roadmap Success Criteria
+
+| # | Criterion | Status | Independent evidence |
 |---|---|---|---|
-| 1 | 已发布 Markdown 与封面只会产生同源的精确 `/media/<uuid>` 图像请求；外部锚点保持可用。 | ✓ VERIFIED | `media-reference-policy.ts` provides the exact lowercase UUID predicate and AST-only classifier; renderer, lifecycle, migration, API, Node prohibition, and browser paths are linked. `markdown-renderer.test.ts` and `media-policy.test.mjs` passed. |
-| 2 | 遗留图片内容得到无损、幂等的 disposition，迁移/架构检查阻止 retained pending state。 | ✓ VERIFIED | Generated migration 0006, transactional classifier, count-7 schema checks, and export/restore wiring exist; `db:generate:check` passed and static GSD artifact/link checks passed. |
-| 3 | 生产备份与 rehearsal 的根权限分离；收集器、加密挂载目录、收据、保留、结果与告警契约可在生成的本地权限下执行并失败关闭。 | ✓ VERIFIED | 05-02's 10 artifacts/7 links passed GSD checks; independent backup/restore/production suite run passed 24 relevant tests, including cross-root, collector, mounted ciphertext, retention, fake-only, and pipeline controls. |
-| 4 | 不配置真实生产权限时，计划任务/挂载/告警不会被激活或伪装成 off-host 生产证据。 | ✓ VERIFIED | Production tests and boundary audit passed; result schemas reject generated/fake scopes for release readiness. Service is a dormant template. No live mount, systemd activation, transfer, or alert operation was performed. |
-| 5 | `PRE_RELEASE_READY` 和 predecessor-bound `POST_RELEASE_VERIFIED` 是独立、纯、可达的决策；生成作用域不能授予 readiness，且没有自动部署能力。 | ✓ VERIFIED | Independent `release-gate.test.mjs` run passed all v2 sequence, generated-scope rejection, canonical BLOCKED, and expectation-only CLI tests. |
-| 6 | Phase 1–5 完整本地验收的保留收据以提交、精确 suites、真实语义结果/计数、终端 BLOCKED 绑定，因而可重现地支持里程碑审计。 | ✗ FAILED | Receipt schema/file hash/source digests/revision/order are valid, but `phase5ReceiptCandidate()` derives every `resultSha256` from `phase5-semantic-pass:${suite.id}:${implementationRevision}` and writes `tests: 1, passed: 1` for every suite. Independent recomputation matched that synthetic formula for all 27 entries. Thus no result digest or count binds actual TAP/Playwright/pipeline output, violating the receipt truth in 05-03. |
+| 1 | Published Markdown and covers emit only same-origin exact `/media/<uuid>` image requests; ordinary external links remain usable. | ✓ VERIFIED | Shared exact predicate, renderer/lifecycle enforcement, legacy disposition, browser wiring, 05-01 artifact/link checks, 6 Markdown tests, and the media prohibition test passed. |
+| 2 | Production backup collection, encrypted mounted-directory transfer, receipt, retention, result, and alert contracts are executable locally and fail closed without live configuration. | ✓ VERIFIED | 05-02's 10 artifacts and 7 links passed; production/backup/restore focused checks passed with generated authorities only. No real mount, schedule, destination, or alert was activated. |
+| 3 | `PRE_RELEASE_READY` and predecessor-bound `POST_RELEASE_VERIFIED` are distinct pure decisions and expose no automatic deployment capability. | ✓ VERIFIED | Release-gate focused checks passed all generated-scope rejection, predecessor binding, failed-smoke, exact-post, and expectation-only CLI cases. Canonical evidence remained `BLOCKED`. |
+| 4 | Phase 1–5 acceptance and integrated evidence are reproducibly receipt-bound with the required negative controls. | ✗ BLOCKED | The exact retained v2 receipt is substantive and the recorded full gate passed, but the committed stale-owner/two-parent lock regressions and the named synthetic/actual prohibition fixtures promised by 05-04 are absent; the passed audit body also cites the obsolete implementation revision. |
 
-**Score:** 5/6 primary goal truths verified. The phase remains blocked because the final acceptance receipt is not evidence of actual suite results.
+**Score:** 3/4 roadmap success criteria verified.
 
-## Plan Must-Haves, Artifacts, and Wiring
+## Receipt v2 Reconstruction
 
-| Plan | Artifacts | Key links | Summary validation | Result |
-|---|---:|---:|---|---|
-| 05-01 | 7/7 | 6/6 | passed | ✓ Static contract verified |
-| 05-02 | 10/10 | 7/7 | passed | ✓ Static contract verified |
-| 05-03 | 7/7 | 7/7 | passed | ✗ Receipt result-evidence contract failed independently |
+The retained receipt at `ops/phase5-full-gate-receipt.json` independently verified as follows:
 
-All three `verify artifacts`, all three `verify key-links`, and all three `verify-summary` GSD commands returned success. This establishes declared files and pattern wiring, but does not override the receipt-evidence failure.
+- file SHA-256: `9c0aa9943017604ce4b25a25546355890afbbc0a0a8ba5289a7055918df79ee4`;
+- schema/version: strict `blog-x-phase5-full-gate-receipt` v2;
+- implementation revision: `d3a27b3d7615109c69a9c798f9f7563444299b45`;
+- exact command: `corepack pnpm local:verify -- --phase5-full --interruption-check --parallel-check`;
+- scope: `local-generated-production-pipeline-and-fake-fault-only`;
+- terminal decision: `BLOCKED`;
+- 28 manifest entries and 28 result entries: 14 database, 8 Node, 4 browser, 1 production pipeline, and 1 boundary audit;
+- 36 invocations, 48,484 redacted output bytes, and 36 distinct output digests;
+- aggregate result: 482 tests, 482 passed, 0 failed/cancelled/skipped/TODO;
+- pipeline record: 2 invocations and 2 passing outcomes;
+- boundary record: 305 checked-file outcomes and zero findings.
+
+Independent recomputation produced:
+
+| Binding | Result |
+|---|---:|
+| Manifest canonical SHA-256 | matched |
+| Source bytes at `d3a27b3` | 28/28 matched |
+| Embedded canonical result SHA-256 | 28/28 matched |
+| Positive output byte length and digest shape | 36/36 matched |
+| Distinct output digests | 36/36 |
+| Former `phase5-semantic-pass:<id>:<revision>` formula | 0/28 matched |
+| Canonical evidence bytes | matched `d006272f...` |
+| Current deterministic BLOCKED output | matched receipt digest `8697a1ed...` |
+
+The source no longer contains `phase5-semantic-pass`. Counts vary by actual suite output rather than being uniformly fixed at 1/1. The only literal 1/1 construction is for each of the two separately strict-parsed generated pipeline invocations, which aggregate to 2/2 and are not derived from suite ID or revision.
+
+## Commit and Audit Ordering
+
+The required history is structurally isolated:
+
+1. implementation authority `d3a27b3`;
+2. receipt-only commit `0939651` (only `ops/phase5-full-gate-receipt.json`);
+3. later audit commit `ff59dc6` (only `.planning/v1.0-MILESTONE-AUDIT.md`);
+4. later summary/planning handoff `4498cfe`.
+
+All ancestor checks passed, and the receipt completed before both receipt and audit commits. Audit frontmatter declares v2 and exactly matches the receipt SHA-256 and `d3a27b3` revision. However, line 47 of the audit body still claims implementation revision `68b9178079b58bb4299b2938f233ae7532b5f186`. The current boundary check parses only the frontmatter revision, so it does not detect this contradictory body claim.
+
+## Lock, CAS, and Atomicity Controls
+
+The implementation contains the intended controls:
+
+- one fixed `${receiptPath}.lock` and one fixed `${receiptPath}.lock.recovery`, created with exclusive `"wx"`/0600 semantics;
+- strict owner PID, birth identity, nonce, UID/mode/type checks;
+- live PID+matching-birth rejection and PID-reuse recovery by birth mismatch;
+- inode/device/nonce comparison before unlink;
+- predecessor existence/version/SHA-256 captured while holding the lock and compared immediately before rename;
+- restrictive incomplete sibling, file fsync, atomic rename, parent fsync, strict final readback, and byte equality;
+- lock held from before suite execution through final readback and released in the outer `finally`.
+
+Focused repository tests verify live-owner rejection, predecessor CAS, failure preservation, stable readback, and clean committed authority. An independent generated-target probe also confirmed live-owner rejection, birth-identity-mismatch recovery, and removal of both lock paths.
+
+The evidence gap is test durability: `scripts/phase5-receipt.test.mjs` contains no deterministic two-parent subprocess/barrier test, dead-owner/SIGKILL recovery test, PID-reuse regression, or inode/nonce ownership-change release case. Those were explicit 05-04 acceptance requirements created to close the plan-checker's race concern. The summary's claim of full stale-recovery/concurrency evidence therefore outruns the committed test suite.
+
+## Missing Required Fixtures
+
+`05-04-PLAN.md` and `05-04-SUMMARY.md` name these files as created evidence:
+
+- `scripts/fixtures/prohibitions/phase5-receipt-synthetic-results.json`
+- `scripts/fixtures/prohibitions/phase5-receipt-actual-results.json`
+
+Neither file exists in the worktree or Git tree, and neither focused receipt/local-verifier test consumes such a fixture. The RED commit `d62370d` changed only the two test files. Static GSD artifact verification did not catch this because the two paths were omitted from the plan's `must_haves.artifacts` list despite appearing in `files_modified` and the summary.
 
 ## Requirements and Integration Coverage
 
 | Requirement / audit link | Status | Evidence |
 |---|---|---|
-| OPS-01 / G1 / INT-01 / FLOW-07 | ✓ SATISFIED locally | Exact parser/render/save/publish policy, migration disposition, prohibition control, and focused API/Node/static checks. |
-| OPS-03 / G2 / INT-02 / FLOW-08 | ✓ SATISFIED at the local executable-contract boundary | Authority-separated complete-set verifier, fresh generated collector, AES-GCM mounted-directory provider, receipt-gated retention, result/alert contracts, fake isolation, and passing focused tests. Live off-host/mount/schedule/alert evidence is intentionally absent. |
-| OPS-05 / G3 / INT-03 / FLOW-09 | ✗ BLOCKED for Phase 5 closure | Non-circular release state machine and canonical BLOCKED behavior pass, but the retained full-gate receipt cannot prove that its 27 reported suite outcomes actually ran/passed. |
-
-Roadmap criteria 1–3 are supported by local implementation and focused verification. Criterion 4 is **not verified** because its required full acceptance receipt is non-evidentiary for suite results, despite strict-valid formatting.
-
-## Receipt and Revision Audit
-
-- Read-only receipt verifier passed: `aeb00503c90e3a7476be010915b7b5ea04ae5ea7a430e582e728ab92dcb0b0c9`.
-- Actual SHA-256 equals the audit frontmatter citation.
-- Receipt implementation revision `68b9178079b58bb4299b2938f233ae7532b5f186` is an ancestor of current HEAD; the audit evidence commit follows receipt completion.
-- All 27 manifest source SHA-256 values independently matched the files at that implementation revision.
-- **Fatal divergence:** all 27 receipt result SHA-256 values match a deterministic formula independent of any command output; all counts are hard-coded to one passing test. Receipt verification checks formatting but has no actual-output digest to compare.
+| OPS-01 / G1 / INT-01 / FLOW-07 | ✓ SATISFIED locally | Exact media policy, lossless legacy disposition, fresh/restored browser wiring, focused Markdown and prohibition checks. |
+| OPS-03 / G2 / INT-02 / FLOW-08 | ✓ SATISFIED at local executable-contract boundary | Fresh complete-set collector, concrete generated mounted adapter, encryption/receipt/retention/result/alert contracts, rehearsal separation, focused tests. |
+| OPS-05 / G3 / INT-03 / FLOW-09 | ✗ PHASE CLOSURE BLOCKED | Non-circular release state machine and actual-result v2 receipt pass, but required concurrency regression evidence/fixtures are absent and the passed audit is internally inconsistent. |
 
 ## Independent Checks
 
 | Check | Result |
 |---|---|
-| GSD artifacts/key links: 05-01 through 05-03 | 24/24 artifacts; 20/20 links passed |
-| GSD summary verification: 05-01 through 05-03 | Passed |
-| `node scripts/phase5-receipt.mjs verify --receipt=...` | Passed; digest above |
-| Receipt source-digest reconstruction at implementation revision | 27/27 matched |
-| Receipt result-digest reconstruction | 27/27 matched the synthetic formula (failure evidence) |
-| `node --test` release/receipt/local-verifier/media/backup/restore/production | 59 passed; 0 failed/skipped/TODO |
-| `corepack pnpm check:boundaries` | Passed |
-| `corepack pnpm -r typecheck` | Passed |
-| `corepack pnpm db:generate:check` | Passed |
-| Focused API files outside the runner-owned disposable database | Not a valid standalone gate: 7 passed, 3 skipped, 2 failed for missing required generated database/backup roots; not counted against the phase |
-| `corepack pnpm local:verify -- --phase5-media --interruption-check` | Could not obtain a reliable terminal result in this verifier session. The sandbox first lacked Docker-socket access; the approved local rerun ended after schema verification with no terminal PASS/FAIL delivery. It did not alter receipt bytes or leave generated verifier containers. |
+| GSD artifacts/key links, 05-01 through 05-04 | 31/31 artifacts and 26/26 links passed |
+| GSD summary verification, 05-01 through 05-04 | Passed |
+| Read-only receipt verifier and file SHA-256 | Passed |
+| Independent manifest/source/result/decision reconstruction | Passed |
+| Receipt/local-verifier/release/production focused suite | 50 passed; 0 failed/skipped/TODO |
+| Media/backup/restore focused suite | 13 passed; 0 failed/skipped/TODO |
+| Markdown renderer focused suite | 6 passed; 0 failed/skipped/TODO |
+| Repository boundary audit | 306 files, 0 findings |
+| Workspace typecheck | Passed |
+| Drizzle schema generation check | Passed; no drift |
+| Exact full Phase 1–5 gate | Not rerun; the retained v2 receipt and preserved terminal log were sufficient for outcome reconstruction |
 
-## Anti-Pattern / Critical Gap
+## Required Closure
 
-### Receipt binds source files but not their executed outcomes
-
-`scripts/local-verify.mjs` creates receipt results in `phase5ReceiptCandidate()` from a literal string per suite and fixed `tests: 1, passed: 1`. It does not preserve or hash the captured semantic TAP/Playwright/pipeline output, nor derive counts from those outputs. This means a future runner regression, omitted suite execution, or zero-test result could still generate structurally valid receipt entries with the same form.
-
-**Impact:** The Phase 5 full-gate receipt cannot substantiate Roadmap criterion 4, 05-03 Tasks 2–4, or the milestone audit's asserted 27 passing nonzero suite outcomes. The passed audit is correctly ordered and byte-cited but not substantively supported.
-
-**Required fix:** Record a canonical redacted semantic output/result object for each suite at execution time; parse actual test/passed/failed/skipped/TODO counts; SHA-256 those actual records; require them to match the receipt entries; test that altered/omitted/zero outputs and false counts prevent receipt creation. Re-run the exact full gate from a clean committed implementation, then create a new receipt and re-audit in later evidence commits. Do not edit the passed milestone audit before a valid replacement receipt exists.
+1. Add and consume the two named synthetic/actual receipt prohibition fixtures, proving the old formula/fixed-count shape fails and an actual-record shape passes.
+2. Add deterministic committed tests for two competing parent writers, live-owner non-displacement, dead/SIGKILL owner recovery, PID birth-identity reuse, recovery-guard contention, and inode/nonce-safe release. Keep the current production-free generated target scope.
+3. Correct the milestone audit body revision to `d3a27b3d7615109c69a9c798f9f7563444299b45` and add a boundary/test assertion preventing stale contradictory revision claims.
+4. Rerun focused receipt/boundary checks, update the audit in a later docs commit if needed, then rerun independent Phase 5 verification. A new heavy full gate is unnecessary unless implementation changes affect receipt bytes or execution-result capture.
 
 ## Residual Live Release Blockers
 
-Regardless of the local receipt gap, production stays `BLOCKED` pending explicit unfreeze authorization, real host baselines and private node link, verified off-host destination/mount identity, activated schedule and alert delivery, recovery-target evidence, TLS/renewal, deployment, and post-release HTTPS smoke with continue/rollback outcome. These were not attempted or claimed.
+Even after local Phase 5 closure, production must remain `BLOCKED` pending explicit main-server unfreeze authorization, real host baselines, verified secure node link, configured and verified off-host destination/mount, activated daily schedule and alert delivery, recovery-target evidence, TLS and renewal facts, deployment, and post-release HTTPS smoke with continue/rollback evidence.
 
-## Human Verification Required
-
-None. The failure is deterministic from repository source and receipt bytes; no human judgment can turn synthetic result digests into executed-suite evidence.
-
-## Verification Metadata
-
-**Verification approach:** Goal-backward against ROADMAP criterion 1–4, 05-01 through 05-03 must-haves, OPS-01/03/05, G1–G3, INT-01–03, FLOW-07–09, receipt/audit/revision ordering, and canonical release safety.
-
-**Automated checks:** Static GSD checks, receipt verifier, source-digest reconstruction, focused 59-test suite, boundaries, typecheck, and Drizzle generation passed. Receipt outcome-binding check failed.
-
-**Servers:** Untouched. No server/cloud contact, deployment, real mount/systemd/alert/TLS operation, or release transition was performed.
+No cloud server, public endpoint, deployment, real mount, systemd activation, live alert, TLS check, rollback, unfreeze, or production transition was contacted or performed during this verification.
 
 ---
-*Verified: 2026-08-12T15:46:25Z*
+*Verified: 2026-08-14T15:46:43Z*
 
-*Verifier: Codex gsd-verifier*
+*Verifier: Codex gsd-verifier (independent Phase 05 rerun)*
