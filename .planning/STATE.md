@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 05
-status: ready_to_execute
-stopped_at: Phase 05 gap plan 05-04 created; ready for local-only execution
-last_updated: "2026-08-13T00:20:25+08:00"
-last_activity: 2026-08-13
-last_activity_desc: Planned Phase 05 receipt actual-result binding gap closure
+status: ready_for_independent_verification
+stopped_at: Phase 05 plan 05-04 executed; ready for independent verification
+last_updated: "2026-08-14T23:37:30+08:00"
+last_activity: 2026-08-14
+last_activity_desc: Rebuilt Phase 05 receipt evidence from actual execution records and completed a later v2 audit
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 25
-  completed_plans: 24
+  completed_plans: 25
 current_phase_name: Integration Gap Closure
 ---
 
@@ -28,17 +28,17 @@ See: .planning/PROJECT.md (updated 2026-08-08)
 ## Current Position
 
 Phase: 05 — Integration Gap Closure
-Plan: 3 of 4
-Status: Gap closure plan 05-04 ready; actual suite outputs are not yet bound into the retained receipt
-Last activity: 2026-08-13 — planned deterministic actual-result receipt gap closure
+Plan: 4 of 4 executed
+Status: Actual-result receipt v2 and later audit are ready for independent verification; Phase 5 is not complete
+Last activity: 2026-08-14 — retained an actual-record v2 receipt after the exact local gate and audited it later
 
-Progress: [████████░░] 80% (4 of 5 phases verified; 3 of 4 Phase 05 plans executed with one gap-closure plan ready)
+Progress: [████████░░] 80% (4 of 5 phases verified; 4 of 4 Phase 05 plans executed and awaiting independent verification)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 24
+- Total plans completed: 25
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -50,7 +50,7 @@ Progress: [████████░░] 80% (4 of 5 phases verified; 3 of 4 P
 | 02 | 6 | - | - |
 | 03 | 4 | - | - |
 | 04 | 3 | - | - |
-| 05 | 3 | 3 | 29min |
+| 05 | 4 | 4 | 34min |
 
 **Recent Trend:**
 
@@ -85,6 +85,7 @@ Progress: [████████░░] 80% (4 of 5 phases verified; 3 of 4 P
 | Phase 05 P01 | 31min | 3 tasks | 31 files |
 | Phase 05 P02 | 19min | 4 tasks | 18 files |
 | Phase 05 P03 | 36min | 4 tasks | 22 files |
+| Phase 05 P04 | 47min | 4 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -154,13 +155,13 @@ Decisions are logged in PROJECT.md Key Decisions table.
 
 ### Blockers/Concerns
 
-- [Phase 05 verification] 当前收据的 27 个结果摘要来自固定公式和固定 1/1 计数，没有绑定真实 TAP、Playwright 与管线输出；必须修复后重跑完整门禁、生成新收据并重新审计（OPS-05）。
+- [Phase 05 verification] 05-04 已用真实执行结果重建 v2 收据并完成后续审计；独立验证尚未运行，05-VERIFICATION 保持 `gaps_found`，不得据此标记 OPS-05 或 Phase 05 完成。
 - [Phase 05] 真实解冻授权、主机基线、安全节点链路、异机目的地/挂载、定时任务与告警激活、TLS、部署和发布后事实仍缺失；canonical release 保持 BLOCKED。
 - [Phase 2+] 副服务器系统、端口、历史数据与私网能力尚未只读核验。
 - [Later] 评论、统计深度、私密内容和精确 RPO/RTO 延后决策，不阻塞 v1。
 
 ## Session Continuity
 
-Last session: 2026-08-10T22:31:10+08:00
-Stopped at: Phase 05 independent verification found a receipt outcome-binding gap
+Last session: 2026-08-14T23:37:30+08:00
+Stopped at: Phase 05 plan 05-04 executed; await independent verification of actual-result receipt evidence
 Resume file: .planning/phases/05-v1-0-integration-gap-closure/05-VERIFICATION.md
