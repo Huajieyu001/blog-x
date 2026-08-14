@@ -130,6 +130,7 @@ test("Phase 5 full selection is an exact once-only Phase 1-5 superset with a ter
   assert.match(full, /production-backup-result-v1/);
   assert.match(runner, /await writePhase5ReceiptAtomic/);
   assert.match(runner, /await runSingle\(options\);[\s\S]*await parallelCheck\(options\);[\s\S]*await writePhase5ReceiptAtomic/);
+  assert.match(runner, /committedImplementationHead\(\{ writerAuthority: authority \}\)/);
   assert.ok(full.indexOf("runPhase4ReleaseChecks") < runner.indexOf("await writePhase5ReceiptAtomic"));
   assert.match(runner, /cleanupPhase5ProductionAuthorities/);
   assert.match(runner, /restoreVerifierOwnedNextEnvironment/);

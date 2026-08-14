@@ -1004,9 +1004,15 @@ async function runPhase5GeneratedPipeline() {
   }
 }
 
-async function committedImplementationHead() {
+async function committedImplementationHead({ writerAuthority } = {}) {
   const dirty = await command("git", ["status", "--porcelain"], { env: process.env });
-  if (dirty.stdout.trim()) throw new Error("Phase 5 receipt requires a clean committed implementation worktree");
+  // The writer lock is deliberately held through the final HEAD check and the
+  // atomic replace. It is verifier-owned coordination state, not an
+  // implementation change; every other tracked or untracked path must remain
+  // clean.
+  const permittedLock = writerAuthority ? `?? ${writerAuthority.lockPath.slice(root.length + 1)}` : null;
+  const unexpected = dirty.stdout.split("\n").filter((line) => line && line !== permittedLock);
+  if (unexpected.length) throw new Error("Phase 5 receipt requires a clean committed implementation worktree");
   const head = await command("git", ["rev-parse", "HEAD"], { env: process.env });
   const revision = head.stdout.trim();
   if (!/^[a-f0-9]{40}$/.test(revision)) throw new Error("Phase 5 implementation revision is invalid");
@@ -1216,7 +1222,7 @@ async function main() {
     if (options.parallelCheck) await parallelCheck(options);
     if (options.phase5Full) {
       if (!receipt) throw new Error("Phase 5 full gate did not produce terminal receipt input");
-      const revision = await committedImplementationHead();
+      const revision = await committedImplementationHead({ writerAuthority: authority });
       if (revision !== receipt.implementationRevision || revision !== options.implementationRevision) throw new Error("Phase 5 receipt revision changed after gate execution");
       await writePhase5ReceiptAtomic(receipt, {
         cleanWorktree: true, expectedRevision: revision, authority, expectedPredecessor: authority.expectedPredecessor,
