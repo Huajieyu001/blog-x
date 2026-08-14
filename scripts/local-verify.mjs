@@ -1094,9 +1094,13 @@ async function runSingle(options) {
   let phase5Receipt;
 
   try {
-    if ((options.phase4Mode === "full" || options.phase5Media || options.phase5Full) && !options.skipBuild) await preflightOfflinePrerequisites(context);
+    if (options.phase5Full && !options.skipBuild) {
+      await preflightOfflinePrerequisites(context);
+      process.stdout.write("[local-verify] use prevalidated local verifier images for the Phase 5 offline gate\n");
+    }
+    else if ((options.phase4Mode === "full" || options.phase5Media) && !options.skipBuild) await preflightOfflinePrerequisites(context);
     else if (["operations", "restore"].includes(options.phase4Mode) && !options.skipBuild) await preflightCachedImages(context);
-    if (!options.skipBuild) await compose(context, "build local API and Web images", "build", "api", "web");
+    if (!options.skipBuild && !options.phase5Full) await compose(context, "build local API and Web images", "build", "api", "web");
     await compose(context, "start isolated PostgreSQL", "up", "-d", "--wait", "postgres");
     if (options.interruptionCheck) await interruptionCheck(context);
     else {
