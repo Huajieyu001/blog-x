@@ -7,6 +7,10 @@ import { auditFiles } from "./check-boundaries.mjs";
 import {
   assertSemanticTap,
   assertPlaywrightJourney,
+  createPhase5ResultRecorder,
+  parseBoundaryResult,
+  parsePlaywrightResult,
+  parseSemanticTapResult,
   cleanupGeneratedMediaRoot,
   phase3Selection,
   phase4Selection,
@@ -121,7 +125,9 @@ test("Phase 5 full selection is an exact once-only Phase 1-5 superset with a ter
   assert.match(full, /createPhase5SuiteManifest/);
   assert.match(full, /runPhase4ReleaseChecks/);
   assert.match(full, /runPhase5GeneratedPipeline/);
-  assert.match(full, /Promise\.all\(\[runPhase5GeneratedPipeline\(\), runPhase5GeneratedPipeline\(\)\]\)/);
+  assert.match(full, /Promise\.all\(\[0, 1\]\.map/);
+  assert.match(full, /createPhase5ResultRecorder/);
+  assert.match(full, /production-backup-result-v1/);
   assert.match(runner, /await writePhase5ReceiptAtomic/);
   assert.match(runner, /await runSingle\(options\);[\s\S]*await parallelCheck\(options\);[\s\S]*await writePhase5ReceiptAtomic/);
   assert.ok(full.indexOf("runPhase4ReleaseChecks") < runner.indexOf("await writePhase5ReceiptAtomic"));
@@ -219,13 +225,13 @@ test("Phase 3 full is the extensible canonical gate for completed Phase 1/2 and 
 });
 
 test("Phase 3 semantic TAP output fails closed on skip or zero tests", () => {
-  assert.doesNotThrow(() => assertSemanticTap("TAP version 13\n# tests 2\n# pass 2\n# fail 0\n# skipped 0\n# todo 0\n"));
+  assert.doesNotThrow(() => assertSemanticTap("TAP version 13\n# tests 2\n# pass 2\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n"));
   assert.throws(() => assertSemanticTap("TAP version 13\n# tests 1\n# pass 0\n# skipped 1\n"), /skip/i);
   assert.throws(() => assertSemanticTap("TAP version 13\n# tests 1\n# pass 0\n# todo 1\n"), /todo/i);
   assert.throws(() => assertSemanticTap("TAP version 13\n# tests 0\n# pass 0\n# skipped 0\n"), /zero semantic tests/i);
   assert.throws(() => assertSemanticTap("TAP version 13\nok 1 - skipped case # SKIP missing database\n"), /skip\/todo directive/i);
   assert.throws(() => assertSemanticTap("TAP version 13\nok 1 - deferred case # TODO pending contract\n"), /skip\/todo directive/i);
-  assert.throws(() => assertSemanticTap("ℹ tests 7\nℹ pass 7\n"), /zero semantic tests/i);
+  assert.throws(() => assertSemanticTap("ℹ tests 7\nℹ pass 7\n"), /TAP|zero semantic tests/i);
   assert.deepEqual(semanticTestCommand("apps/api/test/public-distribution.test.ts"), [
     "node",
     "--import",
@@ -236,9 +242,49 @@ test("Phase 3 semantic TAP output fails closed on skip or zero tests", () => {
   ]);
 });
 
+test("Phase 5 mixed-output parsers retain actual counts and fail closed", () => {
+  assert.deepEqual(parseSemanticTapResult("TAP version 13\n# tests 3\n# pass 3\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n"), {
+    tests: 3, passed: 3, failed: 0, cancelled: 0, skipped: 0, todo: 0,
+  });
+  assert.deepEqual(parsePlaywrightResult("Running 2 tests using 1 worker\n  2 passed"), {
+    tests: 2, passed: 2, failed: 0, cancelled: 0, skipped: 0, todo: 0,
+  });
+  assert.deepEqual(parseBoundaryResult('BLOG X BOUNDARY RESULT {"filesChecked":4,"findings":0,"outcome":"pass"}'), {
+    tests: 4, passed: 4, failed: 0, cancelled: 0, skipped: 0, todo: 0,
+  });
+  for (const output of [
+    "TAP version 13\n# tests 1\n# pass 0\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n",
+    "TAP version 13\n# tests 1\n# pass 0\n# fail 0\n# cancelled 0\n# skipped 1\n# todo 0\n",
+    "TAP version 13\n# tests 1\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 1\n",
+    "TAP version 13\n# tests 2\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n",
+  ]) assert.throws(() => parseSemanticTapResult(output));
+  for (const output of ["Running 0 tests using 1 worker", "Running 2 tests using 1 worker\n  1 passed\n  1 skipped", "Running 2 tests using 1 worker\n  2 flaky"]) {
+    assert.throws(() => parsePlaywrightResult(output));
+  }
+  for (const output of ["Boundary checks passed.", 'BLOG X BOUNDARY RESULT {"filesChecked":0,"findings":0,"outcome":"pass"}', 'BLOG X BOUNDARY RESULT {"filesChecked":4,"findings":1,"outcome":"pass"}']) {
+    assert.throws(() => parseBoundaryResult(output));
+  }
+});
+
+test("Phase 5 recorders are per-run, bind redacted bytes, and reject omitted manifests", () => {
+  const manifest = { format: "blog-x-phase5-suite-manifest", version: 2, suites: [
+    { id: "node-suite", kind: "node", path: "scripts/local-verify.test.mjs", sourceSha256: "a".repeat(64) },
+  ] };
+  const command = { startedAt: "2026-08-10T14:00:00.000Z", completedAt: "2026-08-10T14:00:01.000Z", exitCode: 0, signal: null,
+    combined: "TAP version 13\n# tests 2\n# pass 2\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\npassword=runtime-secret\n" };
+  const first = createPhase5ResultRecorder(manifest, ["runtime-secret"]);
+  const second = createPhase5ResultRecorder(manifest, ["runtime-secret"]);
+  assert.throws(() => first.finalize(), /missing/i);
+  first.recordCommand("node-suite", "node-tap-v13", command, parseSemanticTapResult);
+  const firstResult = first.finalize();
+  assert.equal(firstResult[0].resultRecord.invocations[0].redactedOutputBytes > 0, true);
+  assert.equal(second.has("node-suite"), false);
+  assert.throws(() => second.recordCommand("unknown", "node-tap-v13", command, parseSemanticTapResult), /unknown/i);
+});
+
 test("Phase 3 Playwright journeys have their own fail-closed result contract", () => {
   assert.doesNotThrow(() => assertPlaywrightJourney("Running 1 test using 1 worker\n  1 passed"));
-  assert.throws(() => assertPlaywrightJourney("Running 1 test using 1 worker\n  1 skipped"), /skipped/i);
+  assert.throws(() => assertPlaywrightJourney("Running 1 test using 1 worker\n  1 skipped"), /non-pass|zero/i);
   assert.throws(() => assertPlaywrightJourney("Running 0 tests using 1 worker"), /zero/i);
 });
 
