@@ -5,13 +5,20 @@ import { createServer } from "node:net";
 import { basename, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { auditRepository } from "./check-boundaries.mjs";
+import { auditRepository, evaluateRepositoryBoundaries } from "./check-boundaries.mjs";
 import { createBackupSet } from "./backup/create.mjs";
 import { verifyBackupSet } from "./backup/manifest.mjs";
 import { cleanupGeneratedBackupRoot } from "./backup/paths.mjs";
 import { cleanupGeneratedRestoreRoot, restoreBackupSet } from "./backup/restore.mjs";
 import { runProductionPipeline } from "./backup/production-pipeline.mjs";
-import { writePhase5ReceiptAtomic } from "./phase5-receipt.mjs";
+import {
+  acquirePhase5ReceiptWriterLock,
+  canonicalPhase5ResultBytes,
+  hashPhase5ResultRecord,
+  releasePhase5ReceiptWriterLock,
+  writePhase5ReceiptAtomic,
+} from "./phase5-receipt.mjs";
+import { productionBackupResultSchema } from "./backup/production/results.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = fileURLToPath(import.meta.url);
@@ -164,28 +171,66 @@ export function validateTopologyPolicy(value) {
   return policy;
 }
 
-export function assertSemanticTap(output) {
-  const tap = String(output);
-  const lines = tap.split(/\r?\n/);
-  const directive = lines.find((line) => /#\s*(?:SKIP|TODO)\b/i.test(line)
-    && !/^\s*#\s*(?:skipped|todo)\s+\d+\s*$/i.test(line));
-  if (directive) {
-    throw new Error(`semantic test output contains a skip/todo directive: ${redactText(directive)}`);
-  }
-  const nonzeroSummary = lines.find((line) => /^\s*#\s*(?:skipped|todo)\s+[1-9]\d*\s*$/i.test(line));
-  if (nonzeroSummary) {
-    throw new Error(`semantic test output contains a nonzero skip/todo summary: ${redactText(nonzeroSummary)}`);
-  }
-  const total = [...tap.matchAll(/^# tests (\d+)$/gmi)].map((match) => Number(match[1]));
-  if (!total.length || total.every((count) => count === 0)) throw new Error("semantic test output reported zero semantic tests");
+function exactSummaryCount(lines, name, parser) {
+  const values = lines.filter((line) => parser.test(line)).map((line) => Number(line.replace(parser, "$1")));
+  if (values.length !== 1) throw new Error(`semantic test output has an incomplete or conflicting ${name} footer`);
+  return values[0];
 }
 
-export function assertPlaywrightJourney(output) {
-  const text = String(output);
-  const skipped = [...text.matchAll(/\b(\d+)\s+skipped\b/gi)].some((match) => Number(match[1]) > 0);
-  const passed = [...text.matchAll(/\b(\d+)\s+passed\b/gi)].some((match) => Number(match[1]) > 0);
-  if (skipped) throw new Error("Playwright journey reported skipped tests");
-  if (!passed) throw new Error("Playwright journey reported zero completed tests");
+export function parseSemanticTapResult(output) {
+  const tap = String(output).replace(/\r\n?/g, "\n");
+  const lines = tap.split("\n");
+  if (!/^TAP version 13\s*$/m.test(tap)) throw new Error("semantic test output is not TAP version 13");
+  const directive = lines.find((line) => /#\s*(?:SKIP|TODO)\b/i.test(line)
+    && !/^\s*#\s*(?:skipped|todo)\s+\d+\s*$/i.test(line));
+  if (directive) throw new Error(`semantic test output contains a skip/todo directive: ${redactText(directive)}`);
+  const nonPassSummary = lines.find((line) => /^\s*#\s*(?:skipped|todo|cancelled|fail)\s+[1-9]\d*\s*$/i.test(line));
+  if (nonPassSummary) throw new Error(`semantic test output contains a non-pass summary: ${redactText(nonPassSummary)}`);
+  const tests = exactSummaryCount(lines, "tests", /^\s*#\s*tests\s+(\d+)\s*$/i);
+  if (!tests) throw new Error("semantic test output reported zero semantic tests");
+  const passed = exactSummaryCount(lines, "pass", /^\s*#\s*pass\s+(\d+)\s*$/i);
+  const failed = exactSummaryCount(lines, "fail", /^\s*#\s*fail\s+(\d+)\s*$/i);
+  const cancelled = exactSummaryCount(lines, "cancelled", /^\s*#\s*cancelled\s+(\d+)\s*$/i);
+  const skipped = exactSummaryCount(lines, "skipped", /^\s*#\s*skipped\s+(\d+)\s*$/i);
+  const todo = exactSummaryCount(lines, "todo", /^\s*#\s*todo\s+(\d+)\s*$/i);
+  if (tests !== passed + failed + cancelled + skipped + todo) throw new Error("semantic test output footer arithmetic is inconsistent");
+  if (!passed) throw new Error("semantic test output reported zero semantic tests");
+  if (failed || cancelled || skipped || todo) throw new Error("semantic test output contains a non-pass result");
+  return { tests, passed, failed, cancelled, skipped, todo };
+}
+
+export function assertSemanticTap(output) { return parseSemanticTapResult(output); }
+
+export function parsePlaywrightResult(output) {
+  const text = String(output).replace(/\r\n?/g, "\n");
+  const running = [...text.matchAll(/^Running\s+(\d+)\s+tests?\s+using\s+\d+\s+workers?\s*$/gmi)];
+  if (running.length !== 1) throw new Error("Playwright journey has an incomplete or conflicting launch count");
+  const tests = Number(running[0][1]);
+  const count = (name) => [...text.matchAll(new RegExp(`^\\s*(\\d+)\\s+${name}\\b`, "gmi"))].reduce((total, match) => total + Number(match[1]), 0);
+  const passed = count("passed");
+  const failed = count("failed");
+  const skipped = count("skipped");
+  const didNotRun = count("did not run");
+  const flaky = count("flaky");
+  const interrupted = count("interrupted");
+  if (failed || skipped || didNotRun || flaky || interrupted) throw new Error("Playwright journey contains a non-pass result");
+  if (!tests || !passed) throw new Error("Playwright journey reported zero completed tests");
+  if (tests !== passed + failed + skipped + didNotRun) throw new Error("Playwright journey result count does not match launch count");
+  return { tests, passed, failed, cancelled: interrupted, skipped, todo: 0 };
+}
+
+export function assertPlaywrightJourney(output) { return parsePlaywrightResult(output); }
+
+export function parseBoundaryResult(output) {
+  const lines = String(output).replace(/\r\n?/g, "\n").split("\n").filter((line) => line.startsWith("BLOG X BOUNDARY RESULT "));
+  if (lines.length !== 1) throw new Error("repository boundary output is missing its machine result");
+  let value;
+  try { value = JSON.parse(lines[0].slice("BLOG X BOUNDARY RESULT ".length)); } catch { throw new Error("repository boundary result is invalid"); }
+  if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).sort().join(",") !== "filesChecked,findings,outcome"
+    || !Number.isSafeInteger(value.filesChecked) || value.filesChecked <= 0 || !Number.isSafeInteger(value.findings) || value.findings !== 0 || value.outcome !== "pass") {
+    throw new Error("repository boundary result is not a complete pass");
+  }
+  return { tests: value.filesChecked, passed: value.filesChecked, failed: 0, cancelled: 0, skipped: 0, todo: 0 };
 }
 
 export function semanticTestCommand(file) {
@@ -212,6 +257,84 @@ export function redactText(text, secrets = []) {
   return redacted;
 }
 
+function normalizeCapturedOutput(value, secrets) {
+  return redactText(value, secrets)
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/\r\n?/g, "\n");
+}
+
+function hashText(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function parserForSuiteKind(kind) {
+  return ({ node: "node-tap-v13", database: "node-tap-v13", browser: "playwright-line-v1", pipeline: "production-backup-result-v1", boundary: "repository-boundary-result-v1" })[kind];
+}
+
+function sumCounts(records) {
+  return records.reduce((total, item) => {
+    for (const key of ["tests", "passed", "failed", "cancelled", "skipped", "todo"]) total[key] += item[key];
+    return total;
+  }, { tests: 0, passed: 0, failed: 0, cancelled: 0, skipped: 0, todo: 0 });
+}
+
+export function createPhase5ResultRecorder(manifest, secrets = []) {
+  if (!manifest || manifest.format !== "blog-x-phase5-suite-manifest" || manifest.version !== 2 || !Array.isArray(manifest.suites)) throw new Error("Phase 5 result recorder requires a v2 manifest");
+  const byId = new Map(manifest.suites.map((suite) => [suite.id, suite]));
+  if (byId.size !== manifest.suites.length) throw new Error("Phase 5 result recorder manifest IDs are not unique");
+  const entries = new Map();
+  const record = (suiteId, parser, commandResult, counts, safeOutput) => {
+    const suite = byId.get(suiteId);
+    if (!suite || parser !== parserForSuiteKind(suite.kind)) throw new Error("Phase 5 result recorder received an unknown or mismatched suite");
+    if (!commandResult || commandResult.exitCode !== 0 || commandResult.signal !== null) throw new Error("Phase 5 result recorder requires a successful completed command");
+    const output = normalizeCapturedOutput(safeOutput ?? commandResult.combined, secrets);
+    if (!output.length) throw new Error("Phase 5 result recorder requires captured output");
+    const invocation = {
+      ordinal: (entries.get(suiteId)?.length ?? 0) + 1,
+      parser,
+      startedAt: commandResult.startedAt,
+      completedAt: commandResult.completedAt,
+      exitCode: commandResult.exitCode,
+      signal: commandResult.signal,
+      redactedOutputBytes: Buffer.byteLength(output),
+      redactedOutputSha256: hashText(output),
+      counts,
+    };
+    if (!Number.isFinite(Date.parse(invocation.startedAt)) || !Number.isFinite(Date.parse(invocation.completedAt))) throw new Error("Phase 5 result recorder command timing is invalid");
+    entries.set(suiteId, [...(entries.get(suiteId) ?? []), invocation]);
+    return invocation;
+  };
+  return {
+    recordCommand(suiteId, parser, commandResult, parserFunction) {
+      return record(suiteId, parser, commandResult, parserFunction(commandResult.combined));
+    },
+    recordStructured(suiteId, parser, commandResult, value, counts) {
+      return record(suiteId, parser, commandResult, counts, JSON.stringify(value));
+    },
+    finalize() {
+      if (entries.size !== manifest.suites.length) throw new Error("Phase 5 result recorder is missing a manifest suite");
+      return manifest.suites.map((suite) => {
+        const invocations = entries.get(suite.id);
+        if (!invocations?.length) throw new Error("Phase 5 result recorder is missing suite invocations");
+        const counts = sumCounts(invocations.map((item) => item.counts));
+        const resultRecord = {
+          format: "blog-x-phase5-execution-result", version: 1, suiteId: suite.id, kind: suite.kind, sourceSha256: suite.sourceSha256,
+          invocations, counts, outcome: "pass",
+        };
+        return { id: suite.id, sourceSha256: suite.sourceSha256, resultRecord, resultSha256: hashPhase5ResultRecord(resultRecord) };
+      });
+    },
+    has(suiteId) { return entries.has(suiteId); },
+  };
+}
+
+function recordPhase5Command(context, file, parser, result) {
+  const suiteId = context.phase5SuiteIds?.get(file);
+  if (!suiteId || !context.phase5Recorder) return;
+  const parserFunction = parser === "node-tap-v13" ? parseSemanticTapResult : parsePlaywrightResult;
+  context.phase5Recorder.recordCommand(suiteId, parser, result, parserFunction);
+}
+
 function generatedNamespace() {
   return validateNamespace(`blogxverify_${randomBytes(6).toString("hex")}`);
 }
@@ -235,6 +358,7 @@ async function freePort() {
 
 function command(commandName, args, options = {}) {
   return new Promise((accept, reject) => {
+    const startedAt = new Date().toISOString();
     const child = spawn(commandName, args, {
       cwd: options.cwd ?? root,
       env: options.env ?? process.env,
@@ -242,13 +366,14 @@ function command(commandName, args, options = {}) {
     });
     let stdout = "";
     let stderr = "";
-    child.stdout.on("data", (chunk) => { stdout += chunk; options.onOutput?.(String(chunk)); });
-    child.stderr.on("data", (chunk) => { stderr += chunk; options.onOutput?.(String(chunk)); });
+    let combined = "";
+    child.stdout.on("data", (chunk) => { const value = String(chunk); stdout += value; combined += value; options.onOutput?.(value); });
+    child.stderr.on("data", (chunk) => { const value = String(chunk); stderr += value; combined += value; options.onOutput?.(value); });
     child.on("error", reject);
     child.on("close", (code, signal) => {
-      const result = { code: code ?? 1, signal, stdout, stderr, combined: `${stdout}${stderr}` };
-      if (result.code === 0 || options.allowFailure) accept(result);
-      else reject(Object.assign(new Error(`${commandName} exited with ${result.code}`), { result }));
+      const result = { startedAt, completedAt: new Date().toISOString(), exitCode: code ?? 1, signal: signal ?? null, stdout, stderr, combined };
+      if (result.exitCode === 0 && result.signal === null || options.allowFailure) accept(result);
+      else reject(Object.assign(new Error(`${commandName} exited with ${result.exitCode}`), { result }));
     });
   });
 }
@@ -378,6 +503,7 @@ async function runDatabaseSuite(context, variable, file) {
     "-e", `${variable}=${context.databaseUrl}`,
     "api", ...semanticTestCommand(file));
   assertSemanticTap(result.combined);
+  recordPhase5Command(context, file, "node-tap-v13", result);
 }
 
 function startManaged(context, label, commandName, args, env) {
@@ -447,7 +573,9 @@ async function fullPhaseChecks(context, phase2Full) {
     E2E_RUN_ID: context.runId,
   };
   const journey = phase2Full ? "apps/web/e2e/phase2-reading.spec.ts" : "apps/web/e2e/phase1-publishing.spec.ts";
-  await runStep(context, `run whole ${phase2Full ? "Phase 2" : "Phase 1"} browser journey`, "corepack", ["pnpm", "exec", "playwright", "test", journey, "--workers=1"], { env: playwrightEnvironment });
+  const browser = await runStep(context, `run whole ${phase2Full ? "Phase 2" : "Phase 1"} browser journey`, "corepack", ["pnpm", "exec", "playwright", "test", journey, "--workers=1"], { env: playwrightEnvironment });
+  assertPlaywrightJourney(browser.combined);
+  recordPhase5Command(context, journey, "playwright-line-v1", browser);
   if (phase2Full) await runFailureRecoveryJourney(context);
   if (!phase2Full) {
     const retainedSlug = `${context.runId}-changed`;
@@ -465,6 +593,7 @@ async function runPhase3Checks(context, mode) {
     if (file.endsWith(".test.ts")) {
       const result = await runStep(context, `run ${file}`, "corepack", ["pnpm", "exec", "tsx", "--test", "--test-reporter=tap", file], { env: process.env });
       assertSemanticTap(result.combined);
+      recordPhase5Command(context, file, "node-tap-v13", result);
       continue;
     }
     const result = await runStep(context, `run ${file}`, "corepack", ["pnpm", "exec", "playwright", "test", file, "--workers=1"], {
@@ -477,6 +606,7 @@ async function runPhase3Checks(context, mode) {
       },
     });
     assertPlaywrightJourney(result.combined);
+    recordPhase5Command(context, file, "playwright-line-v1", result);
   }
 }
 
@@ -559,6 +689,7 @@ async function runPhase4OperationsChecks(context) {
   for (const file of selection.nodeSuites) {
     const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
     assertSemanticTap(result.combined);
+    recordPhase5Command(context, file, "node-tap-v13", result);
   }
   await exerciseApiRecovery(context);
   const status = await runStep(context, "run redacted local operator status", "node", ["scripts/ops-status.mjs", `--project=${context.namespace}`, `--web-origin=${context.webOrigin}`]);
@@ -649,6 +780,7 @@ async function runPhase4RestoreChecks(context, includePhase5Legacy = false, brow
   for (const file of selection.nodeSuites) {
     const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
     assertSemanticTap(result.combined);
+    recordPhase5Command(context, file, "node-tap-v13", result);
   }
   const fixture = await seedRestoreFixture(context, includePhase5Legacy);
   const backupRoot = await mkdtemp(resolve(tmpdir(), "blog-x-backup-verify-"));
@@ -659,6 +791,7 @@ async function runPhase4RestoreChecks(context, includePhase5Legacy = false, brow
     namespace: restoreNamespace, database: `blog_x_restore_${suffix}`, webPort: restorePort,
     publicOrigin: `http://127.0.0.1:${restorePort}`, webOrigin: `http://127.0.0.1:${restorePort}`,
     mediaVolume: `${restoreNamespace}_media-data`, logs: context.logs, secrets: context.secrets,
+    phase5Recorder: context.phase5Recorder, phase5SuiteIds: context.phase5SuiteIds,
   };
   const restoreRoot = resolve(tmpdir(), `blog-x-restore-verify-${randomBytes(6).toString("hex")}`);
   try {
@@ -687,6 +820,7 @@ async function runPhase4RestoreChecks(context, includePhase5Legacy = false, brow
     const authority = await compose(restoreContext, `run ${selection.databaseSuite}`, "exec", "-T",
       ...authorityEnvironment, "api", ...semanticTestCommand(selection.databaseSuite));
     assertSemanticTap(authority.combined);
+    recordPhase5Command(restoreContext, selection.databaseSuite, "node-tap-v13", authority);
     const browser = await runStep(context, `run ${browserSuite}`, "corepack",
       ["pnpm", "exec", "playwright", "test", browserSuite, "--workers=1"], {
         env: { ...process.env, E2E_WEB_ORIGIN: restoreContext.webOrigin, E2E_RESTORE_WEB_ORIGIN: restoreContext.webOrigin,
@@ -695,6 +829,7 @@ async function runPhase4RestoreChecks(context, includePhase5Legacy = false, brow
           ...(includePhase5Legacy ? { PHASE5_LEGACY_ARTICLE_ID: fixture.legacyArticleId, PHASE5_LEGACY_ARTICLE_SLUG: fixture.legacyArticleSlug } : {}) },
       });
     assertPlaywrightJourney(browser.combined);
+    recordPhase5Command(context, browserSuite, "playwright-line-v1", browser);
     await verifyBackupSet(backup.finalRoot);
   } finally {
     await command("docker-compose", composeArgs(restoreContext, "down", "--remove-orphans", "--volumes"), { env: composeEnvironment(restoreContext), allowFailure: true });
@@ -706,9 +841,11 @@ async function runPhase4RestoreChecks(context, includePhase5Legacy = false, brow
 async function runPhase4ReleaseChecks(context) {
   const result = await runStep(context, "run scripts/release-gate.test.mjs", "node", ["--test", "--test-reporter=tap", "scripts/release-gate.test.mjs"], { env: process.env });
   assertSemanticTap(result.combined);
+  recordPhase5Command(context, "scripts/release-gate.test.mjs", "node-tap-v13", result);
   const blocked = await runStep(context, "confirm canonical production release remains BLOCKED", "node",
     ["scripts/release-gate.mjs", "--evidence=ops/release-evidence.blocked.json", "--expect-blocked"], { env: process.env });
   if (!blocked.stdout.startsWith("RELEASE BLOCKED ")) throw new Error("canonical release evidence did not remain explicitly BLOCKED");
+  context.canonicalDecision = blocked;
 }
 
 async function resetGeneratedAcceptanceMedia(context) {
@@ -744,10 +881,12 @@ async function runPhase5MediaChecks(context, options = {}) {
   for (const file of selection.apiSuites) {
     const result = await compose(context, `run ${file}`, "exec", "-T", "api", ...semanticTestCommand(file));
     assertSemanticTap(result.combined);
+    recordPhase5Command(context, file, "node-tap-v13", result);
   }
   for (const file of selection.nodeSuites) {
     const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
     assertSemanticTap(result.combined);
+    recordPhase5Command(context, file, "node-tap-v13", result);
   }
   await resetAcceptanceData(context, "clear Phase 5 fresh-browser acceptance data");
   const freshBrowser = await runStep(context, `run ${selection.browserSuites[0]}`, "corepack",
@@ -761,11 +900,8 @@ async function runPhase5MediaChecks(context, options = {}) {
       },
     });
   assertPlaywrightJourney(freshBrowser.combined);
+  recordPhase5Command(context, selection.browserSuites[0], "playwright-line-v1", freshBrowser);
   if (options.includeRestore !== false) await runPhase4RestoreChecks(context, true, selection.browserSuites[1]);
-}
-
-function hashText(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function generatedProductionProject() {
@@ -787,7 +923,7 @@ async function cleanupPhase5ProductionAuthorities(authorities) {
   }
 }
 
-async function createPhase5SuiteManifest() {
+export async function createPhase5SuiteManifest() {
   const selection = phase5Selection("full");
   const sources = [
     ...selection.databaseSuites.map((item) => ["database", item[1]]),
@@ -795,6 +931,7 @@ async function createPhase5SuiteManifest() {
     ...selection.nodeSuites.map((path) => ["node", path]),
     ...selection.browserSuites.map((path) => ["browser", path]),
     ["database", selection.databaseSuite],
+    ["pipeline", "scripts/backup/production-pipeline.mjs"],
     ["boundary", "scripts/check-boundaries.mjs"],
   ];
   const suites = await Promise.all(sources.map(async ([kind, path], index) => ({
@@ -803,7 +940,8 @@ async function createPhase5SuiteManifest() {
     path,
     sourceSha256: hashText(await readFile(resolve(root, path))),
   })));
-  return { format: "blog-x-phase5-suite-manifest", version: 1, suites };
+  if (new Set(suites.map((suite) => suite.path)).size !== suites.length || suites.length !== 28) throw new Error("Phase 5 suite manifest must contain exactly 28 unique sources");
+  return { format: "blog-x-phase5-suite-manifest", version: 2, suites };
 }
 
 async function runPhase5GeneratedPipeline() {
@@ -866,22 +1004,6 @@ async function runPhase5GeneratedPipeline() {
   }
 }
 
-async function phase5ReceiptCandidate(manifest, implementationRevision, startedAt) {
-  const completedAt = new Date().toISOString();
-  const suites = manifest.suites.map((suite) => ({
-    id: suite.id, sourceSha256: suite.sourceSha256, resultSha256: hashText(`phase5-semantic-pass:${suite.id}:${implementationRevision}`),
-    tests: 1, passed: 1, failed: 0, skipped: 0, todo: 0, outcome: "pass",
-  }));
-  return {
-    format: "blog-x-phase5-full-gate-receipt", version: 1, implementationRevision,
-    command: ["corepack", "pnpm", "local:verify", "--", "--phase5-full", "--interruption-check", "--parallel-check"],
-    mode: "phase5-full", scope: "local-generated-production-pipeline-and-fake-fault-only", startedAt, completedAt,
-    suiteManifest: manifest, suiteManifestSha256: hashText(JSON.stringify(manifest)), suites,
-    canonicalEvidenceSha256: hashText(await readFile(resolve(root, "ops/release-evidence.blocked.json"))),
-    canonicalDecisionSha256: hashText("RELEASE BLOCKED"), canonicalDecisionState: "BLOCKED",
-  };
-}
-
 async function committedImplementationHead() {
   const dirty = await command("git", ["status", "--porcelain"], { env: process.env });
   if (dirty.stdout.trim()) throw new Error("Phase 5 receipt requires a clean committed implementation worktree");
@@ -892,22 +1014,47 @@ async function committedImplementationHead() {
 }
 
 async function runPhase5FullChecks(context) {
-  const implementationRevision = await committedImplementationHead();
+  const implementationRevision = context.implementationRevision;
+  if (!/^[a-f0-9]{40}$/.test(implementationRevision ?? "")) throw new Error("Phase 5 full gate requires its pre-run committed implementation revision");
   const startedAt = new Date().toISOString();
   const manifest = await createPhase5SuiteManifest();
+  context.phase5SuiteIds = new Map(manifest.suites.map((suite) => [suite.path, suite.id]));
+  context.phase5Recorder = createPhase5ResultRecorder(manifest, context.secrets);
   await runPhase4FullChecks(context, { includePhase5Legacy: true });
   await runPhase5MediaChecks(context, { includeRestore: false });
   for (const file of ["scripts/backup/production.test.mjs", "scripts/phase5-receipt.test.mjs"]) {
     const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
     assertSemanticTap(result.combined);
+    recordPhase5Command(context, file, "node-tap-v13", result);
   }
-  const pipelineResults = await Promise.all([runPhase5GeneratedPipeline(), runPhase5GeneratedPipeline()]);
-  if (pipelineResults.some((result) => result.scope !== "generated-production-pipeline")) {
+  const pipelineSuiteId = context.phase5SuiteIds.get("scripts/backup/production-pipeline.mjs");
+  const pipelineRuns = await Promise.all([0, 1].map(async () => {
+    const pipelineStartedAt = new Date().toISOString();
+    const result = productionBackupResultSchema.parse(await runPhase5GeneratedPipeline());
+    const commandResult = { startedAt: pipelineStartedAt, completedAt: new Date().toISOString(), exitCode: 0, signal: null, combined: "" };
+    return { result, commandResult };
+  }));
+  const pipelineResults = pipelineRuns.map((run) => run.result);
+  if (pipelineResults.some((result) => result.scope !== "generated-production-pipeline" || result.alertOutcome !== "recorded")
+    || new Set(pipelineResults.map((result) => result.setId)).size !== 2 || new Set(pipelineResults.map((result) => result.receiptSha256)).size !== 2) {
     throw new Error("parallel generated production pipeline did not retain its local scope");
   }
-  await runStep(context, "run Phase 5 boundary audit", "corepack", ["pnpm", "check:boundaries"], { env: process.env });
+  for (const run of pipelineRuns) context.phase5Recorder.recordStructured(pipelineSuiteId, "production-backup-result-v1", run.commandResult, run.result,
+    { tests: 1, passed: 1, failed: 0, cancelled: 0, skipped: 0, todo: 0 });
+  const boundary = await runStep(context, "run Phase 5 boundary audit", "corepack", ["pnpm", "check:boundaries"], { env: process.env });
+  const boundarySuiteId = context.phase5SuiteIds.get("scripts/check-boundaries.mjs");
+  context.phase5Recorder.recordCommand(boundarySuiteId, "repository-boundary-result-v1", boundary, parseBoundaryResult);
   await runPhase4ReleaseChecks(context);
-  context.phase5Receipt = await phase5ReceiptCandidate(manifest, implementationRevision, startedAt);
+  if (!context.canonicalDecision) throw new Error("Phase 5 full gate did not capture its terminal canonical decision");
+  const suites = context.phase5Recorder.finalize();
+  context.phase5Receipt = {
+    format: "blog-x-phase5-full-gate-receipt", version: 2, implementationRevision,
+    command: ["corepack", "pnpm", "local:verify", "--", "--phase5-full", "--interruption-check", "--parallel-check"],
+    mode: "phase5-full", scope: "local-generated-production-pipeline-and-fake-fault-only", startedAt, completedAt: new Date().toISOString(),
+    suiteManifest: manifest, suiteManifestSha256: hashText(canonicalPhase5ResultBytes(manifest)), suites,
+    canonicalEvidenceSha256: hashText(await readFile(resolve(root, "ops/release-evidence.blocked.json"))),
+    canonicalDecisionSha256: hashText(normalizeCapturedOutput(context.canonicalDecision.combined, context.secrets)), canonicalDecisionState: "BLOCKED",
+  };
   process.stdout.write("[local-verify] LOCAL PHASE 5 READINESS PASS; RELEASE BLOCKED\n");
 }
 
@@ -939,6 +1086,7 @@ async function runSingle(options) {
     logs: [],
     secrets: [],
     children: [],
+    implementationRevision: options.implementationRevision,
   };
   context.secrets.push(context.password, context.databaseUrl);
   if (context.publicOrigin === context.internalApiOrigin) throw new Error("public and internal API origins must remain separate");
@@ -1048,17 +1196,30 @@ async function main() {
     skipBuild: flags.has("--skip-build"),
   };
 
+  if (flags.has("--internal-run") && phase5Full) throw new Error("internal verification children cannot acquire Phase 5 receipt authority");
+
   await command("docker", ["info"]);
   await command("docker-compose", ["version"]);
   const boundaryIssues = await auditRepository(root);
   if (boundaryIssues.length) throw new Error(boundaryIssues.map((finding) => `${finding.code}: ${finding.path}`).join("\n"));
-  const receipt = await runSingle(options);
-  if (options.parallelCheck) await parallelCheck(options);
-  if (options.phase5Full) {
-    if (!receipt) throw new Error("Phase 5 full gate did not produce terminal receipt input");
-    const revision = await committedImplementationHead();
-    if (revision !== receipt.implementationRevision) throw new Error("Phase 5 receipt revision changed after gate execution");
-    await writePhase5ReceiptAtomic(receipt, { cleanWorktree: true, expectedRevision: revision });
+  let authority;
+  try {
+    if (options.phase5Full) {
+      options.implementationRevision = await committedImplementationHead();
+      authority = await acquirePhase5ReceiptWriterLock();
+    }
+    const receipt = await runSingle(options);
+    if (options.parallelCheck) await parallelCheck(options);
+    if (options.phase5Full) {
+      if (!receipt) throw new Error("Phase 5 full gate did not produce terminal receipt input");
+      const revision = await committedImplementationHead();
+      if (revision !== receipt.implementationRevision || revision !== options.implementationRevision) throw new Error("Phase 5 receipt revision changed after gate execution");
+      await writePhase5ReceiptAtomic(receipt, {
+        cleanWorktree: true, expectedRevision: revision, authority, expectedPredecessor: authority.expectedPredecessor,
+      });
+    }
+  } finally {
+    if (authority) await releasePhase5ReceiptWriterLock(authority);
   }
   process.stdout.write("[local-verify] all requested checks passed\n");
 }

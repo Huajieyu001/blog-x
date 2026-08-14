@@ -52,6 +52,13 @@ export async function auditMilestoneReceipt(root, content, options = {}) {
   const receiptPath = options.receiptPath ?? resolve(root, expectedPath);
   let verified;
   try { verified = await verifyPhase5Receipt(receiptPath); } catch { return [issue("phase5_audit_receipt_missing", ".planning/v1.0-MILESTONE-AUDIT.md", "passed audit requires a strict verified Phase 5 receipt")]; }
+  const declaredVersion = frontmatter.full_gate_receipt_version;
+  if (declaredVersion !== undefined && declaredVersion !== "2") {
+    issues.push(issue("phase5_audit_receipt_version", ".planning/v1.0-MILESTONE-AUDIT.md", "a migrated passed audit requires receipt version 2"));
+  }
+  if (declaredVersion === "2" && (verified.legacy || verified.receipt.version !== 2)) {
+    issues.push(issue("phase5_audit_receipt_version", ".planning/v1.0-MILESTONE-AUDIT.md", "a v2 audit cannot cite a legacy receipt"));
+  }
   if (frontmatter.full_gate_receipt_sha256 !== verified.sha256 || frontmatter.implementation_revision !== verified.receipt.implementationRevision) {
     issues.push(issue("phase5_audit_receipt_mismatch", ".planning/v1.0-MILESTONE-AUDIT.md", "passed audit receipt digest and implementation revision must match verified bytes"));
   }
@@ -234,15 +241,23 @@ export async function auditRepository(root) {
   return auditFiles(root, await trackedFiles(root));
 }
 
+export async function evaluateRepositoryBoundaries(root) {
+  const files = await trackedFiles(root);
+  const findings = await auditFiles(root, files);
+  return { filesChecked: files.length, findings: findings.length, outcome: findings.length === 0 ? "pass" : "fail" };
+}
+
 async function main() {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-  const issues = await auditRepository(root);
-  if (issues.length) {
+  const result = await evaluateRepositoryBoundaries(root);
+  if (result.outcome !== "pass") {
+    const issues = await auditRepository(root);
     for (const finding of issues) console.error(`${finding.code}: ${finding.path}: ${finding.message}`);
+    console.log(`BLOG X BOUNDARY RESULT ${JSON.stringify(result)}`);
     process.exitCode = 1;
     return;
   }
-  console.log("Boundary checks passed.");
+  console.log(`BLOG X BOUNDARY RESULT ${JSON.stringify(result)}`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
