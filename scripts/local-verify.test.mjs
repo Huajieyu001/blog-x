@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { auditFiles } from "./check-boundaries.mjs";
+import { auditFiles, auditMilestoneReceipt } from "./check-boundaries.mjs";
 import {
   assertSemanticTap,
   assertPlaywrightJourney,
@@ -108,6 +108,8 @@ test("Phase 5 full selection is an exact once-only Phase 1-5 superset with a ter
   for (const file of [
     "scripts/backup/production.test.mjs",
     "scripts/phase5-receipt.test.mjs",
+    "scripts/phase5-receipt-prohibitions.test.mjs",
+    "scripts/phase5-receipt-concurrency.test.mjs",
     "scripts/release-gate.test.mjs",
     "scripts/prohibitions/media-policy.test.mjs",
   ]) assert.ok(selection.nodeSuites.includes(file), file);
@@ -136,6 +138,15 @@ test("Phase 5 full selection is an exact once-only Phase 1-5 superset with a ter
   assert.match(runner, /restoreVerifierOwnedNextEnvironment/);
   assert.match(runner, /options\.phase5Full && !options\.skipBuild\) \{\s*await preflightOfflinePrerequisites/s);
   assert.match(runner, /!options\.skipBuild && !options\.phase5Full/);
+});
+
+test("a replacement passed audit rejects body/frontmatter receipt revision disagreement", async () => {
+  const audit = await readFile(join(process.cwd(), ".planning/v1.0-MILESTONE-AUDIT.md"), "utf8");
+  const replacement = audit
+    .replace("full_gate_receipt_version: 2", "full_gate_receipt_version: 2\naudit_body_revision_contract: 1")
+    .replace(/implementation revision `[a-f0-9]{40}`;/, `implementation revision \`${"0".repeat(40)}\`;`);
+  const findings = await auditMilestoneReceipt(process.cwd(), replacement, { isAncestor: async () => true });
+  assert.equal(findings.some((finding) => finding.code === "phase5_audit_body_revision"), true);
 });
 
 test("Phase 4 full selection explicitly names security, operations, restore, release, database, and browser evidence", () => {
