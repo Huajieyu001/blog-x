@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { publicSearchQuerySchema, publicSearchResponseSchema } from "@blog-x/contracts";
+import { publicRelatedPostsResponseSchema, publicSearchQuerySchema, publicSearchResponseSchema } from "@blog-x/contracts";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { createPublicRepository, SearchUnavailableError } from "../src/content/public-repository.js";
@@ -151,4 +152,108 @@ test("only PostgreSQL cancellation is typed as search unavailable", async () => 
   const unrelated = Object.assign(new Error("connection failed"), { code: "08006" });
   const broken = createPublicRepository({ transaction: async () => { throw unrelated; } } as never);
   await assert.rejects(() => broken.searchPage("query", 1), (error: unknown) => error === unrelated);
+});
+
+test("related posts require public overlap and use deterministic category/tag/time/UUID ranking", async (context) => {
+  if (!databaseUrl) {
+    context.skip("PUBLIC_DISCOVERY_TEST_DATABASE_URL must name a disposable migrated PostgreSQL database");
+    return;
+  }
+  const pool = new Pool({ connectionString: databaseUrl });
+  const db = drizzle({ client: pool, schema });
+  const repository = createPublicRepository(db);
+  context.after(async () => {
+    await pool.query("truncate table article_tags, articles, categories, tags cascade");
+    await pool.end();
+  });
+  await pool.query("truncate table article_tags, articles, categories, tags cascade");
+
+  const category = "50000000-0000-4000-8000-000000000001";
+  const otherCategory = "50000000-0000-4000-8000-000000000002";
+  const tagIds = [
+    "51000000-0000-4000-8000-000000000001",
+    "51000000-0000-4000-8000-000000000002",
+    "51000000-0000-4000-8000-000000000003",
+  ];
+  await db.insert(schema.categories).values([
+    { id: category, name: "Primary", slug: "primary" },
+    { id: otherCategory, name: "Other", slug: "other" },
+  ]);
+  await db.insert(schema.tags).values(tagIds.map((id, index) => ({ id, name: `Tag ${index + 1}`, slug: `tag-${index + 1}` })));
+
+  const tiedTime = new Date("2026-08-15T12:00:00.000Z");
+  const candidates = [
+    article({ id: "52000000-0000-4000-8000-000000000001", slug: "source", title: "Source", categoryId: category }),
+    article({ id: "52000000-0000-4000-8000-000000000002", slug: "category-zero-tags", title: "Category zero", categoryId: category, publishedAt: new Date("2026-08-10T12:00:00.000Z") }),
+    article({ id: "52000000-0000-4000-8000-000000000003", slug: "category-one-tag", title: "Category one", categoryId: category, publishedAt: tiedTime }),
+    article({ id: "52000000-0000-4000-8000-000000000004", slug: "category-two-tags-low-id", title: "Category two low", categoryId: category, publishedAt: tiedTime }),
+    article({ id: "52000000-0000-4000-8000-000000000005", slug: "category-two-tags-high-id", title: "Category two high", categoryId: category, publishedAt: tiedTime }),
+    article({ id: "52000000-0000-4000-8000-000000000006", slug: "tag-only-three", title: "Tag only", categoryId: otherCategory, publishedAt: new Date("2026-08-20T12:00:00.000Z") }),
+    article({ id: "52000000-0000-4000-8000-000000000007", slug: "no-overlap", title: "No overlap", categoryId: otherCategory }),
+    article({ id: "52000000-0000-4000-8000-000000000008", slug: "hidden-strong", title: "RELATED_HIDDEN_DRAFT", categoryId: category, status: "draft", publishedAt: null }),
+    article({ id: "52000000-0000-4000-8000-000000000009", slug: "hidden-unpublished-related", title: "RELATED_HIDDEN_UNPUBLISHED", categoryId: category, status: "unpublished" }),
+    article({ id: "52000000-0000-4000-8000-000000000010", slug: "hidden-deleted-related", title: "RELATED_HIDDEN_DELETED", categoryId: category, deletedAt: tiedTime }),
+    article({ id: "52000000-0000-4000-8000-000000000011", slug: "hidden-null-related", title: "RELATED_HIDDEN_NULL", categoryId: category, publishedAt: null }),
+  ];
+  await db.insert(schema.articles).values(candidates);
+  const tagsFor = (articleId: string, count: number) => tagIds.slice(0, count).map((tagId) => ({ articleId, tagId }));
+  await db.insert(schema.articleTags).values([
+    ...tagsFor(candidates[0]!.id, 3),
+    ...tagsFor(candidates[2]!.id, 1),
+    ...tagsFor(candidates[3]!.id, 2),
+    ...tagsFor(candidates[4]!.id, 2),
+    ...tagsFor(candidates[5]!.id, 3),
+    ...tagsFor(candidates[7]!.id, 3),
+    ...tagsFor(candidates[8]!.id, 3),
+    ...tagsFor(candidates[9]!.id, 3),
+    ...tagsFor(candidates[10]!.id, 3),
+  ]);
+
+  const related = await repository.relatedBySlug("source");
+  assert.ok(related);
+  assert.deepEqual(related.items.map((item) => item.slug), [
+    "category-two-tags-high-id",
+    "category-two-tags-low-id",
+    "category-one-tag",
+    "category-zero-tags",
+  ]);
+  assert.equal(related.items.some((item) => item.slug === "source" || item.slug === "tag-only-three" || item.slug === "no-overlap"), false);
+  assert.deepEqual(publicRelatedPostsResponseSchema.parse(related), related);
+  for (const item of related.items) assert.deepEqual(Object.keys(item).sort(), ["category", "publishedAt", "slug", "status", "summary", "tags", "title"]);
+  assert.doesNotMatch(JSON.stringify(related), /RELATED_HIDDEN|score|sharedTagCount|candidateId|sourceId/);
+
+  for (const hiddenSlug of ["hidden-strong", "hidden-unpublished-related", "hidden-deleted-related", "hidden-null-related", "unknown-related"]) {
+    assert.equal(await repository.relatedBySlug(hiddenSlug), null, hiddenSlug);
+  }
+
+  await db.update(schema.articles).set({ status: "unpublished" }).where(eq(schema.articles.id, candidates[4]!.id));
+  assert.equal((await repository.relatedBySlug("source"))?.items.some((item) => item.slug === "category-two-tags-high-id"), false);
+  await db.update(schema.articles).set({ status: "published" }).where(eq(schema.articles.id, candidates[4]!.id));
+  assert.equal((await repository.relatedBySlug("source"))?.items[0]?.slug, "category-two-tags-high-id");
+  await db.update(schema.articles).set({ deletedAt: tiedTime }).where(eq(schema.articles.id, candidates[4]!.id));
+  assert.equal((await repository.relatedBySlug("source"))?.items.some((item) => item.slug === "category-two-tags-high-id"), false);
+  await db.update(schema.articles).set({ status: "unpublished" }).where(eq(schema.articles.id, candidates[0]!.id));
+  assert.equal(await repository.relatedBySlug("source"), null);
+  await db.update(schema.articles).set({ status: "published" }).where(eq(schema.articles.id, candidates[0]!.id));
+  assert.ok(await repository.relatedBySlug("source"));
+});
+
+test("related posts return an honest empty result when a public source has no taxonomy overlap", async (context) => {
+  if (!databaseUrl) {
+    context.skip("PUBLIC_DISCOVERY_TEST_DATABASE_URL must name a disposable migrated PostgreSQL database");
+    return;
+  }
+  const pool = new Pool({ connectionString: databaseUrl });
+  const db = drizzle({ client: pool, schema });
+  const repository = createPublicRepository(db);
+  context.after(async () => {
+    await pool.query("truncate table article_tags, articles, categories, tags cascade");
+    await pool.end();
+  });
+  await pool.query("truncate table article_tags, articles, categories, tags cascade");
+  await db.insert(schema.articles).values([
+    article({ id: "53000000-0000-4000-8000-000000000001", slug: "isolated-source", title: "Isolated" }),
+    article({ id: "53000000-0000-4000-8000-000000000002", slug: "unrelated-public", title: "Unrelated" }),
+  ]);
+  assert.deepEqual(await repository.relatedBySlug("isolated-source"), { items: [] });
 });

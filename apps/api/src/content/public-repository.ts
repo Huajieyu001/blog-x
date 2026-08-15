@@ -1,9 +1,12 @@
-import { and, count, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import { alias } from "drizzle-orm/pg-core";
 import {
   publicDistributionSchema,
   publicPostListResponseSchema,
   publicPostPageSize,
+  publicRelatedPostLimit,
+  publicRelatedPostsResponseSchema,
   publicSearchPageSize,
   publicSearchResponseSchema,
 } from "@blog-x/contracts";
@@ -203,6 +206,78 @@ export function createPublicRepository(db: Database) {
     }
   }
 
+  async function relatedBySlug(slug: string) {
+    return db.transaction(async (tx) => {
+      const source = (await tx.select({
+        id: schema.articles.id,
+        categoryId: schema.articles.categoryId,
+      }).from(schema.articles)
+        .where(and(publicPredicate, eq(schema.articles.slug, slug)))
+        .limit(1))[0];
+      if (!source) return null;
+
+      const sourceTags = await tx.select({ tagId: schema.articleTags.tagId })
+        .from(schema.articleTags)
+        .where(eq(schema.articleTags.articleId, source.id))
+        .orderBy(schema.articleTags.tagId);
+      const sourceTagIds = sourceTags.map((tag) => tag.tagId);
+      if (!source.categoryId && sourceTagIds.length === 0) {
+        return publicRelatedPostsResponseSchema.parse({ items: [] });
+      }
+
+      const candidateSharedTags = alias(schema.articleTags, "candidate_shared_tags");
+      const categoryMatchPredicate = source.categoryId
+        ? eq(schema.articles.categoryId, source.categoryId)
+        : sql<boolean>`false`;
+      const sharedTagJoinPredicate = sourceTagIds.length > 0
+        ? inArray(candidateSharedTags.tagId, sourceTagIds)
+        : sql<boolean>`false`;
+      const categoryMatch = sql<number>`CASE WHEN ${categoryMatchPredicate} THEN 1 ELSE 0 END`;
+      const sharedTagCount = sql<number>`count(DISTINCT ${candidateSharedTags.tagId})::int`;
+
+      const rows = await tx.select({
+        ...publicListSelection,
+        categoryName: schema.categories.name,
+        categorySlug: schema.categories.slug,
+        categoryMatch,
+        sharedTagCount,
+      }).from(schema.articles)
+        .leftJoin(schema.categories, eq(schema.articles.categoryId, schema.categories.id))
+        .leftJoin(candidateSharedTags, and(
+          eq(candidateSharedTags.articleId, schema.articles.id),
+          sharedTagJoinPredicate,
+        ))
+        .where(and(
+          publicPredicate,
+          ne(schema.articles.id, source.id),
+          or(categoryMatchPredicate, isNotNull(candidateSharedTags.tagId)),
+        ))
+        .groupBy(
+          schema.articles.id,
+          schema.articles.title,
+          schema.articles.summary,
+          schema.articles.slug,
+          schema.articles.publishedAt,
+          schema.articles.status,
+          schema.articles.categoryId,
+          schema.categories.id,
+          schema.categories.name,
+          schema.categories.slug,
+        )
+        .orderBy(
+          desc(categoryMatch),
+          desc(sharedTagCount),
+          desc(schema.articles.publishedAt),
+          desc(schema.articles.id),
+        )
+        .limit(publicRelatedPostLimit);
+
+      return publicRelatedPostsResponseSchema.parse({
+        items: await hydratePublicCards(tx, rows),
+      });
+    }, { isolationLevel: "repeatable read", accessMode: "read only" });
+  }
+
   async function findDetailBySlug(slug: string) {
     const rows = await db.select({
       ...publicDetailSelection,
@@ -310,7 +385,7 @@ export function createPublicRepository(db: Database) {
     }, { isolationLevel: "repeatable read", accessMode: "read only" });
   }
 
-  return { distribution, findDetailBySlug, listPage, searchPage };
+  return { distribution, findDetailBySlug, listPage, relatedBySlug, searchPage };
 }
 
 export type PublicRepository = ReturnType<typeof createPublicRepository>;
