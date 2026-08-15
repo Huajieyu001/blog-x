@@ -1,19 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-status: Awaiting next milestone
-stopped_at: Phase 05 passed independent verification; v1.0 local milestone complete and production release BLOCKED
-last_updated: "2026-08-15T03:13:43.914Z"
+milestone: v1.1
+milestone_name: Content Discovery
+status: planning
+stopped_at: Milestone v1.1 roadmap defined; Phase 06 ready for planning
+last_updated: "2026-08-15T04:06:56.196Z"
 last_activity: 2026-08-15
-last_activity_desc: Milestone v1.0 completed and archived
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 26
-  completed_plans: 26
-current_phase: 05
-current_phase_name: Integration Gap Closure
+  total_phases: 3
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -23,14 +21,14 @@ current_phase_name: Integration Gap Closure
 See: .planning/PROJECT.md (updated 2026-08-15)
 
 **Core value:** 博主能够可靠地发布和保存 Markdown 内容，访客能够持续、快速地通过博客域名阅读已发布文章。  
-**Current focus:** Archive v1.0 safely, then plan v1.1 Content Discovery; production release remains explicitly blocked
+**Current focus:** Phase 06 — Public Discovery Data; production release remains explicitly blocked
 
 ## Current Position
 
-Phase: Milestone v1.0 complete
+Phase: 06 — Public Discovery Data
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-08-15 — Milestone v1.0 completed and archived
+Status: Ready for planning
+Last activity: 2026-08-15 — Milestone v1.1 requirements and roadmap defined
 
 ## Performance Metrics
 
