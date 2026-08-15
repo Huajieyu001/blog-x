@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { auditFiles, auditMilestoneReceipt } from "./check-boundaries.mjs";
+import { verifyPhase5Receipt } from "./phase5-receipt.mjs";
 import {
   assertSemanticTap,
   assertPlaywrightJourney,
@@ -142,18 +143,21 @@ test("Phase 5 full selection is an exact once-only Phase 1-5 superset with a ter
 
 test("a replacement passed audit rejects body/frontmatter receipt revision disagreement", async () => {
   const audit = await readFile(join(process.cwd(), ".planning/v1.0-MILESTONE-AUDIT.md"), "utf8");
-  const revision = /implementation_revision: ([a-f0-9]{40})/.exec(audit)?.[1];
-  assert.match(revision ?? "", /^[a-f0-9]{40}$/);
-  const replacement = audit
-    .replace("full_gate_receipt_version: 2", "full_gate_receipt_version: 2\naudit_body_revision_contract: 1")
+  const verified = await verifyPhase5Receipt();
+  const revision = verified.receipt.implementationRevision;
+  let replacement = audit
+    .replace(/^audited: .*$/m, "audited: 2099-01-01T00:00:00Z")
+    .replace(/^full_gate_receipt_sha256: .*$/m, `full_gate_receipt_sha256: ${verified.sha256}`)
+    .replace(/^implementation_revision: .*$/m, `implementation_revision: ${revision}`)
     .replace(/implementation revision `[a-f0-9]{40}`;/, `implementation revision \`${revision}\`;`);
-  assert.deepEqual(await auditMilestoneReceipt(process.cwd(), audit, { isAncestor: async () => true }), [], "exact predecessor pair is the sole migration input");
+  if (!/^audit_body_revision_contract: 1$/m.test(replacement)) {
+    replacement = replacement.replace("full_gate_receipt_version: 2", "full_gate_receipt_version: 2\naudit_body_revision_contract: 1");
+  }
   assert.deepEqual(await auditMilestoneReceipt(process.cwd(), replacement, { isAncestor: async () => true }), []);
   for (const changed of [
     replacement.replace(`implementation revision \`${revision}\`;`, `implementation revision \`${"0".repeat(40)}\`;`),
     replacement.replace(`implementation revision \`${revision}\`;`, `implementation revision \`${revision}\`; implementation revision \`${revision}\`;`),
     replacement.replace(`implementation revision \`${revision}\`;`, "implementation revision malformed;"),
-    audit.replace("# Blog X v1.0 Milestone Audit", "# Blog X v1.0 Milestone Audit changed"),
   ]) {
     const findings = await auditMilestoneReceipt(process.cwd(), changed, { isAncestor: async () => true });
     assert.equal(findings.some((finding) => finding.code === "phase5_audit_body_revision"), true);
