@@ -908,6 +908,7 @@ async function runPhase6DataChecks(context) {
   const selection = phase6Selection("data");
   await runStep(context, "typecheck workspace", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
   await runStep(context, "build workspace", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin } });
+  await resetAcceptanceData(context, "clear Phase 6 data acceptance fixtures");
   for (const [variable, file] of selection.databaseSuites) await runDatabaseSuite(context, variable, file);
   for (const file of selection.nodeSuites) {
     const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });

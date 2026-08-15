@@ -165,6 +165,7 @@ test("Phase 6 data selection is exact, once-only, and separate from Phase 5 rece
   assert.match(runner, /--internal-run", "--phase6-data", "--skip-build/);
   assert.match(runner, /LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED/);
   assert.match(phase6, /runDatabaseSuite/);
+  assert.match(phase6, /resetAcceptanceData/);
   assert.match(phase6, /assertSemanticTap/);
   assert.match(phase6, /check:boundaries/);
   assert.match(phase6, /--expect-blocked/);
