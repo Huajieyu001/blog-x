@@ -168,6 +168,8 @@ test("Phase 6 data selection is exact, once-only, and separate from Phase 5 rece
   assert.match(phase6, /assertSemanticTap/);
   assert.match(phase6, /check:boundaries/);
   assert.match(phase6, /--expect-blocked/);
+  assert.match(runner, /options\.phase6Data && !options\.skipBuild\) \{\s*await preflightOfflinePrerequisites/s);
+  assert.match(runner, /context\.phase6Data[\s\S]*\/workspace\/apps\/api:ro[\s\S]*\/workspace\/packages\/contracts:ro/);
   for (const receiptCapability of [
     "acquirePhase5ReceiptWriterLock",
     "createPhase5SuiteManifest",

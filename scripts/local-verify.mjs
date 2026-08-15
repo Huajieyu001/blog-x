@@ -521,10 +521,16 @@ async function resetAcceptanceData(context, label) {
 }
 
 async function runDatabaseSuite(context, variable, file) {
-  const result = await compose(context, `run ${file}`, "exec", "-T",
+  const authority = [
     "-e", `DATABASE_URL=${context.databaseUrl}`,
     "-e", `${variable}=${context.databaseUrl}`,
-    "api", ...semanticTestCommand(file));
+  ];
+  const result = context.phase6Data
+    ? await compose(context, `run ${file}`, "run", "--rm", "-T",
+        "--volume", `${resolve(root, "apps/api")}:/workspace/apps/api:ro`,
+        "--volume", `${resolve(root, "packages/contracts")}:/workspace/packages/contracts:ro`,
+        ...authority, "api", ...semanticTestCommand(file))
+    : await compose(context, `run ${file}`, "exec", "-T", ...authority, "api", ...semanticTestCommand(file));
   assertSemanticTap(result.combined);
   recordPhase5Command(context, file, "node-tap-v13", result);
 }
@@ -1139,6 +1145,7 @@ async function runSingle(options) {
     secrets: [],
     children: [],
     implementationRevision: options.implementationRevision,
+    phase6Data: options.phase6Data,
   };
   context.secrets.push(context.password, context.databaseUrl);
   if (context.publicOrigin === context.internalApiOrigin) throw new Error("public and internal API origins must remain separate");
@@ -1146,13 +1153,17 @@ async function runSingle(options) {
   let phase5Receipt;
 
   try {
-    if (options.phase5Full && !options.skipBuild) {
+    if (options.phase6Data && !options.skipBuild) {
+      await preflightOfflinePrerequisites(context);
+      process.stdout.write("[local-verify] use prevalidated verifier dependency images with read-only committed Phase 6 sources\n");
+    }
+    else if (options.phase5Full && !options.skipBuild) {
       await preflightOfflinePrerequisites(context);
       process.stdout.write("[local-verify] use prevalidated local verifier images for the Phase 5 offline gate\n");
     }
     else if ((options.phase4Mode === "full" || options.phase5Media) && !options.skipBuild) await preflightOfflinePrerequisites(context);
     else if (["operations", "restore"].includes(options.phase4Mode) && !options.skipBuild) await preflightCachedImages(context);
-    if (!options.skipBuild && !options.phase5Full) await compose(context, "build local API and Web images", "build", "api", "web");
+    if (!options.skipBuild && !options.phase5Full && !options.phase6Data) await compose(context, "build local API and Web images", "build", "api", "web");
     await compose(context, "start isolated PostgreSQL", "up", "-d", "--wait", "postgres");
     if (options.interruptionCheck) await interruptionCheck(context);
     else {
