@@ -15,6 +15,11 @@ const revisionPattern = /^[a-f0-9]{40}$/;
 const requiredCommand = Object.freeze(["corepack", "pnpm", "local:verify", "--", "--phase5-full", "--interruption-check", "--parallel-check"]);
 const requiredScope = "local-generated-production-pipeline-and-fake-fault-only";
 const lockAuthorities = new WeakSet();
+const lifecycleEventNames = new Set([
+  "recovery-guard-acquired",
+  "lock-created-before-readback",
+  "lock-release-before-ownership-check",
+]);
 
 function fail(message) { throw new Error(`phase5 receipt ${message}`); }
 
@@ -173,6 +178,23 @@ function validateReceiptPath(value) {
   return target;
 }
 
+function lifecycleObserverFor(target, value) {
+  if (value === undefined) return null;
+  if (typeof value !== "function") fail("test lifecycle observer is invalid");
+  if (target === fixedReceiptPath) fail("test lifecycle observer requires a generated receipt target");
+  return value;
+}
+
+async function observeLifecycle(observer, name, metadata) {
+  if (!observer) return;
+  if (!lifecycleEventNames.has(name)) fail("test lifecycle observer event is invalid");
+  const frozen = Object.freeze({ ...metadata, name });
+  let result;
+  try { result = observer(name, frozen); } catch { fail("test lifecycle observer threw"); }
+  try { result = await result; } catch { fail("test lifecycle observer rejected"); }
+  if (result !== undefined) fail("test lifecycle observer must resolve undefined");
+}
+
 async function assertSafeParent(target) {
   const parent = dirname(target);
   const info = await lstat(parent).catch(() => fail("parent is missing"));
@@ -235,25 +257,42 @@ async function readLock(path) {
   try { return lockRecord(JSON.parse((await readFile(path, "utf8")))); } catch (error) { if (error instanceof Error && error.message.startsWith("phase5 receipt")) throw error; fail("writer lock is unreadable"); }
 }
 
-async function createLock(path, inspector) {
+async function safelyUnlinkHeldLock(lock, changedMessage) {
+  try {
+    const current = await assertSafeLockPath(lock.path);
+    const record = await readLock(lock.path);
+    if (current.dev !== lock.dev || current.ino !== lock.ino || record.ownerNonce !== lock.record.ownerNonce) fail(changedMessage);
+    await unlink(lock.path);
+    await lstat(lock.path).then(() => fail("writer lock was not removed")).catch((error) => { if (error?.code !== "ENOENT") throw error; });
+  } finally { await lock.handle.close().catch(() => undefined); }
+}
+
+async function createLock(path, inspector, observer, role) {
   const record = {
     format: "blog-x-phase5-receipt-writer-lock", version: 1, ownerPid: process.pid,
     ownerBirthIdentity: (await inspector(process.pid)).birthIdentity, ownerNonce: randomBytes(24).toString("hex"), acquiredAt: new Date().toISOString(),
   };
   if (!record.ownerBirthIdentity) fail("writer lock owner birth identity is unavailable");
   const handle = await open(path, "wx", 0o600);
+  let held;
   try {
+    const created = await handle.stat();
+    held = { path, handle, dev: created.dev, ino: created.ino, record };
     await handle.writeFile(JSON.stringify(record));
     await handle.sync();
     const info = await handle.stat();
     if (!info.isFile() || (info.mode & 0o077) !== 0 || (typeof process.getuid === "function" && info.uid !== process.getuid())) fail("writer lock is unsafe");
+    await observeLifecycle(observer, "lock-created-before-readback", { role, dev: String(info.dev), ino: String(info.ino), ownerNonce: record.ownerNonce });
     const byPath = await assertSafeLockPath(path);
     const readback = await readLock(path);
     if (byPath.dev !== info.dev || byPath.ino !== info.ino || readback.ownerNonce !== record.ownerNonce) fail("writer lock readback differs");
     return { path, handle, dev: info.dev, ino: info.ino, record };
   } catch (error) {
-    await handle.close().catch(() => undefined);
-    await unlink(path).catch(() => undefined);
+    if (held) {
+      try { await safelyUnlinkHeldLock(held, "writer lock ownership changed during create cleanup"); } catch (cleanupError) { throw cleanupError; }
+    } else {
+      await handle.close().catch(() => undefined);
+    }
     throw error;
   }
 }
@@ -273,19 +312,21 @@ async function removeDeadLock(path, inspector) {
     const current = await assertSafeLockPath(path);
     const currentRecord = await readLock(path);
     if (current.dev !== held.dev || current.ino !== held.ino || currentRecord.ownerNonce !== record.ownerNonce) fail("writer lock changed during stale recovery");
+    if (await lockIsLive(currentRecord, inspector)) fail("writer lock became live during stale recovery");
     await unlink(path);
     await lstat(path).then(() => fail("writer lock was not removed")).catch((error) => { if (error?.code !== "ENOENT") throw error; });
     return true;
   } finally { await handle.close().catch(() => undefined); }
 }
 
-async function releaseRawLock(lock) {
-  const current = await assertSafeLockPath(lock.path);
-  const record = await readLock(lock.path);
-  if (current.dev !== lock.dev || current.ino !== lock.ino || record.ownerNonce !== lock.record.ownerNonce) fail("writer lock ownership changed before release");
-  await unlink(lock.path);
-  await lstat(lock.path).then(() => fail("writer lock was not released")).catch((error) => { if (error?.code !== "ENOENT") throw error; });
-  await lock.handle.close().catch(() => undefined);
+async function releaseRawLock(lock, observer, role) {
+  try {
+    await observeLifecycle(observer, "lock-release-before-ownership-check", { role, dev: String(lock.dev), ino: String(lock.ino), ownerNonce: lock.record.ownerNonce });
+  } catch (error) {
+    try { await safelyUnlinkHeldLock(lock, "writer lock ownership changed during observer cleanup"); } catch (cleanupError) { throw cleanupError; }
+    throw error;
+  }
+  await safelyUnlinkHeldLock(lock, "writer lock ownership changed before release");
 }
 
 async function readPredecessor(target) {
@@ -305,18 +346,19 @@ function samePredecessor(left, right) { return Boolean(left && right) && left.ex
 
 export async function acquirePhase5ReceiptWriterLock(options = {}) {
   const target = validateReceiptPath(options.receiptPath ?? fixedReceiptPath);
+  const observer = lifecycleObserverFor(target, options.testLifecycleObserver);
   await assertSafeParent(target);
   const writerPath = `${target}.lock`;
   const recoveryPath = `${writerPath}.recovery`;
   const inspector = options.processInspector ?? defaultProcessInspector;
   const createWriter = async () => {
-    const raw = await createLock(writerPath, inspector);
+    const raw = await createLock(writerPath, inspector, observer, "writer");
     if (await lstat(recoveryPath).then(() => true).catch((error) => error?.code === "ENOENT" ? false : Promise.reject(error))) {
-      await releaseRawLock(raw);
+      await releaseRawLock(raw, observer, "writer");
       fail("writer lock recovery is in progress");
     }
     const expectedPredecessor = await readPredecessor(target);
-    const authority = { receiptPath: target, lockPath: writerPath, raw, expectedPredecessor };
+    const authority = { receiptPath: target, lockPath: writerPath, raw, expectedPredecessor, observer };
     lockAuthorities.add(authority);
     return authority;
   };
@@ -324,32 +366,33 @@ export async function acquirePhase5ReceiptWriterLock(options = {}) {
     if (error?.code !== "EEXIST") throw error;
   }
   let guard;
-  try { guard = await createLock(recoveryPath, inspector); } catch (error) {
+  try { guard = await createLock(recoveryPath, inspector, observer, "recovery"); } catch (error) {
     if (error?.code !== "EEXIST") throw error;
     const existing = await readLock(recoveryPath);
     if (await lockIsLive(existing, inspector)) fail("writer lock recovery has a live owner");
     await removeDeadLock(recoveryPath, inspector);
-    guard = await createLock(recoveryPath, inspector);
+    guard = await createLock(recoveryPath, inspector, observer, "recovery");
   }
   try {
+    await observeLifecycle(observer, "recovery-guard-acquired", { role: "recovery", dev: String(guard.dev), ino: String(guard.ino), ownerNonce: guard.record.ownerNonce });
     const existing = await lstat(writerPath).then(() => true).catch((error) => error?.code === "ENOENT" ? false : Promise.reject(error));
     if (existing) {
       const record = await readLock(writerPath);
       if (await lockIsLive(record, inspector)) fail("writer lock has a live owner");
       await removeDeadLock(writerPath, inspector);
     }
-    const raw = await createLock(writerPath, inspector);
+    const raw = await createLock(writerPath, inspector, observer, "writer");
     const expectedPredecessor = await readPredecessor(target);
-    const authority = { receiptPath: target, lockPath: writerPath, raw, expectedPredecessor };
+    const authority = { receiptPath: target, lockPath: writerPath, raw, expectedPredecessor, observer };
     lockAuthorities.add(authority);
     return authority;
-  } finally { await releaseRawLock(guard); }
+  } finally { await releaseRawLock(guard, observer, "recovery"); }
 }
 
 export async function releasePhase5ReceiptWriterLock(authority) {
   if (!authority || !lockAuthorities.has(authority)) fail("writer lock authority is invalid");
   lockAuthorities.delete(authority);
-  await releaseRawLock(authority.raw);
+  await releaseRawLock(authority.raw, authority.observer, "writer");
 }
 
 async function assertAuthority(authority, target, expectedPredecessor) {

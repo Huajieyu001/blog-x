@@ -57,7 +57,7 @@ async function receiptRoot(context) {
 }
 
 function passedAudit(receiptSha256, completedAt) {
-  return `---\nmilestone: v1.0\naudited: 2026-08-10T14:31:00Z\nstatus: passed\nfull_gate_receipt_version: 2\nfull_gate_receipt_path: ops/phase5-full-gate-receipt.json\nfull_gate_receipt_sha256: ${receiptSha256}\nimplementation_revision: ${implementationRevision}\n---\n\n# Audit\n\nReceipt completed at ${completedAt}.\n`;
+  return `---\nmilestone: v1.0\naudited: 2026-08-10T14:31:00Z\nstatus: passed\nfull_gate_receipt_version: 2\nfull_gate_receipt_path: ops/phase5-full-gate-receipt.json\nfull_gate_receipt_sha256: ${receiptSha256}\nimplementation_revision: ${implementationRevision}\naudit_body_revision_contract: 1\n---\n\n# Audit\n\n## Receipt-Bound Full Gate\n\n- implementation revision \`${implementationRevision}\`;\n- receipt completed at ${completedAt}.\n`;
 }
 
 async function writeWithLock(value, target, options = {}) {

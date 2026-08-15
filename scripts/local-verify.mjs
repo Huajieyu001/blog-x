@@ -144,6 +144,8 @@ export function phase5Selection(mode) {
       ...media.nodeSuites,
       "scripts/backup/production.test.mjs",
       "scripts/phase5-receipt.test.mjs",
+      "scripts/phase5-receipt-prohibitions.test.mjs",
+      "scripts/phase5-receipt-concurrency.test.mjs",
     ]),
     databaseSuite: media.databaseSuite,
     browserSuites: uniqueSuites([...phase4.browserSuites, ...media.browserSuites]),
@@ -940,7 +942,7 @@ export async function createPhase5SuiteManifest() {
     path,
     sourceSha256: hashText(await readFile(resolve(root, path))),
   })));
-  if (new Set(suites.map((suite) => suite.path)).size !== suites.length || suites.length !== 28) throw new Error("Phase 5 suite manifest must contain exactly 28 unique sources");
+  if (new Set(suites.map((suite) => suite.path)).size !== suites.length || suites.length !== 30) throw new Error("Phase 5 suite manifest must contain exactly 30 unique sources");
   return { format: "blog-x-phase5-suite-manifest", version: 2, suites };
 }
 
@@ -1028,7 +1030,12 @@ async function runPhase5FullChecks(context) {
   context.phase5Recorder = createPhase5ResultRecorder(manifest, context.secrets);
   await runPhase4FullChecks(context, { includePhase5Legacy: true });
   await runPhase5MediaChecks(context, { includeRestore: false });
-  for (const file of ["scripts/backup/production.test.mjs", "scripts/phase5-receipt.test.mjs"]) {
+  for (const file of [
+    "scripts/backup/production.test.mjs",
+    "scripts/phase5-receipt.test.mjs",
+    "scripts/phase5-receipt-prohibitions.test.mjs",
+    "scripts/phase5-receipt-concurrency.test.mjs",
+  ]) {
     const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
     assertSemanticTap(result.combined);
     recordPhase5Command(context, file, "node-tap-v13", result);

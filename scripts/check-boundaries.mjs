@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +12,8 @@ const serverAddresses = [
   [124, 222, 91, 230].join("."),
 ];
 const frozenAddress = serverAddresses[0];
+const legacyAuditSha256 = "9b6191dd45837f5e7f5045ef865460a16f714287b5825e5a1f8cc98af4d9b2d8";
+const legacyReceiptSha256 = "9c0aa9943017604ce4b25a25546355890afbbc0a0a8ba5289a7055918df79ee4";
 
 function operationalSurface(path) {
   return path === "README.md"
@@ -52,6 +55,8 @@ export async function auditMilestoneReceipt(root, content, options = {}) {
   const receiptPath = options.receiptPath ?? resolve(root, expectedPath);
   let verified;
   try { verified = await verifyPhase5Receipt(receiptPath); } catch { return [issue("phase5_audit_receipt_missing", ".planning/v1.0-MILESTONE-AUDIT.md", "passed audit requires a strict verified Phase 5 receipt")]; }
+  const contentSha256 = createHash("sha256").update(content).digest("hex");
+  const legacyMigrationPair = contentSha256 === legacyAuditSha256 && verified.sha256 === legacyReceiptSha256;
   const declaredVersion = frontmatter.full_gate_receipt_version;
   if (declaredVersion !== undefined && declaredVersion !== "2") {
     issues.push(issue("phase5_audit_receipt_version", ".planning/v1.0-MILESTONE-AUDIT.md", "a migrated passed audit requires receipt version 2"));
@@ -61,6 +66,14 @@ export async function auditMilestoneReceipt(root, content, options = {}) {
   }
   if (frontmatter.full_gate_receipt_sha256 !== verified.sha256 || frontmatter.implementation_revision !== verified.receipt.implementationRevision) {
     issues.push(issue("phase5_audit_receipt_mismatch", ".planning/v1.0-MILESTONE-AUDIT.md", "passed audit receipt digest and implementation revision must match verified bytes"));
+  }
+  if (!legacyMigrationPair) {
+    const section = /(?:^|\n)## Receipt-Bound Full Gate\s*\n([\s\S]*?)(?=\n## |$)/u.exec(content)?.[1] ?? "";
+    const revisions = [...section.matchAll(/implementation revision\s+`([a-f0-9]{40})`/giu)].map((match) => match[1]);
+    if (frontmatter.audit_body_revision_contract !== "1" || revisions.length !== 1
+      || revisions[0] !== frontmatter.implementation_revision || revisions[0] !== verified.receipt.implementationRevision) {
+      issues.push(issue("phase5_audit_body_revision", ".planning/v1.0-MILESTONE-AUDIT.md", "passed audit body must cite exactly one receipt-derived implementation revision"));
+    }
   }
   if (!isIsoAuditTimestamp(frontmatter.audited) || Date.parse(frontmatter.audited) < Date.parse(verified.receipt.completedAt)) {
     issues.push(issue("phase5_audit_timestamp", ".planning/v1.0-MILESTONE-AUDIT.md", "passed audit must follow receipt completion"));

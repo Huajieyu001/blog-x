@@ -4,11 +4,18 @@ import { randomBytes } from "node:crypto";
 import { lstat, mkdtemp, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import test, { afterEach } from "node:test";
 import { acquirePhase5ReceiptWriterLock, releasePhase5ReceiptWriterLock } from "./phase5-receipt.mjs";
 
 const workerPath = join(process.cwd(), "scripts/helpers/phase5-receipt-parent-worker.mjs");
 const timeoutMs = 4000;
+const livePeers = new Set();
+
+afterEach(async () => {
+  const peers = [...livePeers];
+  for (const peer of peers) peer.child.kill("SIGKILL");
+  await Promise.all(peers.map((peer) => peer.close().catch(() => undefined)));
+});
 
 async function receiptRoot(context) {
   const root = await mkdtemp(join(tmpdir(), "blog-x-phase5-receipt-"));
@@ -21,17 +28,25 @@ class Peer {
     this.child = fork(workerPath, [action, receiptPath, observedEvent], { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe", "ipc"] });
     this.queue = [];
     this.waiters = [];
+    livePeers.add(this);
     this.child.on("message", (message) => {
       const index = this.waiters.findIndex(({ predicate }) => predicate(message));
       if (index >= 0) this.waiters.splice(index, 1)[0].accept(message);
       else this.queue.push(message);
+    });
+    this.child.on("close", () => {
+      for (const waiter of this.waiters.splice(0)) waiter.reject(new Error("worker closed before the awaited IPC event"));
     });
   }
   wait(predicate, label) {
     const index = this.queue.findIndex(predicate);
     if (index >= 0) return Promise.resolve(this.queue.splice(index, 1)[0]);
     return new Promise((accept, reject) => {
-      const waiter = { predicate, accept: (value) => { clearTimeout(timer); accept(value); } };
+      const waiter = {
+        predicate,
+        accept: (value) => { clearTimeout(timer); accept(value); },
+        reject: (error) => { clearTimeout(timer); reject(error); },
+      };
       this.waiters.push(waiter);
       const timer = setTimeout(() => {
         const at = this.waiters.indexOf(waiter);
@@ -44,10 +59,13 @@ class Peer {
   type(type) { return this.wait((message) => message?.type === type, type); }
   release(token) { this.child.send({ type: "release", token }); }
   async close() {
-    if (this.child.exitCode !== null || this.child.signalCode !== null) return { code: this.child.exitCode, signal: this.child.signalCode };
+    if (this.child.exitCode !== null || this.child.signalCode !== null) {
+      livePeers.delete(this);
+      return { code: this.child.exitCode, signal: this.child.signalCode };
+    }
     return new Promise((accept, reject) => {
       const timer = setTimeout(() => reject(new Error("deadlock guard expired waiting for process close")), timeoutMs);
-      this.child.once("close", (code, signal) => { clearTimeout(timer); accept({ code, signal }); });
+      this.child.once("close", (code, signal) => { clearTimeout(timer); livePeers.delete(this); accept({ code, signal }); });
     });
   }
 }
@@ -71,9 +89,14 @@ test("two barrier-released parents permit exactly one writer while the winner ho
   const peers = [new Peer("write", target.receiptPath), new Peer("write", target.receiptPath)];
   await Promise.all(peers.map(ready));
   peers.forEach(start);
-  const winner = await Promise.race(peers.map(async (peer) => { await peer.type("acquired"); return peer; }));
-  const loser = peers.find((peer) => peer !== winner);
-  await fail(loser, /live owner|recovery.*live owner/i);
+  const outcomes = await Promise.all(peers.map((peer) => peer.wait((message) => ["acquired", "error"].includes(message?.type), "acquired or rejected")));
+  assert.equal(outcomes.filter((message) => message.type === "acquired").length, 1);
+  assert.equal(outcomes.filter((message) => message.type === "error").length, 1);
+  const winnerIndex = outcomes.findIndex((message) => message.type === "acquired");
+  const winner = peers[winnerIndex];
+  const loser = peers[1 - winnerIndex];
+  assert.match(outcomes[1 - winnerIndex].message, /live owner|recovery (?:has a live owner|is in progress)/i);
+  assert.notEqual((await loser.close()).code, 0);
   await finish(winner);
   assert.ok((await readFile(target.receiptPath)).length > 0);
 });
@@ -192,7 +215,7 @@ test("observer is wait-only, closed-event, generated-target-only, and fail-close
   await ready(unknown); start(unknown); await unknown.type("event");
   unknown.release("unknown-token");
   await unknown.type("protocol-error");
-  await fail(unknown, /unknown|duplicated/i);
+  await fail(unknown, /observer rejected/i);
 
   const canonical = join(process.cwd(), "ops/phase5-full-gate-receipt.json");
   let canonicalAuthority;

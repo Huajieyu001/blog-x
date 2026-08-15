@@ -142,11 +142,24 @@ test("Phase 5 full selection is an exact once-only Phase 1-5 superset with a ter
 
 test("a replacement passed audit rejects body/frontmatter receipt revision disagreement", async () => {
   const audit = await readFile(join(process.cwd(), ".planning/v1.0-MILESTONE-AUDIT.md"), "utf8");
+  const revision = /implementation_revision: ([a-f0-9]{40})/.exec(audit)?.[1];
+  assert.match(revision ?? "", /^[a-f0-9]{40}$/);
   const replacement = audit
     .replace("full_gate_receipt_version: 2", "full_gate_receipt_version: 2\naudit_body_revision_contract: 1")
-    .replace(/implementation revision `[a-f0-9]{40}`;/, `implementation revision \`${"0".repeat(40)}\`;`);
-  const findings = await auditMilestoneReceipt(process.cwd(), replacement, { isAncestor: async () => true });
-  assert.equal(findings.some((finding) => finding.code === "phase5_audit_body_revision"), true);
+    .replace(/implementation revision `[a-f0-9]{40}`;/, `implementation revision \`${revision}\`;`);
+  assert.deepEqual(await auditMilestoneReceipt(process.cwd(), audit, { isAncestor: async () => true }), [], "exact predecessor pair is the sole migration input");
+  assert.deepEqual(await auditMilestoneReceipt(process.cwd(), replacement, { isAncestor: async () => true }), []);
+  for (const changed of [
+    replacement.replace(`implementation revision \`${revision}\`;`, `implementation revision \`${"0".repeat(40)}\`;`),
+    replacement.replace(`implementation revision \`${revision}\`;`, `implementation revision \`${revision}\`; implementation revision \`${revision}\`;`),
+    replacement.replace(`implementation revision \`${revision}\`;`, "implementation revision malformed;"),
+    audit.replace("# Blog X v1.0 Milestone Audit", "# Blog X v1.0 Milestone Audit changed"),
+  ]) {
+    const findings = await auditMilestoneReceipt(process.cwd(), changed, { isAncestor: async () => true });
+    assert.equal(findings.some((finding) => finding.code === "phase5_audit_body_revision"), true);
+  }
+  const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
+  assert.doesNotMatch(runner, /testLifecycleObserver/);
 });
 
 test("Phase 4 full selection explicitly names security, operations, restore, release, database, and browser evidence", () => {
