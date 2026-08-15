@@ -1,6 +1,12 @@
-import { and, count, desc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
-import { publicDistributionSchema, publicPostListResponseSchema, publicPostPageSize } from "@blog-x/contracts";
+import {
+  publicDistributionSchema,
+  publicPostListResponseSchema,
+  publicPostPageSize,
+  publicSearchPageSize,
+  publicSearchResponseSchema,
+} from "@blog-x/contracts";
 import * as schema from "../db/schema.js";
 
 type Database = NodePgDatabase<typeof schema>;
@@ -30,7 +36,69 @@ const publicDetailSelection = {
   coverDecorative: schema.articles.coverDecorative,
 };
 
+type PublicCardRow = {
+  id: string;
+  title: string;
+  summary: string;
+  slug: string;
+  publishedAt: Date | null;
+  status: string;
+  categoryId: string | null;
+  categoryName: string | null;
+  categorySlug: string | null;
+};
+
+export class SearchUnavailableError extends Error {
+  constructor(cause?: unknown) {
+    super("public search unavailable", { cause });
+    this.name = "SearchUnavailableError";
+  }
+}
+
+function escapeLikeLiteral(value: string) {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
+
+function isStatementCancellation(error: unknown): error is { code: "57014" } {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "57014";
+}
+
 export function createPublicRepository(db: Database) {
+  async function hydratePublicCards(tx: Pick<Database, "select">, rows: PublicCardRow[]) {
+    const tagsByArticle = new Map<string, Array<{ name: string; slug: string }>>();
+    if (rows.length > 0) {
+      const tagRows = await tx.select({
+        articleId: schema.articleTags.articleId,
+        id: schema.tags.id,
+        name: schema.tags.name,
+        slug: schema.tags.slug,
+      }).from(schema.articleTags)
+        .innerJoin(schema.tags, eq(schema.articleTags.tagId, schema.tags.id))
+        .where(inArray(schema.articleTags.articleId, rows.map((row) => row.id)))
+        .orderBy(schema.articleTags.articleId, schema.tags.name, schema.tags.id);
+      for (const tag of tagRows) {
+        const articleTags = tagsByArticle.get(tag.articleId) ?? [];
+        articleTags.push({ name: tag.name, slug: tag.slug });
+        tagsByArticle.set(tag.articleId, articleTags);
+      }
+    }
+
+    return rows.map((row) => {
+      if (!row.publishedAt || row.status !== "published") throw new Error("public predicate returned a non-public article");
+      return {
+        title: row.title,
+        summary: row.summary,
+        slug: row.slug,
+        status: "published" as const,
+        publishedAt: row.publishedAt.toISOString(),
+        category: row.categoryId && row.categoryName && row.categorySlug
+          ? { name: row.categoryName, slug: row.categorySlug }
+          : null,
+        tags: tagsByArticle.get(row.id) ?? [],
+      };
+    });
+  }
+
   async function listPage(page: number) {
     return db.transaction(async (tx) => {
       const totals = await tx.select({ totalItems: count() }).from(schema.articles).where(publicPredicate);
@@ -51,27 +119,88 @@ export function createPublicRepository(db: Database) {
         pageSize: publicPostPageSize,
         totalItems,
         totalPages: Math.ceil(totalItems / publicPostPageSize),
-        items: await Promise.all(rows.map(async (row) => {
-          if (!row.publishedAt || row.status !== "published") throw new Error("public predicate returned a non-public article");
-          const tags = await tx.select({ name: schema.tags.name, slug: schema.tags.slug })
-            .from(schema.articleTags)
-            .innerJoin(schema.tags, eq(schema.articleTags.tagId, schema.tags.id))
-            .where(eq(schema.articleTags.articleId, row.id))
-            .orderBy(schema.tags.name);
-          return {
-            title: row.title,
-            summary: row.summary,
-            slug: row.slug,
-            status: "published" as const,
-            publishedAt: row.publishedAt.toISOString(),
-            category: row.categoryId && row.categoryName && row.categorySlug
-              ? { name: row.categoryName, slug: row.categorySlug }
-              : null,
-            tags,
-          };
-        })),
+        items: await hydratePublicCards(tx, rows),
       });
     }, { isolationLevel: "repeatable read", accessMode: "read only" });
+  }
+
+  async function searchPage(query: string, page: number) {
+    if (query.length === 0) {
+      return publicSearchResponseSchema.parse({
+        state: "empty_query",
+        query,
+        page,
+        pageSize: publicSearchPageSize,
+        totalItems: 0,
+        totalPages: 0,
+        items: [],
+      });
+    }
+
+    const pattern = `%${escapeLikeLiteral(query)}%`;
+    const titleMatch = sql<boolean>`normalize(${schema.articles.title}, NFC) ILIKE ${pattern} ESCAPE '\\'`;
+    const summaryMatch = sql<boolean>`normalize(${schema.articles.summary}, NFC) ILIKE ${pattern} ESCAPE '\\'`;
+    const markdownMatch = sql<boolean>`normalize(${schema.articles.markdown}, NFC) ILIKE ${pattern} ESCAPE '\\'`;
+    const matchPredicate = or(titleMatch, summaryMatch, markdownMatch);
+    const matchClass = sql<number>`CASE WHEN ${titleMatch} THEN 3 WHEN ${summaryMatch} THEN 2 WHEN ${markdownMatch} THEN 1 ELSE 0 END`;
+
+    try {
+      return await db.transaction(async (tx) => {
+        await tx.execute(sql`SET LOCAL statement_timeout = '2000ms'`);
+        const totals = await tx.select({ totalItems: count() })
+          .from(schema.articles)
+          .where(and(publicPredicate, matchPredicate));
+        const totalItems = totals[0]?.totalItems ?? 0;
+        const totalPages = Math.ceil(totalItems / publicSearchPageSize);
+        if (totalItems === 0) {
+          return publicSearchResponseSchema.parse({
+            state: "no_results",
+            query,
+            page,
+            pageSize: publicSearchPageSize,
+            totalItems,
+            totalPages,
+            items: [],
+          });
+        }
+
+        if (page > totalPages) {
+          return publicSearchResponseSchema.parse({
+            state: "page_out_of_range",
+            query,
+            page,
+            pageSize: publicSearchPageSize,
+            totalItems,
+            totalPages,
+            items: [],
+          });
+        }
+
+        const rows = await tx.select({
+          ...publicListSelection,
+          categoryName: schema.categories.name,
+          categorySlug: schema.categories.slug,
+        }).from(schema.articles)
+          .leftJoin(schema.categories, eq(schema.articles.categoryId, schema.categories.id))
+          .where(and(publicPredicate, matchPredicate))
+          .orderBy(desc(matchClass), desc(schema.articles.publishedAt), desc(schema.articles.id))
+          .limit(publicSearchPageSize)
+          .offset((page - 1) * publicSearchPageSize);
+
+        return publicSearchResponseSchema.parse({
+          state: "results",
+          query,
+          page,
+          pageSize: publicSearchPageSize,
+          totalItems,
+          totalPages,
+          items: await hydratePublicCards(tx, rows),
+        });
+      }, { isolationLevel: "repeatable read", accessMode: "read only" });
+    } catch (error) {
+      if (isStatementCancellation(error)) throw new SearchUnavailableError(error);
+      throw error;
+    }
   }
 
   async function findDetailBySlug(slug: string) {
@@ -181,7 +310,7 @@ export function createPublicRepository(db: Database) {
     }, { isolationLevel: "repeatable read", accessMode: "read only" });
   }
 
-  return { distribution, findDetailBySlug, listPage };
+  return { distribution, findDetailBySlug, listPage, searchPage };
 }
 
 export type PublicRepository = ReturnType<typeof createPublicRepository>;
