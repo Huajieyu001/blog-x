@@ -1,6 +1,6 @@
 # Requirements: Blog X v1.1 Content Discovery
 
-**Defined:** 2026-08-15  
+**Defined:** 2026-08-15
 **Core Value:** 博主能够可靠地发布和保存 Markdown 内容，访客能够持续、快速地通过博客域名阅读已发布文章。
 
 ## v1.1 Requirements
