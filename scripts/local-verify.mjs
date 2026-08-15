@@ -1250,6 +1250,11 @@ async function parallelCheck(options) {
   if (options.phase6Data && results.some((result) => !result.stdout.includes("LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED"))) {
     throw new Error("parallel Phase 6 child omitted its terminal data-pass/BLOCKED marker");
   }
+  if (options.phase6Data) {
+    for (const namespace of [first, second]) {
+      process.stdout.write(`[local-verify] ${namespace} parallel child passed; LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED\n`);
+    }
+  }
   await Promise.all([confirmGeneratedProjectAbsent(first), confirmGeneratedProjectAbsent(second)]);
 }
 

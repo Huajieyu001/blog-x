@@ -198,6 +198,7 @@ test("Phase 6 interruption and parallel paths keep exact generated authority", a
   assert.match(parallel, /firstPort === secondPort/);
   assert.match(parallel, /--internal-run", "--phase6-data", "--skip-build/);
   assert.match(parallel, /LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED/);
+  assert.match(parallel, /parallel child passed; LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED/);
   assert.match(parallel, /confirmGeneratedProjectAbsent/);
   assert.doesNotMatch(parallel, /phase5|receipt/i);
 });
