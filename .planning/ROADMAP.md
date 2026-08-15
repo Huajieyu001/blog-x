@@ -2,7 +2,7 @@
 
 ## Overview
 
-Blog X 采用四个纵向 MVP 阶段交付。第一阶段在本地建立完整的写作发布闭环；第二阶段补齐内容组织、媒体和跨设备阅读；第三阶段使内容可被搜索引擎、订阅工具和迁移流程可靠消费；第四阶段完成安全、备份、监控与受控生产发布门禁。主服务器在用户明确解除冻结前不属于任何阶段的可操作环境。
+Blog X 采用五个纵向 MVP 阶段交付。第一阶段在本地建立完整的写作发布闭环；第二阶段补齐内容组织、媒体和跨设备阅读；第三阶段使内容可被搜索引擎、订阅工具和迁移流程可靠消费；第四阶段完成安全、备份、监控与受控生产发布门禁；第五阶段关闭跨阶段集成缺口。主服务器在用户明确解除冻结前不属于任何阶段的可操作环境。
 
 ## Phases
 
@@ -10,7 +10,7 @@ Blog X 采用四个纵向 MVP 阶段交付。第一阶段在本地建立完整�
 - [x] **Phase 2: Complete Reading Experience** - 补齐分类标签、归档、关于页、图片、目录、主题和错误体验。 (completed 2026-08-09)
 - [x] **Phase 3: Distribution and Portability** - 提供 SEO、Sitemap、RSS 和可迁移内容导出。 (completed 2026-08-09)
 - [x] **Phase 4: Secure Operations and Release Gate** - 完成安全加固、备份恢复、监控和受控生产部署准备。 (completed 2026-08-09)
-- [ ] **Phase 5: Integration Gap Closure** - 关闭同源媒体、生产备份和发布门禁顺序的 v1.0 里程碑阻塞缺口。
+- [x] **Phase 5: Integration Gap Closure** - 关闭同源媒体、生产备份和发布门禁顺序的 v1.0 里程碑阻塞缺口。 (completed 2026-08-15)
 
 ## Phase Details
 
@@ -195,7 +195,7 @@ Plans:
   3. 发布状态机明确区分 `PRE_RELEASE_READY` 与 `POST_RELEASE_VERIFIED`，发布后证据不再成为发布前 GO 的循环条件，且任何状态都不提供自动部署能力。
   4. Phase 1–5 全量本地验收、跨阶段集成审计和三个已知错误夹具全部通过，真实生产发布状态仍保持 `BLOCKED`。
 
-**Plans:** 4/4 plans executed; actual-result receipt evidence is ready for independent verification
+**Plans:** 5/5 plans executed and independently verified
 
 Plans:
 **Wave 1**
@@ -212,7 +212,11 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [~] 05-04-PLAN.md — 已以执行时捕获的规范化脱敏结果替换合成摘要与固定计数，并按实现、收据、审计顺序重建证据；待独立验证，未标记 Phase 05 完成。
+- [x] 05-04-PLAN.md — 以执行时捕获的规范化脱敏结果替换合成摘要与固定计数，并按实现、收据、审计顺序重建证据。
+
+**Wave 5** *(closes independent verification gaps from Wave 4)*
+
+- [x] 05-05-PLAN.md — 固化收据防伪夹具与跨进程锁恢复回归，消除审计 revision 漂移，并重建最终门禁收据。
 
 ## Progress
 
@@ -222,4 +226,4 @@ Plans:
 | 2. Complete Reading Experience | 6/6 | Complete | 2026-08-09 |
 | 3. Distribution and Portability | 4/4 | Complete    | 2026-08-09 |
 | 4. Secure Operations and Release Gate | 3/3 | Complete    | 2026-08-09 |
-| 5. Integration Gap Closure | 4/4 executed | Evidence rebuilt; independent verification pending |  |
+| 5. Integration Gap Closure | 5/5 | Complete | 2026-08-15 |

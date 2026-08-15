@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 05
-status: ready_for_independent_verification
-stopped_at: Phase 05 plan 05-04 executed; ready for independent verification
-last_updated: "2026-08-14T23:37:30+08:00"
-last_activity: 2026-08-14
-last_activity_desc: Rebuilt Phase 05 receipt evidence from actual execution records and completed a later v2 audit
+status: milestone_complete
+stopped_at: Phase 05 independently verified; v1.0 local milestone complete, production release remains BLOCKED
+last_updated: "2026-08-15T10:05:50+08:00"
+last_activity: 2026-08-15
+last_activity_desc: Independently verified final Phase 05 receipt, race controls, audit binding, and all v1.0 requirements
 progress:
   total_phases: 5
-  completed_phases: 4
-  total_plans: 25
-  completed_plans: 25
+  completed_phases: 5
+  total_plans: 26
+  completed_plans: 26
 current_phase_name: Integration Gap Closure
 ---
 
@@ -23,22 +23,22 @@ current_phase_name: Integration Gap Closure
 See: .planning/PROJECT.md (updated 2026-08-08)
 
 **Core value:** 博主能够可靠地发布和保存 Markdown 内容，访客能够持续、快速地通过博客域名阅读已发布文章。  
-**Current focus:** Phase 05 — Integration Gap Closure (receipt evidence gap)
+**Current focus:** v1.0 local milestone complete; production release remains explicitly blocked pending live authorization and evidence
 
 ## Current Position
 
 Phase: 05 — Integration Gap Closure
-Plan: 4 of 4 executed
-Status: Actual-result receipt v2 and later audit are ready for independent verification; Phase 5 is not complete
-Last activity: 2026-08-14 — retained an actual-record v2 receipt after the exact local gate and audited it later
+Plan: 5 of 5 completed
+Status: Phase 5 independently verified; all v1.0 requirements complete locally, with production release still BLOCKED
+Last activity: 2026-08-15 — independently verified the final 30-result receipt, durable race controls, and later audit
 
-Progress: [████████░░] 80% (4 of 5 phases verified; 4 of 4 Phase 05 plans executed and awaiting independent verification)
+Progress: [██████████] 100% (5 of 5 phases independently verified; production deployment is a separate blocked operation)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 25
+- Total plans completed: 26
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -50,7 +50,7 @@ Progress: [████████░░] 80% (4 of 5 phases verified; 4 of 4 P
 | 02 | 6 | - | - |
 | 03 | 4 | - | - |
 | 04 | 3 | - | - |
-| 05 | 4 | 4 | 34min |
+| 05 | 5 | 11h38m | 2h20m |
 
 **Recent Trend:**
 
@@ -86,6 +86,7 @@ Progress: [████████░░] 80% (4 of 5 phases verified; 4 of 4 P
 | Phase 05 P02 | 19min | 4 tasks | 18 files |
 | Phase 05 P03 | 36min | 4 tasks | 22 files |
 | Phase 05 P04 | 47min | 4 tasks | 12 files |
+| Phase 05 P05 | 9h25m elapsed | 4 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -155,13 +156,13 @@ Decisions are logged in PROJECT.md Key Decisions table.
 
 ### Blockers/Concerns
 
-- [Phase 05 verification] 05-04 已用真实执行结果重建 v2 收据并完成后续审计；独立验证尚未运行，05-VERIFICATION 保持 `gaps_found`，不得据此标记 OPS-05 或 Phase 05 完成。
+- [Phase 05 completion] 最终 v2 收据、并发恢复控制和后续审计已独立验证；本地里程碑完成不构成生产发布授权。
 - [Phase 05] 真实解冻授权、主机基线、安全节点链路、异机目的地/挂载、定时任务与告警激活、TLS、部署和发布后事实仍缺失；canonical release 保持 BLOCKED。
 - [Phase 2+] 副服务器系统、端口、历史数据与私网能力尚未只读核验。
 - [Later] 评论、统计深度、私密内容和精确 RPO/RTO 延后决策，不阻塞 v1。
 
 ## Session Continuity
 
-Last session: 2026-08-14T23:37:30+08:00
-Stopped at: Phase 05 plan 05-04 executed; await independent verification of actual-result receipt evidence
-Resume file: .planning/phases/05-v1-0-integration-gap-closure/05-VERIFICATION.md
+Last session: 2026-08-15T10:05:50+08:00
+Stopped at: Phase 05 passed independent verification; v1.0 local milestone complete and production release BLOCKED
+Resume file: .planning/v1.0-MILESTONE-AUDIT.md
