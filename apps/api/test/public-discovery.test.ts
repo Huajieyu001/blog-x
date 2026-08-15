@@ -1,11 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { publicRelatedPostsResponseSchema, publicSearchQuerySchema, publicSearchResponseSchema } from "@blog-x/contracts";
+import {
+  publicDiscoveryInternalErrorResponseSchema,
+  publicRelatedPostsResponseSchema,
+  publicSearchQuerySchema,
+  publicSearchResponseSchema,
+  publicSearchUnavailableResponseSchema,
+} from "@blog-x/contracts";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
+import Fastify from "fastify";
 import { Pool } from "pg";
-import { createPublicRepository, SearchUnavailableError } from "../src/content/public-repository.js";
+import { buildApp } from "../src/app.js";
+import { createPublicRepository, SearchUnavailableError, type PublicRepository } from "../src/content/public-repository.js";
 import * as schema from "../src/db/schema.js";
+import { publicPostRoutes } from "../src/routes/public-posts.js";
 
 const databaseUrl = process.env.PUBLIC_DISCOVERY_TEST_DATABASE_URL;
 
@@ -92,6 +101,12 @@ test("published search is literal, multilingual, strict, ranked, and stable", as
   }
   for (const forbidden of ["\"markdown\":", "\"score\":", "\"matchedField\":", "\"deletedAt\":", "HIDDEN_"]) assert.doesNotMatch(serialized, new RegExp(forbidden, "i"));
   assert.deepEqual(await repository.searchPage(normalizedQuery("needle"), 1), ranked);
+
+  const app = await buildApp({ resources: { pool, db }, publicOrigin: "http://127.0.0.1:3100" });
+  context.after(async () => { await app.close(); });
+  const routeResult = await app.inject({ method: "GET", url: "/public/search?q=needle&page=1" });
+  assert.equal(routeResult.statusCode, 200, routeResult.body);
+  assert.deepEqual(routeResult.json(), ranked);
 
   for (const [query, expectedSlugs] of [
     ["%", ["literal-percent"]],
@@ -222,6 +237,12 @@ test("related posts require public overlap and use deterministic category/tag/ti
   for (const item of related.items) assert.deepEqual(Object.keys(item).sort(), ["category", "publishedAt", "slug", "status", "summary", "tags", "title"]);
   assert.doesNotMatch(JSON.stringify(related), /RELATED_HIDDEN|score|sharedTagCount|candidateId|sourceId/);
 
+  const app = await buildApp({ resources: { pool, db }, publicOrigin: "http://127.0.0.1:3100" });
+  context.after(async () => { await app.close(); });
+  const routeResult = await app.inject({ method: "GET", url: "/public/articles/source/related" });
+  assert.equal(routeResult.statusCode, 200, routeResult.body);
+  assert.deepEqual(routeResult.json(), related);
+
   for (const hiddenSlug of ["hidden-strong", "hidden-unpublished-related", "hidden-deleted-related", "hidden-null-related", "unknown-related"]) {
     assert.equal(await repository.relatedBySlug(hiddenSlug), null, hiddenSlug);
   }
@@ -256,4 +277,85 @@ test("related posts return an honest empty result when a public source has no ta
     article({ id: "53000000-0000-4000-8000-000000000002", slug: "unrelated-public", title: "Unrelated" }),
   ]);
   assert.deepEqual(await repository.relatedBySlug("isolated-source"), { items: [] });
+});
+
+function stubRepository(overrides: Partial<PublicRepository> = {}): PublicRepository {
+  const unavailable = async () => { throw new Error("unexpected repository call"); };
+  return {
+    distribution: unavailable,
+    findDetailBySlug: unavailable,
+    listPage: unavailable,
+    relatedBySlug: unavailable,
+    searchPage: unavailable,
+    ...overrides,
+  } as PublicRepository;
+}
+
+test("public search route fails closed and never scans for an empty normalized query", async (context) => {
+  const app = Fastify();
+  await app.register(publicPostRoutes, { publicRepository: stubRepository() });
+  context.after(async () => { await app.close(); });
+
+  for (const url of ["/public/search", "/public/search?q=%E3%80%80%09"]) {
+    const response = await app.inject({ method: "GET", url });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.deepEqual(response.json(), { state: "empty_query", query: "", page: 1, pageSize: 10, totalItems: 0, totalPages: 0, items: [] });
+  }
+
+  for (const url of [
+    "/public/search?q=one&q=two",
+    "/public/search?q=one&unknown=value",
+    `/public/search?q=${"x".repeat(257)}`,
+  ]) {
+    const response = await app.inject({ method: "GET", url });
+    assert.equal(response.statusCode, 400, response.body);
+    assert.deepEqual(response.json(), { error: "invalid_search_query" });
+  }
+  for (const url of ["/public/search?q=one&page=0", "/public/search?q=one&page=101", "/public/search?q=one&page=1.5", "/public/search?q=one&page=1&page=2"]) {
+    const response = await app.inject({ method: "GET", url });
+    assert.equal(response.statusCode, 400, response.body);
+    assert.deepEqual(response.json(), { error: "invalid_search_page" });
+  }
+});
+
+test("discovery routes expose only typed 503 and exact opaque route-local 500 bodies", async (context) => {
+  const hostile = "SELECT * FROM articles WHERE title ILIKE '%\\_%'; DATABASE_URL=postgres://fixture:${ROUTE_SECRET}@203.0.113.77:5432/blog_x ENV_SECRET=phase6-secret SERVER=203.0.113.77";
+
+  const timeoutApp = Fastify();
+  await timeoutApp.register(publicPostRoutes, {
+    publicRepository: stubRepository({ searchPage: async () => { throw new SearchUnavailableError(); } }),
+  });
+  context.after(async () => { await timeoutApp.close(); });
+  const timeout = await timeoutApp.inject({ method: "GET", url: "/public/search?q=timeout" });
+  assert.equal(timeout.statusCode, 503, timeout.body);
+  assert.deepEqual(publicSearchUnavailableResponseSchema.parse(timeout.json()), { error: "search_unavailable" });
+
+  for (const [method, url, repository] of [
+    ["search", "/public/search?q=explode", stubRepository({ searchPage: async () => { throw new Error(hostile); } })],
+    ["related", "/public/articles/public-source/related", stubRepository({ relatedBySlug: async () => { throw new Error(hostile); } })],
+  ] as const) {
+    const app = Fastify();
+    await app.register(publicPostRoutes, { publicRepository: repository });
+    const response = await app.inject({ method: "GET", url });
+    assert.equal(response.statusCode, 500, `${method}: ${response.body}`);
+    assert.equal(response.body, '{"error":"discovery_error"}');
+    assert.deepEqual(publicDiscoveryInternalErrorResponseSchema.parse(response.json()), { error: "discovery_error" });
+    const exposed = `${response.statusMessage}\n${JSON.stringify(response.headers)}\n${response.body}`;
+    for (const secret of ["SELECT", "ILIKE", "ROUTE_SECRET", "phase6-secret", "203.0.113.77", "DATABASE_URL", "postgres://"]) {
+      assert.doesNotMatch(exposed, new RegExp(secret.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), `${method} leaked ${secret}`);
+    }
+    await app.close();
+  }
+});
+
+test("related route returns one indistinguishable not_found contract for every unavailable source", async (context) => {
+  const app = Fastify();
+  await app.register(publicPostRoutes, { publicRepository: stubRepository({ relatedBySlug: async () => null }) });
+  context.after(async () => { await app.close(); });
+  const responses = await Promise.all(["unknown", "draft", "unpublished", "deleted", "null-time"].map((slug) => app.inject({ method: "GET", url: `/public/articles/${slug}/related` })));
+  for (const response of responses) {
+    assert.equal(response.statusCode, 404);
+    assert.equal(response.body, '{"error":"not_found"}');
+  }
+  assert.equal(new Set(responses.map((response) => response.body)).size, 1);
 });
