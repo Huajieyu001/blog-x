@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { publicPostListItemSchema } from "./public-posts.js";
+import { publicPostListItemSchema } from "./public-posts";
 
 export const publicSearchPageSize = 10;
 export const publicSearchMaxPage = 100;
