@@ -152,6 +152,21 @@ export function phase5Selection(mode) {
   };
 }
 
+export function phase6Selection(mode) {
+  if (mode !== "data") throw new Error(`Phase 6 selection is not recognized: ${mode}`);
+  return {
+    databaseSuites: [
+      ["PUBLIC_DISCOVERY_TEST_DATABASE_URL", "apps/api/test/public-discovery.test.ts"],
+      ["PUBLIC_LIST_TEST_DATABASE_URL", "apps/api/test/public-list.test.ts"],
+      ["PUBLIC_VISIBILITY_TEST_DATABASE_URL", "apps/api/test/public-visibility.test.ts"],
+      ["AUTH_TEST_DATABASE_URL", "apps/api/test/taxonomy.test.ts"],
+      ["PHASE2_TEST_DATABASE_URL", "apps/api/test/phase2-public-visibility.test.ts"],
+    ],
+    nodeSuites: ["scripts/local-verify.test.mjs"],
+    boundarySuite: "scripts/check-boundaries.mjs",
+  };
+}
+
 export function validateTopologyPolicy(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("topology policy must be an object");
   const policy = value;
@@ -459,8 +474,14 @@ async function interruptionCheck(context) {
   if (!marker) throw new Error("migration did not reach the advisory-lock checkpoint");
   await runStep(context, "interrupt migration process", "docker", ["kill", container]);
   await runStep(context, "remove interrupted migration container", "docker", ["rm", "-f", container]);
+  const removed = await command("docker", ["inspect", container], { allowFailure: true });
+  if (removed.exitCode === 0) throw new Error("generated interruption container remained after removal");
   await Promise.all([runMigration(context, "retry migration A"), runMigration(context, "retry migration B")]);
   await inspectSchema(context);
+  await migrationRetryPreservation(context);
+  const advisoryLocks = await compose(context, "confirm migration advisory lock released", ...psqlArgs(context,
+    "select count(*) from pg_locks where locktype = 'advisory' and granted;"));
+  if (advisoryLocks.stdout.trim() !== "0") throw new Error("generated migration retained an advisory lock owner");
   const after = await runStep(context, "confirm verification volume identity", "docker", ["volume", "inspect", "--format", "{{.CreatedAt}}", volume]);
   if (before.stdout.trim() !== after.stdout.trim()) throw new Error("interruption recovery replaced the PostgreSQL volume");
 }
@@ -877,6 +898,24 @@ async function runPhase4FullChecks(context, options = {}) {
   process.stdout.write("[local-verify] LOCAL PHASE 4 READINESS PASS; RELEASE BLOCKED\n");
 }
 
+async function runPhase6DataChecks(context) {
+  const selection = phase6Selection("data");
+  await runStep(context, "typecheck workspace", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
+  await runStep(context, "build workspace", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin } });
+  for (const [variable, file] of selection.databaseSuites) await runDatabaseSuite(context, variable, file);
+  for (const file of selection.nodeSuites) {
+    const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
+    assertSemanticTap(result.combined);
+  }
+  await inspectSchema(context);
+  const boundary = await runStep(context, `run ${selection.boundarySuite}`, "corepack", ["pnpm", "check:boundaries"], { env: process.env });
+  parseBoundaryResult(boundary.combined);
+  const blocked = await runStep(context, "confirm canonical production release remains BLOCKED", "node",
+    ["scripts/release-gate.mjs", "--evidence=ops/release-evidence.blocked.json", "--expect-blocked"], { env: process.env });
+  if (!blocked.stdout.startsWith("RELEASE BLOCKED ")) throw new Error("canonical release evidence did not remain explicitly BLOCKED");
+  process.stdout.write("[local-verify] LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED\n");
+}
+
 async function runPhase5MediaChecks(context, options = {}) {
   const selection = phase5MediaSelection();
   for (const [variable, file] of selection.databaseSuites) await runDatabaseSuite(context, variable, file);
@@ -1081,7 +1120,7 @@ async function runSingle(options) {
   const namespace = validateNamespace(options.namespace ?? generatedNamespace());
   const database = validateDatabaseName(`blog_x_${namespace.slice("blogxverify_".length)}`, namespace);
   const webPort = options.webPort ?? await freePort();
-  const phaseLabel = options.phase5Media || options.phase5Full ? "phase5-" : options.phase4Mode ? "phase4-" : options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
+  const phaseLabel = options.phase6Data ? "phase6-" : options.phase5Media || options.phase5Full ? "phase5-" : options.phase4Mode ? "phase4-" : options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
   const runId = namespace.replace("blogxverify_", phaseLabel);
   const publicOrigin = validateLoopbackHttpOrigin(`http://127.0.0.1:${webPort}`);
   const context = {
@@ -1120,14 +1159,17 @@ async function runSingle(options) {
       await Promise.all([runMigration(context, "concurrent migration A"), runMigration(context, "concurrent migration B")]);
       await inspectSchema(context);
     }
-    await migrationRetryPreservation(context);
+    if (!options.interruptionCheck) await migrationRetryPreservation(context);
     await compose(context, "start isolated API and Web", "up", "-d", "--wait", "api", "web");
     await runStep(context, "confirm exact generated media volume", "docker", ["volume", "inspect", context.mediaVolume]);
     await waitForHttp(context.webOrigin);
     await compose(context, "verify active schema", "exec", "-T", "-e", `DATABASE_URL=${context.databaseUrl}`,
       "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:schema:verify");
     await seed(context);
-    if (options.phase4Mode === "security") {
+    if (options.phase6Data) {
+      await runPhase6DataChecks(context);
+    }
+    else if (options.phase4Mode === "security") {
       await runPhase4SecurityChecks(context);
     }
     else if (options.phase4Mode === "operations") {
@@ -1172,8 +1214,13 @@ async function parallelCheck(options) {
   const second = generatedNamespace();
   if (first === second) throw new Error("parallel verification namespaces collided");
   const [firstPort, secondPort] = await Promise.all([freePort(), freePort()]);
-  const childMode = ["restore", "full"].includes(options.phase4Mode) ? "--phase4-restore" : "--infrastructure-only";
-  const child = (namespace, webPort) => command(process.execPath, [scriptPath, "--internal-run", childMode, "--skip-build", `--namespace=${namespace}`, `--web-port=${webPort}`], { env: process.env });
+  if (firstPort === secondPort) throw new Error("parallel verification ports collided");
+  const childMode = options.phase6Data ? "--phase6-data" : ["restore", "full"].includes(options.phase4Mode) ? "--phase4-restore" : "--infrastructure-only";
+  const child = (namespace, webPort) => command(process.execPath,
+    options.phase6Data
+      ? [scriptPath, "--internal-run", "--phase6-data", "--skip-build", `--namespace=${namespace}`, `--web-port=${webPort}`]
+      : [scriptPath, "--internal-run", childMode, "--skip-build", `--namespace=${namespace}`, `--web-port=${webPort}`],
+    { env: process.env });
   process.stdout.write("[local-verify] run two isolated namespaces in parallel\n");
   const settled = await Promise.allSettled([child(first, firstPort), child(second, secondPort)]);
   const failed = settled.find((item) => item.status === "rejected");
@@ -1184,6 +1231,20 @@ async function parallelCheck(options) {
   const results = settled.map((item) => item.value);
   if (!results[0].stdout.includes(`${first} passed`) || !results[1].stdout.includes(`${second} passed`)) {
     throw new Error("parallel verification did not preserve namespace identity");
+  }
+  if (options.phase6Data && results.some((result) => !result.stdout.includes("LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED"))) {
+    throw new Error("parallel Phase 6 child omitted its terminal data-pass/BLOCKED marker");
+  }
+  await Promise.all([confirmGeneratedProjectAbsent(first), confirmGeneratedProjectAbsent(second)]);
+}
+
+async function confirmGeneratedProjectAbsent(namespace) {
+  validateNamespace(namespace);
+  const containers = await command("docker", ["ps", "-aq", "--filter", `label=com.docker.compose.project=${namespace}`]);
+  if (containers.stdout.trim()) throw new Error(`generated project ${namespace} retained a container`);
+  for (const volume of [`${namespace}_postgres-data`, `${namespace}_media-data`]) {
+    const inspected = await command("docker", ["volume", "inspect", volume], { allowFailure: true });
+    if (inspected.exitCode === 0) throw new Error(`generated project ${namespace} retained volume ${volume}`);
   }
 }
 
@@ -1198,7 +1259,8 @@ async function main() {
   const phase4Modes = ["security", "operations", "restore", "full"].filter((mode) => flags.has(`--phase4-${mode}`));
   const phase5Media = flags.has("--phase5-media");
   const phase5Full = flags.has("--phase5-full");
-  if (phase3Modes.length + phase4Modes.length + Number(phase5Media) + Number(phase5Full) > 1) throw new Error("choose at most one Phase 3, Phase 4, or Phase 5 verification selection");
+  const phase6Data = flags.has("--phase6-data");
+  if (phase3Modes.length + phase4Modes.length + Number(phase5Media) + Number(phase5Full) + Number(phase6Data) > 1) throw new Error("choose at most one Phase 3, Phase 4, Phase 5, or Phase 6 verification selection");
   const options = {
     namespace: optionValue("namespace"),
     webPort: optionValue("web-port") ? Number(optionValue("web-port")) : undefined,
@@ -1207,7 +1269,8 @@ async function main() {
     phase4Mode: phase4Modes[0],
     phase5Media,
     phase5Full,
-    fullPhase: !phase4Modes.length && !phase5Media && !phase5Full && (flags.has("--full-phase") || flags.has("--phase2-full") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run"))),
+    phase6Data,
+    fullPhase: !phase4Modes.length && !phase5Media && !phase5Full && !phase6Data && (flags.has("--full-phase") || flags.has("--phase2-full") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run"))),
     interruptionCheck: flags.has("--interruption-check"),
     parallelCheck: flags.has("--parallel-check"),
     skipBuild: flags.has("--skip-build"),

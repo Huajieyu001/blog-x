@@ -17,6 +17,7 @@ import {
   phase4Selection,
   phase5Selection,
   phase5MediaSelection,
+  phase6Selection,
   redactText,
   semanticTestCommand,
   validateDatabaseName,
@@ -141,8 +142,64 @@ test("Phase 5 full selection is an exact once-only Phase 1-5 superset with a ter
   assert.match(runner, /!options\.skipBuild && !options\.phase5Full/);
 });
 
+test("Phase 6 data selection is exact, once-only, and separate from Phase 5 receipt authority", async () => {
+  const selection = phase6Selection("data");
+  assert.deepEqual(selection, {
+    databaseSuites: [
+      ["PUBLIC_DISCOVERY_TEST_DATABASE_URL", "apps/api/test/public-discovery.test.ts"],
+      ["PUBLIC_LIST_TEST_DATABASE_URL", "apps/api/test/public-list.test.ts"],
+      ["PUBLIC_VISIBILITY_TEST_DATABASE_URL", "apps/api/test/public-visibility.test.ts"],
+      ["AUTH_TEST_DATABASE_URL", "apps/api/test/taxonomy.test.ts"],
+      ["PHASE2_TEST_DATABASE_URL", "apps/api/test/phase2-public-visibility.test.ts"],
+    ],
+    nodeSuites: ["scripts/local-verify.test.mjs"],
+    boundarySuite: "scripts/check-boundaries.mjs",
+  });
+  const paths = [...selection.databaseSuites.map((item) => item[1]), ...selection.nodeSuites, selection.boundarySuite];
+  assert.equal(new Set(paths).size, paths.length);
+  assert.throws(() => phase6Selection("unknown"), /Phase 6 selection/i);
+
+  const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
+  const phase6 = runner.slice(runner.indexOf("async function runPhase6DataChecks"), runner.indexOf("async function runPhase5MediaChecks"));
+  assert.match(runner, /--phase6-data/);
+  assert.match(runner, /--internal-run", "--phase6-data", "--skip-build/);
+  assert.match(runner, /LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED/);
+  assert.match(phase6, /runDatabaseSuite/);
+  assert.match(phase6, /assertSemanticTap/);
+  assert.match(phase6, /check:boundaries/);
+  assert.match(phase6, /--expect-blocked/);
+  for (const receiptCapability of [
+    "acquirePhase5ReceiptWriterLock",
+    "createPhase5SuiteManifest",
+    "createPhase5ResultRecorder",
+    "writePhase5ReceiptAtomic",
+  ]) assert.doesNotMatch(phase6, new RegExp(receiptCapability));
+
+  const phase5 = phase5Selection("full");
+  assert.equal(phase5.databaseSuites.some((item) => item[1] === "apps/api/test/public-discovery.test.ts"), false);
+});
+
+test("Phase 6 interruption and parallel paths keep exact generated authority", async () => {
+  const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
+  const interruption = runner.slice(runner.indexOf("async function interruptionCheck"), runner.indexOf("async function migrationRetryPreservation"));
+  assert.match(interruption, /\$\{context\.namespace\}_migration_interrupt/);
+  assert.match(interruption, /migration lock acquired/);
+  assert.match(interruption, /"kill", container/);
+  assert.match(interruption, /"rm", "-f", container/);
+  assert.match(interruption, /Promise\.all\(\[runMigration/);
+  assert.match(interruption, /migrationRetryPreservation/);
+  assert.match(interruption, /confirm verification volume identity/);
+
+  const parallel = runner.slice(runner.indexOf("async function parallelCheck"), runner.indexOf("function optionValue"));
+  assert.match(parallel, /firstPort === secondPort/);
+  assert.match(parallel, /--internal-run", "--phase6-data", "--skip-build/);
+  assert.match(parallel, /LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED/);
+  assert.match(parallel, /confirmGeneratedProjectAbsent/);
+  assert.doesNotMatch(parallel, /phase5|receipt/i);
+});
+
 test("a replacement passed audit rejects body/frontmatter receipt revision disagreement", async () => {
-  const audit = await readFile(join(process.cwd(), ".planning/v1.0-MILESTONE-AUDIT.md"), "utf8");
+  const audit = await readFile(join(process.cwd(), ".planning/milestones/v1.0-MILESTONE-AUDIT.md"), "utf8");
   const verified = await verifyPhase5Receipt();
   const revision = verified.receipt.implementationRevision;
   let replacement = audit
