@@ -906,8 +906,10 @@ async function runPhase4FullChecks(context, options = {}) {
 
 async function runPhase6DataChecks(context) {
   const selection = phase6Selection("data");
-  await runStep(context, "typecheck workspace", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
-  await runStep(context, "build workspace", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin } });
+  if (!context.internalRun) {
+    await runStep(context, "typecheck workspace", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
+    await runStep(context, "build workspace", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin } });
+  }
   await resetAcceptanceData(context, "clear Phase 6 data acceptance fixtures");
   for (const [variable, file] of selection.databaseSuites) await runDatabaseSuite(context, variable, file);
   for (const file of selection.nodeSuites) {
@@ -1147,6 +1149,7 @@ async function runSingle(options) {
     children: [],
     implementationRevision: options.implementationRevision,
     phase6Data: options.phase6Data,
+    internalRun: options.internalRun,
   };
   context.secrets.push(context.password, context.databaseUrl);
   if (context.publicOrigin === context.internalApiOrigin) throw new Error("public and internal API origins must remain separate");
@@ -1282,6 +1285,7 @@ async function main() {
     phase5Media,
     phase5Full,
     phase6Data,
+    internalRun: flags.has("--internal-run"),
     fullPhase: !phase4Modes.length && !phase5Media && !phase5Full && !phase6Data && (flags.has("--full-phase") || flags.has("--phase2-full") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run"))),
     interruptionCheck: flags.has("--interruption-check"),
     parallelCheck: flags.has("--parallel-check"),
