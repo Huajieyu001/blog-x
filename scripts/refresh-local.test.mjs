@@ -426,6 +426,63 @@ test("collector uses fake argv/database/media/history adapters and rejects parti
   await assert.rejects(collectRefreshFacts({ sources: { composeAuthority: async () => ({ services: ["api", "postgres", "web"], ps: ["api", "postgres", "web"] }), containers: async () => fixture.containers, volumes: async () => fixture.volumes, business: async () => fixture.business, sequences: async () => fixture.sequences, ledger: async () => fixture.ledger, media: async () => fixture.media, protected: async () => fixture.protected, routes: async () => bad, releaseState: async () => "BLOCKED", git: async () => fixture.git, database: async () => fixture.database, seeds: async () => fixture.seeds, targets: async () => fixture.targets } }), /route|search|contract/i);
 });
 
+const COMPOSE_V5_PS_RECORDS = [
+  { ID: "api-id", Name: "blogxlocal-api-1", Project: "blogxlocal", Service: "api", State: "running", Health: "healthy", ExitCode: 0, Image: "blog-x-api-local", Publishers: [] },
+  { ID: "postgres-id", Name: "blogxlocal-postgres-1", Project: "blogxlocal", Service: "postgres", State: "running", Health: "healthy", ExitCode: 0, Image: "postgres:18", Publishers: [] },
+  { ID: "web-id", Name: "blogxlocal-web-1", Project: "blogxlocal", Service: "web", State: "running", Health: "healthy", ExitCode: 0, Image: "blog-x-web-local", Publishers: [{ URL: "127.0.0.1", TargetPort: 3100, PublishedPort: 3100, Protocol: "tcp" }] },
+];
+const COMPOSE_V5_PS_NDJSON = `${COMPOSE_V5_PS_RECORDS.map((record) => JSON.stringify(record)).join("\n")}\n`;
+const COMPOSE_PS_ARGV = ["-p", "blogxlocal", "-f", "compose.yaml", "ps", "--all", "--format", "json"];
+
+function composeAuthorityFixture(psStdout) {
+  const runtime = testRuntime(memoryArtifactFs(), undefined, async (command, args) => {
+    if (command !== "docker-compose") throw new Error(`unexpected command ${command}`);
+    if (args.at(4) === "config") return { stdout: "api\npostgres\nweb\n" };
+    if (args.at(4) === "ps") return { stdout: psStdout };
+    throw new Error(`unexpected Compose argv ${args.join(" ")}`);
+  });
+  return { runtime, sources: runtime.createFactSources() };
+}
+
+test("Compose ps authority accepts legacy JSON arrays and sanitized v5 NDJSON records", async () => {
+  for (const psStdout of [JSON.stringify(COMPOSE_V5_PS_RECORDS), COMPOSE_V5_PS_NDJSON, COMPOSE_V5_PS_NDJSON.replaceAll("\n", "\r\n")]) {
+    const { runtime, sources } = composeAuthorityFixture(psStdout);
+    assert.deepEqual(await sources.composeAuthority(), { services: ["api", "postgres", "web"], ps: ["api", "postgres", "web"] });
+    assert.deepEqual(runtime.calls.map(({ command, args }) => [command, args]), [
+      ["docker-compose", ["-p", "blogxlocal", "-f", "compose.yaml", "config", "--services"]],
+      ["docker-compose", COMPOSE_PS_ARGV],
+    ]);
+  }
+  assert.equal(COMPOSE_V5_PS_RECORDS[2].Publishers[0].TargetPort, 3100);
+  assert.doesNotMatch(COMPOSE_V5_PS_NDJSON, /Mountpoint|Source|postgres:\/\/|password|credential|\/Users\/|private\/var/i);
+});
+
+test("Compose ps authority rejects malformed mixed blank and non-object encodings", async () => {
+  const first = JSON.stringify(COMPOSE_V5_PS_RECORDS[0]); const second = JSON.stringify(COMPOSE_V5_PS_RECORDS[1]);
+  const invalid = [
+    "", "   \t", `\n${first}`, `${first}\n\n${second}`, `${first}\n\n`,
+    `${JSON.stringify(COMPOSE_V5_PS_RECORDS)}\n${first}`, `${first}\nnot-json`, `${first} trailing-garbage`,
+    "null", "true", "42", '"api"', "[]", JSON.stringify([COMPOSE_V5_PS_RECORDS[0], []]), `${first}\n[]`,
+  ];
+  for (const psStdout of invalid) {
+    const { sources } = composeAuthorityFixture(psStdout);
+    await assert.rejects(sources.composeAuthority(), /Compose ps|JSON|record|object|blank|encoding/i, JSON.stringify(psStdout));
+  }
+});
+
+test("Compose ps records require nonempty string services and retain exact fixed service authority", async () => {
+  for (const Service of [undefined, null, "", "   ", 7, ["api"], { name: "api" }]) {
+    const records = structuredClone(COMPOSE_V5_PS_RECORDS); if (typeof Service === "undefined") delete records[0].Service; else records[0].Service = Service;
+    await assert.rejects(composeAuthorityFixture(records.map((record) => JSON.stringify(record)).join("\n")).sources.composeAuthority(), /Compose ps|Service|string|nonempty/i);
+  }
+  for (const services of [["api", "postgres"], ["api", "postgres", "web", "worker"], ["api", "api", "postgres", "web"]]) {
+    const records = services.map((Service, index) => ({ ...COMPOSE_V5_PS_RECORDS[index % COMPOSE_V5_PS_RECORDS.length], Service }));
+    const authority = await composeAuthorityFixture(records.map((record) => JSON.stringify(record)).join("\n")).sources.composeAuthority();
+    const facts = factsFixture(); facts.composeAuthority = authority;
+    assert.throws(() => assertFixedRuntimeAuthority(facts), /Compose|service|authority/i, services.join(","));
+  }
+});
+
 test("v4 verifier rejects extra evidence keys and any reconstructed runtime drift without writing", async () => {
   const evidence = { format: "blog-x-phase6-local-refresh-evidence", version: 3, implementationRevision: "a".repeat(40), lockfileSha256: "b".repeat(64), attemptClaim: { implementationRevision: "a".repeat(40), sha256: "c".repeat(64) }, oldImages: { api: SHA("a"), web: SHA("w") }, targets: { api: { id: SHA("n"), labels: {} }, web: { id: SHA("x"), labels: {} } }, stages: { preflight: projectSanitizedFacts(factsFixture()), postMigration: projectSanitizedFacts(factsFixture({ phase1: "2026-08-16T00:00:00.000Z" })), postCutover: projectSanitizedFacts(factsFixture({ apiImage: SHA("n"), webImage: SHA("x"), phase1: "2026-08-16T00:00:00.000Z" })) }, releaseState: "BLOCKED" };
   assert.doesNotMatch(JSON.stringify(evidence), /Mountpoint|relativePath|migration_fingerprint|applied_at/);
