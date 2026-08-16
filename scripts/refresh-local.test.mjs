@@ -14,8 +14,14 @@ import {
   createRefreshPlan,
   inspectTargetFilesystem,
   runLocalRefresh,
+  runRefreshCli,
   verifyEvidence,
 } from "./refresh-local.mjs";
+import {
+  createLiveRefreshAdapter,
+  createRefreshAttemptStore,
+  verifyLiveRefreshEvidence,
+} from "./refresh-local-live.mjs";
 
 async function fixtureStore(t) {
   const root = await mkdtemp(join(tmpdir(), "blog-x-refresh-seed-"));
@@ -164,6 +170,59 @@ test("source contracts require neutral stores, offline frozen installs and sanit
   assert.match(helper, /resolve\(cwd, "workspace"\)/);
   const orchestrator = await readFile("scripts/refresh-local.mjs", "utf8");
   assert.match(orchestrator, /--probe-offline-builds/);
-  assert.match(orchestrator, /--network=none.*--pull=false/s);
-  assert.doesNotMatch(orchestrator, /docker-compose|compose\.yaml.*up -d/);
+  assert.match(orchestrator, /createLiveRefreshAdapter/);
+  const live = await readFile("scripts/refresh-local-live.mjs", "utf8");
+  assert.match(live, /docker-compose/);
+  assert.match(live, /--network=none/);
+  assert.match(live, /--pull=false/);
+  assert.match(live, /--no-build/);
+  assert.match(live, /--no-deps/);
+  assert.doesNotMatch(live, /\b(?:ssh|scp|curl)\b/);
+});
+
+test("runRefreshCli replaces the hardcoded stub and consumes an injected adapter only after an absent claim", async () => {
+  const events = [];
+  const revision = "e".repeat(40);
+  const result = await runRefreshCli({
+    argv: [],
+    revisionResolver: async () => revision,
+    claimStore: { async assertAbsent(value) { events.push(`absent:${value}`); } },
+    liveAdapterFactory: async ({ revision: value }) => ({
+      async execute(phase) { events.push(`${value}:${phase}`); },
+    }),
+    io: { write() {} },
+  });
+  assert.equal(result.implementationRevision, revision);
+  assert.equal(events[0], `absent:${revision}`);
+  assert.ok(events.some((event) => event.endsWith(":preflight")));
+});
+
+test("attempt claims are canonical, exclusive, revision-bound, and leave second cli calls before adapter construction", async (t) => {
+  const claimRoot = await mkdtemp(join(tmpdir(), "blog-x-claim-"));
+  t.after(() => rm(claimRoot, { recursive: true, force: true }));
+  const store = createRefreshAttemptStore({ root: claimRoot });
+  const revision = "f".repeat(40);
+  const first = await store.claimRefreshAttempt(revision);
+  assert.match(first.sha256, /^[a-f0-9]{64}$/);
+  assert.deepEqual(JSON.parse(first.bytes.trim()), { format: "blog-x-local-refresh-attempt", version: 1, implementationRevision: revision });
+  await assert.rejects(store.claimRefreshAttempt(revision), /claimed|exists/i);
+  let factoryCalls = 0;
+  await assert.rejects(runRefreshCli({
+    argv: [], revisionResolver: async () => revision, claimStore: store,
+    liveAdapterFactory: async () => { factoryCalls += 1; throw new Error("must not construct"); }, io: { write() {} },
+  }), /claimed|exists/i);
+  assert.equal(factoryCalls, 0);
+  await assert.rejects(store.claimRefreshAttempt("F".repeat(40)), /revision/i);
+});
+
+test("live adapter command policy permits only fixed local argv and verifier reconstructs without mutation", async () => {
+  const adapter = createLiveRefreshAdapter({
+    runArgv: async () => ({ stdout: "", stderr: "" }),
+    fetch: async () => ({ ok: true, status: 200, async json() { return {}; } }),
+  });
+  assert.doesNotThrow(() => adapter.assertAllowedArgv("docker", ["build", "--network=none", "--pull=false", "--file", "apps/api/Dockerfile.refresh", "--tag", "blog-x-api-local:aaaaaaaaaaaa", "."]));
+  for (const [command, args] of [["docker-compose", ["-p", "other", "down"]], ["docker", ["build", "--network=host"]], ["ssh", ["root@example"]]]) {
+    assert.throws(() => adapter.assertAllowedArgv(command, args), /not allowlisted|authority|network/i);
+  }
+  assert.equal(typeof verifyLiveRefreshEvidence, "function");
 });
