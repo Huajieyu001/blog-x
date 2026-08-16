@@ -27,6 +27,17 @@
 **Depends on:** Shipped Local MVP baseline
 **Requirements:** SRCH-01, SRCH-02, SRCH-03, READ-08
 **UI hint:** no
+**Plans:** 6 active plans (+ 1 superseded draft)
+
+Plans:
+- [x] 06-01-PLAN.md — Define strict public search contracts and published-only query semantics.
+- [x] 06-02-PLAN.md — Implement deterministic related-article data and API boundaries.
+- [x] 06-03-PLAN.md — Run isolated Phase 6 data gates and detect the stale fixed runtime.
+- [x] 06-04-PLAN.md — Build sanitized offline API/Web refresh primitives.
+- 06-05-PLAN.md — Superseded after its one allowed `b7fa05c` invocation safely exposed the missing live adapter.
+- [ ] 06-06-PLAN.md — Implement the strict real live adapter under TDD without runtime mutation.
+- [ ] 06-07-PLAN.md — Execute one clean-revision refresh, commit evidence, and summarize the gap closure.
+
 **Success Criteria:**
 
 1. 参数化查询只返回已发布、未删除且具有公开时间的文章，覆盖标题、摘要和 Markdown 正文。
@@ -68,6 +79,6 @@
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 6. Public Discovery Data | v1.1 | 0/? | Not started | — |
+| 6. Public Discovery Data | v1.1 | 4/6 active | Gap closure planned | — |
 | 7. Responsive Discovery Experience | v1.1 | 0/? | Not started | — |
 | 8. Reliable Local Delivery | v1.1 | 0/? | Not started | — |
