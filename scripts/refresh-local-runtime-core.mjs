@@ -6,6 +6,7 @@ import {
   assertFixedRuntimeAuthority,
   assertPersistenceTransition,
   assertRouteFacts,
+  assertRouteObservations,
   collectRefreshFacts,
   factsEqual,
   factsSha256,
@@ -336,10 +337,12 @@ function routeSource(fetch) {
       const bytes = await response.text();
       if (Buffer.byteLength(bytes) > 1_048_576) fail(`route ${path} body exceeds the fixed bound`);
       const fact = { status: response.status, bodySha256: digest(bytes) };
-      if (path.startsWith("/api/")) { try { fact.body = JSON.parse(bytes); } catch { fail(`route ${path} returned malformed JSON`); } }
+      const contentType = response.headers?.get?.("content-type");
+      const mediaType = typeof contentType === "string" ? contentType.split(";", 1)[0].trim().toLowerCase() : "";
+      if (mediaType === "application/json" || mediaType.endsWith("+json")) { try { fact.body = JSON.parse(bytes); } catch { fail(`route ${path} returned malformed JSON`); } }
       output[path] = fact;
     }
-    assertRouteFacts(output);
+    assertRouteObservations(output);
     return output;
   };
 }
@@ -507,10 +510,10 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
       if (!state.facts.preflight) return { baseline: "not_applicable", recollection: "not_attempted", preservation: "not_applicable_pre_runtime", facts: { preflight: null, current: null, rollback: null } };
       try {
         const current = await collect();
-        const preflight = projectSanitizedFacts(state.facts.preflight); const now = projectSanitizedFacts(current);
+        const preflight = projectSanitizedFacts(state.facts.preflight, { routeContract: "observed" }); const now = projectSanitizedFacts(current, { routeContract: "observed" });
         const stable = ["business", "media", "protected", "sequences", "volumes"].every((key) => factsEqual(preflight[key], now[key]));
-        return { baseline: "applicable", recollection: "collected", preservation: stable ? "proved" : "unproved", facts: { preflight: factsSha256(preflight), current: factsSha256(now), rollback: state.facts.rollback ? factsSha256(projectSanitizedFacts(state.facts.rollback)) : null } };
-      } catch { return { baseline: "applicable", recollection: "failed", preservation: "unproved", facts: { preflight: factsSha256(projectSanitizedFacts(state.facts.preflight)), current: null, rollback: null } }; }
+        return { baseline: "applicable", recollection: "collected", preservation: stable ? "proved" : "unproved", facts: { preflight: factsSha256(preflight), current: factsSha256(now), rollback: state.facts.rollback ? factsSha256(projectSanitizedFacts(state.facts.rollback, { routeContract: "observed" })) : null } };
+      } catch { return { baseline: "applicable", recollection: "failed", preservation: "unproved", facts: { preflight: factsSha256(projectSanitizedFacts(state.facts.preflight, { routeContract: "observed" })), current: null, rollback: null } }; }
     },
     currentPhase() { return state.phase; },
     async execute(phase, plan) {
@@ -589,7 +592,10 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
       if (phase === "release-blocked") { if (state.facts.postCutover.releaseState !== "BLOCKED") fail("release state changed"); return; }
       if (phase === "write-evidence") {
         const targetEvidence = Object.fromEntries(["api", "web"].map((app) => [app, { id: state.targets[app].Id, labels: selectedLabels(state.targets[app].Config?.Labels), probe: state.targets[app].probe }]));
-        const evidence = { format: "blog-x-phase6-local-refresh-evidence", version: 4, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, attemptClaim: { implementationRevision: plan.revision, sha256: state.claim.sha256 }, oldImages: state.oldImages, seeds: state.seeds, targets: targetEvidence, stages: { preflight: projectSanitizedFacts(state.facts.preflight), postMigration: projectSanitizedFacts(state.facts.postMigration), postCutover: projectSanitizedFacts(state.facts.postCutover) }, releaseState: "BLOCKED" };
+        const preflight = projectSanitizedFacts(state.facts.preflight, { routeContract: "observed" });
+        const postMigration = projectSanitizedFacts(state.facts.postMigration, { routeContract: "observed" });
+        if (!factsEqual(preflight.routes, postMigration.routes)) fail("evidence pre-cutover route observations changed");
+        const evidence = { format: "blog-x-phase6-local-refresh-evidence", version: 4, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, attemptClaim: { implementationRevision: plan.revision, sha256: state.claim.sha256 }, oldImages: state.oldImages, seeds: state.seeds, targets: targetEvidence, stages: { preflight, postMigration, postCutover: projectSanitizedFacts(state.facts.postCutover, { routeContract: "final" }) }, releaseState: "BLOCKED" };
         await publishEvidence(evidenceFs, evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, randomEvidenceHex); return;
       }
       if (phase === "rollback-api-web") {
@@ -614,7 +620,27 @@ function assertProjectedDigest(value, label, extras = []) {
   exactKeys(value, ["count", ...extras, "sha256"], label);
   if (!Number.isSafeInteger(value.count) || value.count < 0 || !validDigest(value.sha256) || extras.some((key) => !Number.isSafeInteger(value[key]) || value[key] < 0)) fail(`${label} digest/count is invalid`);
 }
-function assertProjectionSchema(value, label) {
+function assertProjectedRoutes(routes, label, routeContract) {
+  exactKeys(routes, ROUTE_KEYS, `${label} routes`);
+  const finalContracts = {
+    "/": { status: 200 },
+    "/categories": { status: 200 },
+    "/tags": { status: 200 },
+    "/archives": { status: 200 },
+    "/api/health": { status: 200, contractSha256: factsSha256({ ok: true }) },
+    "/api/public/search?q=": { status: 200, contractSha256: factsSha256({ state: "empty_query", query: "", page: 1, pageSize: 10, totalItems: 0, totalPages: 0, items: [] }) },
+    "/api/public/articles/phase6-unknown/related": { status: 404, contractSha256: factsSha256({ error: "not_found" }) },
+  };
+  if (!["observed", "final"].includes(routeContract)) fail(`${label} route projection mode is invalid`);
+  for (const path of ROUTE_KEYS) {
+    const route = routes[path];
+    exactKeys(route, path.startsWith("/api/") ? ["bodySha256", "contractSha256", "status"] : ["bodySha256", "status"], `${label} route ${path}`);
+    if (!validDigest(route.bodySha256) || !Number.isSafeInteger(route.status) || route.status < 100 || route.status > 599 || route.status >= 300 && route.status < 400) fail(`${label} route ${path} projection is invalid`);
+    if (path.startsWith("/api/") && route.contractSha256 !== null && !validDigest(route.contractSha256)) fail(`${label} route ${path} contract projection is invalid`);
+    if (routeContract === "final" && (route.status !== finalContracts[path].status || path.startsWith("/api/") && route.contractSha256 !== finalContracts[path].contractSha256)) fail(`${label} route ${path} final contract is invalid`);
+  }
+}
+function assertProjectionSchema(value, label, { routeContract = "final" } = {}) {
   exactKeys(value, PROJECTION_KEYS, label);
   for (const key of ["business", "protected", "sequences", "volumes"]) assertProjectedDigest(value[key], `${label} ${key}`);
   exactKeys(value.git, ["clean", "implementationRevision", "lockfileSha256"], `${label} Git`);
@@ -631,12 +657,7 @@ function assertProjectionSchema(value, label) {
     exactKeys(container, ["healthy", "id", "imageId", "labels"], `${label} ${service} container`);
     if (container.healthy !== true || typeof container.id !== "string" || !container.id || typeof container.imageId !== "string" || !container.imageId.startsWith("sha256:") || !container.labels || typeof container.labels !== "object" || Array.isArray(container.labels)) fail(`${label} ${service} container projection is invalid`);
   }
-  exactKeys(value.routes, ROUTE_KEYS, `${label} routes`);
-  for (const path of ROUTE_KEYS) {
-    const route = value.routes[path];
-    exactKeys(route, path.startsWith("/api/") ? ["bodySha256", "contractSha256", "status"] : ["bodySha256", "status"], `${label} route ${path}`);
-    if (!validDigest(route.bodySha256) || (path.startsWith("/api/") && !validDigest(route.contractSha256)) || !Number.isSafeInteger(route.status)) fail(`${label} route ${path} projection is invalid`);
-  }
+  assertProjectedRoutes(value.routes, label, routeContract);
   exactKeys(value.topology, ["containersHealthy", "fixedPortsExact", "project", "servicesExact"], `${label} topology`);
   if (value.releaseState !== "BLOCKED" || value.topology.project !== PROJECT || [value.topology.containersHealthy, value.topology.fixedPortsExact, value.topology.servicesExact].some((item) => item !== true)) fail(`${label} authority is not exact`);
 }
@@ -657,7 +678,9 @@ function assertEvidenceSchema(evidence) {
     exactKeys(target.probe, ["filesystemExact", "filesystemSha256", "storeSha256"], `evidence ${app} probe`);
     if (!validImageId(target.id) || target.probe.filesystemExact !== true || !validDigest(target.probe.filesystemSha256) || !validDigest(target.probe.storeSha256) || target.labels["org.opencontainers.image.revision"] !== evidence.implementationRevision || target.labels["io.blog-x.lockfile-sha256"] !== evidence.lockfileSha256 || !validImageId(target.labels["io.blog-x.seed-image-id"]) || target.labels["io.blog-x.application"] !== app || target.labels["io.blog-x.public-origin"] !== ORIGIN || target.labels["io.blog-x.refresh-kind"] !== "phase6-offline") fail(`evidence ${app} target provenance is invalid`);
   }
-  for (const name of ["preflight", "postMigration", "postCutover"]) assertProjectionSchema(evidence.stages[name], `evidence ${name}`);
+  for (const name of ["preflight", "postMigration"]) assertProjectionSchema(evidence.stages[name], `evidence ${name}`, { routeContract: "observed" });
+  assertProjectionSchema(evidence.stages.postCutover, "evidence postCutover", { routeContract: "final" });
+  if (!factsEqual(evidence.stages.preflight.routes, evidence.stages.postMigration.routes)) fail("evidence pre-cutover route observations changed");
   for (const key of ["business", "database", "git", "media", "protected", "seeds", "sequences", "targets", "volumes"]) if (!factsEqual(evidence.stages.preflight[key], evidence.stages.postMigration[key]) || !factsEqual(evidence.stages.postMigration[key], evidence.stages.postCutover[key])) fail(`evidence ${key} stages are inconsistent`);
   for (const stage of Object.values(evidence.stages)) {
     if (stage.git.clean !== true || stage.git.implementationRevision !== evidence.implementationRevision || stage.git.lockfileSha256 !== evidence.lockfileSha256 || !factsEqual(stage.seeds, evidence.seeds)) fail("evidence Git/lock/seed linkage is invalid");
@@ -720,7 +743,7 @@ export async function verifyRawRefreshEvidence(path, { claimStore, fs, runArgv, 
   const current = await reconstruct();
   current.git = verifiedGit;
   assertFixedRuntimeAuthority(current);
-  if (!factsEqual(projectSanitizedFacts(current), evidence.stages.postCutover)) fail("current runtime facts drifted from evidence");
+  if (!factsEqual(projectSanitizedFacts(current, { routeContract: "final" }), evidence.stages.postCutover)) fail("current runtime facts drifted from evidence");
   const after = await fs.readFile(path, "utf8");
   if (after !== before) fail("read-only evidence verification changed evidence");
   return evidence;

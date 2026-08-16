@@ -31,6 +31,16 @@ const SELECTED_LABELS = [
 function fail(message) { throw new Error(`local refresh facts: ${message}`); }
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function isPlain(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
+function isJsonValue(value, ancestors = new Set()) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (!Array.isArray(value) && !isPlain(value)) return false;
+  if (!Array.isArray(value) && ![Object.prototype, null].includes(Object.getPrototypeOf(value)) || ancestors.has(value)) return false;
+  ancestors.add(value);
+  const valid = (Array.isArray(value) ? value : Object.values(value)).every((item) => isJsonValue(item, ancestors));
+  ancestors.delete(value);
+  return valid;
+}
 function exactKeys(value, keys, label, { optional = [] } = {}) {
   if (!isPlain(value)) fail(`${label} must be an object`);
   const actual = Object.keys(value).sort();
@@ -63,8 +73,19 @@ function assertPorts(service, actual) {
   if (!same(actual, expected)) fail(`${service} port authority is not exact`);
 }
 
-export function assertRouteFacts(routes) {
+export function assertRouteObservations(routes) {
   exactKeys(routes, ROUTE_KEYS, "route facts");
+  for (const path of ROUTE_KEYS) {
+    exactKeys(routes[path], ["bodySha256", "status"], `route ${path}`, { optional: ["body"] });
+    const { bodySha256, status } = routes[path];
+    if (!Number.isSafeInteger(status) || status < 100 || status > 599 || status >= 300 && status < 400 || !/^[a-f0-9]{64}$/.test(bodySha256)) fail(`route ${path} observation is invalid`);
+    if (Object.hasOwn(routes[path], "body") && !isJsonValue(routes[path].body)) fail(`route ${path} JSON observation is invalid`);
+  }
+  return true;
+}
+
+export function assertRouteFacts(routes) {
+  assertRouteObservations(routes);
   for (const path of ["/", "/categories", "/tags", "/archives"]) {
     exactKeys(routes[path], ["bodySha256", "status"], `route ${path}`);
     if (routes[path].status !== 200 || !/^[a-f0-9]{64}$/.test(routes[path].bodySha256)) fail(`route ${path} contract is invalid`);
@@ -78,6 +99,7 @@ export function assertRouteFacts(routes) {
     exactKeys(routes[path], ["body", "bodySha256", "status"], `route ${path}`);
     if (routes[path].status !== expected.status || !same(routes[path].body, expected.body) || !/^[a-f0-9]{64}$/.test(routes[path].bodySha256)) fail(`route ${path} contract is not exact`);
   }
+  return true;
 }
 
 export function assertFixedRuntimeAuthority(facts) {
@@ -147,6 +169,8 @@ export function assertPersistenceTransition(before, after, { stage, targetImageI
   assertFixedRuntimeAuthority(after);
   assertPersistenceFacts(before);
   assertPersistenceFacts(after);
+  assertRouteObservations(before.routes);
+  assertRouteObservations(after.routes);
   persistenceEqual(before, after);
   const stableBefore = ledgerStable(before.ledger);
   const stableAfter = ledgerStable(after.ledger);
@@ -172,7 +196,9 @@ export function assertPersistenceTransition(before, after, { stage, targetImageI
     if (!same(timestampsBefore, timestampsAfter)) fail("ledger timestamps changed during rollback");
     if (!oldImageIds) fail("old image IDs are required");
     assertImages(after, oldImageIds, "rollback");
-    if (preflightRoutes && !same(after.routes, preflightRoutes)) fail("rollback routes did not return to preflight observations");
+    if (!preflightRoutes) fail("rollback requires an explicit preflight route baseline");
+    assertRouteObservations(preflightRoutes);
+    if (!same(after.routes, preflightRoutes)) fail("rollback routes did not return to preflight observations");
   } else fail("unknown persistence transition stage");
   return true;
 }
@@ -181,16 +207,24 @@ function digestProjection(value, label, extras = []) {
   assertDigestFact(value, label, extras);
   return Object.fromEntries(["count", ...extras, "sha256"].map((key) => [key, value[key]]));
 }
-function routeProjection(routes) {
-  assertRouteFacts(routes);
-  return Object.fromEntries(ROUTE_KEYS.map((path) => [path, { status: routes[path].status, bodySha256: routes[path].bodySha256, ...((routes[path].body && path.startsWith("/api/")) ? { contractSha256: sha256(canonical(routes[path].body)) } : {}) }]));
+function routeProjection(routes, routeContract) {
+  if (routeContract === "final") assertRouteFacts(routes);
+  else if (routeContract === "observed") assertRouteObservations(routes);
+  else fail("route projection mode is invalid");
+  return Object.fromEntries(ROUTE_KEYS.map((path) => [path, {
+    status: routes[path].status,
+    bodySha256: routes[path].bodySha256,
+    ...(path.startsWith("/api/") ? { contractSha256: Object.hasOwn(routes[path], "body") ? sha256(canonical(routes[path].body)) : null } : {}),
+  }]));
 }
 
-export function projectSanitizedFacts(facts) {
+export function projectSanitizedFacts(facts, { routeContract = "final" } = {}) {
   exactKeys(facts, BASE_FACT_KEYS, "collected facts", { optional: ["composeAuthority"] });
   assertFixedRuntimeAuthority(facts);
   assertPersistenceFacts(facts);
-  assertRouteFacts(facts.routes);
+  if (routeContract === "final") assertRouteFacts(facts.routes);
+  else if (routeContract === "observed") assertRouteObservations(facts.routes);
+  else fail("route projection mode is invalid");
   if (facts.releaseState !== "BLOCKED") fail("release state must remain BLOCKED");
   const containers = Object.fromEntries(REFRESH_AUTHORITY.services.map((service) => {
     const item = containerByService(facts, service);
@@ -206,7 +240,7 @@ export function projectSanitizedFacts(facts) {
     media: digestProjection(facts.media, "media", ["bytes"]),
     protected: digestProjection(facts.protected, "protected"),
     releaseState: "BLOCKED",
-    routes: routeProjection(facts.routes),
+    routes: routeProjection(facts.routes, routeContract),
     sequences: digestProjection(facts.sequences, "sequences"),
     seeds: copy(facts.seeds),
     targets: copy(facts.targets),
@@ -239,7 +273,7 @@ export async function collectRefreshFacts({ sources } = {}) {
   for (const key of ["git", "database", "seeds", "targets"]) facts[key] = copy(await sources[key]());
   assertFixedRuntimeAuthority(facts);
   assertPersistenceFacts(facts);
-  assertRouteFacts(facts.routes);
+  assertRouteObservations(facts.routes);
   if (facts.releaseState !== "BLOCKED") fail("release gate did not remain BLOCKED");
   return facts;
 }
