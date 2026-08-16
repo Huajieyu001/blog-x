@@ -27,7 +27,7 @@
 **Depends on:** Shipped Local MVP baseline
 **Requirements:** SRCH-01, SRCH-02, SRCH-03, READ-08
 **UI hint:** no
-**Plans:** 6 active plans (+ 1 superseded draft)
+**Plans:** 7 active plans (+ 2 superseded drafts)
 
 Plans:
 - [x] 06-01-PLAN.md — Define strict public search contracts and published-only query semantics.
@@ -35,8 +35,10 @@ Plans:
 - [x] 06-03-PLAN.md — Run isolated Phase 6 data gates and detect the stale fixed runtime.
 - [x] 06-04-PLAN.md — Build sanitized offline API/Web refresh primitives.
 - 06-05-PLAN.md — Superseded after its one allowed `b7fa05c` invocation safely exposed the missing live adapter.
-- [ ] 06-06-PLAN.md — Implement the strict real live adapter under TDD without runtime mutation.
-- [ ] 06-07-PLAN.md — Execute one clean-revision refresh, commit evidence, and summarize the gap closure.
+- [x] 06-06-PLAN.md — Implement the first strict live-adapter revision without runtime mutation.
+- 06-07-PLAN.md — Superseded before execution at `3221f99`; audit stopped before bare invocation, claim, evidence or mutation.
+- [ ] 06-08-PLAN.md — Remediate every audited P0/P1 live-adapter and evidence gap under TDD.
+- [ ] 06-09-PLAN.md — Execute one later clean-revision refresh, commit evidence, and hand off independent verification.
 
 **Success Criteria:**
 
@@ -79,6 +81,6 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 6. Public Discovery Data | v1.1 | 4/6 active | Gap closure planned | — |
+| 6. Public Discovery Data | v1.1 | 5/7 active | Audit remediation planned | — |
 | 7. Responsive Discovery Experience | v1.1 | 0/? | Not started | — |
 | 8. Reliable Local Delivery | v1.1 | 0/? | Not started | — |
