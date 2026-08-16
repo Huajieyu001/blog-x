@@ -12,8 +12,9 @@ export const REFRESH_AUTHORITY = Object.freeze({
   services: Object.freeze(["api", "postgres", "web"]),
 });
 
-const FACT_KEYS = ["business", "composeAuthority", "containers", "ledger", "media", "protected", "releaseState", "routes", "sequences", "volumes"];
-const PROJECTION_KEYS = ["business", "containers", "ledger", "media", "protected", "releaseState", "routes", "sequences", "topology", "volumes"];
+const FACT_KEYS = ["business", "composeAuthority", "containers", "database", "git", "ledger", "media", "protected", "releaseState", "routes", "seeds", "sequences", "targets", "volumes"];
+const BASE_FACT_KEYS = ["business", "containers", "database", "git", "ledger", "media", "protected", "releaseState", "routes", "seeds", "sequences", "targets", "volumes"];
+const PROJECTION_KEYS = ["business", "containers", "database", "git", "ledger", "media", "protected", "releaseState", "routes", "seeds", "sequences", "targets", "topology", "volumes"];
 const ROUTE_KEYS = ["/", "/api/health", "/api/public/articles/phase6-unknown/related", "/api/public/search?q=", "/archive", "/categories", "/tags"];
 const SELECTED_LABELS = [
   "com.docker.compose.oneoff",
@@ -109,15 +110,30 @@ function ledgerStable(rows) {
     return { scope: row.scope, migration_count: row.migration_count, migration_fingerprint: row.migration_fingerprint };
   });
 }
+function normalizedLedgerRows(rows) {
+  const seen = new Set();
+  return Object.fromEntries([...rows].sort((a, b) => a.scope.localeCompare(b.scope)).map((row) => {
+    if (seen.has(row.scope)) fail("ledger contains a duplicate scope");
+    seen.add(row.scope);
+    const appliedAt = new Date(row.applied_at).toISOString();
+    const stableSha256 = sha256(canonical({ scope: row.scope, migrationCount: row.migration_count, migrationFingerprint: row.migration_fingerprint }));
+    return [row.scope, { appliedAt, stableSha256 }];
+  }));
+}
 function assertPersistenceFacts(facts) {
   assertDigestFact(facts.business, "business");
   assertDigestFact(facts.sequences, "sequences");
   assertDigestFact(facts.media, "media", ["bytes"]);
   assertDigestFact(facts.protected, "protected");
   ledgerStable(facts.ledger);
+  exactKeys(facts.git, ["clean", "implementationRevision", "lockfileSha256"], "Git facts");
+  if (facts.git.clean !== true || !/^[a-f0-9]{40}$/.test(facts.git.implementationRevision) || !/^[a-f0-9]{64}$/.test(facts.git.lockfileSha256)) fail("Git facts are invalid");
+  exactKeys(facts.database, ["name", "schemaRows", "schemaSha256", "systemIdentifier"], "database facts");
+  if (facts.database.name !== "blog_x" || typeof facts.database.systemIdentifier !== "string" || !facts.database.systemIdentifier || !Number.isSafeInteger(facts.database.schemaRows) || facts.database.schemaRows < 1 || !/^[a-f0-9]{64}$/.test(facts.database.schemaSha256)) fail("database facts are invalid");
+  exactKeys(facts.seeds, ["api", "web"], "seed facts"); exactKeys(facts.targets, ["api", "web"], "target facts");
 }
 function persistenceEqual(before, after) {
-  for (const key of ["business", "sequences", "media", "protected", "volumes"]) if (!same(before[key], after[key])) fail(`${key} persistence changed`);
+  for (const key of ["business", "database", "git", "media", "protected", "seeds", "sequences", "targets", "volumes"]) if (!same(before[key], after[key])) fail(`${key} persistence changed`);
   const beforePg = containerByService(before, "postgres");
   const afterPg = containerByService(after, "postgres");
   if (beforePg?.Id !== afterPg?.Id || beforePg?.Image !== afterPg?.Image) fail("PostgreSQL identity changed");
@@ -135,8 +151,8 @@ export function assertPersistenceTransition(before, after, { stage, targetImageI
   const stableBefore = ledgerStable(before.ledger);
   const stableAfter = ledgerStable(after.ledger);
   if (!same(stableBefore, stableAfter)) fail("ledger stable tuples changed");
-  const timestampsBefore = Object.fromEntries(before.ledger.map((row) => [row.scope, row.applied_at]));
-  const timestampsAfter = Object.fromEntries(after.ledger.map((row) => [row.scope, row.applied_at]));
+  const timestampsBefore = Object.fromEntries(Object.entries(normalizedLedgerRows(before.ledger)).map(([scope, row]) => [scope, row.appliedAt]));
+  const timestampsAfter = Object.fromEntries(Object.entries(normalizedLedgerRows(after.ledger)).map(([scope, row]) => [scope, row.appliedAt]));
   if (!same(Object.keys(timestampsBefore).sort(), Object.keys(timestampsAfter).sort())) fail("ledger row count changed");
   if (stage === "postMigration") {
     if (!(Date.parse(timestampsAfter.phase1) > Date.parse(timestampsBefore.phase1))) fail("phase1 applied_at must advance strictly");
@@ -171,7 +187,7 @@ function routeProjection(routes) {
 }
 
 export function projectSanitizedFacts(facts) {
-  exactKeys(facts, FACT_KEYS.filter((key) => key !== "composeAuthority"), "collected facts", { optional: ["composeAuthority"] });
+  exactKeys(facts, BASE_FACT_KEYS, "collected facts", { optional: ["composeAuthority"] });
   assertFixedRuntimeAuthority(facts);
   assertPersistenceFacts(facts);
   assertRouteFacts(facts.routes);
@@ -180,17 +196,20 @@ export function projectSanitizedFacts(facts) {
     const item = containerByService(facts, service);
     return [service, { id: item.Id, imageId: item.Image, labels: normalizeLabels(item.Config?.Labels), healthy: item.State?.Health?.Status === "healthy" }];
   }));
-  const stable = ledgerStable(facts.ledger);
-  const timestamps = facts.ledger.map(({ scope, applied_at }) => ({ scope, applied_at }));
+  const rows = normalizedLedgerRows(facts.ledger);
   const projection = {
     business: digestProjection(facts.business, "business"),
     containers,
-    ledger: { count: facts.ledger.length, stableSha256: sha256(canonical(stable)), timestampSha256: sha256(canonical(timestamps)) },
+    database: copy(facts.database),
+    git: copy(facts.git),
+    ledger: { count: facts.ledger.length, rows, stableSha256: sha256(canonical(Object.fromEntries(Object.entries(rows).map(([scope, row]) => [scope, row.stableSha256])))), timestampSha256: sha256(canonical(Object.fromEntries(Object.entries(rows).map(([scope, row]) => [scope, row.appliedAt])))) },
     media: digestProjection(facts.media, "media", ["bytes"]),
     protected: digestProjection(facts.protected, "protected"),
     releaseState: "BLOCKED",
     routes: routeProjection(facts.routes),
     sequences: digestProjection(facts.sequences, "sequences"),
+    seeds: copy(facts.seeds),
+    targets: copy(facts.targets),
     topology: { project: REFRESH_AUTHORITY.project, servicesExact: true, fixedPortsExact: true, containersHealthy: true },
     volumes: { count: facts.volumes.length, sha256: sha256(canonical(facts.volumes)) },
   };
@@ -203,7 +222,7 @@ function normalizeVolumes(volumes) {
 }
 
 export async function collectRefreshFacts({ sources } = {}) {
-  const required = ["composeAuthority", "containers", "volumes", "business", "sequences", "ledger", "media", "protected", "routes", "releaseState"];
+  const required = ["composeAuthority", "containers", "volumes", "business", "sequences", "ledger", "media", "protected", "routes", "releaseState", "git", "database", "seeds", "targets"];
   if (!isPlain(sources) || required.some((key) => typeof sources[key] !== "function")) fail("collector requires every read-only source adapter");
   const facts = {
     composeAuthority: await sources.composeAuthority(),
@@ -217,6 +236,7 @@ export async function collectRefreshFacts({ sources } = {}) {
     routes: copy(await sources.routes()),
     releaseState: await sources.releaseState(),
   };
+  for (const key of ["git", "database", "seeds", "targets"]) facts[key] = copy(await sources[key]());
   assertFixedRuntimeAuthority(facts);
   assertPersistenceFacts(facts);
   assertRouteFacts(facts.routes);

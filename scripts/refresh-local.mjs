@@ -4,8 +4,9 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import {
-  createLiveRefreshAdapter,
-  createRefreshAttemptStore,
+  createProductionLiveRefreshAdapter,
+  createProductionRefreshAttemptStore,
+  verifyProductionLiveRefreshEvidence,
   verifyLiveRefreshEvidence,
 } from "./refresh-local-live.mjs";
 
@@ -90,7 +91,7 @@ export async function runLocalRefresh({ adapter, plan = createRefreshPlan({ revi
       await adapter.execute(phase, plan);
     }
     await adapter.execute("write-evidence", plan);
-    return { format: "blog-x-phase6-local-refresh-evidence", version: 3, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, releaseState: "BLOCKED" };
+    return { format: "blog-x-phase6-local-refresh-evidence", version: 4, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, releaseState: "BLOCKED" };
   } catch (error) {
     if (cutoverStarted) {
       await adapter.execute("rollback-api-web", plan);
@@ -101,8 +102,13 @@ export async function runLocalRefresh({ adapter, plan = createRefreshPlan({ revi
 }
 
 function run(command, args, { cwd = root, input, env } = {}) {
+  const childEnv = Object.fromEntries(["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL"].filter((key) => typeof process.env[key] === "string" && process.env[key]).map((key) => [key, process.env[key]]));
+  for (const [key, value] of Object.entries(env ?? {})) {
+    if (!["BLOG_X_API_IMAGE", "BLOG_X_WEB_IMAGE"].includes(key) || typeof value !== "string") fail("child environment addition is forbidden");
+    childEnv[key] = value;
+  }
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(command, args, { cwd, env: env ? { ...process.env, ...env } : process.env, stdio: [input ? "pipe" : "ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, { cwd, env: childEnv, stdio: [input ? "pipe" : "ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => { stdout += chunk; });
@@ -146,7 +152,7 @@ async function probeOne(application, seedImage, revision, lockSha256) {
     inspectTargetFilesystem({ workdir: config.WorkingDir, cmd: config.Cmd, neutralStore: store, storePath: store, paths: [`${REFRESH_ROOT}/apps/${application}`, `${store}/probe`] });
     return { tag, imageId: image.Id, store };
   } finally {
-    await run("docker", ["image", "rm", tag]).catch(() => undefined);
+    await run("docker", ["image", "rm", tag]);
   }
 }
 
@@ -173,14 +179,14 @@ async function resolveCleanRevision() {
 export async function runRefreshCli({
   argv = process.argv.slice(2),
   revisionResolver = resolveCleanRevision,
-  claimStore = createRefreshAttemptStore(),
-  liveAdapterFactory = async ({ revision }) => createLiveRefreshAdapter({ runArgv: run, root, claimStore }),
+  claimStore = createProductionRefreshAttemptStore(),
+  liveAdapterFactory = createProductionLiveRefreshAdapter,
   io = process.stdout,
 } = {}) {
   const evidenceOption = argv.find((item) => item.startsWith("--verify-evidence="));
   if (evidenceOption) {
     if (argv.length !== 1 || evidenceOption !== "--verify-evidence=ops/phase6-local-refresh-evidence.json") fail("evidence verification accepts only the fixed evidence path");
-    await verifyEvidence("ops/phase6-local-refresh-evidence.json");
+    await verifyProductionLiveRefreshEvidence();
     io.write("LOCAL REFRESH EVIDENCE VERIFIED; RELEASE BLOCKED\n");
     return { releaseState: "BLOCKED" };
   }
@@ -199,13 +205,36 @@ export async function runRefreshCli({
     io.write(`LOCAL REFRESH ATTEMPT CLAIM ${mode.toUpperCase()} ${revisionOption}\n`);
     return result;
   }
+  const failureOption = argv.find((item) => item.startsWith("--check-failure-report="));
+  if (failureOption) {
+    const mode = failureOption.slice("--check-failure-report=".length);
+    const revisionToken = argv[1] ?? ""; const revision = revisionToken.startsWith("--revision=") ? revisionToken.slice("--revision=".length) : "";
+    if (argv.length !== 2 || argv[0] !== `--check-failure-report=${mode}` || argv[1] !== `--revision=${revision}` || !["absent", "present"].includes(mode) || !/^[a-f0-9]{40}$/.test(revision)) fail("failure report check requires exact ordered mode and revision arguments");
+    const result = mode === "absent" ? await claimStore.assertFailureReportAbsent(revision) : await claimStore.assertFailureReportPresent(revision);
+    io.write(mode === "absent" ? `REFRESH FAILURE REPORT ABSENT ${revision}\n` : `REFRESH FAILURE REPORT PRESENT ${revision} ${result.sha256}\n`);
+    return result;
+  }
   if (argv.length) fail("unknown refresh CLI option");
   const revision = await revisionResolver();
   shortRevision(revision);
   await claimStore.assertAbsent(revision);
-  const adapter = await liveAdapterFactory({ revision, claimStore });
-  const plan = createRefreshPlan({ revision, lockSha256: sha256(await readFile(lockfile)), apiSeedId: "sha256:0", webSeedId: "sha256:0" });
-  return runLocalRefresh({ adapter, plan });
+  const claim = await claimStore.claimRefreshAttempt(revision);
+  let adapter;
+  try {
+    adapter = await liveAdapterFactory();
+    adapter.attachAttemptClaim?.(claim);
+    const plan = createRefreshPlan({ revision, lockSha256: sha256(await readFile(lockfile)), apiSeedId: "sha256:0", webSeedId: "sha256:0" });
+    return await runLocalRefresh({ adapter, plan });
+  } catch (error) {
+    let detail = { baseline: "not_applicable", recollection: "not_attempted", preservation: "not_applicable_pre_runtime", facts: { preflight: null, current: null, rollback: null } };
+    if (adapter?.recollectFailure) {
+      try { detail = await adapter.recollectFailure(error); }
+      catch { detail = { baseline: "applicable", recollection: "failed", preservation: "unproved", facts: { preflight: null, current: null, rollback: null } }; }
+    }
+    const report = { format: "blog-x-local-refresh-failure", version: 1, implementationRevision: revision, claimSha256: claim.sha256, stage: adapter?.currentPhase?.() ?? "adapter_construction", errorClass: String(error?.name ?? "error").toLowerCase().replace(/[^a-z0-9_-]/g, "_") || "error", ...detail };
+    try { await claimStore.writeFailureReport(report); } catch (reportError) { throw new Error(`UNRECOVERABLE_FAILURE_REPORT_INVARIANT:${reportError?.code ?? "publication_failed"}`, { cause: error }); }
+    throw error;
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
