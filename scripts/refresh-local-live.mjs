@@ -217,4 +217,9 @@ export async function verifyLiveRefreshEvidence(path, { claimStore = createRefre
   return evidence;
 }
 
+/** Read-only inspection used by the 06-07 pre/post attempt gate. */
+export async function inspectRefreshAttemptClaim(revision, { claimStore = createRefreshAttemptStore() } = {}) {
+  return claimStore.assertPresent(revision);
+}
+
 export { CLAIM_ROOT, EVIDENCE_PATH };

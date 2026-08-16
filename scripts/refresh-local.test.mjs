@@ -20,6 +20,7 @@ import {
 import {
   createLiveRefreshAdapter,
   createRefreshAttemptStore,
+  inspectRefreshAttemptClaim,
   verifyLiveRefreshEvidence,
 } from "./refresh-local-live.mjs";
 
@@ -211,6 +212,7 @@ test("attempt claims are canonical, exclusive, revision-bound, and leave second 
   const revision = "f".repeat(40);
   const first = await store.claimRefreshAttempt(revision);
   assert.match(first.sha256, /^[a-f0-9]{64}$/);
+  assert.equal((await inspectRefreshAttemptClaim(revision, { claimStore: store })).sha256, first.sha256);
   assert.deepEqual(JSON.parse(first.bytes.trim()), { format: "blog-x-local-refresh-attempt", version: 1, implementationRevision: revision });
   await assert.rejects(store.claimRefreshAttempt(revision), /claimed|exists/i);
   let factoryCalls = 0;
