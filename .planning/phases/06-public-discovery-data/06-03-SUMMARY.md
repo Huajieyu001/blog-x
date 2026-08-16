@@ -164,3 +164,27 @@ None. Phase 8 owns durable cache-loss/offline recovery automation; no manual ser
 ---
 *Phase: 06-public-discovery-data*
 *Completed: 2026-08-15*
+
+## Closure Addendum — 2026-08-16
+
+This addendum closes the stale fixed-runtime observation recorded above without rewriting it. The original offline-cache safe stop, its conclusions, and every later audit/failed-attempt stop remain part of the permanent history.
+
+### Preserved safe-stop and terminal-attempt history
+
+- The original 06-03 bare refresh failed closed at `LOCAL REFRESH BLOCKED: OFFLINE CACHE MISSING`; it made no migration, service, volume, database, media, server, or release mutation.
+- `b7fa05c5b41859e037ce6c5d361fc9ee7fc8d44b` consumed one bare invocation and safely stopped before Docker/Compose/database/volume/runtime/evidence/server/deploy mutation because the refresh still had no live adapter.
+- `3221f99b6617180536f558583e2d84585113813c` stopped in pre-execution audit before invocation, claim, evidence, or mutation because adapter authority, persistence/provenance, rollback, argv/filesystem, and evidence reconstruction were not yet sufficient.
+- `df4aa3b702409754cc52e6f761d2218114c9b2bc` stopped in an independent read-only audit before invocation, claim, evidence, or mutation. It identified incomplete v3 reconstruction, terminal-failure reporting gaps, ambient authority gaps, injectable production seams, and non-atomic claim/evidence invariants.
+- `5cd4ec6b8342a7f086173d03d48e37a6793a2b4a` consumed its sole attempt and stopped terminally at Compose v5 NDJSON authority parsing. Its revision was not retried.
+- `eb6ea25b6fc15d9f1c77a21f82eb3fd5722a912c` consumed its sole attempt and stopped terminally because the sealed route set used `/archive` instead of the canonical `/archives`. Its revision was not retried.
+- `b6a72d43dca668cd0208226c2813c848e11e7921` consumed its sole attempt and stopped terminally because stale preflight search/related routes were incorrectly held to final strict contracts. Its revision was not retried.
+
+### Successful fixed refresh
+
+- Implementation revision `fd5ef1ba4b3c54f3c169d9fcfb931dba324ddbc5` consumed exactly one no-option refresh attempt and succeeded. Its claim digest is `66ce23a6dd32307143e88e7e8da5e88a9a467e5428637a879d879f7b4212344a`; the canonical failure-report check is absent.
+- Evidence-only commit `719062d799a93b048ed0d6c83c79f531cdbf26ed` contains strict v4 evidence with SHA-256 `16704ea439990dd31797620555b46ac202fc6468e4716175246b874f41f596f6`.
+- The fixed `blogxlocal` runtime now uses target API image `sha256:4d50e57382e1d47565d25aeabb1282f4610311735c37c13b43e3861094a10509` and Web image `sha256:1459d87bbad8e2b8f2e5a500f83bea4d85ee04356fef8f7e1c638f946269002b`; PostgreSQL identity, two named volumes, 38 business rows, normalized ledger state, zero media bytes, and protected history are preserved by the recorded stage digests.
+- Final same-origin visibility at `http://127.0.0.1:3100` includes `/archives` 200, empty-query search 200, and the unknown-article related endpoint 404 under its strict final contract. Phase 7 search/related UI is not present yet.
+- Release remains canonically `BLOCKED`. No cloud server, registry, deployment, push, production-unfreeze, or release transition was part of this closure.
+
+This addendum and 06-11-SUMMARY are an executor handoff, not Phase 6 completion authority. A fresh independent verifier alone decides Phase 6 closure; `06-VERIFICATION.md`, REQUIREMENTS, ROADMAP, STATE completion, milestone/archive records, and the Phase 5 receipt remain untouched here.
