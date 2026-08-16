@@ -1,87 +1,123 @@
 import { createHash, randomBytes } from "node:crypto";
+import { lstat, link, mkdir, open, readFile, readdir, realpath, unlink } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
 import {
-  chmod, lstat, link, mkdir, open, readFile, realpath, rename, rm, stat, unlink,
-} from "node:fs/promises";
-import { basename, dirname, isAbsolute, resolve } from "node:path";
+  REFRESH_AUTHORITY,
+  assertFixedRuntimeAuthority,
+  assertPersistenceTransition,
+  assertRouteFacts,
+  collectRefreshFacts,
+  factsEqual,
+  factsSha256,
+  projectSanitizedFacts,
+} from "./refresh-local-facts.mjs";
 
 const CLAIM_ROOT = "/private/tmp/blog-x-refresh-attempts";
 const EVIDENCE_PATH = "ops/phase6-local-refresh-evidence.json";
 const COMPOSE_FILE = "compose.yaml";
 const PROJECT = "blogxlocal";
 const ORIGIN = "http://127.0.0.1:3100";
-const SERVICES = ["api", "web"];
 const CONTAINERS = ["blogxlocal-postgres-1", "blogxlocal-api-1", "blogxlocal-web-1"];
 const VOLUMES = ["blogxlocal_postgres-data", "blogxlocal_media-data"];
+const REQUIRED_IMAGE_LABELS = ["org.opencontainers.image.revision", "io.blog-x.lockfile-sha256", "io.blog-x.seed-image-id", "io.blog-x.application", "io.blog-x.public-origin", "io.blog-x.refresh-kind"];
+const MEDIA_PROGRAM = "const fs=require('node:fs'),crypto=require('node:crypto'),path=require('node:path');const root='/var/lib/blog-x/media';const out=[];function walk(dir){for(const name of fs.readdirSync(dir).sort()){const full=path.join(dir,name),st=fs.lstatSync(full);if(st.isSymbolicLink())throw new Error('symlink');if(st.isDirectory())walk(full);else if(st.isFile()){const bytes=fs.readFileSync(full);out.push({relativePath:path.relative(root,full),bytes:bytes.length,sha256:crypto.createHash('sha256').update(bytes).digest('hex')});}}}if(fs.existsSync(root))walk(root);process.stdout.write(JSON.stringify(out));";
+const TARGET_FS_PROGRAM = "const fs=require('node:fs');const app=process.argv[1],store=process.argv[2],required=app==='web'?['/refresh-workspace/apps/web/.next','/refresh-workspace/node_modules']:['/refresh-workspace/apps/api/src/app.ts','/refresh-workspace/node_modules'],forbidden=['/workspace','/pnpm-store/files',app==='web'?'/refresh-workspace/apps/web/dist':'/refresh-workspace/apps/api/dist'],roots=fs.readdirSync('/pnpm-store');if(!/^\\/pnpm-store\\/v\\d+$/.test(store)||roots.length!==1||!/^v\\d+$/.test(roots[0])||required.some(p=>!fs.existsSync(p))||forbidden.some(p=>fs.existsSync(p)))process.exit(42);";
+const ONEOFF_PROGRAM = "setInterval(()=>{},2147483647)";
+const BUSINESS_ARGS = ["-p", PROJECT, "-f", COMPOSE_FILE, "exec", "-T", "postgres", "pg_dump", "--data-only", "--no-owner", "--no-privileges", "--exclude-table=public.blog_x_schema_ledger", "--dbname=postgres://blog_x@127.0.0.1:5432/blog_x"];
+const SEQUENCE_SQL = "SELECT COALESCE(json_agg(x ORDER BY schemaname,sequencename),'[]'::json) FROM (SELECT schemaname,sequencename,sequenceowner,data_type,start_value,min_value,max_value,increment_by,cycle,cache_size,last_value FROM pg_sequences WHERE schemaname='public') x;";
+const LEDGER_SQL = "SELECT COALESCE(json_agg(x ORDER BY scope),'[]'::json) FROM (SELECT scope,migration_count,migration_fingerprint,applied_at FROM blog_x_schema_ledger) x;";
+const PSQL_PREFIX = ["-p", PROJECT, "-f", COMPOSE_FILE, "exec", "-T", "postgres", "psql", "--no-psqlrc", "--tuples-only", "--no-align", "--dbname=postgres://blog_x@127.0.0.1:5432/blog_x", "--command"];
 
 function fail(message) { throw new Error(`local refresh: ${message}`); }
 function digest(value) { return createHash("sha256").update(value).digest("hex"); }
-function validRevision(revision) { return typeof revision === "string" && /^[a-f0-9]{40}$/.test(revision); }
-function canonical(value) { return JSON.stringify(value, Object.keys(value).sort()); }
+function validRevision(value) { return typeof value === "string" && /^[a-f0-9]{40}$/.test(value); }
+function validDigest(value) { return typeof value === "string" && /^[a-f0-9]{64}$/.test(value); }
+function validImageId(value) { return typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value); }
+function same(left, right) { return JSON.stringify(left) === JSON.stringify(right); }
+function exactKeys(value, keys, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !same(Object.keys(value).sort(), [...keys].sort())) fail(`${label} keys are not exact`);
+}
 function canonicalClaim(revision) {
   if (!validRevision(revision)) fail("attempt claim revision must be lowercase full SHA");
   return `${JSON.stringify({ format: "blog-x-local-refresh-attempt", version: 1, implementationRevision: revision })}\n`;
 }
+function mode(entry) { return entry.mode & 0o7777; }
+function isMissing(error) { return error?.code === "ENOENT"; }
+function selectedLabels(labels = {}) { return Object.fromEntries(REQUIRED_IMAGE_LABELS.map((key) => [key, labels[key]])); }
+function parseJson(stdout, label) { try { return JSON.parse(stdout); } catch { fail(`${label} returned invalid JSON`); } }
+function cleanOutput(result) { return String(result?.stdout ?? "").trim(); }
+function normalizeDump(value) { return value.split("\n").filter((line) => !/^--|^SET |^SELECT pg_catalog\.set_config|^\\restrict |^\\unrestrict /.test(line)).join("\n").trim(); }
 
-const nativeFs = { chmod, lstat, link, mkdir, open, readFile, realpath, rename, rm, stat, unlink };
+const nativeFs = { lstat, link, mkdir, open, readFile, readdir, realpath, unlink };
 
-function assertClaimRoot(root) {
-  if (typeof root !== "string" || !isAbsolute(root) || root === "/" || basename(root) !== "blog-x-refresh-attempts") fail("attempt claim root is unsafe");
-}
-
-export function createRefreshAttemptStore({ root = CLAIM_ROOT, fs = nativeFs } = {}) {
-  assertClaimRoot(root);
+/** The path is deliberately not configurable: tests inject filesystem and identity behavior, never authority. */
+export function createRefreshAttemptStore({ fs = nativeFs, identity = { uid: process.getuid?.() }, randomHex = () => randomBytes(12).toString("hex"), ...unexpected } = {}) {
+  if (Object.keys(unexpected).length) fail("attempt claim store accepts no root override or extra option");
+  if (!Number.isSafeInteger(identity.uid) || identity.uid < 0) fail("attempt claim identity is invalid");
   const pathFor = (revision) => {
     if (!validRevision(revision)) fail("attempt claim revision must be lowercase full SHA");
-    return resolve(root, `${revision}.json`);
+    return `${CLAIM_ROOT}/${revision}.json`;
   };
-  async function missing(path) {
-    try { await fs.lstat(path); return false; } catch (error) { if (error?.code === "ENOENT") return true; throw error; }
+  async function entry(path) { try { return await fs.lstat(path); } catch (error) { if (isMissing(error)) return undefined; throw error; } }
+  async function assertRealDirectory(path, { uid, expectedMode }) {
+    const item = await entry(path);
+    if (!item || !item.isDirectory() || item.isSymbolicLink() || item.uid !== uid || mode(item) !== expectedMode || await fs.realpath(path) !== path) fail(`attempt claim path ${path} authority is unsafe`);
   }
-  async function assertDirectory({ create = false } = {}) {
-    if (create) await fs.mkdir(root, { recursive: true, mode: 0o700 });
-    if (await missing(root)) return false;
-    const entry = await fs.lstat(root);
-    if (!entry.isDirectory() || entry.isSymbolicLink() || (entry.mode & 0o777) !== 0o700) fail("attempt claim root must be a real mode-0700 directory");
-    // macOS commonly exposes /private/tmp through a symlinked parent; lstat on the
-    // final fixed directory is the portable boundary we can enforce here.
+  async function assertParents() {
+    await assertRealDirectory("/private", { uid: 0, expectedMode: 0o755 });
+    await assertRealDirectory("/private/tmp", { uid: 0, expectedMode: 0o1777 });
+  }
+  async function assertRoot({ create = false } = {}) {
+    await assertParents();
+    let item = await entry(CLAIM_ROOT);
+    if (!item && create) {
+      await fs.mkdir(CLAIM_ROOT, { mode: 0o700 });
+      item = await entry(CLAIM_ROOT);
+    }
+    if (!item) return false;
+    await assertRealDirectory(CLAIM_ROOT, { uid: identity.uid, expectedMode: 0o700 });
     return true;
   }
+  async function assertClaimFile(path) {
+    const item = await entry(path);
+    if (!item || !item.isFile() || item.isSymbolicLink() || item.uid !== identity.uid || mode(item) !== 0o600 || await fs.realpath(path) !== path) fail("attempt claim file authority is unsafe");
+  }
   return Object.freeze({
-    root,
+    root: CLAIM_ROOT,
     pathFor,
     async assertAbsent(revision) {
       const path = pathFor(revision);
-      if (!(await assertDirectory())) return { present: false };
-      if (!(await missing(path))) fail("refresh attempt is already claimed");
+      if (!(await assertRoot())) return { present: false };
+      if (await entry(path)) fail("refresh attempt is already claimed");
       return { present: false };
     },
     async assertPresent(revision) {
       const path = pathFor(revision);
-      if (!(await assertDirectory()) || await missing(path)) fail("refresh attempt claim is absent");
+      if (!(await assertRoot())) fail("refresh attempt claim is absent");
+      await assertClaimFile(path);
       const bytes = await fs.readFile(path, "utf8");
-      if (bytes !== canonicalClaim(revision)) fail("refresh attempt claim bytes are not canonical");
+      if (bytes !== canonicalClaim(revision)) fail("attempt claim bytes are not canonical");
       return { present: true, bytes, sha256: digest(bytes) };
     },
     async claimRefreshAttempt(revision) {
       const finalPath = pathFor(revision);
-      await assertDirectory({ create: true });
-      if (!(await missing(finalPath))) fail("refresh attempt is already claimed");
+      await assertRoot({ create: true });
+      if (await entry(finalPath)) fail("refresh attempt is already claimed");
       const bytes = canonicalClaim(revision);
-      const tempPath = resolve(root, `.${revision}.${randomBytes(12).toString("hex")}.tmp`);
+      const suffix = randomHex();
+      if (!/^[a-f0-9]{24}$/.test(suffix)) fail("attempt claim temporary token is invalid");
+      const tempPath = `${CLAIM_ROOT}/.${revision}.${suffix}.tmp`;
       let handle;
       try {
         handle = await fs.open(tempPath, "wx", 0o600);
         await handle.writeFile(bytes, "utf8");
         await handle.sync();
-        await handle.close();
-        handle = undefined;
-        try { await fs.link(tempPath, finalPath); } catch (error) {
-          if (error?.code === "EEXIST") fail("refresh attempt is already claimed");
-          throw error;
-        }
-        const directory = await fs.open(root, "r");
-        await directory.sync();
-        await directory.close();
+        await handle.close(); handle = undefined;
+        await assertClaimFile(tempPath);
+        try { await fs.link(tempPath, finalPath); } catch (error) { if (error?.code === "EEXIST") fail("refresh attempt is already claimed"); throw error; }
+        await assertClaimFile(finalPath);
+        const directory = await fs.open(CLAIM_ROOT, "r");
+        try { await directory.sync(); } finally { await directory.close(); }
         return { implementationRevision: revision, bytes, sha256: digest(bytes) };
       } finally {
         await handle?.close().catch(() => undefined);
@@ -91,135 +127,328 @@ export function createRefreshAttemptStore({ root = CLAIM_ROOT, fs = nativeFs } =
   });
 }
 
-function composePrefix(args) {
-  return args[0] === "-p" && args[1] === PROJECT && args[2] === "-f" && args[3] === COMPOSE_FILE;
+function exact(command, args, expected) { return command === expected[0] && same(args, expected[1]); }
+function buildArgsMatch(args) {
+  if (args.length !== 18 || args[0] !== "build" || args[1] !== "--network=none" || args[2] !== "--pull=false" || args[3] !== "--file" || !/^apps\/(api|web)\/Dockerfile\.refresh$/.test(args[4]) || args[5] !== "--tag") return false;
+  const app = args[4].split("/")[1];
+  const revision = args[12]?.slice("REFRESH_REVISION=".length);
+  return args[6] === `blog-x-${app}-local:${revision?.slice(0, 12)}` && args[7] === "--build-arg" && args[8].startsWith("SEED_IMAGE=") && validRef(args[8].slice("SEED_IMAGE=".length)) && args[9] === "--build-arg" && /^SEED_IMAGE_ID=sha256:[a-f0-9]{64}$/.test(args[10]) && args[11] === "--build-arg" && validRevision(revision) && args[13] === "--build-arg" && /^LOCKFILE_SHA256=[a-f0-9]{64}$/.test(args[14]) && args[15] === "--build-arg" && args[16] === `PUBLIC_ORIGIN=${ORIGIN}` && args[17] === ".";
+}
+function validRef(ref) { return validImageId(ref) || /^blog-x-(api|web)-local(?::[a-f0-9]{12})?$/.test(ref); }
+function validOneoff(value) { return /^blogxlocal-api-refresh-[a-f0-9]{12}$/.test(value); }
+function assertEnv(options, expected) {
+  const actual = options?.env ?? {};
+  if (!same(Object.keys(actual).sort(), Object.keys(expected).sort()) || Object.entries(expected).some(([key, value]) => actual[key] !== value)) fail("command environment is not exact");
 }
 
-/** Positive command allowlist: all stateful actions below remain fixed to blogxlocal. */
-export function assertAllowedRefreshArgv(command, args) {
+/** Complete token-level policy. The runner never receives a command before this passes. */
+export function assertAllowedRefreshCommand(command, args, options = {}) {
   if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string" || arg.includes("\0"))) fail("command argv is invalid");
-  if (command === "git") {
-    if (["status --porcelain", "rev-parse HEAD", "hash-object pnpm-lock.yaml"].includes(args.join(" "))) return;
-  }
+  let allowed = false;
+  if (command === "git") allowed = exact(command, args, ["git", ["status", "--porcelain"]]) || exact(command, args, ["git", ["rev-parse", "HEAD"]]) || exact(command, args, ["git", ["hash-object", "pnpm-lock.yaml"]]) || exact(command, args, ["git", ["ls-files", ".planning/milestones"]]);
   if (command === "docker") {
-    if (args[0] === "build" && args.includes("--network=none") && args.includes("--pull=false") && args.includes("--file") && args.includes("--tag") && args.at(-1) === "." && !args.some((arg) => /network=host|buildx|pull$/.test(arg))) return;
-    if (["container", "image", "volume"].includes(args[0]) && args[1] === "inspect") return;
-    if (args[0] === "run" && args.includes("--network=none") && args.includes("--rm")) return;
+    allowed = buildArgsMatch(args)
+      || (same(args.slice(0, 2), ["image", "inspect"]) && args.length === 3 && validRef(args[2]))
+      || (same(args.slice(0, 2), ["container", "inspect"]) && ((args.length === 5 && same(args.slice(2), CONTAINERS)) || (args.length === 3 && validOneoff(args[2]))))
+      || (same(args.slice(0, 2), ["volume", "inspect"]) && args.length === 4 && same(args.slice(2), VOLUMES))
+      || (args.length === 10 && same(args.slice(0, 5), ["run", "--rm", "--network=none", "--entrypoint", "corepack"]) && validRef(args[5]) && same(args.slice(6), ["pnpm", "--store-dir=/pnpm-store", "store", "path"]))
+      || (args.length === 10 && same(args.slice(0, 5), ["run", "--rm", "--network=none", "--entrypoint", "node"]) && validRef(args[5]) && args[6] === "-e" && args[7] === TARGET_FS_PROGRAM && ["api", "web"].includes(args[8]) && /^\/pnpm-store\/v\d+$/.test(args[9]))
+      || (args.length === 3 && args[0] === "exec" && validOneoff(args[1]) && args[2] === "true")
+      || (args.length === 7 && args[0] === "exec" && validOneoff(args[1]) && same(args.slice(2, 6), ["corepack", "pnpm", "--filter", "@blog-x/api"]) && ["db:migrate", "db:schema:verify"].includes(args[6]))
+      || (args.length === 3 && same(args.slice(0, 2), ["rm", "-f"]) && validOneoff(args[2]));
   }
-  if (command === "docker-compose" && composePrefix(args)) {
+  const prefix = ["-p", PROJECT, "-f", COMPOSE_FILE];
+  if (command === "docker-compose" && same(args.slice(0, 4), prefix)) {
     const tail = args.slice(4);
-    if (["config", "ps"].includes(tail[0])) return;
-    if (tail[0] === "exec" && tail[1] === "-T" && ["postgres", "api", "web"].includes(tail[2])) return;
-    if (tail[0] === "run" && tail[1] === "--rm" && tail[2] === "--no-deps" && tail[3] === "api") return;
-    if (tail[0] === "up" && tail.slice(1, 5).join(" ") === "-d --wait --no-build --no-deps" && tail.slice(5).join(" ") === "api web") return;
+    allowed = same(tail, ["config", "--services"])
+      || same(tail, ["ps", "--all", "--format", "json"])
+      || same(args, BUSINESS_ARGS)
+      || same(args, [...PSQL_PREFIX, SEQUENCE_SQL])
+      || same(args, [...PSQL_PREFIX, LEDGER_SQL])
+      || same(tail, ["exec", "-T", "api", "node", "-e", MEDIA_PROGRAM])
+      || (tail.length === 9 && same(tail.slice(0, 5), ["run", "--detach", "--no-deps", "--name", tail[4]]) && validOneoff(tail[4]) && same(tail.slice(5), ["api", "node", "-e", ONEOFF_PROGRAM]))
+      || same(tail, ["up", "-d", "--wait", "--no-build", "--no-deps", "api", "web"]);
   }
-  if (command === "node" && args[0] === "scripts/release-gate.mjs" && args.includes("--expect-blocked")) return;
-  fail(`command is not allowlisted: ${command} ${args.join(" ")}`);
+  if (command === "node") allowed = same(args, ["scripts/release-gate.mjs", "--evidence=ops/release-evidence.blocked.json", "--expect-blocked"]);
+  if (!allowed) fail(`command argv is not an exact allowlisted shape: ${command} ${args.join(" ")}`);
+  if (options?.env !== undefined) {
+    if (command === "docker-compose" && args.at(4) === "run") {
+      assertEnv(options, { BLOG_X_API_IMAGE: options.env.BLOG_X_API_IMAGE });
+      const suffix = args[8]?.slice("blogxlocal-api-refresh-".length);
+      if (options.env.BLOG_X_API_IMAGE !== `blog-x-api-local:${suffix}`) fail("target API environment is not exact");
+    }
+    else if (command === "docker-compose" && args.at(4) === "up") {
+      exactKeys(options.env, ["BLOG_X_API_IMAGE", "BLOG_X_WEB_IMAGE"], "Compose image environment");
+      if (![options.env.BLOG_X_API_IMAGE, options.env.BLOG_X_WEB_IMAGE].every(validRef)) fail("Compose image environment contains a mutable or alternate ref");
+    } else fail("command does not accept an environment override");
+  }
+  return true;
 }
 
-function parseJson(stdout, label) { try { return JSON.parse(stdout); } catch { fail(`${label} returned invalid JSON`); } }
-function normalizeVolume(volumes) {
-  return volumes.map(({ Name, Driver, Mountpoint, CreatedAt, Scope, Labels, Options }) => ({ Name, Driver, Mountpoint, CreatedAt, Scope, Labels: Labels ?? {}, Options: Options ?? {} })).sort((a, b) => a.Name.localeCompare(b.Name));
-}
-function redactError(error) { return String(error?.message ?? error).replace(/postgres:\/\/\S+/g, "[redacted]"); }
+export const assertAllowedRefreshArgv = assertAllowedRefreshCommand;
 
-export function createLiveRefreshAdapter({ runArgv, claimStore = createRefreshAttemptStore(), fetch = globalThis.fetch, now = () => new Date().toISOString(), root = process.cwd(), evidenceFs = nativeFs } = {}) {
+function routeSource(fetch) {
+  return async () => {
+    const output = {};
+    for (const path of ["/", "/categories", "/tags", "/archive", "/api/health", "/api/public/search?q=", "/api/public/articles/phase6-unknown/related"]) {
+      const response = await fetch(`${ORIGIN}${path}`);
+      const bytes = await response.text();
+      if (Buffer.byteLength(bytes) > 1_048_576) fail(`route ${path} body exceeds the fixed bound`);
+      const fact = { status: response.status, bodySha256: digest(bytes) };
+      if (path.startsWith("/api/")) { try { fact.body = JSON.parse(bytes); } catch { fail(`route ${path} returned malformed JSON`); } }
+      output[path] = fact;
+    }
+    assertRouteFacts(output);
+    return output;
+  };
+}
+
+export function createRefreshFactSources({ run, fetch, root = process.cwd(), fs = nativeFs }) {
+  return Object.freeze({
+    async composeAuthority() {
+      const services = cleanOutput(await run("docker-compose", ["-p", PROJECT, "-f", COMPOSE_FILE, "config", "--services"])).split("\n").filter(Boolean).sort();
+      const raw = parseJson(cleanOutput(await run("docker-compose", ["-p", PROJECT, "-f", COMPOSE_FILE, "ps", "--all", "--format", "json"])), "Compose ps");
+      const ps = (Array.isArray(raw) ? raw : [raw]).map((item) => item.Service).sort();
+      return { services, ps };
+    },
+    async containers() { return parseJson((await run("docker", ["container", "inspect", ...CONTAINERS])).stdout, "container inspect"); },
+    async volumes() { return parseJson((await run("docker", ["volume", "inspect", ...VOLUMES])).stdout, "volume inspect"); },
+    async business() { const value = normalizeDump((await run("docker-compose", BUSINESS_ARGS)).stdout); return { count: value ? value.split("\n").length : 0, sha256: digest(value) }; },
+    async sequences() { const rows = parseJson(cleanOutput(await run("docker-compose", [...PSQL_PREFIX, SEQUENCE_SQL])), "sequence query"); return { count: rows.length, sha256: factsSha256(rows) }; },
+    async ledger() { return parseJson(cleanOutput(await run("docker-compose", [...PSQL_PREFIX, LEDGER_SQL])), "ledger query"); },
+    async media() { const rows = parseJson(cleanOutput(await run("docker-compose", ["-p", PROJECT, "-f", COMPOSE_FILE, "exec", "-T", "api", "node", "-e", MEDIA_PROGRAM])), "media inventory"); return { count: rows.length, bytes: rows.reduce((sum, row) => sum + row.bytes, 0), sha256: factsSha256(rows) }; },
+    async protected() {
+      const tracked = cleanOutput(await run("git", ["ls-files", ".planning/milestones"])).split("\n").filter(Boolean);
+      const paths = [...tracked, "ops/phase5-full-gate-receipt.json", ".planning/phases/06-public-discovery-data/06-VERIFICATION.md"].sort();
+      const hashes = [];
+      for (const path of paths) hashes.push({ path, sha256: digest(await fs.readFile(resolve(root, path))) });
+      return { count: hashes.length, sha256: factsSha256(hashes) };
+    },
+    routes: routeSource(fetch),
+    async releaseState() { await run("node", ["scripts/release-gate.mjs", "--evidence=ops/release-evidence.blocked.json", "--expect-blocked"]); return "BLOCKED"; },
+  });
+}
+
+function buildCommand(target, plan) {
+  return ["build", "--network=none", "--pull=false", "--file", target.dockerfile, "--tag", target.tag, "--build-arg", `SEED_IMAGE=${target.seedReference}`, "--build-arg", `SEED_IMAGE_ID=${target.seedId}`, "--build-arg", `REFRESH_REVISION=${plan.revision}`, "--build-arg", `LOCKFILE_SHA256=${plan.lockSha256}`, "--build-arg", `PUBLIC_ORIGIN=${ORIGIN}`, "."];
+}
+function imageByService(facts, service) { return facts.containers.find((item) => item.Config?.Labels?.["com.docker.compose.service"] === service); }
+function validateTarget(image, target) {
+  if (!validImageId(image?.Id) || image.Config?.WorkingDir !== "/refresh-workspace" || !Array.isArray(image.Config?.Cmd) || image.Config.Cmd.some((part) => String(part).includes("/workspace"))) fail(`${target.application} target configuration is invalid`);
+  const expected = { ...target.labels, "io.blog-x.seed-image-id": target.seedId };
+  exactKeys(selectedLabels(image.Config?.Labels), REQUIRED_IMAGE_LABELS, `${target.application} target labels`);
+  for (const [key, value] of Object.entries(expected)) if (image.Config.Labels[key] !== value) fail(`${target.application} target label ${key} is not exact`);
+}
+async function publishEvidence(fs, finalPath, bytes, randomHex) {
+  const token = randomHex();
+  if (!/^[a-f0-9]{16}$/.test(token)) fail("evidence temporary token is invalid");
+  const temp = resolve(dirname(finalPath), `.${basename(finalPath)}.${token}.tmp`);
+  let handle; let linked = false;
+  try {
+    handle = await fs.open(temp, "wx", 0o600);
+    await handle.writeFile(bytes, "utf8"); await handle.sync(); await handle.close(); handle = undefined;
+    try { await fs.link(temp, finalPath); linked = true; } catch (error) { if (error?.code === "EEXIST") fail("evidence already exists and will not be overwritten"); throw error; }
+    const directory = await fs.open(dirname(finalPath), "r");
+    try { await directory.sync(); } finally { await directory.close(); }
+  } catch (error) {
+    if (linked) await fs.unlink(finalPath).catch(() => undefined);
+    throw error;
+  } finally { await handle?.close().catch(() => undefined); await fs.unlink(temp).catch(() => undefined); }
+}
+
+export function createLiveRefreshAdapter({ runArgv, claimStore = createRefreshAttemptStore(), fetch = globalThis.fetch, root = process.cwd(), evidenceFs = nativeFs, collectFacts, targetProbe, randomEvidenceHex = () => randomBytes(8).toString("hex") } = {}) {
   if (typeof runArgv !== "function" || typeof fetch !== "function") fail("live adapter requires argv runner and loopback fetch");
-  const state = { preflight: undefined, claim: undefined, targets: {}, cutover: false, evidence: undefined };
-  const run = async (command, args, options) => { assertAllowedRefreshArgv(command, args); return runArgv(command, args, options); };
-  const inspect = async (kind, refs) => parseJson((await run("docker", [kind, "inspect", ...refs])).stdout, `${kind} inspect`);
-  const snapshot = async () => {
-    const containers = await inspect("container", CONTAINERS);
-    const volumes = normalizeVolume(await inspect("volume", VOLUMES));
-    return { containers: containers.map((item) => ({ id: item.Id, image: item.Image, reference: item.Config?.Image, name: item.Name, health: item.State?.Health?.Status, ports: item.NetworkSettings?.Ports ?? {} })).sort((a, b) => a.name.localeCompare(b.name)), volumes, volumeSha256: digest(JSON.stringify(volumes)) };
+  const run = async (command, args, options = {}) => { assertAllowedRefreshCommand(command, args, options); return runArgv(command, args, options); };
+  const sources = createRefreshFactSources({ run, fetch, root, fs: evidenceFs });
+  const collect = collectFacts ?? (() => collectRefreshFacts({ sources }));
+  const state = { facts: {}, claim: undefined, targets: {}, seeds: {}, oldImages: {}, cutover: false, migrationOneoff: undefined };
+  const inspectImages = async (refs) => {
+    const result = [];
+    for (const ref of refs) result.push(parseJson((await run("docker", ["image", "inspect", ref])).stdout, `image inspect ${ref}`)[0]);
+    return result;
   };
-  const assertAuthority = (snap) => {
-    if (snap.containers.length !== 3 || snap.containers.some((item) => !CONTAINERS.includes(item.name.slice(1)) || item.health !== "healthy")) fail("fixed runtime is not exactly healthy");
-    const web = snap.containers.find((item) => item.name === "/blogxlocal-web-1");
-    const api = snap.containers.find((item) => item.name === "/blogxlocal-api-1");
-    const postgres = snap.containers.find((item) => item.name === "/blogxlocal-postgres-1");
-    if (!web || !api || !postgres || Object.keys(api.ports).length || Object.keys(postgres.ports).length || JSON.stringify(web.ports["3100/tcp"]) !== JSON.stringify([{ HostIp: "127.0.0.1", HostPort: "3100" }])) fail("fixed port topology is invalid");
-  };
-  const route = async (path, expected, body) => {
-    const response = await fetch(`${ORIGIN}${path}`);
-    if (response.status !== expected) fail(`route ${path} returned ${response.status}`);
-    if (body) {
-      const actual = await response.json();
-      for (const [key, value] of Object.entries(body)) if (actual[key] !== value) fail(`route ${path} contract ${key}`);
+  const assertSeedsStable = async (plan) => {
+    for (const target of plan.targets) {
+      const image = (await inspectImages([target.seedReference]))[0];
+      if (image?.Id !== target.seedId) fail(`${target.application} seed reference drifted`);
     }
   };
+  const probe = targetProbe ?? (async (target, image) => {
+    const store = cleanOutput(await run("docker", ["run", "--rm", "--network=none", "--entrypoint", "corepack", image.Id, "pnpm", "--store-dir=/pnpm-store", "store", "path"]));
+    if (!/^\/pnpm-store\/v\d+$/.test(store)) fail(`${target.application} target store is invalid`);
+    await run("docker", ["run", "--rm", "--network=none", "--entrypoint", "node", image.Id, "-e", TARGET_FS_PROGRAM, target.application, store]);
+    validateTarget(image, target);
+    return { storeSha256: digest(store), filesystemExact: true };
+  });
+  const evidencePath = resolve(root, EVIDENCE_PATH);
+  async function assertEvidenceAbsent() {
+    try { await evidenceFs.lstat(evidencePath); fail("refresh evidence final already exists"); } catch (error) { if (error?.code !== "ENOENT") throw error; }
+    const prefix = `.${basename(evidencePath)}.`;
+    const names = await evidenceFs.readdir(dirname(evidencePath));
+    if (names.some((name) => name.startsWith(prefix) && name.endsWith(".tmp"))) fail("refresh evidence temporary already exists");
+  }
+  async function inspectTargetOneoff(plan) {
+    const api = plan.targets.find((target) => target.application === "api");
+    const oneoff = (parseJson((await run("docker", ["container", "inspect", state.migrationOneoff])).stdout, "target API oneoff inspect"))[0];
+    const labels = oneoff?.Config?.Labels ?? {};
+    if (oneoff?.Image !== state.targets.api.Id || labels["com.docker.compose.project"] !== PROJECT || labels["com.docker.compose.service"] !== "api" || labels["com.docker.compose.oneoff"] !== "True" || api.tag !== oneoff.Config?.Image) fail("target API oneoff immutable identity is invalid");
+  }
   return Object.freeze({
-    assertAllowedArgv: assertAllowedRefreshArgv,
+    assertAllowedArgv: assertAllowedRefreshCommand,
     async execute(phase, plan) {
       if (phase === "preflight") {
-        state.preflight = await snapshot(); assertAuthority(state.preflight);
+        await assertEvidenceAbsent();
+        state.facts.preflight = await collect(); assertFixedRuntimeAuthority(state.facts.preflight);
         for (const target of plan.targets) {
-          const current = state.preflight.containers.find((entry) => entry.name === `/blogxlocal-${target.application}-1`);
-          if (!current?.image?.startsWith("sha256:") || !current.reference) fail("fixed seed image authority is missing");
-          target.seedId = current.image;
-          target.seedReference = current.reference;
-          target.labels["io.blog-x.seed-image-id"] = current.image;
+          const running = imageByService(state.facts.preflight, target.application);
+          if (!validImageId(running?.Image) || typeof running.Config?.Image !== "string") fail("fixed seed image authority is missing");
+          const seed = (await inspectImages([running.Config.Image]))[0];
+          if (seed?.Id !== running.Image) fail(`${target.application} seed tag does not resolve to the running image`);
+          target.seedId = seed.Id; target.seedReference = running.Config.Image; target.labels["io.blog-x.seed-image-id"] = seed.Id;
+          state.seeds[target.application] = { reference: running.Config.Image, id: seed.Id };
+          state.oldImages[target.application] = running.Image;
         }
         state.claim = await claimStore.claimRefreshAttempt(plan.revision);
         return;
       }
       if (!state.claim) fail("refresh attempt must be claimed before mutation");
       if (phase === "build-api" || phase === "build-web") {
-        const target = plan.targets.find((entry) => entry.application === phase.slice(6));
-        const args = ["build", "--network=none", "--pull=false", "--file", target.dockerfile, "--tag", target.tag, "--build-arg", `SEED_IMAGE=${target.seedReference}`, "--build-arg", `SEED_IMAGE_ID=${target.seedId}`, "--build-arg", `REFRESH_REVISION=${plan.revision}`, "--build-arg", `LOCKFILE_SHA256=${plan.lockSha256}`, "--build-arg", `PUBLIC_ORIGIN=${ORIGIN}`, "."];
-        await run("docker", args); state.targets[target.application] = (await inspect("image", [target.tag]))[0]; return;
+        const target = plan.targets.find((item) => item.application === phase.slice(6));
+        await run("docker", buildCommand(target, plan));
+        state.targets[target.application] = (await inspectImages([target.tag]))[0];
+        await assertSeedsStable(plan); return;
       }
       if (phase === "inspect-target-images") {
-        for (const target of plan.targets) {
-          const image = state.targets[target.application]; const labels = image?.Config?.Labels ?? {};
-          if (!image?.Id?.startsWith("sha256:") || Object.entries(target.labels).some(([key, value]) => labels[key] !== value) || image.Config?.WorkingDir !== "/refresh-workspace" || image.Config?.Cmd?.some((part) => String(part).includes("/workspace"))) fail("target provenance or filesystem configuration is invalid");
-        }
+        await assertSeedsStable(plan);
+        for (const target of plan.targets) { const image = state.targets[target.application]; validateTarget(image, target); state.targets[target.application].probe = await probe(target, image); }
         return;
       }
-      if (phase === "migrate" || phase === "schema-verify") {
-        const command = phase === "migrate" ? "db:migrate" : "db:schema:verify";
-        await run("docker-compose", ["-p", PROJECT, "-f", COMPOSE_FILE, "run", "--rm", "--no-deps", "api", "corepack", "pnpm", "--filter", "@blog-x/api", command]); return;
+      if (phase === "migrate") {
+        const api = plan.targets.find((item) => item.application === "api");
+        state.migrationOneoff = `blogxlocal-api-refresh-${plan.revision.slice(0, 12)}`;
+        try {
+          await run("docker-compose", ["-p", PROJECT, "-f", COMPOSE_FILE, "run", "--detach", "--no-deps", "--name", state.migrationOneoff, "api", "node", "-e", ONEOFF_PROGRAM], { env: { BLOG_X_API_IMAGE: api.tag } });
+          await inspectTargetOneoff(plan);
+          await run("docker", ["exec", state.migrationOneoff, "corepack", "pnpm", "--filter", "@blog-x/api", "db:migrate"]);
+        } catch (error) { await run("docker", ["rm", "-f", state.migrationOneoff]).catch(() => undefined); state.migrationOneoff = undefined; throw error; }
+        return;
+      }
+      if (phase === "schema-verify") {
+        try { await inspectTargetOneoff(plan); await run("docker", ["exec", state.migrationOneoff, "corepack", "pnpm", "--filter", "@blog-x/api", "db:schema:verify"]); }
+        finally { await run("docker", ["rm", "-f", state.migrationOneoff]); state.migrationOneoff = undefined; }
+        state.facts.postMigration = await collect();
+        assertPersistenceTransition(state.facts.preflight, state.facts.postMigration, { stage: "postMigration" }); return;
       }
       if (phase === "cutover-api-web") {
         state.cutover = true;
-        await run("docker-compose", ["-p", PROJECT, "-f", COMPOSE_FILE, "up", "-d", "--wait", "--no-build", "--no-deps", "api", "web"], { env: { BLOG_X_API_IMAGE: plan.targets.find((target) => target.application === "api").tag, BLOG_X_WEB_IMAGE: plan.targets.find((target) => target.application === "web").tag } });
-        const current = await snapshot(); assertAuthority(current);
-        for (const target of plan.targets) if (current.containers.find((entry) => entry.name === `/blogxlocal-${target.application}-1`)?.image !== state.targets[target.application].Id) fail("cutover image ID mismatch");
-        return;
+        await run("docker-compose", ["-p", PROJECT, "-f", COMPOSE_FILE, "up", "-d", "--wait", "--no-build", "--no-deps", "api", "web"], { env: { BLOG_X_API_IMAGE: state.targets.api.Id, BLOG_X_WEB_IMAGE: state.targets.web.Id } });
+        state.facts.postCutover = await collect();
+        assertPersistenceTransition(state.facts.postMigration, state.facts.postCutover, { stage: "postCutover", targetImageIds: { api: state.targets.api.Id, web: state.targets.web.Id } }); return;
       }
-      if (phase === "routes") { await route("/", 200); await route("/categories", 200); await route("/tags", 200); await route("/archive", 200); await route("/api/health", 200); await route("/api/public/search?q=", 200, { state: "empty_query" }); await route("/api/public/articles/phase6-unknown/related", 404, { error: "not_found" }); return; }
-      if (phase === "release-blocked") { await run("node", ["scripts/release-gate.mjs", "--evidence=ops/release-evidence.blocked.json", "--expect-blocked"]); return; }
+      if (phase === "routes") { assertRouteFacts(state.facts.postCutover.routes); return; }
+      if (phase === "release-blocked") { if (state.facts.postCutover.releaseState !== "BLOCKED") fail("release state changed"); return; }
       if (phase === "write-evidence") {
-        const after = await snapshot(); assertAuthority(after);
-        if (after.volumeSha256 !== state.preflight.volumeSha256 || after.containers.find((item) => item.name === "/blogxlocal-postgres-1").id !== state.preflight.containers.find((item) => item.name === "/blogxlocal-postgres-1").id) fail("persistence authority changed");
-        const evidence = { format: "blog-x-phase6-local-refresh-evidence", version: 2, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, releaseState: "BLOCKED", createdAt: now(), attemptClaim: { implementationRevision: state.claim.implementationRevision, sha256: state.claim.sha256 }, targets: Object.fromEntries(Object.entries(state.targets).map(([key, image]) => [key, { id: image.Id, labels: image.Config?.Labels ?? {}, workdir: image.Config?.WorkingDir, cmd: image.Config?.Cmd ?? [] }])), runtime: { before: state.preflight, after } };
-        const bytes = `${JSON.stringify(evidence, null, 2)}\n`; const finalPath = resolve(root, EVIDENCE_PATH); const temp = resolve(dirname(finalPath), `.${basename(finalPath)}.${randomBytes(8).toString("hex")}.tmp`);
-        const handle = await evidenceFs.open(temp, "wx", 0o600); try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
-        await evidenceFs.rename(temp, finalPath); state.evidence = evidence; return;
+        const targetEvidence = Object.fromEntries(["api", "web"].map((app) => [app, { id: state.targets[app].Id, labels: selectedLabels(state.targets[app].Config?.Labels), probe: state.targets[app].probe }]));
+        const evidence = { format: "blog-x-phase6-local-refresh-evidence", version: 3, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, attemptClaim: { implementationRevision: plan.revision, sha256: state.claim.sha256 }, oldImages: state.oldImages, targets: targetEvidence, stages: { preflight: projectSanitizedFacts(state.facts.preflight), postMigration: projectSanitizedFacts(state.facts.postMigration), postCutover: projectSanitizedFacts(state.facts.postCutover) }, releaseState: "BLOCKED" };
+        await publishEvidence(evidenceFs, evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, randomEvidenceHex); return;
       }
       if (phase === "rollback-api-web") {
         if (!state.cutover) return;
-        await run("docker-compose", ["-p", PROJECT, "-f", COMPOSE_FILE, "up", "-d", "--wait", "--no-build", "--no-deps", "api", "web"], { env: { BLOG_X_API_IMAGE: state.preflight.containers.find((entry) => entry.name === "/blogxlocal-api-1").reference, BLOG_X_WEB_IMAGE: state.preflight.containers.find((entry) => entry.name === "/blogxlocal-web-1").reference } });
-        return;
+        if (state.migrationOneoff) { await run("docker", ["rm", "-f", state.migrationOneoff]); state.migrationOneoff = undefined; }
+        await run("docker-compose", ["-p", PROJECT, "-f", COMPOSE_FILE, "up", "-d", "--wait", "--no-build", "--no-deps", "api", "web"], { env: { BLOG_X_API_IMAGE: state.oldImages.api, BLOG_X_WEB_IMAGE: state.oldImages.web } }); return;
       }
-      if (phase === "verify-rollback") { const restored = await snapshot(); assertAuthority(restored); for (const old of state.preflight.containers) if (old.name !== "/blogxlocal-postgres-1" && restored.containers.find((entry) => entry.name === old.name)?.image !== old.image) fail("rollback image ID mismatch"); return; }
+      if (phase === "verify-rollback") {
+        state.facts.rollback = await collect();
+        assertPersistenceTransition(state.facts.postMigration, state.facts.rollback, { stage: "rollback", oldImageIds: state.oldImages, preflightRoutes: state.facts.preflight.routes });
+        await assertEvidenceAbsent(); return;
+      }
       fail(`unknown live refresh phase ${phase}`);
     },
   });
 }
 
-export async function verifyLiveRefreshEvidence(path, { claimStore = createRefreshAttemptStore(), fs = nativeFs } = {}) {
-  const before = await fs.readFile(path, "utf8"); const evidence = parseJson(before, "evidence");
-  if (evidence?.format !== "blog-x-phase6-local-refresh-evidence" || evidence.version !== 2 || evidence.releaseState !== "BLOCKED" || !validRevision(evidence.implementationRevision) || evidence.attemptClaim?.implementationRevision !== evidence.implementationRevision) fail("evidence is not a strict blocked local refresh record");
+const EVIDENCE_KEYS = ["attemptClaim", "format", "implementationRevision", "lockfileSha256", "oldImages", "releaseState", "stages", "targets", "version"];
+const PROJECTION_KEYS = ["business", "containers", "ledger", "media", "protected", "releaseState", "routes", "sequences", "topology", "volumes"];
+const ROUTE_KEYS = ["/", "/api/health", "/api/public/articles/phase6-unknown/related", "/api/public/search?q=", "/archive", "/categories", "/tags"];
+function assertProjectedDigest(value, label, extras = []) {
+  exactKeys(value, ["count", ...extras, "sha256"], label);
+  if (!Number.isSafeInteger(value.count) || value.count < 0 || !validDigest(value.sha256) || extras.some((key) => !Number.isSafeInteger(value[key]) || value[key] < 0)) fail(`${label} digest/count is invalid`);
+}
+function assertProjectionSchema(value, label) {
+  exactKeys(value, PROJECTION_KEYS, label);
+  for (const key of ["business", "protected", "sequences", "volumes"]) assertProjectedDigest(value[key], `${label} ${key}`);
+  assertProjectedDigest(value.media, `${label} media`, ["bytes"]);
+  exactKeys(value.ledger, ["count", "stableSha256", "timestampSha256"], `${label} ledger`);
+  if (!Number.isSafeInteger(value.ledger.count) || value.ledger.count < 1 || !validDigest(value.ledger.stableSha256) || !validDigest(value.ledger.timestampSha256)) fail(`${label} ledger projection is invalid`);
+  exactKeys(value.containers, ["api", "postgres", "web"], `${label} containers`);
+  for (const service of ["api", "postgres", "web"]) {
+    const container = value.containers[service];
+    exactKeys(container, ["healthy", "id", "imageId", "labels"], `${label} ${service} container`);
+    if (container.healthy !== true || typeof container.id !== "string" || !container.id || typeof container.imageId !== "string" || !container.imageId.startsWith("sha256:") || !container.labels || typeof container.labels !== "object" || Array.isArray(container.labels)) fail(`${label} ${service} container projection is invalid`);
+  }
+  exactKeys(value.routes, ROUTE_KEYS, `${label} routes`);
+  for (const path of ROUTE_KEYS) {
+    const route = value.routes[path];
+    exactKeys(route, path.startsWith("/api/") ? ["bodySha256", "contractSha256", "status"] : ["bodySha256", "status"], `${label} route ${path}`);
+    if (!validDigest(route.bodySha256) || (path.startsWith("/api/") && !validDigest(route.contractSha256)) || !Number.isSafeInteger(route.status)) fail(`${label} route ${path} projection is invalid`);
+  }
+  exactKeys(value.topology, ["containersHealthy", "fixedPortsExact", "project", "servicesExact"], `${label} topology`);
+  if (value.releaseState !== "BLOCKED" || value.topology.project !== PROJECT || [value.topology.containersHealthy, value.topology.fixedPortsExact, value.topology.servicesExact].some((item) => item !== true)) fail(`${label} authority is not exact`);
+}
+function assertEvidenceSchema(evidence) {
+  exactKeys(evidence, EVIDENCE_KEYS, "evidence");
+  if (evidence.format !== "blog-x-phase6-local-refresh-evidence" || evidence.version !== 3 || evidence.releaseState !== "BLOCKED" || !validRevision(evidence.implementationRevision) || !validDigest(evidence.lockfileSha256)) fail("evidence is not a strict blocked v3 local refresh record");
+  exactKeys(evidence.attemptClaim, ["implementationRevision", "sha256"], "evidence claim");
+  exactKeys(evidence.oldImages, ["api", "web"], "evidence old images");
+  exactKeys(evidence.targets, ["api", "web"], "evidence targets");
+  exactKeys(evidence.stages, ["postCutover", "postMigration", "preflight"], "evidence stages");
+  if (evidence.attemptClaim.implementationRevision !== evidence.implementationRevision || !validDigest(evidence.attemptClaim.sha256) || !Object.values(evidence.oldImages).every(validImageId)) fail("evidence immutable identity is invalid");
+  for (const app of ["api", "web"]) {
+    const target = evidence.targets[app];
+    exactKeys(target, ["id", "labels", "probe"], `evidence ${app} target`);
+    exactKeys(target.labels, REQUIRED_IMAGE_LABELS, `evidence ${app} labels`);
+    exactKeys(target.probe, ["filesystemExact", "storeSha256"], `evidence ${app} probe`);
+    if (!validImageId(target.id) || target.probe.filesystemExact !== true || !validDigest(target.probe.storeSha256) || target.labels["org.opencontainers.image.revision"] !== evidence.implementationRevision || target.labels["io.blog-x.lockfile-sha256"] !== evidence.lockfileSha256 || !validImageId(target.labels["io.blog-x.seed-image-id"]) || target.labels["io.blog-x.application"] !== app || target.labels["io.blog-x.public-origin"] !== ORIGIN || target.labels["io.blog-x.refresh-kind"] !== "phase6-offline") fail(`evidence ${app} target provenance is invalid`);
+  }
+  for (const name of ["preflight", "postMigration", "postCutover"]) assertProjectionSchema(evidence.stages[name], `evidence ${name}`);
+  for (const key of ["business", "media", "protected", "sequences", "volumes"]) if (!factsEqual(evidence.stages.preflight[key], evidence.stages.postMigration[key]) || !factsEqual(evidence.stages.postMigration[key], evidence.stages.postCutover[key])) fail(`evidence ${key} stages are inconsistent`);
+  if (evidence.stages.preflight.ledger.stableSha256 !== evidence.stages.postMigration.ledger.stableSha256 || evidence.stages.postMigration.ledger.stableSha256 !== evidence.stages.postCutover.ledger.stableSha256 || evidence.stages.preflight.ledger.timestampSha256 === evidence.stages.postMigration.ledger.timestampSha256 || evidence.stages.postMigration.ledger.timestampSha256 !== evidence.stages.postCutover.ledger.timestampSha256) fail("evidence ledger stage transition is invalid");
+  for (const app of ["api", "web"]) {
+    if (evidence.stages.preflight.containers[app].imageId !== evidence.oldImages[app] || evidence.stages.postMigration.containers[app].imageId !== evidence.oldImages[app] || evidence.stages.postCutover.containers[app].imageId !== evidence.targets[app].id) fail(`evidence ${app} image transition is invalid`);
+  }
+  const bytes = JSON.stringify(evidence);
+  if (/Mountpoint|relativePath|migration_fingerprint|applied_at|environment|command|postgres:\/\//i.test(bytes)) fail("evidence contains forbidden raw facts");
+  return true;
+}
+
+export async function verifyLiveRefreshEvidence(path, { claimStore = createRefreshAttemptStore(), fs = nativeFs, collectFacts, probeTargets, runArgv, fetch = globalThis.fetch, root = process.cwd() } = {}) {
+  const before = await fs.readFile(path, "utf8");
+  const evidence = parseJson(before, "evidence"); assertEvidenceSchema(evidence);
   const claim = await claimStore.assertPresent(evidence.implementationRevision);
   if (claim.sha256 !== evidence.attemptClaim.sha256) fail("evidence attempt claim digest mismatch");
-  const after = await fs.readFile(path, "utf8"); if (after !== before) fail("read-only evidence verification changed evidence");
+  let run;
+  if ((!collectFacts || !probeTargets) && typeof runArgv === "function") run = async (command, args, options = {}) => { assertAllowedRefreshCommand(command, args, options); return runArgv(command, args, options); };
+  const reconstruct = collectFacts ?? (run ? () => collectRefreshFacts({ sources: createRefreshFactSources({ run, fetch, root, fs }) }) : undefined);
+  const probe = probeTargets ?? (run ? async (targets) => {
+    for (const app of ["api", "web"]) {
+      const target = targets[app];
+      const image = parseJson((await run("docker", ["image", "inspect", target.id])).stdout, `verify ${app} image`)[0];
+      if (image?.Id !== target.id || image.Config?.WorkingDir !== "/refresh-workspace" || !factsEqual(selectedLabels(image.Config?.Labels), target.labels)) fail(`verified ${app} target image drifted`);
+      const store = cleanOutput(await run("docker", ["run", "--rm", "--network=none", "--entrypoint", "corepack", target.id, "pnpm", "--store-dir=/pnpm-store", "store", "path"]));
+      if (digest(store) !== target.probe.storeSha256) fail(`verified ${app} target store drifted`);
+      await run("docker", ["run", "--rm", "--network=none", "--entrypoint", "node", target.id, "-e", TARGET_FS_PROGRAM, app, store]);
+    }
+  } : undefined);
+  if (typeof reconstruct !== "function" || typeof probe !== "function") fail("read-only evidence verification requires fact and target probe adapters");
+  const current = await reconstruct();
+  assertFixedRuntimeAuthority(current);
+  if (!factsEqual(projectSanitizedFacts(current), evidence.stages.postCutover)) fail("current runtime facts drifted from evidence");
+  await probe(evidence.targets);
+  const after = await fs.readFile(path, "utf8");
+  if (after !== before) fail("read-only evidence verification changed evidence");
   return evidence;
 }
 
-/** Read-only inspection used by the 06-07 pre/post attempt gate. */
-export async function inspectRefreshAttemptClaim(revision, { claimStore = createRefreshAttemptStore() } = {}) {
-  return claimStore.assertPresent(revision);
-}
+export async function inspectRefreshAttemptClaim(revision, { claimStore = createRefreshAttemptStore() } = {}) { return claimStore.assertPresent(revision); }
 
 export { CLAIM_ROOT, EVIDENCE_PATH };

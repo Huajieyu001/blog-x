@@ -90,7 +90,7 @@ export async function runLocalRefresh({ adapter, plan = createRefreshPlan({ revi
       await adapter.execute(phase, plan);
     }
     await adapter.execute("write-evidence", plan);
-    return { format: "blog-x-phase6-local-refresh-evidence", version: 1, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, releaseState: "BLOCKED" };
+    return { format: "blog-x-phase6-local-refresh-evidence", version: 3, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, releaseState: "BLOCKED" };
   } catch (error) {
     if (cutoverStarted) {
       await adapter.execute("rollback-api-web", plan);
@@ -159,7 +159,7 @@ export async function probeOfflineBuilds({ apiSeedImage = process.env.BLOG_X_API
 }
 
 export async function verifyEvidence(path, options) {
-  return verifyLiveRefreshEvidence(resolve(root, path), options);
+  return verifyLiveRefreshEvidence(resolve(root, path), { runArgv: run, root, ...options });
 }
 
 async function resolveCleanRevision() {
@@ -179,11 +179,13 @@ export async function runRefreshCli({
 } = {}) {
   const evidenceOption = argv.find((item) => item.startsWith("--verify-evidence="));
   if (evidenceOption) {
-    await verifyEvidence(evidenceOption.slice("--verify-evidence=".length));
+    if (argv.length !== 1 || evidenceOption !== "--verify-evidence=ops/phase6-local-refresh-evidence.json") fail("evidence verification accepts only the fixed evidence path");
+    await verifyEvidence("ops/phase6-local-refresh-evidence.json");
     io.write("LOCAL REFRESH EVIDENCE VERIFIED; RELEASE BLOCKED\n");
     return { releaseState: "BLOCKED" };
   }
   if (argv.includes("--probe-offline-builds")) {
+    if (argv.length !== 1 || argv[0] !== "--probe-offline-builds") fail("offline probe option is not exact");
     const result = await probeOfflineBuilds();
     io.write(`OFFLINE REFRESH PROBES PASSED ${result.revision.slice(0, 12)}\n`);
     return result;
@@ -192,7 +194,7 @@ export async function runRefreshCli({
   if (claimOption) {
     const mode = claimOption.slice("--check-attempt-claim=".length);
     const revisionOption = argv.find((item) => item.startsWith("--revision="))?.slice("--revision=".length);
-    if (argv.length !== 2 || !["absent", "present"].includes(mode) || !/^[a-f0-9]{40}$/.test(revisionOption ?? "")) fail("attempt claim check requires one mode and one full revision");
+    if (argv.length !== 2 || argv[0] !== `--check-attempt-claim=${mode}` || argv[1] !== `--revision=${revisionOption}` || !["absent", "present"].includes(mode) || !/^[a-f0-9]{40}$/.test(revisionOption ?? "")) fail("attempt claim check requires one exact mode and one full revision");
     const result = mode === "absent" ? await claimStore.assertAbsent(revisionOption) : await claimStore.assertPresent(revisionOption);
     io.write(`LOCAL REFRESH ATTEMPT CLAIM ${mode.toUpperCase()} ${revisionOption}\n`);
     return result;
