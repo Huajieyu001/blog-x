@@ -24,6 +24,7 @@ import { createRefreshTestRuntime } from "./refresh-local-test-core.mjs";
 import {
   assertFixedRuntimeAuthority,
   assertPersistenceTransition,
+  assertRouteFacts,
   collectRefreshFacts,
   factsSha256,
   projectSanitizedFacts,
@@ -347,10 +348,19 @@ const exactRoutes = {
   "/": { status: 200, bodySha256: "1".repeat(64) },
   "/categories": { status: 200, bodySha256: "2".repeat(64) },
   "/tags": { status: 200, bodySha256: "3".repeat(64) },
-  "/archive": { status: 200, bodySha256: "4".repeat(64) },
+  "/archives": { status: 200, bodySha256: "4".repeat(64) },
   "/api/health": { status: 200, body: { ok: true }, bodySha256: "5".repeat(64) },
   "/api/public/search?q=": { status: 200, body: { state: "empty_query", query: "", page: 1, pageSize: 10, totalItems: 0, totalPages: 0, items: [] }, bodySha256: "6".repeat(64) },
   "/api/public/articles/phase6-unknown/related": { status: 404, body: { error: "not_found" }, bodySha256: "7".repeat(64) },
+};
+const rawRouteBodies = {
+  "/": "<html>home</html>",
+  "/categories": "<html>categories</html>",
+  "/tags": "<html>tags</html>",
+  "/archives": "<html>archives</html>",
+  "/api/health": JSON.stringify({ ok: true }),
+  "/api/public/search?q=": JSON.stringify({ state: "empty_query", query: "", page: 1, pageSize: 10, totalItems: 0, totalPages: 0, items: [] }),
+  "/api/public/articles/phase6-unknown/related": JSON.stringify({ error: "not_found" }),
 };
 function factsFixture({ apiImage = SHA("a"), webImage = SHA("w"), phase1 = "2026-08-15T00:00:00.000Z", routes = exactRoutes } = {}) {
   return {
@@ -394,6 +404,24 @@ test("sanitized v4 fact projection contains digests and counts but no raw rows, 
   const bytes = JSON.stringify(projection);
   assert.deepEqual(Object.keys(projection).sort(), ["business", "containers", "database", "git", "ledger", "media", "protected", "releaseState", "routes", "seeds", "sequences", "targets", "topology", "volumes"].sort());
   assert.doesNotMatch(bytes, /Mountpoint|relativePath|migration_fingerprint|applied_at|environment|command|private\/var/i);
+});
+
+test("route facts and sanitized projections require one plural archives authority", () => {
+  const singularArchive = "/archives".slice(0, -1);
+  assert.doesNotThrow(() => assertRouteFacts(exactRoutes));
+
+  const singular = structuredClone(exactRoutes);
+  singular[singularArchive] = singular["/archives"];
+  delete singular["/archives"];
+  assert.throws(() => assertRouteFacts(singular), /route|key|archive/i);
+
+  const dual = structuredClone(exactRoutes);
+  dual[singularArchive] = structuredClone(dual["/archives"]);
+  assert.throws(() => assertRouteFacts(dual), /route|key|archive/i);
+
+  const projection = projectSanitizedFacts(factsFixture());
+  assert.equal(Object.hasOwn(projection.routes, "/archives"), true);
+  assert.equal(Object.hasOwn(projection.routes, singularArchive), false);
 });
 
 test("command policy is exact-token and rejects extra, reordered, alternate authority and mutable rollback refs", () => {
@@ -501,12 +529,6 @@ function liveFixture({ failPostCutover = false, recollectionFault = false, stage
   const plan = createRefreshPlan({ revision, lockSha256: lock, apiSeedId: old.api, webSeedId: old.web });
   const targets = { api: targetImage("api", targetIds.api, revision, lock, old.api), web: targetImage("web", targetIds.web, revision, lock, old.web) };
   const calls = []; let snapshot = 0; let rolledBack = false; let verificationMode = false;
-  const routeBodies = {
-    "/": "<html>home</html>", "/categories": "<html>categories</html>", "/tags": "<html>tags</html>", "/archive": "<html>archive</html>",
-    "/api/health": JSON.stringify({ ok: true }),
-    "/api/public/search?q=": JSON.stringify({ state: "empty_query", query: "", page: 1, pageSize: 10, totalItems: 0, totalPages: 0, items: [] }),
-    "/api/public/articles/phase6-unknown/related": JSON.stringify({ error: "not_found" }),
-  };
   const runner = async (command, args, options = {}) => {
     calls.push({ command, args: [...args], options: structuredClone(options) });
     if (command === "docker" && args[0] === "context" && args[1] === "show") return { stdout: "colima\n" };
@@ -553,7 +575,7 @@ function liveFixture({ failPostCutover = false, recollectionFault = false, stage
   };
   const evidenceBaseFs = memoryArtifactFs();
   const evidenceFs = atomicFault ? atomicFaultFs(evidenceBaseFs, "evidence", atomicFault) : evidenceBaseFs;
-  const fetch = async (url) => { const path = url.slice("http://127.0.0.1:3100".length); const body = routeBodies[path]; return { status: path.endsWith("/related") ? 404 : 200, url, async text() { return body; } }; };
+  const fetch = async (url) => { const path = url.slice("http://127.0.0.1:3100".length); const body = rawRouteBodies[path]; return { status: path.endsWith("/related") ? 404 : 200, url, async text() { return body; } }; };
   const runtime = createRefreshTestRuntime({ processBoundary: runner, fs: evidenceFs, fetch, clock(stage) { if (recollectionFault && stage === "failure_recollection" || stageFaults.includes(stage)) throw new Error(`${stage} fault`); }, randomHex: () => "3".repeat(24) });
   const adapter = runtime.createAdapter();
   return { adapter, calls, evidenceFs, old, plan, revision, targetIds, runtime, beginVerification() { verificationMode = true; } };
@@ -571,9 +593,23 @@ test("complete fake live refresh uses target API one-off, immutable cutover and 
   const bytes = await fixture.evidenceFs.readFile("/virtual-workspace/ops/phase6-local-refresh-evidence.json");
   const evidence = JSON.parse(bytes);
   assert.equal(evidence.version, 4); assert.equal(evidence.releaseState, "BLOCKED");
+  const singularArchive = "/archives".slice(0, -1);
+  for (const facts of Object.values(evidence.stages)) {
+    assert.equal(Object.hasOwn(facts.routes, "/archives"), true);
+    assert.equal(Object.hasOwn(facts.routes, singularArchive), false);
+  }
   assert.doesNotMatch(bytes, /Mountpoint|relativePath|migration_fingerprint|applied_at|environment|command|private\/var/i);
   assert.equal([...fixture.evidenceFs.entries.keys()].some((path) => path.endsWith(".tmp")), false);
   assert.deepEqual(fixture.calls.filter((call) => call.command === "docker" && call.args[0] === "rm").map((call) => call.args), [["rm", "-f", oneoff]]);
+  const evidencePath = "/virtual-workspace/ops/phase6-local-refresh-evidence.json";
+  const singularEvidence = structuredClone(evidence);
+  for (const facts of Object.values(singularEvidence.stages)) {
+    facts.routes[singularArchive] = facts.routes["/archives"];
+    delete facts.routes["/archives"];
+  }
+  fixture.evidenceFs.entries.get(evidencePath).bytes = `${JSON.stringify(singularEvidence, null, 2)}\n`;
+  await assert.rejects(fixture.runtime.verifyEvidence(evidencePath), /route|key|archive|evidence/i);
+  fixture.evidenceFs.entries.get(evidencePath).bytes = bytes;
   fixture.beginVerification();
   assert.equal((await fixture.runtime.verifyEvidence("/virtual-workspace/ops/phase6-local-refresh-evidence.json")).releaseState, "BLOCKED");
   assert.equal(await fixture.evidenceFs.readFile("/virtual-workspace/ops/phase6-local-refresh-evidence.json"), bytes);
@@ -686,6 +722,24 @@ test("route collection rejects redirects and final URL drift with redirect:error
   const sources = testRuntime(memoryArtifactFs(), undefined, async () => ({ stdout: "" }), async (url, options) => { calls.push({ url, options }); return { status: 200, url: url.replace("127.0.0.1", "localhost"), async text() { return "<html></html>"; } }; }).createFactSources();
   await assert.rejects(sources.routes(), /redirect|final URL|origin/i);
   assert.deepEqual(calls[0].options, { redirect: "error" });
+});
+
+test("route collection fetches plural archives exactly once and never requests singular authority", async () => {
+  const calls = [];
+  const singularArchive = "/archives".slice(0, -1);
+  const sources = testRuntime(memoryArtifactFs(), undefined, async () => ({ stdout: "" }), async (url, options) => {
+    calls.push({ url, options });
+    const path = url.slice("http://127.0.0.1:3100".length);
+    const body = rawRouteBodies[path] ?? "<html>unexpected route</html>";
+    return { status: path.endsWith("/related") ? 404 : 200, url, async text() { return body; } };
+  }).createFactSources();
+  const routes = await sources.routes();
+  const paths = calls.map(({ url }) => new URL(url).pathname);
+  assert.equal(paths.filter((path) => path === "/archives").length, 1);
+  assert.equal(paths.includes(singularArchive), false);
+  assert.equal(Object.hasOwn(routes, "/archives"), true);
+  assert.equal(Object.hasOwn(routes, singularArchive), false);
+  assert.equal(calls.every(({ options }) => options.redirect === "error"), true);
 });
 
 test("claim publication treats temporary unlink failure as terminal even after final link", async () => {
