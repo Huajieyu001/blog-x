@@ -7,13 +7,13 @@
 
 ### Search
 
-- [ ] **SRCH-01**: 访客可按标题、摘要和 Markdown 正文搜索已发布文章；草稿、下线和已删除文章永不出现在结果中。
-- [ ] **SRCH-02**: 搜索支持中文与英文普通查询、稳定分页、明确的空查询/无结果/服务异常状态，并限制查询长度和资源消耗。
-- [ ] **SRCH-03**: 搜索结果按可解释且确定性的相关度排序，标题匹配优先于摘要和正文，排序相同时使用稳定公开时间与 UUID 次序。
+- [x] **SRCH-01**: 访客可按标题、摘要和 Markdown 正文搜索已发布文章；草稿、下线和已删除文章永不出现在结果中。
+- [x] **SRCH-02**: 搜索支持中文与英文普通查询、稳定分页、明确的空查询/无结果/服务异常状态，并限制查询长度和资源消耗。
+- [x] **SRCH-03**: 搜索结果按可解释且确定性的相关度排序，标题匹配优先于摘要和正文，排序相同时使用稳定公开时间与 UUID 次序。
 
 ### Related Reading
 
-- [ ] **READ-08**: 文章详情展示仅含其他已发布文章的相关文章，优先共享分类与标签，并在分数相同时保持确定性顺序。
+- [x] **READ-08**: 文章详情展示仅含其他已发布文章的相关文章，优先共享分类与标签，并在分数相同时保持确定性顺序。
 - [ ] **READ-09**: 相关文章在无匹配、文章状态变化及手机/桌面布局下保持诚实、可访问且不会泄露非公开元数据。
 
 ### Local Delivery
@@ -44,10 +44,10 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SRCH-01 | Phase 6 | Pending |
-| SRCH-02 | Phase 6 | Pending |
-| SRCH-03 | Phase 6 | Pending |
-| READ-08 | Phase 6 | Pending |
+| SRCH-01 | Phase 6 | Complete |
+| SRCH-02 | Phase 6 | Complete |
+| SRCH-03 | Phase 6 | Complete |
+| READ-08 | Phase 6 | Complete |
 | READ-09 | Phase 7 | Pending |
 | DEVX-01 | Phase 8 | Pending |
 | DEVX-02 | Phase 8 | Pending |

@@ -1,150 +1,136 @@
 ---
 phase: 06-public-discovery-data
-verified: 2026-08-15T12:57:00Z
-status: gaps_found
-score: 19/20 must-haves verified
+verified: 2026-08-16T16:05:31Z
+status: passed
+score: 4/4 must-haves verified
 behavior_unverified: 0
+decision_coverage:
+  honored: 0
+  total: 0
+  not_honored: []
 ---
 
 # Phase 6: Public Discovery Data Verification Report
 
 **Phase Goal:** 访客搜索和相关文章获得严格、稳定、低资源且不泄露非公开状态的数据基础。
-**Verified:** 2026-08-15T12:57:00Z
-**Status:** gaps_found
-
-## Verification Verdict
-
-Phase 6 的四项产品需求和 ROADMAP 的四条数据能力成功标准均由真实 PostgreSQL、Fastify 路由、严格 contracts 和独立三参数门禁验证通过。当前唯一阻塞项是 06-03 明确承诺的固定本地运行时刷新没有完成：`blogxlocal` 三项服务虽然健康，但仍运行旧镜像，`http://127.0.0.1:3100/api/public/search?q=` 和相关文章路由均返回 Fastify 默认 404。
-
-该运行时缺口不能仅通过记录“Phase 8 负责离线刷新”来豁免。06-03 的 must-have、success criterion 和输出目标都明确要求最新验证 revision 在固定 `3100` 可观察；而 Phase 7 还需要通过该同源入口集成和浏览器验证搜索/相关文章 UI。因此 Phase 6 保持 pending，正式 Phase 7 执行应等待最小刷新闭环完成。
+**Verified:** 2026-08-16T16:05:31Z
+**Status:** passed
 
 ## Goal Achievement
 
+Roadmap success criteria are the phase contract and therefore override the larger collection of historical and superseded plan-level must-haves.
+
 ### Observable Truths
 
-| # | Plan | Truth | Status | Evidence |
-|---|------|-------|--------|----------|
-| 1 | 06-01 | 搜索只覆盖具有公开时间的 published、非删除文章，并仅返回严格 public card | ✓ VERIFIED | 独立 generated PostgreSQL suite 验证标题/摘要/Markdown 与 draft/unpublished/deleted/null-time 零泄漏；严格 key-set 断言通过 |
-| 2 | 06-01 | 空/Unicode 空白查询不扫描；重复、未知、超长和越界输入失败关闭 | ✓ VERIFIED | contracts 10/10；Fastify empty-query no-scan 与 400 route tests 通过 |
-| 3 | 06-01 | raw 256 UTF-16、NFC、80 code points、page 1..100/page size 10 边界准确 | ✓ VERIFIED | `public-discovery.test.ts` normalization/limit cases 全部通过 |
-| 4 | 06-01 | `%`、`_`、反斜杠按 literal ILIKE 数据处理；CJK/emoji/case/NFC 行为正确 | ✓ VERIFIED | PostgreSQL hostile-input suite 通过；实现使用绑定 pattern 和显式 `ESCAPE '\\'` |
-| 5 | 06-01 | title 3、summary 2、Markdown 1，随后 publishedAt/UUID 稳定排序并共享快照 | ✓ VERIFIED | 排名、ties、重复请求、分页测试通过；repository 使用 repeatable-read/read-only transaction |
-| 6 | 06-01 | 搜索资源有固定 LIMIT/OFFSET、批量 hydration、GET limiter、2000ms timeout，且仅 57014 映射 unavailable | ✓ VERIFIED | repository 和 route timeout tests 通过；独立代码检查确认 `SET LOCAL statement_timeout` 与 typed mapping |
-| 7 | 06-02 | `/public/search` 严格解析并返回四种一致状态 | ✓ VERIFIED | Fastify/PostgreSQL route suite 与 strict response schema 通过 |
-| 8 | 06-02 | distinct 400、typed-only 503、其他异常 exact opaque 500 | ✓ VERIFIED | exact body `{"error":"discovery_error"}` 与 hostile exception non-disclosure tests 通过 |
-| 9 | 06-02 | related source 使用 publicPredicate，排除自己，最多四张 public card，隐藏来源统一 404 | ✓ VERIFIED | hidden/unknown/draft/unpublished/deleted/null-time source tests 通过 |
-| 10 | 06-02 | related 只返回真实分类/标签 overlap，按 category/tag-count/time/UUID 确定排序，无 overlap 返回空 | ✓ VERIFIED | PostgreSQL related ranking、lifecycle 与 empty-overlap tests 通过 |
-| 11 | 06-02 | 搜索和相关文章不泄露 Markdown、UUID、score、内部关联或生命周期字段 | ✓ VERIFIED | strict card schema、完整 key-set 和 serialized secret-marker tests 通过 |
-| 12 | 06-03 | `--phase6-data` 使用独立 generated namespace，严格执行 suites 并只清理自身 | ✓ VERIFIED | 独立重跑 gate；父 namespace `blogxverify_0327a50deab2` 通过，结束后无 `blogxverify_*` container/volume |
-| 13 | 06-03 | `--interruption-check` 真实杀死命名迁移进程并完成双 retry、sentinel/schema/volume/lock 恢复 | ✓ VERIFIED | 独立 exact three-flag gate 输出完整 interruption lifecycle 并 exit 0 |
-| 14 | 06-03 | `--parallel-check` 启动两个不同 child namespace/port，执行真实 Phase 6 suites 且无 receipt authority | ✓ VERIFIED | `blogxverify_d1086e9cbf6d` 与 `blogxverify_212c63e8d082` 均输出 data-pass/BLOCKED marker 并清理 |
-| 15 | 06-03 | gate 包含 build/typecheck/schema/ledger/regressions/boundaries 和 canonical BLOCKED，且不写 receipt | ✓ VERIFIED | exact gate exit 0；独立 typecheck/boundary/release checks 通过；工作区和 retained receipt 无变化 |
-| 16 | 06-03 | Phase 6 selection 与 Phase 5 receipt writer 分离，完整 v1 archive 保持不变 | ✓ VERIFIED | local-verifier 27/27；`git diff --exit-code` 对 milestone archive/receipt 为净；最近 archive commit 仍为 `61cb903` |
-| 17 | 06-03 | generated gate 前后固定 `blogxlocal` 身份、业务数据、sequence、ledger、media 不变 | ✓ VERIFIED | 独立 gate 前后容器 ID/image ID/startedAt 与 `/private/tmp/blog-x-phase6-pre-refresh.txt` 完全一致；三项服务健康 |
-| 18 | 06-03 | 缓存不足时 refresh 在迁移/重建前失败关闭，不破坏固定环境 | ✓ VERIFIED | formal Docker build 为 `network: none`；缺失 frozen-install cache 后记录 `OFFLINE CACHE MISSING`，runtime/migration/volume action 均为 none |
-| 19 | 06-03 | 最新验证 revision 在固定 `3100` 通过 health、公开页面、empty search、unknown related 检查 | ✗ FAILED | `/api/health` 为 200，但 empty search 与 related 均为默认 route-not-found 404；当前 API/Web 容器仍是旧 image IDs，未承载 `588e959`/当前 HEAD |
-| 20 | 06-03 | executor 只交付 summaries，保持 requirements/status 未完成、生产 BLOCKED 且不接触服务器 | ✓ VERIFIED | REQUIREMENTS/ROADMAP/STATE 未被 executor 标完成；canonical gate 输出 `RELEASE BLOCKED`；本次验证无 SSH/cloud/deploy |
+| # | Truth | Status | Evidence |
+|---|-------|--------|----------|
+| 1 | 参数化搜索仅返回已发布、未删除且有公开时间的文章，并覆盖标题、摘要和 Markdown 正文。 | ✓ VERIFIED | `publicPredicate` is applied before matching/counting; the isolated PostgreSQL Phase 6 gate ran `public-discovery`, public-list and visibility suites with no skips. |
+| 2 | 中文、英文、空查询、特殊字符、长度和分页边界均失败关闭且资源受限。 | ✓ VERIFIED | Strict shared query schemas, literal `ILIKE ... ESCAPE`, fixed page size/maximum page, transaction-local 2000ms timeout, 10/10 contract tests and live empty-query DTO at `3100`. |
+| 3 | 排序为标题优先于摘要和正文，之后按公开时间和 UUID 稳定排序。 | ✓ VERIFIED | Repository rank `3/2/1`, deterministic tie order and repeatable-read snapshot are asserted by the real disposable-PostgreSQL discovery suite. |
+| 4 | 相关文章排除当前文章和所有非公开文章，并按真实分类/标签重叠稳定排序。 | ✓ VERIFIED | Public source/candidate predicates, source exclusion, fixed cap four, no-overlap empty response and deterministic ordering are exercised by the isolated database suite; live unknown source is strict 404. |
 
-**Score:** 19/20 must-have truths verified
+**Score:** 4/4 truths verified
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `packages/contracts/src/public-discovery.ts` | 严格 discovery contracts/limits/errors | ✓ EXISTS + SUBSTANTIVE | constants、NFC query schema、coherent states、strict related/error schemas 均存在并被 API 使用 |
-| `apps/api/src/content/public-repository.ts` | published-only search 与 deterministic related authority | ✓ EXISTS + SUBSTANTIVE | publicPredicate、literal pattern、snapshot pagination、ranking、hydration 和 related query 已连线 |
-| `apps/api/src/routes/public-posts.ts` | strict search/related Fastify routes | ✓ EXISTS + SUBSTANTIVE | 两条 GET route、typed 503、route-local opaque 500 均存在并在 generated runtime 测试通过 |
-| `apps/api/test/public-discovery.test.ts` | PostgreSQL/route/confidentiality evidence | ✓ EXISTS + SUBSTANTIVE | search/related/ranking/leak/error/route 行为均有非零测试 |
-| `scripts/local-verify.mjs` | isolated Phase 6 gate/interruption/parallel/BLOCKED | ✓ EXISTS + SUBSTANTIVE | exact gate 独立重跑通过 |
-| `scripts/local-verify.test.mjs` | selection/no-receipt/cleanup regression | ✓ EXISTS + SUBSTANTIVE | 27/27 通过 |
+| `packages/contracts/src/public-discovery.ts` | Strict search/related wire contracts | ✓ VERIFIED | Exists, substantive, exported through contracts package and consumed by API routes/repository. |
+| `apps/api/src/content/public-repository.ts` | Published-only search and related queries | ✓ VERIFIED | Parameterized PostgreSQL queries, bounded pagination, deterministic ranking and repeatable-read transactions. |
+| `apps/api/src/routes/public-posts.ts` | Public HTTP discovery boundaries | ✓ VERIFIED | Strict request parsing and opaque 400/404/500/503 responses wired to the repository. |
+| `apps/api/test/public-discovery.test.ts` | Real database and route behavior | ✓ VERIFIED | Executed by the generated Phase 6 PostgreSQL gate; conditional skips are rejected by the TAP parser. |
+| `scripts/local-verify.mjs` | Isolated Phase 6 acceptance gate | ✓ VERIFIED | Generated namespace, migration, semantic suites, boundary gate, cleanup and terminal `RELEASE BLOCKED`. |
+| `scripts/refresh-local.mjs` and sealed refresh modules | Fixed-runtime evidence and read-only reconstruction | ✓ VERIFIED | 46/46 focused tests pass; claim, failure-report and v4 evidence CLIs verify current state. |
+| `ops/phase6-local-refresh-evidence.json` | Sanitized fixed-runtime evidence | ✓ VERIFIED | Strict v4 evidence SHA-256 `16704ea439990dd31797620555b46ac202fc6468e4716175246b874f41f596f6`; reconstructed from current runtime. |
 
-**Artifacts:** 6/6 verified
+**Artifacts:** 7/7 verified
 
 ### Key Link Verification
 
-| Connection | Status | Details |
-|------------|--------|---------|
-| discovery contracts → existing public card | ✓ WIRED | 复用 `publicPostListItemSchema`，无第二套 public projection |
-| repository search/related → schema/publicPredicate | ✓ WIRED | source、candidate、count、rows 在匹配/排序前受同一公开谓词约束 |
-| routes → strict contracts → repository | ✓ WIRED | query/params、success 和 error schemas 均在 handler 边界使用 |
-| Phase 6 gate → PostgreSQL suites/Compose/boundaries/release gate | ✓ WIRED | parent 与两 child 的真实 generated runs 均通过 |
-| fixed `blogxlocal` Compose → latest verified revision at `3100` | ✗ NOT WIRED AT RUNTIME | Compose 定义存在，但 offline formal build 未产出 revision-tagged image，固定容器仍运行旧镜像 |
+| From | To | Via | Status | Details |
+|------|----|-----|--------|---------|
+| Shared contracts | API routes/repository | Strict schemas | ✓ WIRED | Search/related success and error envelopes share allowlisted contracts. |
+| API routes | Repository | `searchPage` / `relatedBySlug` | ✓ WIRED | Parsed inputs delegate to the data boundary; errors remain opaque. |
+| Repository | PostgreSQL schema | `publicPredicate` and parameterized SQL | ✓ WIRED | Public visibility is applied to source, candidates and search rows before hydration. |
+| Local verifier | Disposable PostgreSQL/API | Generated Compose namespace | ✓ WIRED | Fresh migration plus discovery/list/visibility/taxonomy regressions passed and cleaned up. |
+| Fixed Web origin | Fixed API | Same-origin `/api` routing | ✓ WIRED | `http://127.0.0.1:3100/api/health` and discovery routes return current strict responses. |
+| Sealed collectors | v4 evidence | Read-only fact reconstruction | ✓ WIRED | Current Git/lock/image/topology/persistence/route/release facts match committed evidence. |
 
-**Wiring:** 10/11 plan key links verified; the one runtime/provenance link is blocked.
+**Wiring:** 6/6 connections verified
 
 ## Requirements Coverage
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| SRCH-01 | ✓ SATISFIED IN IMPLEMENTATION | published-only PostgreSQL search across title/summary/Markdown；hidden states and fields zero-leak |
-| SRCH-02 | ✓ SATISFIED IN IMPLEMENTATION | multilingual/NFC/literal wildcard/limits/stable pagination/state/error tests pass |
-| SRCH-03 | ✓ SATISFIED IN IMPLEMENTATION | exact 3/2/1 rank plus publication/UUID tie order and repeatable-read snapshot pass |
-| READ-08 | ✓ SATISFIED IN IMPLEMENTATION | related source/candidates public-only, real overlap, deterministic order, fixed cap pass |
+| SRCH-01 | ✓ SATISFIED | Published-only title/summary/Markdown search and strict public-card projection. |
+| SRCH-02 | ✓ SATISFIED | Unicode normalization, fixed bounds, literal wildcard handling, stable pagination and explicit state/error contracts. |
+| SRCH-03 | ✓ SATISFIED | Exact 3/2/1 relevance plus published-time/UUID tie order in a read-only repeatable-read snapshot. |
+| READ-08 | ✓ SATISFIED | Public-only source/candidates, real overlap, source exclusion, fixed cap and stable order. |
 
-**Coverage:** 4/4 product requirements satisfied by implementation and generated runtime evidence. They must remain formally pending until the Phase 6 runtime-observability gap is closed and Phase 6 is reverified.
+**Coverage:** 4/4 Phase 6 requirements satisfied
 
-## Automated Evidence
+## Behavioral Verification
 
-- `corepack pnpm --filter @blog-x/contracts test` — 10 passed, 0 failed/skipped/TODO/cancelled.
-- `node --test scripts/local-verify.test.mjs` — 27 passed, 0 failed/skipped/TODO/cancelled.
-- `corepack pnpm -r typecheck` — contracts/API/Web passed.
-- `node scripts/check-boundaries.mjs` — 328 files checked, 0 findings.
-- `corepack pnpm local:verify -- --phase6-data` — generated PostgreSQL/public-boundary gate passed and ended `RELEASE BLOCKED`.
-- Exact `corepack pnpm local:verify -- --phase6-data --interruption-check --parallel-check` — exit 0; real interruption recovery, parent pass, two child passes, exact cleanup, no receipt.
-- `node scripts/release-gate.mjs --evidence=ops/release-evidence.blocked.json --expect-blocked` — canonical `RELEASE BLOCKED` with live-production facts unresolved.
-- Fixed runtime inspection — Web/API/PostgreSQL healthy and unchanged, but Phase 6 search route remains default 404.
-- `verify-summary` for 06-03 correctly fails because the self-check heading is `PASSED WITH SAFE REFRESH BLOCK`; this is consistent with the unresolved runtime success criterion.
+| Check | Result | Detail |
+|-------|--------|--------|
+| Isolated Phase 6 data gate | ✓ PASS | Generated PostgreSQL/API/Web namespace migrated, ran all named semantic suites, rejected skips/zero tests, cleaned its namespace, ended `LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED`. |
+| Refresh safety suite | ✓ 46/46 | Claim/report/evidence sealing, offline image authority, persistence comparisons, rollback, exact commands and same-origin route rules. |
+| Local-verifier suite | ✓ 27/27 | Namespace safety, Phase 6 selection, semantic TAP parsing, boundary and release constraints. |
+| Discovery contract suite | ✓ 10/10 | Query normalization/bounds, coherent response states, related cap and opaque errors. |
+| Workspace typecheck | ✓ PASS | Contracts, API and Web passed. |
+| Boundary audit | ✓ PASS | 363 files checked, 0 findings. |
+| Fixed runtime | ✓ PASS | PostgreSQL/API/Web healthy; API/Web immutable image IDs match v4 evidence. |
+| Evidence reconstruction | ✓ PASS | `LOCAL REFRESH EVIDENCE VERIFIED; RELEASE BLOCKED`. |
+| Protected v1 evidence | ✓ PASS | Milestone evidence and retained Phase 5 receipt unchanged. |
 
-## Prohibitions and Safety
+## Test Quality Audit
 
-- No search daemon, pg_trgm/GIN migration, browser database access, public data plane, or new resident service was introduced.
-- Literal wildcard/SQL-shaped queries and hostile exception messages are covered by passing tests; no hidden state or topology field is exposed.
-- Exact gate did not mutate `.planning/milestones` or `ops/phase5-full-gate-receipt.json`, did not leave generated containers/volumes, and did not acquire receipt authority.
-- No local volume was deleted or recreated; the fixed `blogxlocal` runtime was not mutated after refresh preflight failed.
-- No SSH, server, cloud, deployment, unfreeze, or production transition was performed. Production remains `BLOCKED`.
+| Test File | Linked Req | Active | Disabled | Circular | Assertion Level | Verdict |
+|-----------|------------|--------|----------|----------|-----------------|---------|
+| `packages/contracts/src/public-discovery.test.ts` | SRCH-02, READ-08 | Yes | 0 | No | Value/schema | ✓ Strong |
+| `apps/api/test/public-discovery.test.ts` | SRCH-01/02/03, READ-08 | Yes in disposable DB gate | 4 conditional guards | No | Behavioral/value | ✓ Strong |
+| `scripts/local-verify.test.mjs` | Phase acceptance | Yes | 0 | No | Behavioral/policy | ✓ Strong |
+| `scripts/refresh-local.test.mjs` | Fixed-runtime evidence | Yes | 0 | No | Behavioral/fail-first | ✓ Strong |
+
+The four `context.skip` calls are environment guards, not disabled acceptance tests: the canonical Phase 6 gate supplies a disposable migrated database and rejects any skip/TODO/zero-test TAP result. Fixture writers create known bad/clean inputs for fail-first checks; they do not generate expected discovery values from the system under test.
 
 ## Anti-Patterns Found
 
-No product-code stubs or placeholder implementations were found. One delivery/evidence mismatch is blocking: the plan statically links Compose to `3100`, but no current-revision image is actually running there.
+No goal-blocking stubs, placeholders, disabled requirement tests or circular discovery oracles were found. The repository's two `return null` branches are intentional not-found visibility results and are covered by strict 404/absence tests.
 
-## Human Verification Required
+One non-blocking scanner limitation remains: historical Plan 06-10 key-link text names `/private/tmp/blog-x-refresh-attempts` as a direct `refresh-local-live.mjs` link, while the sealed implementation deliberately moved the literal root and read-only report parser into `refresh-local-runtime-core.mjs`. Direct inspection and 46/46 tests confirm the production module boundary and behavior.
 
-None. The blocking condition is machine-observable and reproduced as an exact 404 response.
+### Decision Coverage
+
+No trackable decisions in `06-CONTEXT.md`; all product constraints are represented by the roadmap, requirements, plans and tests.
+
+## Human Verification
+
+N/A — infrastructure/data-boundary phase with no Phase 6 visitor UI. All acceptance criteria are verifiable programmatically; responsive search and related-content presentation belong to Phase 7.
+
+## Release and Server Safety
+
+- Production remains canonically `BLOCKED`; unresolved live authorization, host, network, backup, TLS and rollback facts remain explicit.
+- No SSH, cloud server, registry, deployment, push or production-unfreeze action was used during independent verification.
+- The main server remains frozen. The only observed visitor origin is local loopback `http://127.0.0.1:3100`.
 
 ## Gaps Summary
 
-### Critical Gap
-
-1. **Fixed `3100` runtime is healthy but stale**
-   - Missing: a source-proven, fully offline Web/API build and safe `blogxlocal` refresh from the verified revision.
-   - Cause: `compose.yaml` correctly sets formal builds to `network: none`, but the Dockerfiles require `corepack pnpm install --frozen-lockfile` and the required classic install cache layer is absent. The executor correctly stopped before mutation.
-   - Impact: 06-03's explicit must-have and phase success criterion are false; visitors and Phase 7 browser tests cannot reach the new search/related APIs through the fixed same-origin entry.
-   - Authority: Phase 8 owns the reusable one-command delivery system, but that future ownership does not waive this Phase 6 acceptance criterion. A minimal closure can establish the durable offline primitive now and Phase 8 can harden/generalize it later.
-
-## Recommended Fix Plan
-
-### 06-04-PLAN.md: Durable Offline Fixed-Runtime Refresh
-
-**Objective:** build the verified Phase 6 revision without registry access and make it observable at fixed `blogxlocal`/`3100` while preserving all local data.
-
-**Tasks:**
-
-1. Add a source-proven offline dependency/build authority that works with Docker `network: none` even when the classic frozen-install layer is absent; reject stale/unknown images and all network fallback.
-2. From a clean committed revision, build revision-tagged Web/API images, retain exact PostgreSQL/media volumes and business/sequence/ledger/media facts, run idempotent migration/schema verification, and recreate only fixed `blogxlocal` Web/API services.
-3. Verify container image/revision provenance plus Web-origin home/category/tag/archive, `/api/health`, empty search 200, and strict hidden/unknown related 404; confirm fixed data identities, v1 archive, receipt and production `BLOCKED` remain unchanged, then re-run the independent Phase 6 verifier.
-
-**Estimated scope:** Medium
-
-**Phase 7 disposition:** Do not formally execute/complete Phase 7 yet. Planning may continue, but the Phase 6 dependency and fixed same-origin runtime must be closed before Phase 7 browser integration evidence is authoritative.
+**No Phase 6 gaps found.** The public discovery data goal is achieved and Phase 7 may build the responsive visitor experience against these strict contracts.
 
 ## Verification Metadata
 
-**Verification approach:** Goal-backward, all PLAN frontmatter must-haves plus ROADMAP success criteria
-**Automated checks:** product contracts, PostgreSQL/Fastify semantics, local verifier, typecheck, boundaries, exact interruption/parallel gate, cleanup, release gate and fixed-runtime route checks
-**Automated result:** all implementation/data checks passed; 1 fixed-runtime observability check failed
+**Verification approach:** Goal-backward, using ROADMAP success criteria as the authoritative contract
+
+**Evidence ancestry:** implementation `fd5ef1b` → evidence-only `719062d` → docs-only `d85090e`
+
+**Automated result:** all structural, behavioral, fixed-runtime and evidence checks passed
+
 **Human checks required:** 0
+
 **Servers contacted:** 0
 
 ---
-*Verified: 2026-08-15T12:57:00Z*
-*Verifier: independent Phase 6 GSD verifier*
+*Verified: 2026-08-16T16:05:31Z*
+
+*Verifier: independent Phase 6 verification run*

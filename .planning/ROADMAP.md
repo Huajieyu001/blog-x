@@ -16,7 +16,7 @@
 
 ## v1.1 Phases
 
-- [ ] **Phase 6: Public Discovery Data** — 建立仅公开内容的低资源搜索与确定性相关文章数据边界。
+- [x] **Phase 6: Public Discovery Data** — 建立仅公开内容的低资源搜索与确定性相关文章数据边界。 (completed 2026-08-17)
 - [ ] **Phase 7: Responsive Discovery Experience** — 交付搜索入口、结果页和文章相关文章的响应式访客体验。
 - [ ] **Phase 8: Reliable Local Delivery** — 固化离线优先的本地更新、健康验证和 v1.1 全量验收。
 
@@ -27,9 +27,10 @@
 **Depends on:** Shipped Local MVP baseline
 **Requirements:** SRCH-01, SRCH-02, SRCH-03, READ-08
 **UI hint:** no
-**Plans:** 8 active plans (+ 3 superseded drafts)
+**Plans:** 8/8 active plans complete (+ 3 superseded drafts)
 
 Plans:
+
 - [x] 06-01-PLAN.md — Define strict public search contracts and published-only query semantics.
 - [x] 06-02-PLAN.md — Implement deterministic related-article data and API boundaries.
 - [x] 06-03-PLAN.md — Run isolated Phase 6 data gates and detect the stale fixed runtime.
@@ -39,8 +40,8 @@ Plans:
 - 06-07-PLAN.md — Superseded before execution at `3221f99`; audit stopped before bare invocation, claim, evidence or mutation.
 - [x] 06-08-PLAN.md — Remediate the first audited P0/P1 live-adapter and evidence gap set under TDD.
 - 06-09-PLAN.md — Superseded before execution at `df4aa3b`; second audit stopped before bare invocation, claim, evidence or mutation.
-- [ ] 06-10-PLAN.md — Close all five remaining evidence, failure, authority, sealing and atomic-publication blockers under TDD.
-- [ ] 06-11-PLAN.md — Execute the next clean revision exactly once, commit v4 evidence/docs, and hand off independent verification.
+- [x] 06-10-PLAN.md — Close all five remaining evidence, failure, authority, sealing and atomic-publication blockers under TDD.
+- [x] 06-11-PLAN.md — Execute the next clean revision exactly once, commit v4 evidence/docs, and hand off independent verification.
 
 **Success Criteria:**
 
@@ -83,6 +84,6 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 6. Public Discovery Data | v1.1 | 6/8 active | Second audit remediation planned | — |
+| 6. Public Discovery Data | v1.1 | 8/8 active | Complete | 2026-08-17 |
 | 7. Responsive Discovery Experience | v1.1 | 0/? | Not started | — |
 | 8. Reliable Local Delivery | v1.1 | 0/? | Not started | — |
