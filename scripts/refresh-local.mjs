@@ -3,6 +3,11 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import {
+  createLiveRefreshAdapter,
+  createRefreshAttemptStore,
+  verifyLiveRefreshEvidence,
+} from "./refresh-local-live.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const composeFile = resolve(root, "compose.yaml");
@@ -95,9 +100,9 @@ export async function runLocalRefresh({ adapter, plan = createRefreshPlan({ revi
   }
 }
 
-function run(command, args, { cwd = root, input } = {}) {
+function run(command, args, { cwd = root, input, env } = {}) {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(command, args, { cwd, stdio: [input ? "pipe" : "ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, { cwd, env: env ? { ...process.env, ...env } : process.env, stdio: [input ? "pipe" : "ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => { stdout += chunk; });
@@ -153,31 +158,56 @@ export async function probeOfflineBuilds({ apiSeedImage = process.env.BLOG_X_API
   return { api, web, revision, lockSha256 };
 }
 
-export async function verifyEvidence(path) {
-  const bytes = await readFile(resolve(root, path));
-  const evidence = JSON.parse(bytes.toString("utf8"));
-  if (evidence.format !== "blog-x-phase6-local-refresh-evidence" || evidence.version !== 1 || evidence.releaseState !== "BLOCKED") fail("evidence is not a strict blocked local refresh record");
-  if (!/^[a-f0-9]{40}$/.test(evidence.implementationRevision ?? "") || !/^[a-f0-9]{64}$/.test(evidence.lockfileSha256 ?? "")) fail("evidence provenance is malformed");
-  return evidence;
+export async function verifyEvidence(path, options) {
+  return verifyLiveRefreshEvidence(resolve(root, path), options);
 }
 
-async function main() {
-  const evidenceOption = process.argv.find((item) => item.startsWith("--verify-evidence="));
+async function resolveCleanRevision() {
+  const status = (await run("git", ["status", "--porcelain"])).stdout;
+  if (status.trim()) fail("worktree must be clean before live refresh");
+  const revision = (await run("git", ["rev-parse", "HEAD"])).stdout.trim();
+  shortRevision(revision);
+  return revision;
+}
+
+export async function runRefreshCli({
+  argv = process.argv.slice(2),
+  revisionResolver = resolveCleanRevision,
+  claimStore = createRefreshAttemptStore(),
+  liveAdapterFactory = async ({ revision }) => createLiveRefreshAdapter({ runArgv: run, root, claimStore }),
+  io = process.stdout,
+} = {}) {
+  const evidenceOption = argv.find((item) => item.startsWith("--verify-evidence="));
   if (evidenceOption) {
     await verifyEvidence(evidenceOption.slice("--verify-evidence=".length));
-    process.stdout.write("LOCAL REFRESH EVIDENCE VERIFIED; RELEASE BLOCKED\n");
-    return;
+    io.write("LOCAL REFRESH EVIDENCE VERIFIED; RELEASE BLOCKED\n");
+    return { releaseState: "BLOCKED" };
   }
-  if (process.argv.includes("--probe-offline-builds")) {
+  if (argv.includes("--probe-offline-builds")) {
     const result = await probeOfflineBuilds();
-    process.stdout.write(`OFFLINE REFRESH PROBES PASSED ${result.revision.slice(0, 12)}\n`);
-    return;
+    io.write(`OFFLINE REFRESH PROBES PASSED ${result.revision.slice(0, 12)}\n`);
+    return result;
   }
-  fail("live fixed refresh is intentionally available only to the ordered 06-05 executor");
+  const claimOption = argv.find((item) => item.startsWith("--check-attempt-claim="));
+  if (claimOption) {
+    const mode = claimOption.slice("--check-attempt-claim=".length);
+    const revisionOption = argv.find((item) => item.startsWith("--revision="))?.slice("--revision=".length);
+    if (argv.length !== 2 || !["absent", "present"].includes(mode) || !/^[a-f0-9]{40}$/.test(revisionOption ?? "")) fail("attempt claim check requires one mode and one full revision");
+    const result = mode === "absent" ? await claimStore.assertAbsent(revisionOption) : await claimStore.assertPresent(revisionOption);
+    io.write(`LOCAL REFRESH ATTEMPT CLAIM ${mode.toUpperCase()} ${revisionOption}\n`);
+    return result;
+  }
+  if (argv.length) fail("unknown refresh CLI option");
+  const revision = await revisionResolver();
+  shortRevision(revision);
+  await claimStore.assertAbsent(revision);
+  const adapter = await liveAdapterFactory({ revision, claimStore });
+  const plan = createRefreshPlan({ revision, lockSha256: sha256(await readFile(lockfile)), apiSeedId: "sha256:0", webSeedId: "sha256:0" });
+  return runLocalRefresh({ adapter, plan });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
+  runRefreshCli().catch((error) => {
     process.stderr.write(`${error.message}\n`);
     process.exitCode = 1;
   });

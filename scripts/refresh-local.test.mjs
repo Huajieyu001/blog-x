@@ -150,9 +150,14 @@ test("evidence verification is read-only and refuses malformed or non-BLOCKED re
   const root = await mkdtemp(join(tmpdir(), "blog-x-refresh-evidence-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const path = join(root, "evidence.json");
-  await writeFile(path, JSON.stringify({ format: "blog-x-phase6-local-refresh-evidence", version: 1, implementationRevision: "a".repeat(40), lockfileSha256: "b".repeat(64), releaseState: "BLOCKED" }));
+  const claimRoot = join(root, "blog-x-refresh-attempts");
+  await mkdir(claimRoot, { mode: 0o700 });
+  const claimStore = createRefreshAttemptStore({ root: claimRoot });
+  const revision = "a".repeat(40);
+  const claim = await claimStore.claimRefreshAttempt(revision);
+  await writeFile(path, JSON.stringify({ format: "blog-x-phase6-local-refresh-evidence", version: 2, implementationRevision: revision, lockfileSha256: "b".repeat(64), releaseState: "BLOCKED", attemptClaim: { implementationRevision: revision, sha256: claim.sha256 } }));
   const before = await readFile(path, "utf8");
-  assert.equal((await verifyEvidence(path)).releaseState, "BLOCKED");
+  assert.equal((await verifyEvidence(path, { claimStore })).releaseState, "BLOCKED");
   assert.equal(await readFile(path, "utf8"), before);
   await writeFile(path, JSON.stringify({ format: "blog-x-phase6-local-refresh-evidence", version: 1, implementationRevision: "short", lockfileSha256: "b".repeat(64), releaseState: "READY" }));
   await assert.rejects(verifyEvidence(path), /evidence/i);
@@ -198,8 +203,10 @@ test("runRefreshCli replaces the hardcoded stub and consumes an injected adapter
 });
 
 test("attempt claims are canonical, exclusive, revision-bound, and leave second cli calls before adapter construction", async (t) => {
-  const claimRoot = await mkdtemp(join(tmpdir(), "blog-x-claim-"));
-  t.after(() => rm(claimRoot, { recursive: true, force: true }));
+  const claimParent = await mkdtemp(join(tmpdir(), "blog-x-claim-"));
+  const claimRoot = join(claimParent, "blog-x-refresh-attempts");
+  await mkdir(claimRoot, { mode: 0o700 });
+  t.after(() => rm(claimParent, { recursive: true, force: true }));
   const store = createRefreshAttemptStore({ root: claimRoot });
   const revision = "f".repeat(40);
   const first = await store.claimRefreshAttempt(revision);
