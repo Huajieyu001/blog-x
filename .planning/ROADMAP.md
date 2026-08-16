@@ -27,7 +27,7 @@
 **Depends on:** Shipped Local MVP baseline
 **Requirements:** SRCH-01, SRCH-02, SRCH-03, READ-08
 **UI hint:** no
-**Plans:** 7 active plans (+ 2 superseded drafts)
+**Plans:** 8 active plans (+ 3 superseded drafts)
 
 Plans:
 - [x] 06-01-PLAN.md — Define strict public search contracts and published-only query semantics.
@@ -37,8 +37,10 @@ Plans:
 - 06-05-PLAN.md — Superseded after its one allowed `b7fa05c` invocation safely exposed the missing live adapter.
 - [x] 06-06-PLAN.md — Implement the first strict live-adapter revision without runtime mutation.
 - 06-07-PLAN.md — Superseded before execution at `3221f99`; audit stopped before bare invocation, claim, evidence or mutation.
-- [ ] 06-08-PLAN.md — Remediate every audited P0/P1 live-adapter and evidence gap under TDD.
-- [ ] 06-09-PLAN.md — Execute one later clean-revision refresh, commit evidence, and hand off independent verification.
+- [x] 06-08-PLAN.md — Remediate the first audited P0/P1 live-adapter and evidence gap set under TDD.
+- 06-09-PLAN.md — Superseded before execution at `df4aa3b`; second audit stopped before bare invocation, claim, evidence or mutation.
+- [ ] 06-10-PLAN.md — Close all five remaining evidence, failure, authority, sealing and atomic-publication blockers under TDD.
+- [ ] 06-11-PLAN.md — Execute the next clean revision exactly once, commit v4 evidence/docs, and hand off independent verification.
 
 **Success Criteria:**
 
@@ -81,6 +83,6 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 6. Public Discovery Data | v1.1 | 5/7 active | Audit remediation planned | — |
+| 6. Public Discovery Data | v1.1 | 6/8 active | Second audit remediation planned | — |
 | 7. Responsive Discovery Experience | v1.1 | 0/? | Not started | — |
 | 8. Reliable Local Delivery | v1.1 | 0/? | Not started | — |
