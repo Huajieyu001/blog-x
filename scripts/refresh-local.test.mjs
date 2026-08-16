@@ -362,6 +362,32 @@ const rawRouteBodies = {
   "/api/public/search?q=": JSON.stringify({ state: "empty_query", query: "", page: 1, pageSize: 10, totalItems: 0, totalPages: 0, items: [] }),
   "/api/public/articles/phase6-unknown/related": JSON.stringify({ error: "not_found" }),
 };
+const STALE_SEARCH_BODY = "<html>legacy search route missing</html>";
+const STALE_RELATED_BODY = JSON.stringify({ error: "legacy_route_missing" });
+const rawDigest = (value) => createHash("sha256").update(value).digest("hex");
+const staleRoutes = {
+  ...structuredClone(exactRoutes),
+  "/api/public/search?q=": { status: 404, bodySha256: rawDigest(STALE_SEARCH_BODY) },
+  "/api/public/articles/phase6-unknown/related": { status: 404, body: JSON.parse(STALE_RELATED_BODY), bodySha256: rawDigest(STALE_RELATED_BODY) },
+};
+const finalRouteResponses = Object.fromEntries(Object.entries(rawRouteBodies).map(([path, body]) => [path, {
+  status: path.endsWith("/related") ? 404 : 200,
+  body,
+  contentType: path.startsWith("/api/") ? "application/json; charset=utf-8" : "text/html; charset=utf-8",
+}]));
+const staleRouteResponses = {
+  ...structuredClone(finalRouteResponses),
+  "/api/public/search?q=": { status: 404, body: STALE_SEARCH_BODY, contentType: "text/html; charset=utf-8" },
+  "/api/public/articles/phase6-unknown/related": { status: 404, body: STALE_RELATED_BODY, contentType: "application/problem+json; charset=utf-8" },
+};
+function fakeRouteResponse(url, response) {
+  return {
+    status: response.status,
+    url,
+    headers: { get(name) { return name.toLowerCase() === "content-type" ? response.contentType : null; } },
+    async text() { return response.body; },
+  };
+}
 function factsFixture({ apiImage = SHA("a"), webImage = SHA("w"), phase1 = "2026-08-15T00:00:00.000Z", routes = exactRoutes } = {}) {
   return {
     containers: [inspectContainer("api", apiImage), inspectContainer("postgres", SHA("p")), inspectContainer("web", webImage)],
@@ -399,11 +425,40 @@ test("postMigration permits only phase1 timestamp advance and later stages prese
   assert.throws(() => assertPersistenceTransition(postMigration, drift, { stage: "postCutover", targetImageIds: { api: SHA("n"), web: SHA("x") } }), /media|persistence/i);
 });
 
+test("route observations stay exact before cutover and rollback requires an explicit preflight baseline", () => {
+  const preflight = factsFixture({ routes: staleRoutes });
+  const postMigration = factsFixture({ phase1: "2026-08-16T00:00:00.000Z", routes: structuredClone(staleRoutes) });
+  assert.doesNotThrow(() => assertPersistenceTransition(preflight, postMigration, { stage: "postMigration" }));
+
+  const drift = structuredClone(postMigration);
+  drift.routes["/api/public/search?q="].bodySha256 = "9".repeat(64);
+  assert.throws(() => assertPersistenceTransition(preflight, drift, { stage: "postMigration" }), /route|observation/i);
+
+  const rollback = factsFixture({ phase1: "2026-08-16T00:00:00.000Z", routes: structuredClone(staleRoutes) });
+  assert.throws(() => assertPersistenceTransition(postMigration, rollback, { stage: "rollback", oldImageIds: { api: SHA("a"), web: SHA("w") } }), /preflight|route|baseline/i);
+  assert.doesNotThrow(() => assertPersistenceTransition(postMigration, rollback, { stage: "rollback", oldImageIds: { api: SHA("a"), web: SHA("w") }, preflightRoutes: staleRoutes }));
+
+  const staleCutover = factsFixture({ apiImage: SHA("n"), webImage: SHA("x"), phase1: "2026-08-16T00:00:00.000Z", routes: staleRoutes });
+  assert.throws(() => assertPersistenceTransition(postMigration, staleCutover, { stage: "postCutover", targetImageIds: { api: SHA("n"), web: SHA("x") } }), /route|contract|search/i);
+});
+
 test("sanitized v4 fact projection contains digests and counts but no raw rows, paths, mounts, env or commands", () => {
   const projection = projectSanitizedFacts(factsFixture());
   const bytes = JSON.stringify(projection);
   assert.deepEqual(Object.keys(projection).sort(), ["business", "containers", "database", "git", "ledger", "media", "protected", "releaseState", "routes", "seeds", "sequences", "targets", "topology", "volumes"].sort());
   assert.doesNotMatch(bytes, /Mountpoint|relativePath|migration_fingerprint|applied_at|environment|command|private\/var/i);
+});
+
+test("observed route projection is deterministic nullable and excludes raw stale bodies", () => {
+  const projection = projectSanitizedFacts(factsFixture({ routes: staleRoutes }), { routeContract: "observed" });
+  assert.deepEqual(Object.keys(projection.routes["/api/public/search?q="]).sort(), ["bodySha256", "contractSha256", "status"]);
+  assert.equal(projection.routes["/api/public/search?q="].contractSha256, null);
+  assert.match(projection.routes["/api/public/articles/phase6-unknown/related"].contractSha256, /^[a-f0-9]{64}$/);
+  assert.deepEqual(Object.keys(projection.routes["/archives"]).sort(), ["bodySha256", "status"]);
+  const bytes = JSON.stringify(projection);
+  assert.doesNotMatch(bytes, /legacy search route missing|legacy_route_missing|content-type|text\/html|problem\+json/i);
+  assert.throws(() => projectSanitizedFacts(factsFixture({ routes: staleRoutes })), /route|contract|search/i);
+  assert.throws(() => projectSanitizedFacts(factsFixture(), { routeContract: "unknown" }), /route|mode|contract/i);
 });
 
 test("route facts and sanitized projections require one plural archives authority", () => {
@@ -433,7 +488,7 @@ test("command policy is exact-token and rejects extra, reordered, alternate auth
   }
 });
 
-test("collector uses fake argv/database/media/history adapters and rejects partial route bodies", async () => {
+test("collector uses fake argv/database/media/history adapters and rejects malformed route observations", async () => {
   const fixture = factsFixture();
   const calls = [];
   const collected = await collectRefreshFacts({
@@ -450,8 +505,8 @@ test("collector uses fake argv/database/media/history adapters and rejects parti
   });
   assert.deepEqual(calls, ["compose", "containers", "volumes", "database", "media", "history"]);
   assertFixedRuntimeAuthority(collected);
-  const bad = structuredClone(fixture.routes); bad["/api/public/search?q="].body = { state: "empty_query" };
-  await assert.rejects(collectRefreshFacts({ sources: { composeAuthority: async () => ({ services: ["api", "postgres", "web"], ps: ["api", "postgres", "web"] }), containers: async () => fixture.containers, volumes: async () => fixture.volumes, business: async () => fixture.business, sequences: async () => fixture.sequences, ledger: async () => fixture.ledger, media: async () => fixture.media, protected: async () => fixture.protected, routes: async () => bad, releaseState: async () => "BLOCKED", git: async () => fixture.git, database: async () => fixture.database, seeds: async () => fixture.seeds, targets: async () => fixture.targets } }), /route|search|contract/i);
+  const bad = structuredClone(fixture.routes); bad["/api/public/search?q="].status = 302;
+  await assert.rejects(collectRefreshFacts({ sources: { composeAuthority: async () => ({ services: ["api", "postgres", "web"], ps: ["api", "postgres", "web"] }), containers: async () => fixture.containers, volumes: async () => fixture.volumes, business: async () => fixture.business, sequences: async () => fixture.sequences, ledger: async () => fixture.ledger, media: async () => fixture.media, protected: async () => fixture.protected, routes: async () => bad, releaseState: async () => "BLOCKED", git: async () => fixture.git, database: async () => fixture.database, seeds: async () => fixture.seeds, targets: async () => fixture.targets } }), /route|search|status|redirect|observation/i);
 });
 
 const COMPOSE_V5_PS_RECORDS = [
@@ -523,12 +578,12 @@ function targetImage(app, id, revision, lock, seedId) {
   return { Id: id, Config: { Image: `blog-x-${app}-local:${revision.slice(0, 12)}`, WorkingDir: "/refresh-workspace", Cmd: ["corepack", "pnpm", "--filter", `@blog-x/${app}`, "start"], Labels: { "org.opencontainers.image.revision": revision, "io.blog-x.lockfile-sha256": lock, "io.blog-x.seed-image-id": seedId, "io.blog-x.application": app, "io.blog-x.public-origin": "http://127.0.0.1:3100", "io.blog-x.refresh-kind": "phase6-offline" } } };
 }
 
-function liveFixture({ failPostCutover = false, recollectionFault = false, stageFaults = [], atomicFault } = {}) {
+function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault } = {}) {
   const revision = "a".repeat(40); const lock = createHash("sha256").update("raw-lock\n").digest("hex");
   const old = { api: SHA("a"), web: SHA("b") }; const targetIds = { api: SHA("e"), web: SHA("f") };
   const plan = createRefreshPlan({ revision, lockSha256: lock, apiSeedId: old.api, webSeedId: old.web });
   const targets = { api: targetImage("api", targetIds.api, revision, lock, old.api), web: targetImage("web", targetIds.web, revision, lock, old.web) };
-  const calls = []; let snapshot = 0; let rolledBack = false; let verificationMode = false;
+  const calls = []; const routeFetches = []; let snapshot = 0; let rolledBack = false; let verificationMode = false; let staleVerification = false;
   const runner = async (command, args, options = {}) => {
     calls.push({ command, args: [...args], options: structuredClone(options) });
     if (command === "docker" && args[0] === "context" && args[1] === "show") return { stdout: "colima\n" };
@@ -575,10 +630,18 @@ function liveFixture({ failPostCutover = false, recollectionFault = false, stage
   };
   const evidenceBaseFs = memoryArtifactFs();
   const evidenceFs = atomicFault ? atomicFaultFs(evidenceBaseFs, "evidence", atomicFault) : evidenceBaseFs;
-  const fetch = async (url) => { const path = url.slice("http://127.0.0.1:3100".length); const body = rawRouteBodies[path]; return { status: path.endsWith("/related") ? 404 : 200, url, async text() { return body; } }; };
+  const fetch = async (url, options) => {
+    const path = url.slice("http://127.0.0.1:3100".length);
+    const stale = rolledBack || snapshot < 3 || stalePostCutover && snapshot >= 3 || verificationMode && staleVerification;
+    const responses = stale ? structuredClone(staleRouteResponses) : finalRouteResponses;
+    if (preCutoverRouteDrift && snapshot === 2) responses["/api/public/search?q="].body = `${STALE_SEARCH_BODY} drift`;
+    if (rollbackRouteDrift && rolledBack) responses["/api/public/search?q="].body = `${STALE_SEARCH_BODY} rollback drift`;
+    routeFetches.push({ path, snapshot, rolledBack, stale, options: structuredClone(options) });
+    return fakeRouteResponse(url, responses[path]);
+  };
   const runtime = createRefreshTestRuntime({ processBoundary: runner, fs: evidenceFs, fetch, clock(stage) { if (recollectionFault && stage === "failure_recollection" || stageFaults.includes(stage)) throw new Error(`${stage} fault`); }, randomHex: () => "3".repeat(24) });
   const adapter = runtime.createAdapter();
-  return { adapter, calls, evidenceFs, old, plan, revision, targetIds, runtime, beginVerification() { verificationMode = true; } };
+  return { adapter, calls, evidenceFs, old, plan, revision, routeFetches, targetIds, runtime, beginVerification() { verificationMode = true; }, serveStaleVerification() { staleVerification = true; }, serveFinalVerification() { staleVerification = false; } };
 }
 
 test("complete fake live refresh uses target API one-off, immutable cutover and sanitized atomic v4 evidence", async () => {
@@ -593,12 +656,18 @@ test("complete fake live refresh uses target API one-off, immutable cutover and 
   const bytes = await fixture.evidenceFs.readFile("/virtual-workspace/ops/phase6-local-refresh-evidence.json");
   const evidence = JSON.parse(bytes);
   assert.equal(evidence.version, 4); assert.equal(evidence.releaseState, "BLOCKED");
+  assert.deepEqual(evidence.stages.preflight.routes, evidence.stages.postMigration.routes);
+  assert.equal(evidence.stages.preflight.routes["/api/public/search?q="].status, 404);
+  assert.equal(evidence.stages.preflight.routes["/api/public/search?q="].contractSha256, null);
+  assert.match(evidence.stages.preflight.routes["/api/public/articles/phase6-unknown/related"].contractSha256, /^[a-f0-9]{64}$/);
+  assert.equal(evidence.stages.postCutover.routes["/api/public/search?q="].status, 200);
+  assert.match(evidence.stages.postCutover.routes["/api/public/search?q="].contractSha256, /^[a-f0-9]{64}$/);
   const singularArchive = "/archives".slice(0, -1);
   for (const facts of Object.values(evidence.stages)) {
     assert.equal(Object.hasOwn(facts.routes, "/archives"), true);
     assert.equal(Object.hasOwn(facts.routes, singularArchive), false);
   }
-  assert.doesNotMatch(bytes, /Mountpoint|relativePath|migration_fingerprint|applied_at|environment|command|private\/var/i);
+  assert.doesNotMatch(bytes, /Mountpoint|relativePath|migration_fingerprint|applied_at|environment|command|private\/var|legacy search route missing|legacy_route_missing|content-type|problem\+json/i);
   assert.equal([...fixture.evidenceFs.entries.keys()].some((path) => path.endsWith(".tmp")), false);
   assert.deepEqual(fixture.calls.filter((call) => call.command === "docker" && call.args[0] === "rm").map((call) => call.args), [["rm", "-f", oneoff]]);
   const evidencePath = "/virtual-workspace/ops/phase6-local-refresh-evidence.json";
@@ -609,6 +678,11 @@ test("complete fake live refresh uses target API one-off, immutable cutover and 
   }
   fixture.evidenceFs.entries.get(evidencePath).bytes = `${JSON.stringify(singularEvidence, null, 2)}\n`;
   await assert.rejects(fixture.runtime.verifyEvidence(evidencePath), /route|key|archive|evidence/i);
+  fixture.evidenceFs.entries.get(evidencePath).bytes = bytes;
+  const forgedFinal = structuredClone(evidence);
+  forgedFinal.stages.postCutover.routes["/api/health"].contractSha256 = "9".repeat(64);
+  fixture.evidenceFs.entries.get(evidencePath).bytes = `${JSON.stringify(forgedFinal, null, 2)}\n`;
+  await assert.rejects(fixture.runtime.verifyEvidence(evidencePath), /final|route|contract|evidence/i);
   fixture.evidenceFs.entries.get(evidencePath).bytes = bytes;
   fixture.beginVerification();
   assert.equal((await fixture.runtime.verifyEvidence("/virtual-workspace/ops/phase6-local-refresh-evidence.json")).releaseState, "BLOCKED");
@@ -621,6 +695,9 @@ test("complete fake live refresh uses target API one-off, immutable cutover and 
   assert.ok(fixture.calls.some((call) => call.command === "docker" && call.args.join(" ") === "image inspect blog-x-api-local"));
   assert.ok(fixture.calls.some((call) => call.command === "docker" && call.args.join(" ") === `image inspect ${fixture.targetIds.api}`));
   assert.equal(fixture.runtime.fetches.length >= 14, true);
+  fixture.serveStaleVerification();
+  await assert.rejects(fixture.runtime.verifyEvidence(evidencePath), /route|contract|drift|search/i);
+  fixture.serveFinalVerification();
   fixture.evidenceFs.entries.get("/virtual-workspace/ops/phase5-full-gate-receipt.json").bytes = "raw drift\n";
   await assert.rejects(fixture.runtime.verifyEvidence("/virtual-workspace/ops/phase6-local-refresh-evidence.json"), /drift/i);
 });
@@ -635,6 +712,41 @@ test("post-cutover fact failure rolls back API/Web by immutable IDs and suppress
   ]);
   await assert.rejects(fixture.evidenceFs.readFile("/virtual-workspace/ops/phase6-local-refresh-evidence.json"), /ENOENT/);
   assert.equal(fixture.calls.some((call) => call.args.includes("down") || call.args.includes("postgres") && call.args[0] === "rm" || call.command === "docker" && call.args[0] === "volume" && call.args[1] !== "inspect"), false);
+});
+
+test("stale preflight reaches both builds but exact observation drift stops before cutover", async () => {
+  const fixture = liveFixture({ preCutoverRouteDrift: true });
+  await assert.rejects(runLocalRefresh({ adapter: fixture.adapter, plan: fixture.plan }), /route|observation|pre-cutover/i);
+  assert.equal(fixture.calls.some((call) => call.command === "docker" && call.args[0] === "build" && call.args.includes("apps/api/Dockerfile.refresh")), true);
+  assert.equal(fixture.calls.some((call) => call.command === "docker" && call.args[0] === "build" && call.args.includes("apps/web/Dockerfile.refresh")), true);
+  assert.equal(fixture.calls.some((call) => call.command === "docker-compose" && call.args.includes("up")), false);
+});
+
+test("stale postCutover fails final authority and rollback must restore exact stale observations", async () => {
+  const staleFinal = liveFixture({ stalePostCutover: true });
+  await assert.rejects(runLocalRefresh({ adapter: staleFinal.adapter, plan: staleFinal.plan }), /route|contract|search/i);
+  const cutovers = staleFinal.calls.filter((call) => call.command === "docker-compose" && call.args.includes("up"));
+  assert.deepEqual(cutovers.map((call) => call.options.env), [
+    { BLOG_X_API_IMAGE: staleFinal.targetIds.api, BLOG_X_WEB_IMAGE: staleFinal.targetIds.web },
+    { BLOG_X_API_IMAGE: staleFinal.old.api, BLOG_X_WEB_IMAGE: staleFinal.old.web },
+  ]);
+  assert.equal(staleFinal.routeFetches.some(({ snapshot, rolledBack, stale }) => snapshot >= 3 && !rolledBack && stale), true);
+  assert.equal(staleFinal.routeFetches.some(({ rolledBack, stale }) => rolledBack && stale), true);
+
+  const rollbackDrift = liveFixture({ failPostCutover: true, rollbackRouteDrift: true });
+  await assert.rejects(runLocalRefresh({ adapter: rollbackDrift.adapter, plan: rollbackDrift.plan }), /rollback routes|preflight observations/i);
+});
+
+test("failure recollection hashes stale route projections without retaining raw responses", async () => {
+  const fixture = liveFixture({ stageFaults: ["build-api"] });
+  await assert.rejects(fixture.runtime.runCli(), /build-api fault/);
+  const report = await fixture.runtime.createAttemptStore().assertFailureReportPresent(fixture.revision);
+  assert.equal(report.report.stage, "build-api");
+  assert.equal(report.report.recollection, "collected");
+  assert.match(report.report.facts.preflight, /^[a-f0-9]{64}$/);
+  assert.match(report.report.facts.current, /^[a-f0-9]{64}$/);
+  assert.equal(report.report.facts.rollback, null);
+  assert.doesNotMatch(report.bytes, /legacy search route missing|legacy_route_missing|content-type|text\/html|problem\+json|http:\/\/127\.0\.0\.1:3100/i);
 });
 
 test("v4 projection is revision and schema complete with row-addressed sanitized ledger transitions", () => {
@@ -724,14 +836,43 @@ test("route collection rejects redirects and final URL drift with redirect:error
   assert.deepEqual(calls[0].options, { redirect: "error" });
 });
 
+test("route collection records stale HTML and JSON API observations by declared media type", async () => {
+  const inverse = structuredClone(staleRouteResponses);
+  inverse["/api/public/search?q="] = { status: 404, body: JSON.stringify({ error: "old_search" }), contentType: "Application/Problem+JSON ; charset=utf-8" };
+  inverse["/api/public/articles/phase6-unknown/related"] = { status: 404, body: "<html>legacy related route missing</html>", contentType: "TEXT/HTML; charset=utf-8" };
+
+  for (const responses of [staleRouteResponses, inverse]) {
+    const calls = [];
+    const sources = testRuntime(memoryArtifactFs(), undefined, async () => ({ stdout: "" }), async (url, options) => {
+      calls.push({ url, options });
+      const path = url.slice("http://127.0.0.1:3100".length);
+      return fakeRouteResponse(url, responses[path]);
+    }).createFactSources();
+    const routes = await sources.routes();
+    assert.equal(routes["/api/public/search?q="].status, 404);
+    assert.equal(routes["/api/public/articles/phase6-unknown/related"].status, 404);
+    assert.equal(Object.hasOwn(routes["/api/public/search?q="], "body"), responses["/api/public/search?q="].contentType.toLowerCase().includes("json"));
+    assert.equal(Object.hasOwn(routes["/api/public/articles/phase6-unknown/related"], "body"), responses["/api/public/articles/phase6-unknown/related"].contentType.toLowerCase().includes("json"));
+    assert.equal(calls.length, 7);
+    assert.equal(calls.every(({ options }) => options.redirect === "error"), true);
+  }
+
+  const malformed = structuredClone(finalRouteResponses);
+  malformed["/api/health"] = { status: 200, body: "{not-json", contentType: "application/json" };
+  const sources = testRuntime(memoryArtifactFs(), undefined, async () => ({ stdout: "" }), async (url) => {
+    const path = url.slice("http://127.0.0.1:3100".length);
+    return fakeRouteResponse(url, malformed[path]);
+  }).createFactSources();
+  await assert.rejects(sources.routes(), /malformed JSON|route|health/i);
+});
+
 test("route collection fetches plural archives exactly once and never requests singular authority", async () => {
   const calls = [];
   const singularArchive = "/archives".slice(0, -1);
   const sources = testRuntime(memoryArtifactFs(), undefined, async () => ({ stdout: "" }), async (url, options) => {
     calls.push({ url, options });
     const path = url.slice("http://127.0.0.1:3100".length);
-    const body = rawRouteBodies[path] ?? "<html>unexpected route</html>";
-    return { status: path.endsWith("/related") ? 404 : 200, url, async text() { return body; } };
+    return fakeRouteResponse(url, finalRouteResponses[path] ?? { status: 200, body: "<html>unexpected route</html>", contentType: "text/html" });
   }).createFactSources();
   const routes = await sources.routes();
   const paths = calls.map(({ url }) => new URL(url).pathname);
