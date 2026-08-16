@@ -597,3 +597,66 @@ test("local Docker authority accepts only approved Unix contexts and child envir
   await assert.doesNotReject(testCore.assertLocalDockerSocket(allowed, socketFs));
   await assert.rejects(testCore.assertLocalDockerSocket(allowed, { ...socketFs, async realpath() { return "/tmp/escaped.sock"; } }), /socket|authority|unsafe/i);
 });
+
+test("failure-report presence is cryptographically bound to the canonical real claim", async () => {
+  const revision = "8".repeat(40);
+  const missing = fakeClaimStore();
+  await missing.store.writeFailureReport({ format: "blog-x-local-refresh-failure", version: 1, implementationRevision: revision, claimSha256: "9".repeat(64), stage: "adapter_construction", errorClass: "error", baseline: "not_applicable", recollection: "not_attempted", preservation: "not_applicable_pre_runtime", facts: { preflight: null, current: null, rollback: null } });
+  await assert.rejects(missing.store.assertFailureReportPresent(revision), /claim.*absent|claim.*canonical|claim.*digest/i);
+
+  const forged = fakeClaimStore();
+  const claim = await forged.store.claimRefreshAttempt(revision);
+  await forged.store.writeFailureReport({ format: "blog-x-local-refresh-failure", version: 1, implementationRevision: revision, claimSha256: claim.sha256.replace(/^./, claim.sha256[0] === "a" ? "b" : "a"), stage: "adapter_construction", errorClass: "error", baseline: "not_applicable", recollection: "not_attempted", preservation: "not_applicable_pre_runtime", facts: { preflight: null, current: null, rollback: null } });
+  await assert.rejects(forged.store.assertFailureReportPresent(revision), /claim.*digest|bound|mismatch/i);
+});
+
+test("production module graph exposes only sealed refresh and verifier assembly", async () => {
+  const live = await import("./refresh-local-live.mjs");
+  const mainSource = await readFile("scripts/refresh-local.mjs", "utf8");
+  const liveSource = await readFile("scripts/refresh-local-live.mjs", "utf8");
+  for (const key of ["createLiveRefreshAdapter", "verifyLiveRefreshEvidence", "createRefreshFactSources"]) assert.equal(key in live, false, `${key} must not be a production export`);
+  assert.doesNotMatch(mainSource, /revisionResolver|liveAdapterFactory|verifyEvidence\(path, options\)/);
+  assert.doesNotMatch(liveSource, /collectFacts|targetProbe|probeTargets/);
+  assert.doesNotMatch(liveSource, /refresh-local-test-core/);
+});
+
+test("post-claim attachment materialization and recollection failures receive exact terminal stages", async () => {
+  const revision = "7".repeat(40);
+  const reports = [];
+  const claimStore = {
+    async assertAbsent() {},
+    async claimRefreshAttempt() { return { implementationRevision: revision, bytes: "claim\n", sha256: "6".repeat(64) }; },
+    async writeFailureReport(report) { reports.push(report); return { sha256: "5".repeat(64) }; },
+  };
+  await assert.rejects(runRefreshCli({ argv: [], revisionResolver: async () => revision, claimStore, liveAdapterFactory: async () => ({ attachAttemptClaim() { throw new Error("attach fault"); }, currentPhase() { return "constructed"; } }), io: { write() {} } }), /attach fault/);
+  assert.equal(reports.at(-1).stage, "claim_attachment");
+  assert.equal(reports.at(-1).preservation, "not_applicable_pre_runtime");
+
+  await assert.rejects(runRefreshCli({ argv: [], revisionResolver: async () => revision, claimStore, liveAdapterFactory: async () => ({ attachAttemptClaim() {}, async execute() { throw new Error("runtime fault"); }, currentPhase() { return "preflight_collection"; }, async recollectFailure() { throw new Error("recollection fault"); } }), io: { write() {} } }), /runtime fault/);
+  assert.equal(reports.at(-1).stage, "failure_recollection");
+  assert.equal(reports.at(-1).recollection, "failed");
+  assert.equal(reports.at(-1).preservation, "unproved");
+
+  assert.match(mainSourceForStageAudit(), /lockfile_plan_materialization/);
+});
+
+function mainSourceForStageAudit() {
+  return runRefreshCli.toString();
+}
+
+test("post-link claim and report faults use artifact-specific unrecoverable invariants", async () => {
+  for (const artifact of ["claim", "failure-report"]) {
+    const fs = memoryClaimFs(); const originalUnlink = fs.unlink;
+    const store = createRefreshAttemptStore({ fs, identity: { uid: 501 }, randomHex: () => "4".repeat(24) });
+    const revision = artifact === "claim" ? "4".repeat(40) : "5".repeat(40);
+    if (artifact === "claim") {
+      fs.unlink = async (path) => { if (path.endsWith(".tmp")) throw Object.assign(new Error("unlink fault"), { code: "EIO" }); return originalUnlink(path); };
+      await assert.rejects(store.claimRefreshAttempt(revision), /UNRECOVERABLE_CLAIM_INVARIANT:EIO/);
+    }
+    else {
+      const claim = await store.claimRefreshAttempt(revision);
+      fs.unlink = async (path) => { if (path.endsWith(".tmp")) throw Object.assign(new Error("unlink fault"), { code: "EIO" }); return originalUnlink(path); };
+      await assert.rejects(store.writeFailureReport({ format: "blog-x-local-refresh-failure", version: 1, implementationRevision: revision, claimSha256: claim.sha256, stage: "write-evidence", errorClass: "error", baseline: "applicable", recollection: "failed", preservation: "unproved", facts: { preflight: null, current: null, rollback: null } }), /UNRECOVERABLE_FAILURE_REPORT_INVARIANT:EIO/);
+    }
+  }
+});
