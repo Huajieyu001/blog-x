@@ -7,8 +7,8 @@ import {
   createProductionLiveRefreshAdapter,
   createProductionRefreshAttemptStore,
   verifyProductionLiveRefreshEvidence,
-  verifyLiveRefreshEvidence,
 } from "./refresh-local-live.mjs";
+import { runRefreshCliBoundary } from "./refresh-local-runtime-core.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const composeFile = resolve(root, "compose.yaml");
@@ -83,19 +83,28 @@ export function inspectTargetFilesystem({ workdir, cmd, neutralStore, storePath,
 
 export async function runLocalRefresh({ adapter, plan = createRefreshPlan({ revision: "0".repeat(40), lockSha256: "0".repeat(64), apiSeedId: "sha256:0", webSeedId: "sha256:0" }) } = {}) {
   if (!adapter?.execute) fail("a command adapter is required");
-  let cutoverStarted = false;
+  let cutoverStarted = false; let attemptedPhase = "preflight";
   try {
     for (const phase of plan.phases) {
       if (phase === "write-evidence") continue;
+      attemptedPhase = phase;
       if (phase === "cutover-api-web") cutoverStarted = true;
       await adapter.execute(phase, plan);
     }
+    attemptedPhase = "write-evidence";
     await adapter.execute("write-evidence", plan);
     return { format: "blog-x-phase6-local-refresh-evidence", version: 4, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, releaseState: "BLOCKED" };
   } catch (error) {
-    if (cutoverStarted) {
-      await adapter.execute("rollback-api-web", plan);
-      await adapter.execute("verify-rollback", plan);
+    error.refreshStage ??= adapter.currentPhase?.() ?? attemptedPhase;
+    if (cutoverStarted && !error.refreshBeforeMutation) {
+      try {
+        await adapter.execute("rollback-api-web", plan);
+        await adapter.execute("verify-rollback", plan);
+      } catch (recoveryError) {
+        if (/^UNRECOVERABLE_EVIDENCE_INVARIANT:/.test(error?.message ?? "")) throw error;
+        recoveryError.refreshStage ??= adapter.currentPhase?.() ?? "rollback-api-web";
+        throw recoveryError;
+      }
     }
     throw error;
   }
@@ -164,10 +173,6 @@ export async function probeOfflineBuilds({ apiSeedImage = process.env.BLOG_X_API
   return { api, web, revision, lockSha256 };
 }
 
-export async function verifyEvidence(path, options) {
-  return verifyLiveRefreshEvidence(resolve(root, path), { runArgv: run, root, ...options });
-}
-
 async function resolveCleanRevision() {
   const status = (await run("git", ["status", "--porcelain"])).stdout;
   if (status.trim()) fail("worktree must be clean before live refresh");
@@ -176,65 +181,20 @@ async function resolveCleanRevision() {
   return revision;
 }
 
-export async function runRefreshCli({
-  argv = process.argv.slice(2),
-  revisionResolver = resolveCleanRevision,
-  claimStore = createProductionRefreshAttemptStore(),
-  liveAdapterFactory = createProductionLiveRefreshAdapter,
-  io = process.stdout,
-} = {}) {
-  const evidenceOption = argv.find((item) => item.startsWith("--verify-evidence="));
-  if (evidenceOption) {
-    if (argv.length !== 1 || evidenceOption !== "--verify-evidence=ops/phase6-local-refresh-evidence.json") fail("evidence verification accepts only the fixed evidence path");
-    await verifyProductionLiveRefreshEvidence();
-    io.write("LOCAL REFRESH EVIDENCE VERIFIED; RELEASE BLOCKED\n");
-    return { releaseState: "BLOCKED" };
-  }
-  if (argv.includes("--probe-offline-builds")) {
-    if (argv.length !== 1 || argv[0] !== "--probe-offline-builds") fail("offline probe option is not exact");
-    const result = await probeOfflineBuilds();
-    io.write(`OFFLINE REFRESH PROBES PASSED ${result.revision.slice(0, 12)}\n`);
-    return result;
-  }
-  const claimOption = argv.find((item) => item.startsWith("--check-attempt-claim="));
-  if (claimOption) {
-    const mode = claimOption.slice("--check-attempt-claim=".length);
-    const revisionOption = argv.find((item) => item.startsWith("--revision="))?.slice("--revision=".length);
-    if (argv.length !== 2 || argv[0] !== `--check-attempt-claim=${mode}` || argv[1] !== `--revision=${revisionOption}` || !["absent", "present"].includes(mode) || !/^[a-f0-9]{40}$/.test(revisionOption ?? "")) fail("attempt claim check requires one exact mode and one full revision");
-    const result = mode === "absent" ? await claimStore.assertAbsent(revisionOption) : await claimStore.assertPresent(revisionOption);
-    io.write(`LOCAL REFRESH ATTEMPT CLAIM ${mode.toUpperCase()} ${revisionOption}\n`);
-    return result;
-  }
-  const failureOption = argv.find((item) => item.startsWith("--check-failure-report="));
-  if (failureOption) {
-    const mode = failureOption.slice("--check-failure-report=".length);
-    const revisionToken = argv[1] ?? ""; const revision = revisionToken.startsWith("--revision=") ? revisionToken.slice("--revision=".length) : "";
-    if (argv.length !== 2 || argv[0] !== `--check-failure-report=${mode}` || argv[1] !== `--revision=${revision}` || !["absent", "present"].includes(mode) || !/^[a-f0-9]{40}$/.test(revision)) fail("failure report check requires exact ordered mode and revision arguments");
-    const result = mode === "absent" ? await claimStore.assertFailureReportAbsent(revision) : await claimStore.assertFailureReportPresent(revision);
-    io.write(mode === "absent" ? `REFRESH FAILURE REPORT ABSENT ${revision}\n` : `REFRESH FAILURE REPORT PRESENT ${revision} ${result.sha256}\n`);
-    return result;
-  }
-  if (argv.length) fail("unknown refresh CLI option");
-  const revision = await revisionResolver();
-  shortRevision(revision);
-  await claimStore.assertAbsent(revision);
-  const claim = await claimStore.claimRefreshAttempt(revision);
-  let adapter;
-  try {
-    adapter = await liveAdapterFactory();
-    adapter.attachAttemptClaim?.(claim);
-    const plan = createRefreshPlan({ revision, lockSha256: sha256(await readFile(lockfile)), apiSeedId: "sha256:0", webSeedId: "sha256:0" });
-    return await runLocalRefresh({ adapter, plan });
-  } catch (error) {
-    let detail = { baseline: "not_applicable", recollection: "not_attempted", preservation: "not_applicable_pre_runtime", facts: { preflight: null, current: null, rollback: null } };
-    if (adapter?.recollectFailure) {
-      try { detail = await adapter.recollectFailure(error); }
-      catch { detail = { baseline: "applicable", recollection: "failed", preservation: "unproved", facts: { preflight: null, current: null, rollback: null } }; }
-    }
-    const report = { format: "blog-x-local-refresh-failure", version: 1, implementationRevision: revision, claimSha256: claim.sha256, stage: adapter?.currentPhase?.() ?? "adapter_construction", errorClass: String(error?.name ?? "error").toLowerCase().replace(/[^a-z0-9_-]/g, "_") || "error", ...detail };
-    try { await claimStore.writeFailureReport(report); } catch (reportError) { throw new Error(`UNRECOVERABLE_FAILURE_REPORT_INVARIANT:${reportError?.code ?? "publication_failed"}`, { cause: error }); }
-    throw error;
-  }
+export async function runRefreshCli(...args) {
+  if (args.length) fail("sealed production refresh CLI accepts no arguments or overrides");
+  return runRefreshCliBoundary({
+    argv: process.argv.slice(2),
+    resolveRevision: resolveCleanRevision,
+    attemptStore: createProductionRefreshAttemptStore(),
+    adapterFactory: createProductionLiveRefreshAdapter,
+    output: process.stdout,
+    readLockfile: () => readFile(lockfile),
+    materializePlan: (bytes, revision) => createRefreshPlan({ revision, lockSha256: sha256(bytes), apiSeedId: "sha256:0", webSeedId: "sha256:0" }),
+    executeRefresh: (adapter, plan) => runLocalRefresh({ adapter, plan }),
+    verifyEvidence: verifyProductionLiveRefreshEvidence,
+    probeOffline: probeOfflineBuilds,
+  });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
