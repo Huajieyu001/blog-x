@@ -1,0 +1,30 @@
+# The invoking refresh command always builds this target with --network=none --pull=false.
+ARG SEED_IMAGE
+FROM ${SEED_IMAGE}
+
+ARG REFRESH_REVISION
+ARG LOCKFILE_SHA256
+ARG SEED_IMAGE_ID
+ARG PUBLIC_ORIGIN=http://127.0.0.1:3100
+LABEL org.opencontainers.image.revision=${REFRESH_REVISION} \
+  io.blog-x.lockfile-sha256=${LOCKFILE_SHA256} \
+  io.blog-x.seed-image-id=${SEED_IMAGE_ID} \
+  io.blog-x.application=api \
+  io.blog-x.public-origin=${PUBLIC_ORIGIN} \
+  io.blog-x.refresh-kind=phase6-offline
+
+COPY scripts/refresh-seed-store.mjs /usr/local/lib/refresh-seed-store.mjs
+RUN node /usr/local/lib/refresh-seed-store.mjs
+
+WORKDIR /refresh-workspace
+RUN corepack enable
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY packages/contracts/package.json packages/contracts/package.json
+RUN corepack pnpm install --store-dir=/pnpm-store --offline --frozen-lockfile
+COPY apps/api apps/api
+COPY packages/contracts packages/contracts
+
+EXPOSE 3001
+CMD ["corepack", "pnpm", "--filter", "@blog-x/api", "dev"]

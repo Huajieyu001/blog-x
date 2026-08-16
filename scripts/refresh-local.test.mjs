@@ -14,6 +14,7 @@ import {
   createRefreshPlan,
   inspectTargetFilesystem,
   runLocalRefresh,
+  verifyEvidence,
 } from "./refresh-local.mjs";
 
 async function fixtureStore(t) {
@@ -44,7 +45,7 @@ test("seed relocation computes both pnpm paths with exact argv and preserves a v
   const { root, source, neutral } = await fixtureStore(t);
   const runner = fakeRunner([source, neutral]);
 
-  const result = await prepareSeedStore({ cwd: root, run: runner.run });
+  const result = await prepareSeedStore({ cwd: root, run: runner.run, neutralRoot: join(root, "pnpm-store"), refreshWorkspace: join(root, "refresh-workspace") });
 
   assert.deepEqual(runner.calls, [
     ["corepack", ["pnpm", "store", "path"]],
@@ -60,7 +61,7 @@ test("seed relocation waits for a verified complete copy before it deletes a sto
   const { root, source, neutral } = await fixtureStore(t);
   await writeFile(join(root, "workspace", "marker"), "legacy-source");
   const runner = fakeRunner([source, neutral]);
-  const result = await prepareSeedStore({ cwd: root, run: runner.run });
+  const result = await prepareSeedStore({ cwd: root, run: runner.run, neutralRoot: join(root, "pnpm-store"), refreshWorkspace: join(root, "refresh-workspace") });
   assert.equal(result.removedWorkspace, true);
   await assert.rejects(readFile(join(root, "workspace", "marker")));
   assert.equal((await readFile(join(neutral, "files", "package.tgz"), "utf8")), "seed-package");
@@ -72,17 +73,17 @@ test("unsafe, equal, root, unversioned and flattened store paths fail before del
     { sourceStore: "/", neutralStore: neutral },
     { sourceStore: source, neutralStore: source },
     { sourceStore: source, neutralStore: join(root, "pnpm-store") },
-    { sourceStore: join(root, "other", "v10"), neutralStore: neutral },
+    { sourceStore: join(root, "other", "v9"), neutralStore: neutral },
   ]) {
-    assert.throws(() => validateStorePaths(paths), /store path|version|distinct|source/i);
+    assert.throws(() => validateStorePaths({ ...paths, neutralRoot: join(root, "pnpm-store") }), /store|version|distinct|source/i);
   }
   const runner = fakeRunner([source, join(root, "pnpm-store", "v10")]);
-  await assert.rejects(prepareSeedStore({ cwd: root, run: runner.run, copy: async () => undefined }), /manifest/i);
+  await assert.rejects(prepareSeedStore({ cwd: root, run: runner.run, copy: async () => undefined, neutralRoot: join(root, "pnpm-store") }), /manifest/i);
   assert.equal(await readFile(join(source, "files", "package.tgz"), "utf8"), "seed-package");
 });
 
 test("refresh plan has one fixed local authority and offline two-image barrier before mutation", () => {
-  const plan = createRefreshPlan({ revision: "a".repeat(40), lockSha256: "b".repeat(64), apiSeedId: "sha256:api", webSeedId: "sha256:web" });
+  const plan = createRefreshPlan({ revision: "a".repeat(40), lockSha256: "b".repeat(64), apiSeedId: `sha256:${"c".repeat(64)}`, webSeedId: `sha256:${"d".repeat(64)}` });
   assert.deepEqual(FIXED_REFRESH, {
     project: "blogxlocal",
     origin: "http://127.0.0.1:3100",
@@ -139,6 +140,18 @@ test("successful refresh writes sanitized evidence only after route and BLOCKED 
   assert.equal("credentials" in evidence, false);
 });
 
+test("evidence verification is read-only and refuses malformed or non-BLOCKED records", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "blog-x-refresh-evidence-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const path = join(root, "evidence.json");
+  await writeFile(path, JSON.stringify({ format: "blog-x-phase6-local-refresh-evidence", version: 1, implementationRevision: "a".repeat(40), lockfileSha256: "b".repeat(64), releaseState: "BLOCKED" }));
+  const before = await readFile(path, "utf8");
+  assert.equal((await verifyEvidence(path)).releaseState, "BLOCKED");
+  assert.equal(await readFile(path, "utf8"), before);
+  await writeFile(path, JSON.stringify({ format: "blog-x-phase6-local-refresh-evidence", version: 1, implementationRevision: "short", lockfileSha256: "b".repeat(64), releaseState: "READY" }));
+  await assert.rejects(verifyEvidence(path), /evidence/i);
+});
+
 test("source contracts require neutral stores, offline frozen installs and sanitized refresh workspaces", async () => {
   for (const file of ["apps/api/Dockerfile.refresh", "apps/web/Dockerfile.refresh"]) {
     const dockerfile = await readFile(file, "utf8");
@@ -146,6 +159,11 @@ test("source contracts require neutral stores, offline frozen installs and sanit
     assert.match(dockerfile, /--store-dir=\/pnpm-store --offline --frozen-lockfile/);
     assert.match(dockerfile, /\/refresh-workspace/);
     assert.match(dockerfile, /--network=none/);
-    assert.match(dockerfile, /rm -rf \/workspace/);
   }
+  const helper = await readFile("scripts/refresh-seed-store.mjs", "utf8");
+  assert.match(helper, /resolve\(cwd, "workspace"\)/);
+  const orchestrator = await readFile("scripts/refresh-local.mjs", "utf8");
+  assert.match(orchestrator, /--probe-offline-builds/);
+  assert.match(orchestrator, /--network=none.*--pull=false/s);
+  assert.doesNotMatch(orchestrator, /docker-compose|compose\.yaml.*up -d/);
 });
