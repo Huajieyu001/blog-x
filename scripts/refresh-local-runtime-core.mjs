@@ -67,6 +67,35 @@ function mode(entry) { return entry.mode & 0o7777; }
 function isMissing(error) { return error?.code === "ENOENT"; }
 function selectedLabels(labels = {}) { return Object.fromEntries(REQUIRED_IMAGE_LABELS.map((key) => [key, labels[key]])); }
 function parseJson(stdout, label) { try { return JSON.parse(stdout); } catch { fail(`${label} returned invalid JSON`); } }
+function parseComposePs(stdout) {
+  if (typeof stdout !== "string" || !stdout.trim()) fail("Compose ps output is empty");
+  let body = stdout;
+  if (body.endsWith("\r\n")) body = body.slice(0, -2);
+  else if (body.endsWith("\n")) body = body.slice(0, -1);
+  else if (body.endsWith("\r")) fail("Compose ps output has an invalid terminal record");
+  if (!body.trim() || body.endsWith("\n") || body.endsWith("\r")) fail("Compose ps output contains a blank terminal record");
+  const leading = body.match(/^\s*/)?.[0] ?? "";
+  if (/[\r\n]/.test(leading)) fail("Compose ps output contains a leading blank record");
+  const trailing = body.slice(body.trimEnd().length);
+  if (/[\r\n]/.test(trailing)) fail("Compose ps output contains a blank terminal record");
+  const first = body.trimStart()[0];
+  let records;
+  if (first === "[") {
+    const decoded = parseJson(body, "Compose ps");
+    if (!Array.isArray(decoded) || decoded.length === 0) fail("Compose ps array must contain object records");
+    records = decoded;
+  } else {
+    records = body.split("\n").map((line) => {
+      if (!line.trim()) fail("Compose ps output contains a blank record");
+      return parseJson(line, "Compose ps record");
+    });
+  }
+  for (const record of records) {
+    if (record === null || typeof record !== "object" || Array.isArray(record)) fail("Compose ps records must be objects");
+    if (typeof record.Service !== "string" || !record.Service.trim()) fail("Compose ps Service must be a nonempty string");
+  }
+  return records;
+}
 function cleanOutput(result) { return String(result?.stdout ?? "").trim(); }
 function normalizeDump(value) { return value.split("\n").filter((line) => !/^--|^SET |^SELECT pg_catalog\.set_config|^\\restrict |^\\unrestrict /.test(line)).join("\n").trim(); }
 
@@ -320,8 +349,8 @@ export function createRawRefreshFactSources({ run, fetch, root = process.cwd(), 
   return Object.freeze({
     async composeAuthority() {
       const services = cleanOutput(await run("docker-compose", ["-p", PROJECT, "-f", COMPOSE_FILE, "config", "--services"])).split("\n").filter(Boolean).sort();
-      const raw = parseJson(cleanOutput(await run("docker-compose", ["-p", PROJECT, "-f", COMPOSE_FILE, "ps", "--all", "--format", "json"])), "Compose ps");
-      const ps = (Array.isArray(raw) ? raw : [raw]).map((item) => item.Service).sort();
+      const raw = parseComposePs((await run("docker-compose", ["-p", PROJECT, "-f", COMPOSE_FILE, "ps", "--all", "--format", "json"])).stdout);
+      const ps = raw.map((item) => item.Service).sort();
       return { services, ps };
     },
     async containers() { return parseJson((await run("docker", ["container", "inspect", ...CONTAINERS])).stdout, "container inspect"); },

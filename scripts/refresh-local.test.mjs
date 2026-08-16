@@ -445,7 +445,7 @@ function composeAuthorityFixture(psStdout) {
 }
 
 test("Compose ps authority accepts legacy JSON arrays and sanitized v5 NDJSON records", async () => {
-  for (const psStdout of [JSON.stringify(COMPOSE_V5_PS_RECORDS), COMPOSE_V5_PS_NDJSON, COMPOSE_V5_PS_NDJSON.replaceAll("\n", "\r\n")]) {
+  for (const psStdout of [JSON.stringify(COMPOSE_V5_PS_RECORDS), JSON.stringify(COMPOSE_V5_PS_RECORDS, null, 2), COMPOSE_V5_PS_NDJSON, COMPOSE_V5_PS_NDJSON.replaceAll("\n", "\r\n")]) {
     const { runtime, sources } = composeAuthorityFixture(psStdout);
     assert.deepEqual(await sources.composeAuthority(), { services: ["api", "postgres", "web"], ps: ["api", "postgres", "web"] });
     assert.deepEqual(runtime.calls.map(({ command, args }) => [command, args]), [
@@ -461,7 +461,9 @@ test("Compose ps authority rejects malformed mixed blank and non-object encoding
   const first = JSON.stringify(COMPOSE_V5_PS_RECORDS[0]); const second = JSON.stringify(COMPOSE_V5_PS_RECORDS[1]);
   const invalid = [
     "", "   \t", `\n${first}`, `${first}\n\n${second}`, `${first}\n\n`,
-    `${JSON.stringify(COMPOSE_V5_PS_RECORDS)}\n${first}`, `${first}\nnot-json`, `${first} trailing-garbage`,
+    `${JSON.stringify(COMPOSE_V5_PS_RECORDS)}\n${first}`, `${first}\nnot-json`, `${first} trailing-garbage`, `${first}\n   `, `{
+      "Service": "api"
+    }`,
     "null", "true", "42", '"api"', "[]", JSON.stringify([COMPOSE_V5_PS_RECORDS[0], []]), `${first}\n[]`,
   ];
   for (const psStdout of invalid) {
