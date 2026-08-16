@@ -20,9 +20,16 @@ import {
 import {
   createLiveRefreshAdapter,
   createRefreshAttemptStore,
+  assertAllowedRefreshCommand,
   inspectRefreshAttemptClaim,
   verifyLiveRefreshEvidence,
 } from "./refresh-local-live.mjs";
+import {
+  assertFixedRuntimeAuthority,
+  assertPersistenceTransition,
+  collectRefreshFacts,
+  projectSanitizedFacts,
+} from "./refresh-local-facts.mjs";
 
 async function fixtureStore(t) {
   const root = await mkdtemp(join(tmpdir(), "blog-x-refresh-seed-"));
@@ -234,4 +241,103 @@ test("live adapter command policy permits only fixed local argv and verifier rec
     assert.throws(() => adapter.assertAllowedArgv(command, args), /not allowlisted|authority|network/i);
   }
   assert.equal(typeof verifyLiveRefreshEvidence, "function");
+});
+
+const SHA = (letter) => `sha256:${letter.repeat(64)}`;
+const composeLabels = (service, oneoff = "False") => ({
+  "com.docker.compose.project": "blogxlocal",
+  "com.docker.compose.service": service,
+  "com.docker.compose.oneoff": oneoff,
+});
+function inspectContainer(service, image = SHA(service[0])) {
+  const names = { postgres: "blogxlocal-postgres-1", api: "blogxlocal-api-1", web: "blogxlocal-web-1" };
+  const ports = service === "postgres" ? { "5432/tcp": null }
+    : service === "api" ? { "3001/tcp": null }
+      : { "3100/tcp": [{ HostIp: "127.0.0.1", HostPort: "3100" }] };
+  return { Id: `${service}-container`, Image: image, Name: `/${names[service]}`, Config: { Image: `blog-x-${service}-local`, Labels: composeLabels(service) }, State: { Health: { Status: "healthy" } }, NetworkSettings: { Ports: ports } };
+}
+const volumeFixture = (name) => ({ Name: name, Driver: "local", Mountpoint: `/private/var/lib/${name}`, CreatedAt: "2026-08-15T00:00:00Z", Scope: "local", Labels: { "com.docker.compose.project": "blogxlocal" }, Options: null });
+const exactRoutes = {
+  "/": { status: 200, bodySha256: "1".repeat(64) },
+  "/categories": { status: 200, bodySha256: "2".repeat(64) },
+  "/tags": { status: 200, bodySha256: "3".repeat(64) },
+  "/archive": { status: 200, bodySha256: "4".repeat(64) },
+  "/api/health": { status: 200, body: { ok: true }, bodySha256: "5".repeat(64) },
+  "/api/public/search?q=": { status: 200, body: { state: "empty_query", query: "", page: 1, pageSize: 10, totalItems: 0, totalPages: 0, items: [] }, bodySha256: "6".repeat(64) },
+  "/api/public/articles/phase6-unknown/related": { status: 404, body: { error: "not_found" }, bodySha256: "7".repeat(64) },
+};
+function factsFixture({ apiImage = SHA("a"), webImage = SHA("w"), phase1 = "2026-08-15T00:00:00.000Z", routes = exactRoutes } = {}) {
+  return {
+    containers: [inspectContainer("api", apiImage), inspectContainer("postgres", SHA("p")), inspectContainer("web", webImage)],
+    volumes: [volumeFixture("blogxlocal_media-data"), volumeFixture("blogxlocal_postgres-data")],
+    business: { count: 3, sha256: "a".repeat(64) }, sequences: { count: 2, sha256: "b".repeat(64) },
+    ledger: [{ scope: "phase1", migration_count: 7, migration_fingerprint: "fingerprint", applied_at: phase1 }],
+    media: { count: 2, bytes: 42, sha256: "c".repeat(64) }, protected: { count: 9, sha256: "d".repeat(64) },
+    routes, releaseState: "BLOCKED",
+  };
+}
+
+test("raw Docker Ports:null and exact Compose labels are the only fixed runtime authority", () => {
+  const facts = factsFixture();
+  assert.doesNotThrow(() => assertFixedRuntimeAuthority(facts));
+  for (const mutate of [
+    (copy) => { copy.containers[0].NetworkSettings.Ports["3001/tcp"] = [{ HostIp: "0.0.0.0", HostPort: "3001" }]; },
+    (copy) => { copy.containers[1].Config.Labels["com.docker.compose.project"] = "other"; },
+    (copy) => { copy.containers[2].NetworkSettings.Ports["3101/tcp"] = null; },
+  ]) {
+    const copy = structuredClone(facts); mutate(copy);
+    assert.throws(() => assertFixedRuntimeAuthority(copy), /authority|port|compose/i);
+  }
+});
+
+test("postMigration permits only phase1 timestamp advance and later stages preserve all persistence digests", () => {
+  const preflight = factsFixture();
+  const postMigration = factsFixture({ phase1: "2026-08-16T00:00:00.000Z" });
+  assert.doesNotThrow(() => assertPersistenceTransition(preflight, postMigration, { stage: "postMigration" }));
+  assert.throws(() => assertPersistenceTransition(preflight, factsFixture(), { stage: "postMigration" }), /phase1|advance/i);
+  const drift = structuredClone(postMigration); drift.media.sha256 = "e".repeat(64);
+  assert.throws(() => assertPersistenceTransition(postMigration, drift, { stage: "postCutover", targetImageIds: { api: SHA("n"), web: SHA("x") } }), /media|persistence/i);
+});
+
+test("sanitized v3 fact projection contains digests and counts but no rows, paths, mounts, env or commands", () => {
+  const projection = projectSanitizedFacts(factsFixture());
+  const bytes = JSON.stringify(projection);
+  assert.deepEqual(Object.keys(projection).sort(), ["business", "containers", "ledger", "media", "protected", "releaseState", "routes", "sequences", "topology", "volumes"].sort());
+  assert.doesNotMatch(bytes, /Mountpoint|relativePath|migration_fingerprint|applied_at|environment|command|private\/var/i);
+});
+
+test("command policy is exact-token and rejects extra, reordered, alternate authority and mutable rollback refs", () => {
+  const revision = "a".repeat(40);
+  const valid = ["docker", ["build", "--network=none", "--pull=false", "--file", "apps/api/Dockerfile.refresh", "--tag", `blog-x-api-local:${revision.slice(0, 12)}`, "--build-arg", `SEED_IMAGE=${SHA("s")}`, "--build-arg", `SEED_IMAGE_ID=${SHA("s")}`, "--build-arg", `REFRESH_REVISION=${revision}`, "--build-arg", `LOCKFILE_SHA256=${"b".repeat(64)}`, "--build-arg", "PUBLIC_ORIGIN=http://127.0.0.1:3100", "."]];
+  assert.doesNotThrow(() => assertAllowedRefreshCommand(...valid));
+  for (const args of [[...valid[1], "extra"], ["build", "--pull=false", "--network=none", ...valid[1].slice(3)], valid[1].map((value) => value === "blogxlocal" ? "other" : value)]) {
+    assert.throws(() => assertAllowedRefreshCommand("docker", args), /allowlisted|exact|argv/i);
+  }
+});
+
+test("collector uses fake argv/database/media/history adapters and rejects partial route bodies", async () => {
+  const fixture = factsFixture();
+  const calls = [];
+  const collected = await collectRefreshFacts({
+    sources: {
+      async composeAuthority() { calls.push("compose"); return { services: ["api", "postgres", "web"], ps: ["api", "postgres", "web"] }; },
+      async containers() { calls.push("containers"); return fixture.containers; },
+      async volumes() { calls.push("volumes"); return fixture.volumes; },
+      async business() { calls.push("database"); return fixture.business; },
+      async sequences() { return fixture.sequences; }, async ledger() { return fixture.ledger; },
+      async media() { calls.push("media"); return fixture.media; }, async protected() { calls.push("history"); return fixture.protected; },
+      async routes() { return fixture.routes; }, async releaseState() { return "BLOCKED"; },
+    },
+  });
+  assert.deepEqual(calls, ["compose", "containers", "volumes", "database", "media", "history"]);
+  assertFixedRuntimeAuthority(collected);
+  const bad = structuredClone(fixture.routes); bad["/api/public/search?q="].body = { state: "empty_query" };
+  await assert.rejects(collectRefreshFacts({ sources: { ...(await Promise.resolve({})), composeAuthority: async () => ({ services: ["api", "postgres", "web"], ps: ["api", "postgres", "web"] }), containers: async () => fixture.containers, volumes: async () => fixture.volumes, business: async () => fixture.business, sequences: async () => fixture.sequences, ledger: async () => fixture.ledger, media: async () => fixture.media, protected: async () => fixture.protected, routes: async () => bad, releaseState: async () => "BLOCKED" } }), /route|search|contract/i);
+});
+
+test("v3 verifier rejects extra evidence keys and any reconstructed runtime drift without writing", async () => {
+  assert.equal(typeof verifyLiveRefreshEvidence, "function");
+  const evidence = { format: "blog-x-phase6-local-refresh-evidence", version: 3, implementationRevision: "a".repeat(40), lockfileSha256: "b".repeat(64), attemptClaim: { implementationRevision: "a".repeat(40), sha256: "c".repeat(64) }, oldImages: { api: SHA("a"), web: SHA("w") }, targets: { api: { id: SHA("n"), labels: {} }, web: { id: SHA("x"), labels: {} } }, stages: { preflight: projectSanitizedFacts(factsFixture()), postMigration: projectSanitizedFacts(factsFixture({ phase1: "2026-08-16T00:00:00.000Z" })), postCutover: projectSanitizedFacts(factsFixture({ apiImage: SHA("n"), webImage: SHA("x"), phase1: "2026-08-16T00:00:00.000Z" })) }, releaseState: "BLOCKED" };
+  assert.doesNotMatch(JSON.stringify(evidence), /Mountpoint|relativePath|migration_fingerprint|applied_at/);
+  assert.throws(() => projectSanitizedFacts({ ...factsFixture(), rawRows: ["secret"] }), /key|fact|raw/i);
 });
