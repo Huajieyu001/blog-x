@@ -15,7 +15,7 @@ export const REFRESH_AUTHORITY = Object.freeze({
 const FACT_KEYS = ["business", "composeAuthority", "containers", "database", "git", "ledger", "media", "protected", "releaseState", "routes", "seeds", "sequences", "targets", "volumes"];
 const BASE_FACT_KEYS = ["business", "containers", "database", "git", "ledger", "media", "protected", "releaseState", "routes", "seeds", "sequences", "targets", "volumes"];
 const PROJECTION_KEYS = ["business", "containers", "database", "git", "ledger", "media", "protected", "releaseState", "routes", "seeds", "sequences", "targets", "topology", "volumes"];
-const ROUTE_KEYS = ["/", "/api/health", "/api/public/articles/phase6-unknown/related", "/api/public/search?q=", "/archive", "/categories", "/tags"];
+const ROUTE_KEYS = ["/", "/api/health", "/api/public/articles/phase6-unknown/related", "/api/public/search?q=", "/archives", "/categories", "/tags"];
 const SELECTED_LABELS = [
   "com.docker.compose.oneoff",
   "com.docker.compose.project",
@@ -65,7 +65,7 @@ function assertPorts(service, actual) {
 
 export function assertRouteFacts(routes) {
   exactKeys(routes, ROUTE_KEYS, "route facts");
-  for (const path of ["/", "/categories", "/tags", "/archive"]) {
+  for (const path of ["/", "/categories", "/tags", "/archives"]) {
     exactKeys(routes[path], ["bodySha256", "status"], `route ${path}`);
     if (routes[path].status !== 200 || !/^[a-f0-9]{64}$/.test(routes[path].bodySha256)) fail(`route ${path} contract is invalid`);
   }

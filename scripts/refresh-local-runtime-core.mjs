@@ -329,7 +329,7 @@ export const assertAllowedRefreshArgv = assertAllowedRefreshCommand;
 function routeSource(fetch) {
   return async () => {
     const output = {};
-    for (const path of ["/", "/categories", "/tags", "/archive", "/api/health", "/api/public/search?q=", "/api/public/articles/phase6-unknown/related"]) {
+    for (const path of ["/", "/categories", "/tags", "/archives", "/api/health", "/api/public/search?q=", "/api/public/articles/phase6-unknown/related"]) {
       const requested = `${ORIGIN}${path}`;
       const response = await fetch(requested, { redirect: "error" });
       if (response.url !== requested || new URL(response.url).origin !== ORIGIN || response.status >= 300 && response.status < 400) fail(`route ${path} redirect or final URL authority is invalid`);
@@ -609,7 +609,7 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
 
 const EVIDENCE_KEYS = ["attemptClaim", "format", "implementationRevision", "lockfileSha256", "oldImages", "releaseState", "seeds", "stages", "targets", "version"];
 const PROJECTION_KEYS = ["business", "containers", "database", "git", "ledger", "media", "protected", "releaseState", "routes", "seeds", "sequences", "targets", "topology", "volumes"];
-const ROUTE_KEYS = ["/", "/api/health", "/api/public/articles/phase6-unknown/related", "/api/public/search?q=", "/archive", "/categories", "/tags"];
+const ROUTE_KEYS = ["/", "/api/health", "/api/public/articles/phase6-unknown/related", "/api/public/search?q=", "/archives", "/categories", "/tags"];
 function assertProjectedDigest(value, label, extras = []) {
   exactKeys(value, ["count", ...extras, "sha256"], label);
   if (!Number.isSafeInteger(value.count) || value.count < 0 || !validDigest(value.sha256) || extras.some((key) => !Number.isSafeInteger(value[key]) || value[key] < 0)) fail(`${label} digest/count is invalid`);
