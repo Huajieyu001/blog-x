@@ -20,6 +20,7 @@ import {
 import {
   createLiveRefreshAdapter,
   createRefreshAttemptStore,
+  createRefreshFactSources,
   assertAllowedRefreshCommand,
   inspectRefreshAttemptClaim,
   verifyLiveRefreshEvidence,
@@ -464,4 +465,86 @@ test("post-cutover fact failure rolls back API/Web by immutable IDs and suppress
   ]);
   await assert.rejects(fixture.evidenceFs.readFile("/virtual-workspace/ops/phase6-local-refresh-evidence.json"), /ENOENT/);
   assert.equal(fixture.calls.some((call) => call.args.includes("down") || call.args.includes("postgres") && call.args[0] === "rm" || call.args.includes("volume")), false);
+});
+
+test("v4 projection is revision and schema complete with row-addressed sanitized ledger transitions", () => {
+  const facts = factsFixture();
+  facts.git = { implementationRevision: "a".repeat(40), clean: true, lockfileSha256: "b".repeat(64) };
+  facts.database = { name: "blog_x", systemIdentifier: "1".repeat(32), schemaSha256: "2".repeat(64), schemaRows: 12 };
+  facts.seeds = { api: { reference: "blog-x-api-local", inspectedId: SHA("a") }, web: { reference: "blog-x-web-local", inspectedId: SHA("b") } };
+  facts.targets = { api: { id: SHA("e"), labelsSha256: "3".repeat(64), filesystemSha256: "4".repeat(64), storeSha256: "5".repeat(64) }, web: { id: SHA("f"), labelsSha256: "6".repeat(64), filesystemSha256: "7".repeat(64), storeSha256: "8".repeat(64) } };
+  facts.ledger.push({ scope: "phase5", migration_count: 2, migration_fingerprint: "secret-fingerprint", applied_at: "2026-08-15T00:00:00.000Z" });
+  const projection = projectSanitizedFacts(facts);
+  assert.deepEqual(Object.keys(projection.git).sort(), ["clean", "implementationRevision", "lockfileSha256"]);
+  assert.deepEqual(Object.keys(projection.database).sort(), ["name", "schemaRows", "schemaSha256", "systemIdentifier"]);
+  assert.deepEqual(Object.keys(projection.ledger.rows).sort(), ["phase1", "phase5"]);
+  assert.deepEqual(Object.keys(projection.ledger.rows.phase1).sort(), ["appliedAt", "stableSha256"]);
+  assert.doesNotMatch(JSON.stringify(projection), /secret-fingerprint|migration_fingerprint/);
+});
+
+test("empty argv publishes claim before adapter construction and every later failure writes a durable report", async () => {
+  const events = []; const revision = "c".repeat(40);
+  await assert.rejects(runRefreshCli({
+    argv: [],
+    revisionResolver: async () => { events.push("git"); return revision; },
+    claimStore: {
+      async assertAbsent() { events.push("absent"); },
+      async claimRefreshAttempt() { events.push("claim"); return { implementationRevision: revision, sha256: "d".repeat(64) }; },
+      async writeFailureReport() { events.push("report"); },
+    },
+    liveAdapterFactory: async () => { events.push("adapter"); throw new Error("daemon rejected"); },
+    io: { write() {} },
+  }), /daemon rejected/);
+  assert.deepEqual(events, ["git", "absent", "claim", "adapter", "report"]);
+});
+
+test("failure-report CLI is exact, canonical, read-only and does not construct process or adapter authority", async () => {
+  const revision = "d".repeat(40); const writes = []; let adapterCalls = 0;
+  const store = {
+    async assertFailureReportAbsent(value) { assert.equal(value, revision); return { present: false }; },
+    async assertFailureReportPresent() { throw new Error("not expected"); },
+  };
+  await runRefreshCli({ argv: ["--check-failure-report=absent", `--revision=${revision}`], claimStore: store, liveAdapterFactory: async () => { adapterCalls += 1; }, io: { write(value) { writes.push(value); } } });
+  assert.deepEqual(writes, [`REFRESH FAILURE REPORT ABSENT ${revision}\n`]);
+  assert.equal(adapterCalls, 0);
+  for (const argv of [[`--revision=${revision}`, "--check-failure-report=absent"], ["--check-failure-report=absent"], ["--check-failure-report=absent", `--revision=${revision}`, "extra"], ["--check-failure-report=present", `--revision=${"D".repeat(40)}`]]) {
+    await assert.rejects(runRefreshCli({ argv, claimStore: store, io: { write() {} } }), /failure report|exact|revision/i);
+  }
+});
+
+test("production factories are sealed while test core exposes raw boundaries but no fact or probe injection", async () => {
+  const live = await import("./refresh-local-live.mjs");
+  assert.equal(live.createProductionLiveRefreshAdapter.length, 0);
+  assert.equal(live.createProductionRefreshAttemptStore.length, 0);
+  assert.throws(() => live.createProductionLiveRefreshAdapter({ collectFacts: async () => ({}) }), /argument|sealed|override/i);
+  const testCore = await import("./refresh-local-test-core.mjs");
+  const runtime = testCore.createRefreshTestRuntime({ processBoundary: async () => ({ stdout: "" }), fs: memoryArtifactFs(), fetch: async () => { throw new Error("fake"); }, clock: () => "2026-08-16T00:00:00.000Z", randomHex: () => "1".repeat(24) });
+  assert.equal("collectFacts" in runtime, false);
+  assert.equal("probeTargets" in runtime, false);
+});
+
+test("route collection rejects redirects and final URL drift with redirect:error", async () => {
+  const calls = [];
+  const sources = createRefreshFactSources({
+    run: async () => ({ stdout: "" }), root: "/virtual", fs: memoryArtifactFs(),
+    fetch: async (url, options) => { calls.push({ url, options }); return { status: 200, url: url.replace("127.0.0.1", "localhost"), async text() { return "<html></html>"; } }; },
+  });
+  await assert.rejects(sources.routes(), /redirect|final URL|origin/i);
+  assert.deepEqual(calls[0].options, { redirect: "error" });
+});
+
+test("claim publication treats temporary unlink failure as terminal even after final link", async () => {
+  const fs = memoryClaimFs(); const originalUnlink = fs.unlink;
+  fs.unlink = async (path) => { if (path.endsWith(".tmp")) throw Object.assign(new Error("unlink fault"), { code: "EIO" }); return originalUnlink(path); };
+  const store = createRefreshAttemptStore({ fs, identity: { uid: 501 }, randomHex: () => "9".repeat(24) });
+  await assert.rejects(store.claimRefreshAttempt("e".repeat(40)), /unlink|EIO|publication/i);
+});
+
+test("local Docker authority accepts only approved Unix contexts and child environment is minimal", async () => {
+  const testCore = await import("./refresh-local-test-core.mjs");
+  const allowed = testCore.assertLocalDockerAuthority("colima", [{ Name: "colima", Endpoints: { docker: { Host: "unix:///Users/test/.colima/default/docker.sock" } } }], { uid: 501, home: "/Users/test" });
+  assert.equal(allowed.socket, "/Users/test/.colima/default/docker.sock");
+  for (const host of ["tcp://127.0.0.1:2375", "ssh://host", "https://daemon", "unix:///tmp/other.sock"]) assert.throws(() => testCore.assertLocalDockerAuthority("colima", [{ Name: "colima", Endpoints: { docker: { Host: host } } }], { uid: 501, home: "/Users/test" }), /local|unix|socket|authority/i);
+  assert.throws(() => testCore.buildMinimalChildEnvironment({ PATH: "/bin", HOME: "/Users/test", TMPDIR: "/tmp", LANG: "C", DOCKER_HOST: "tcp://remote" }), /DOCKER_HOST|override/i);
+  assert.deepEqual(Object.keys(testCore.buildMinimalChildEnvironment({ PATH: "/bin", HOME: "/Users/test", TMPDIR: "/tmp", LANG: "C", SECRET: "no" })).sort(), ["HOME", "LANG", "PATH", "TMPDIR"]);
 });
