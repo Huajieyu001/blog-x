@@ -66,6 +66,12 @@ Use these entry points:
 Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
 <!-- GSD:workflow-end -->
 
+## Project-local Subagent Authorization
+
+- The user explicitly authorizes GSD workflows in this repository to spawn and coordinate specialized subagents without requesting permission again for each spawn.
+- This authorization covers local planning, research, implementation, review, testing, and verification work performed through GSD for Blog X.
+- It does not authorize production or server operations, deployment, credential use, external messages, or work outside this repository; those remain governed by the project constraints and the user's current instructions.
+
 <!-- GSD:profile-start -->
 
 ## Developer Profile
