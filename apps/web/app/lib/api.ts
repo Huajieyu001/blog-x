@@ -19,6 +19,8 @@ import {
   type PublicPostDetail,
   publicDistributionSchema,
   type PublicDistribution,
+  publicSearchResponseSchema,
+  type PublicSearchResponse,
 } from "@blog-x/contracts";
 
 const internalApiOrigin = process.env.INTERNAL_API_ORIGIN ?? "http://127.0.0.1:3001";
@@ -131,4 +133,9 @@ export function getPublicTaxonomy(kind: "categories" | "tags") {
 
 export function getPublicTaxonomyPosts(kind: "categories" | "tags", slug: string, page: number) {
   return getPublic(`/public/${kind}/${encodeURIComponent(slug)}/articles?page=${encodeURIComponent(String(page))}`, publicTaxonomyPostListSchema, true);
+}
+
+export function getPublicSearch(query: string, page: number): Promise<PublicResult<PublicSearchResponse>> {
+  const search = new URLSearchParams({ q: query, page: String(page) });
+  return getPublic(`/public/search?${search.toString()}`, publicSearchResponseSchema);
 }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import styles from "../public.module.css";
+import SearchForm from "./SearchForm";
 import ThemeControl from "./ThemeControl";
 
 const links = [
@@ -76,6 +77,7 @@ export default function PublicHeader() {
             {link.label}
           </Link>
         ))}
+        <SearchForm tabIndex={compact && !open ? -1 : undefined} />
         <Link className={styles.managementLink} href="/admin" tabIndex={compact && !open ? -1 : undefined}>管理</Link>
       </nav>
     </header>
