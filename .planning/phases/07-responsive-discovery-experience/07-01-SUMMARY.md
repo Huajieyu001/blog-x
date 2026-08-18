@@ -154,7 +154,7 @@ Each task was committed atomically:
 
 None - no external service configuration required.
 
-## Verification
+## Automated Evidence
 
 - `node scripts/phase7-browser-verify.mjs --grep "desktop search tracer"` — PASS, 1/1 Chromium test.
 - `corepack pnpm --filter @blog-x/web typecheck` — PASS.
@@ -164,7 +164,7 @@ None - no external service configuration required.
 ## Self-Check: PASSED
 
 - All eight planned production/test artifacts exist in commit `15b4aec`.
-- The named tracer, typecheck, acceptance assertions, forced-failure cleanup and boundary scans passed.
+- The named tracer, typecheck, acceptance assertions, forced-error cleanup and boundary scans passed.
 - No Docker, server, deployment, credential, dependency, database, API route or fixed-port change was introduced.
 
 ## Next Phase Readiness
