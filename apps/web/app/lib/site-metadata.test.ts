@@ -3,8 +3,12 @@ import test from "node:test";
 import { escapeXml, pageMetadata, publicOrigin, publicUrl, renderRss, resolveCanonicalPage } from "./site-metadata";
 
 test("public origin accepts only an absolute HTTP(S) origin and fails closed in production", () => {
-  assert.equal(publicOrigin("https://blog.example").toString(), "https://blog.example/");
-  assert.equal(publicUrl("/posts/one", publicOrigin("https://blog.example")), "https://blog.example/posts/one");
+  const origin = publicOrigin("https://blog.example");
+  assert.equal(origin.toString(), "https://blog.example/");
+  assert.equal(publicUrl("/posts/one", origin), "https://blog.example/posts/one");
+  for (const path of ["posts/one", "//evil.example/x", "/\\evil.example/x"]) {
+    assert.throws(() => publicUrl(path, origin), /same-origin|PUBLIC_ORIGIN/i);
+  }
   for (const candidate of ["/relative", "ftp://blog.example", "https://user:pass@blog.example", "https://blog.example/blog", "https://blog.example/?x=1", "https://blog.example/#fragment"]) {
     assert.throws(() => publicOrigin(candidate), /PUBLIC_ORIGIN/i);
   }

@@ -22,8 +22,14 @@ export function publicOrigin(value = process.env.PUBLIC_ORIGIN, production = pro
 }
 
 export function publicUrl(path: string, origin = publicOrigin()) {
-  if (!path.startsWith("/")) throw new Error("public URL paths must begin with /");
-  return new URL(path, origin).toString();
+  if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\")) {
+    throw new Error("public URL paths must be same-origin root-relative paths");
+  }
+  const resolved = new URL(path, origin);
+  if (resolved.origin !== origin.origin) {
+    throw new Error("public URL paths must stay on PUBLIC_ORIGIN");
+  }
+  return resolved.toString();
 }
 
 type SearchParameters = Record<string, string | string[] | undefined>;
