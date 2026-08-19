@@ -14,7 +14,7 @@
 ### Related Reading
 
 - [x] **READ-08**: 文章详情展示仅含其他已发布文章的相关文章，优先共享分类与标签，并在分数相同时保持确定性顺序。
-- [ ] **READ-09**: 相关文章在无匹配、文章状态变化及手机/桌面布局下保持诚实、可访问且不会泄露非公开元数据。
+- [x] **READ-09**: 相关文章在无匹配、文章状态变化及手机/桌面布局下保持诚实、可访问且不会泄露非公开元数据。
 
 ### Local Delivery
 
@@ -48,7 +48,7 @@
 | SRCH-02 | Phase 6 | Complete |
 | SRCH-03 | Phase 6 | Complete |
 | READ-08 | Phase 6 | Complete |
-| READ-09 | Phase 7 | Pending |
+| READ-09 | Phase 7 | Complete |
 | DEVX-01 | Phase 8 | Pending |
 | DEVX-02 | Phase 8 | Pending |
 | DEVX-03 | Phase 8 | Pending |
