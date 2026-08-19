@@ -85,5 +85,5 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 6. Public Discovery Data | v1.1 | 8/8 active | Complete | 2026-08-17 |
-| 7. Responsive Discovery Experience | v1.1 | 1/4 | In Progress | — |
+| 7. Responsive Discovery Experience | v1.1 | 2/4 | In Progress|  |
 | 8. Reliable Local Delivery | v1.1 | 0/? | Not started | — |
