@@ -17,7 +17,7 @@
 ## v1.1 Phases
 
 - [x] **Phase 6: Public Discovery Data** — 建立仅公开内容的低资源搜索与确定性相关文章数据边界。 (completed 2026-08-17)
-- [ ] **Phase 7: Responsive Discovery Experience** — 交付搜索入口、结果页和文章相关文章的响应式访客体验。
+- [x] **Phase 7: Responsive Discovery Experience** — 交付搜索入口、结果页和文章相关文章的响应式访客体验。 (completed 2026-08-19)
 - [ ] **Phase 8: Reliable Local Delivery** — 固化离线优先的本地更新、健康验证和 v1.1 全量验收。
 
 ### Phase 6: Public Discovery Data
@@ -85,5 +85,5 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 6. Public Discovery Data | v1.1 | 8/8 active | Complete | 2026-08-17 |
-| 7. Responsive Discovery Experience | v1.1 | 4/4 | In Progress|  |
+| 7. Responsive Discovery Experience | v1.1 | 4/4 | Complete    | 2026-08-19 |
 | 8. Reliable Local Delivery | v1.1 | 0/? | Not started | — |
