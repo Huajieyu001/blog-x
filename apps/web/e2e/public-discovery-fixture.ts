@@ -1,5 +1,9 @@
 import { createServer } from "node:http";
-import { publicPostDetailSchema, publicRelatedPostsResponseSchema } from "@blog-x/contracts";
+import {
+  publicPostDetailSchema,
+  publicRelatedPostsResponseSchema,
+  publicSearchResponseSchema,
+} from "@blog-x/contracts";
 
 const port = Number(process.env.DISCOVERY_FIXTURE_PORT);
 
@@ -57,6 +61,18 @@ const populatedRelated = publicRelatedPostsResponseSchema.parse({
 });
 
 const emptyRelated = publicRelatedPostsResponseSchema.parse({ items: [] });
+
+const responsiveResults = Array.from({ length: 11 }, (_, index) => ({
+  title: index === 0
+    ? "响应式长标题 LongResponsiveTitleWithoutBreakOpportunity".repeat(4)
+    : `响应式搜索结果 ${index + 1}`,
+  summary: index === 1 ? "" : `保持相同字段顺序的公开摘要 ${index + 1}`,
+  slug: `responsive-result-${index + 1}`,
+  publishedAt: `2026-07-${String(20 - index).padStart(2, "0")}T04:00:00.000Z`,
+  status: "published" as const,
+  category: { name: `超长分类名称${"分类".repeat(index === 0 ? 20 : 1)}`, slug: `responsive-category-${index + 1}` },
+  tags: [{ name: `LongTagWithoutBreakOpportunity${index + 1}`, slug: `responsive-tag-${index + 1}` }],
+}));
 
 const server = createServer((request, response) => {
   const url = new URL(request.url ?? "/", `http://127.0.0.1:${port}`);
@@ -126,6 +142,18 @@ const server = createServer((request, response) => {
         totalPages: 1,
         items: [publishedResult],
       });
+    }
+
+    if (query === "响应式" && (page === 1 || page === 2)) {
+      return json(response, 200, publicSearchResponseSchema.parse({
+        state: "results",
+        query,
+        page,
+        pageSize: 10,
+        totalItems: responsiveResults.length,
+        totalPages: 2,
+        items: page === 1 ? responsiveResults.slice(0, 10) : responsiveResults.slice(10),
+      }));
     }
 
     return json(response, 200, {

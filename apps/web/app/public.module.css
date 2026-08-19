@@ -92,7 +92,7 @@
   background: var(--surface);
   font: 500 14px/1.4 ui-sans-serif, system-ui, sans-serif;
 }
-.searchInput:focus-visible { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px; }
+.searchInput:focus-visible { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 4px; }
 .searchButton {
   min-height: 44px;
   padding: 0 16px;
@@ -103,6 +103,7 @@
   font: 700 13px/1.4 ui-sans-serif, system-ui, sans-serif;
   cursor: pointer;
 }
+.searchButton:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 
 .menuToggle {
   display: none;
@@ -504,6 +505,9 @@
   }
   .articleTocNarrow nav { padding: 0 0 18px; }
   .articleContentWithToc .articleBody { padding-top: 28px; }
+}
+
+@media (min-width: 701px) and (max-width: 1023px) {
   .relatedGrid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
 }
 
