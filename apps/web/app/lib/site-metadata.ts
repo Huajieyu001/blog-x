@@ -54,14 +54,30 @@ type PageMetadataOptions = {
   type?: "article" | "website";
   origin?: URL;
   index?: boolean;
+  canonicalPath?: string | null;
 };
 
-export function pageMetadata({ title, description, path, type = "website", origin = publicOrigin(), index = true }: PageMetadataOptions): Metadata {
+export function pageMetadata({
+  title,
+  description,
+  path,
+  type = "website",
+  origin = publicOrigin(),
+  index = true,
+  canonicalPath,
+}: PageMetadataOptions): Metadata {
   const url = publicUrl(path, origin);
+  const resolvedCanonicalPath = canonicalPath === undefined ? (index ? path : null) : canonicalPath;
   return {
     title,
     description,
-    ...(index ? { alternates: { canonical: url, types: { "application/rss+xml": "/rss.xml" } } } : { robots: { index: false, follow: true } }),
+    ...(resolvedCanonicalPath !== null ? {
+      alternates: {
+        canonical: publicUrl(resolvedCanonicalPath, origin),
+        ...(index ? { types: { "application/rss+xml": "/rss.xml" } } : {}),
+      },
+    } : {}),
+    ...(!index ? { robots: { index: false, follow: true } } : {}),
     openGraph: { title, description, type, url, siteName: "Blog X" },
   };
 }

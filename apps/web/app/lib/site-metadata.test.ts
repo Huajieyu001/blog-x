@@ -72,3 +72,23 @@ test("page metadata emits complete canonical Open Graph and noindex metadata", (
   });
   assert.deepEqual(pageMetadata({ title: "无效", description: "无效", path: "/", origin, index: false }).robots, { index: false, follow: true });
 });
+
+test("page metadata keeps canonical, robots and Open Graph decisions independent", () => {
+  const origin = publicOrigin("https://blog.example");
+  const canonicalNoIndex = pageMetadata({
+    title: "搜索文章",
+    description: "搜索已发布文章。",
+    path: "/search",
+    canonicalPath: "/search?q=%E4%B8%AD%E6%96%87",
+    origin,
+    index: false,
+  });
+  assert.deepEqual(canonicalNoIndex.robots, { index: false, follow: true });
+  assert.equal(canonicalNoIndex.alternates?.canonical, "https://blog.example/search?q=%E4%B8%AD%E6%96%87");
+  assert.equal(canonicalNoIndex.openGraph?.url, "https://blog.example/search");
+
+  const noCanonical = pageMetadata({ title: "搜索文章", description: "搜索已发布文章。", path: "/search", canonicalPath: null, origin, index: false });
+  assert.deepEqual(noCanonical.robots, { index: false, follow: true });
+  assert.equal(noCanonical.alternates, undefined);
+  assert.equal(noCanonical.openGraph?.url, "https://blog.example/search");
+});
