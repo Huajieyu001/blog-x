@@ -78,7 +78,9 @@ test("invalid requests perform zero discovery calls and accepted outcomes fail c
   const { state: _state, ...expected } = response();
   assert.deepEqual(await loadSearchDiscovery({ q: "中文" }, validSearchEncodingMarker, fetchSearch), { kind: "results", ...expected });
   assert.equal(calls, 1);
-  assert.deepEqual(await loadSearchDiscovery({ q: "different" }, validSearchEncodingMarker, fetchSearch), { kind: "upstream_error" });
+  assert.deepEqual(await loadSearchDiscovery({ q: "different" }, validSearchEncodingMarker, fetchSearch), {
+    kind: "upstream_error", query: "different", page: 1,
+  });
   assert.equal(calls, 2);
 });
 
@@ -100,7 +102,9 @@ test("loader preserves strict item order and maps every transport state exhausti
     const outcome = await loadSearchDiscovery({ q: query, ...(page === 1 ? {} : { page: String(page) }) }, validSearchEncodingMarker, async () => ({ kind: "ok", data }));
     assert.equal(outcome.kind, kind);
   }
-  assert.deepEqual(await loadSearchDiscovery({ q: "中文" }, validSearchEncodingMarker, async () => ({ kind: "upstream_error" })), { kind: "upstream_error" });
+  assert.deepEqual(await loadSearchDiscovery({ q: "中文" }, validSearchEncodingMarker, async () => ({ kind: "upstream_error" })), {
+    kind: "upstream_error", query: "中文", page: 1,
+  });
 });
 
 test("repeated and concurrent accepted reads keep the same strict projection", async () => {
@@ -123,7 +127,7 @@ test("search href round-trips normalized Unicode and reserved characters while o
 test("canonical is allowed only for normalized successful real shapes", () => {
   const outcomes = {
     invalid: { kind: "invalid" as const },
-    upstream: { kind: "upstream_error" as const },
+    upstream: { kind: "upstream_error" as const, query: "中文", page: 1 },
     empty: { kind: "empty_query" as const, ...response({ state: "empty_query", query: "", totalItems: 0, totalPages: 0, items: [] }) },
     zero: { kind: "no_results" as const, ...response({ state: "no_results", totalItems: 0, totalPages: 0, items: [] }) },
     result1: { kind: "results" as const, ...response() },

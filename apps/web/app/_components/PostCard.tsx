@@ -9,13 +9,20 @@ const dateFormatter = new Intl.DateTimeFormat("zh-CN", {
   timeZone: "Asia/Shanghai",
 });
 
-export default function PostCard({ post, position }: { post: PublicPostListItem; position: number }) {
+type PostCardProps = {
+  post: PublicPostListItem;
+  position?: number;
+  variant?: "default" | "compact";
+};
+
+export default function PostCard({ post, position = 1, variant = "default" }: PostCardProps) {
+  const compact = variant === "compact";
   return (
-    <article className={styles.postCard} data-testid="post-card">
-      <p className={styles.index} aria-hidden="true">{String(position).padStart(2, "0")}</p>
+    <article className={compact ? styles.compactPostCard : styles.postCard} data-testid="post-card">
+      {!compact ? <p className={styles.index} aria-hidden="true">{String(position).padStart(2, "0")}</p> : null}
       <div className={styles.cardBody}>
         <div className={styles.cardMeta}>
-          <span className={styles.status}><span aria-hidden="true" />已发布</span>
+          {!compact ? <span className={styles.status}><span aria-hidden="true" />已发布</span> : null}
           <time dateTime={post.publishedAt}>{dateFormatter.format(new Date(post.publishedAt))}</time>
         </div>
         <h3><Link href={`/posts/${encodeURIComponent(post.slug)}`}>{post.title}</Link></h3>

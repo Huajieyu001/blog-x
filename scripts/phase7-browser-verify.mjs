@@ -10,10 +10,11 @@ const children = [];
 async function createIsolatedWebRoot() {
   const source = resolve(root, "apps/web");
   const isolated = await mkdtemp(resolve(root, "apps/.phase7-web-"));
-  for (const file of ["next.config.ts", "package.json", "tsconfig.json", "next-env.d.ts"]) {
+  for (const file of ["next.config.ts", "package.json", "tsconfig.json", "next-env.d.ts", "proxy.ts"]) {
     await copyFile(resolve(source, file), resolve(isolated, file));
   }
   await cp(resolve(source, "app"), resolve(isolated, "app"), { recursive: true });
+  await cp(resolve(source, "lib"), resolve(isolated, "lib"), { recursive: true });
   await symlink(resolve(source, "node_modules"), resolve(isolated, "node_modules"), "dir");
   return isolated;
 }

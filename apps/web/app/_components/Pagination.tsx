@@ -9,21 +9,36 @@ function visiblePages(current: number, total: number) {
     .sort((left, right) => left - right);
 }
 
-export default function Pagination({ page, totalPages, basePath = "/" }: { page: number; totalPages: number; basePath?: string }) {
+type PaginationProps = {
+  page: number;
+  totalPages: number;
+  basePath?: string;
+  ariaLabel?: string;
+  hrefForPage?: (page: number) => string;
+};
+
+export default function Pagination({
+  page,
+  totalPages,
+  basePath = "/",
+  ariaLabel = "文章分页",
+  hrefForPage,
+}: PaginationProps) {
   if (totalPages <= 1 || page > totalPages) return null;
   const pages = visiblePages(page, totalPages);
+  const href = hrefForPage ?? ((number: number) => pageHref(number, basePath));
 
   return (
-    <nav className={styles.pagination} aria-label="文章分页">
+    <nav className={styles.pagination} aria-label={ariaLabel}>
       {page > 1
-        ? <Link className={styles.direction} href={pageHref(page - 1, basePath)}>上一页</Link>
+        ? <Link className={styles.direction} href={href(page - 1)}>上一页</Link>
         : <span className={styles.direction} aria-disabled="true">上一页</span>}
       <ol>
         {pages.map((number, index) => (
           <li key={number}>
             {index > 0 && pages[index - 1] !== number - 1 ? <span className={styles.ellipsis} aria-hidden="true">…</span> : null}
             <Link
-              href={pageHref(number, basePath)}
+              href={href(number)}
               aria-label={`第 ${number} 页`}
               aria-current={number === page ? "page" : undefined}
             >
@@ -33,7 +48,7 @@ export default function Pagination({ page, totalPages, basePath = "/" }: { page:
         ))}
       </ol>
       {page < totalPages
-        ? <Link className={styles.direction} href={pageHref(page + 1, basePath)}>下一页</Link>
+        ? <Link className={styles.direction} href={href(page + 1)}>下一页</Link>
         : <span className={styles.direction} aria-disabled="true">下一页</span>}
     </nav>
   );

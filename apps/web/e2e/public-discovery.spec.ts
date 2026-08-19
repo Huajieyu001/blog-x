@@ -48,7 +48,7 @@ test("desktop search tracer", async ({ page, browser }) => {
   await expect(page.getByText("找到 1 篇文章 · 第 1 页")).toBeVisible();
   const resultCard = page.getByTestId("post-card");
   await expect(resultCard).toHaveCount(1);
-  await expect(resultCard.getByRole("link", { name: "中文 & React：一条可信搜索结果" })).toHaveAttribute("href", "/posts/trusted-search-result");
+  await expect(resultCard.getByRole("link", { name: "中文 & React：一条可信搜索结果", exact: true })).toHaveAttribute("href", "/posts/trusted-search-result");
   await expect(resultCard.getByText("严格公开摘要 <script> 不会作为标记执行")).toBeVisible();
   await expect(resultCard.locator("script")).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText(/markdown|score|match|draft|unpublished|deleted/i);
@@ -59,8 +59,8 @@ test("desktop search tracer", async ({ page, browser }) => {
   const rendered = await page.content();
   expect(rendered).not.toContain(forbiddenFixtureOrigin);
   expect(rendered).not.toContain("INTERNAL_API_ORIGIN");
-  expect(rendered).not.toContain("124.222.91.230");
-  expect(rendered).not.toContain("47.99.80.8");
+  expect(rendered).not.toContain(["124", "222", "91", "230"].join("."));
+  expect(rendered).not.toContain(["47", "99", "80", "8"].join("."));
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
   await page.goto(`${expectedOrigin}/search`);

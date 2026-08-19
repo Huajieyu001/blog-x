@@ -14,7 +14,7 @@ type Payload<State extends PublicSearchResponse["state"]> = Omit<Extract<PublicS
 
 export type SearchDiscoveryOutcome =
   | { kind: "invalid" }
-  | { kind: "upstream_error" }
+  | { kind: "upstream_error"; query: string; page: number }
   | ({ kind: "empty_query" } & Payload<"empty_query">)
   | ({ kind: "no_results" } & Payload<"no_results">)
   | ({ kind: "page_out_of_range" } & Payload<"page_out_of_range">)
@@ -42,7 +42,7 @@ export async function loadSearchDiscovery(
 
   const result = await fetchSearch(request.query, request.page);
   if (result.kind !== "ok" || result.data.query !== request.query || result.data.page !== request.page) {
-    return { kind: "upstream_error" };
+    return { kind: "upstream_error", query: request.query, page: request.page };
   }
   const { state, ...payload } = result.data;
   return { kind: state, ...payload } as SearchDiscoveryOutcome;
