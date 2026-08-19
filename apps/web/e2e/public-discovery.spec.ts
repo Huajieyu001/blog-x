@@ -32,6 +32,41 @@ async function expectKeyboardFocus(locator: import("@playwright/test").Locator) 
   expect(focus.outlineOffset).toBeGreaterThanOrEqual(4);
 }
 
+const hiddenSentinels = [
+  "DRAFT_PRIVATE_SENTINEL",
+  "UNPUBLISHED_PRIVATE_SENTINEL",
+  "DELETED_PRIVATE_SENTINEL",
+  "RAW_MARKDOWN_PRIVATE_SENTINEL",
+  "STACK_PRIVATE_SENTINEL",
+];
+
+async function expectNoDiscoveryDisclosure(page: import("@playwright/test").Page) {
+  const rendered = await page.content();
+  for (const sentinel of hiddenSentinels) expect(rendered).not.toContain(sentinel);
+  expect(rendered).not.toContain("INTERNAL_API_ORIGIN");
+  expect(rendered).not.toContain(["124", "222", "91", "230"].join("."));
+  expect(rendered).not.toContain(["47", "99", "80", "8"].join("."));
+  expect(rendered).not.toMatch(/(?:ZodError|ECONNREFUSED|sharedTagCount|matchLocation|relevanceScore)/i);
+}
+
+async function expectSearchHead(page: import("@playwright/test").Page, canonical?: string) {
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "noindex, follow");
+  const link = page.locator('link[rel="canonical"]');
+  if (canonical) {
+    await expect(link).toHaveCount(1);
+    await expect(link).toHaveAttribute("href", canonical);
+  } else {
+    await expect(link).toHaveCount(0);
+  }
+}
+
+async function fixtureControl(page: import("@playwright/test").Page, mode: "reset" | "stats") {
+  const expectedOrigin = requireGeneratedOrigin(webOrigin, "E2E_WEB_ORIGIN");
+  const response = await page.request.get(`${expectedOrigin}/api/control/discovery?mode=${mode}`);
+  expect(response.ok()).toBe(true);
+  return response.json() as Promise<{ search: Record<string, number>; related: Record<string, number> }>;
+}
+
 test("desktop search tracer", async ({ page, browser }) => {
   const expectedOrigin = requireGeneratedOrigin(webOrigin, "E2E_WEB_ORIGIN");
   const forbiddenFixtureOrigin = requireGeneratedOrigin(fixtureOrigin, "E2E_DISCOVERY_FIXTURE_ORIGIN");
@@ -329,5 +364,225 @@ test.describe("responsive discovery implementation", () => {
     expect(await noScriptPage.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     for (const url of noScriptRequests) expect(new URL(url).origin).toBe(expectedOrigin);
     await noScript.close();
+  });
+});
+
+test.describe("phase 7 edge and privacy matrix", () => {
+  test.beforeEach(async ({ page }) => {
+    await fixtureControl(page, "reset");
+  });
+
+  test("D-01 D-02 D-03 D-04: UI[loading] native entry has no typing fetch, client authority, spinner or stale substitution", async ({ page }) => {
+    const expectedOrigin = requireGeneratedOrigin(webOrigin, "E2E_WEB_ORIGIN");
+    const unknownControl = await page.request.get(`${expectedOrigin}/api/control/discovery?mode=unknown`);
+    expect(unknownControl.status()).toBe(400);
+    const requests: string[] = [];
+    page.on("request", (request) => {
+      if (/^https?:/.test(request.url())) requests.push(request.url());
+    });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(expectedOrigin);
+    const form = page.getByRole("navigation", { name: "站点导航" }).getByRole("search", { name: "搜索文章" });
+    const before = requests.length;
+    await form.getByRole("searchbox", { name: "搜索文章" }).fill("matrix-one");
+    await page.waitForTimeout(100);
+    expect(requests).toHaveLength(before);
+    await expect(page.locator('[role="progressbar"], [aria-busy="true"]')).toHaveCount(0);
+    await form.getByRole("button", { name: "搜索", exact: true }).click();
+    await expect(page).toHaveURL(`${expectedOrigin}/search?q=matrix-one`);
+    await expect(page.getByTestId("post-card")).toHaveCount(1);
+    expect(requests.every((request) => new URL(request).origin === expectedOrigin)).toBe(true);
+  });
+
+  test("D-05 D-08 D-09 D-10: UI[empty] UI[populated] UI[partial] UI[zero-one-many] proves EDGE[SRCH-01/adjacency] EDGE[SRCH-01/empty] EDGE[SRCH-01/ordering] and EDGE[SRCH-02/adjacency] EDGE[SRCH-02/empty] EDGE[SRCH-02/ordering] EDGE[SRCH-02/precision]", async ({ page }) => {
+    const expectedOrigin = requireGeneratedOrigin(webOrigin, "E2E_WEB_ORIGIN");
+
+    await page.goto(`${expectedOrigin}/search`);
+    await expect(page.getByRole("heading", { name: "请输入搜索内容" })).toBeVisible();
+    await expect(page.getByText("输入标题、摘要或正文中的关键词，即可搜索已发布文章。")).toBeVisible();
+    await expect(page.getByRole("link", { name: "返回最新文章" })).toHaveAttribute("href", "/");
+    await expect(page.getByTestId("post-card")).toHaveCount(0);
+
+    await page.goto(`${expectedOrigin}/search?q=hidden-only`);
+    await expect(page.getByRole("heading", { name: "没有找到匹配文章" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "清除搜索" })).toHaveAttribute("href", "/search");
+    await expect(page.getByTestId("post-card")).toHaveCount(0);
+
+    await page.goto(`${expectedOrigin}/search?q=matrix-one`);
+    await expect(page.getByText("找到 1 篇文章 · 第 1 页")).toBeVisible();
+    await expect(page.getByTestId("post-card").locator("h3")).toHaveText(["矩阵结果 01"]);
+    await expect(page.getByRole("navigation", { name: "搜索结果分页" })).toHaveCount(0);
+
+    await page.goto(`${expectedOrigin}/search?q=matrix-ten`);
+    await expect(page.getByTestId("post-card")).toHaveCount(10);
+    await expect(page.getByTestId("post-card").locator("h3")).toHaveText(
+      Array.from({ length: 10 }, (_, index) => `矩阵结果 ${String(index + 1).padStart(2, "0")}`),
+    );
+    await expect(page.getByRole("navigation", { name: "搜索结果分页" })).toHaveCount(0);
+
+    await page.goto(`${expectedOrigin}/search?q=matrix-eleven`);
+    const pagination = page.getByRole("navigation", { name: "搜索结果分页" });
+    await expect(page.getByTestId("post-card")).toHaveCount(10);
+    await expect(pagination.getByRole("link", { name: "第 1 页" })).toHaveAttribute("href", "/search?q=matrix-eleven");
+    await expect(pagination.getByRole("link", { name: "第 2 页" })).toHaveAttribute("href", "/search?q=matrix-eleven&page=2");
+    await pagination.getByRole("link", { name: "下一页" }).click();
+    await expect(page).toHaveURL(`${expectedOrigin}/search?q=matrix-eleven&page=2`);
+    await expect(page.getByTestId("post-card").locator("h3")).toHaveText(["矩阵结果 11"]);
+    await expect(page.getByText("找到 11 篇文章 · 第 2 页")).toBeVisible();
+
+    await page.goto(`${expectedOrigin}/search?q=matrix-eleven&page=3`);
+    await expect(page.getByRole("heading", { name: "这一页没有结果" })).toBeVisible();
+    await expect(page.getByText("“matrix-eleven” 共有 11 篇文章，请返回可用页码。")).toBeVisible();
+    await expect(page.getByRole("link", { name: "返回第 1 页" })).toHaveAttribute("href", "/search?q=matrix-eleven");
+    await expect(page.getByTestId("post-card")).toHaveCount(0);
+
+    for (const query of ["http-400", "http-500", "http-503", "refusal", "malformed-json", "malformed-dto", "contradictory-totals"]) {
+      await page.goto(`${expectedOrigin}/search?q=${query}`);
+      await expect(page.getByRole("heading", { name: "暂时无法完成搜索" })).toBeVisible();
+      await expect(page.getByText("搜索服务似乎暂时不可用，请重试或返回最新文章。")).toBeVisible();
+      await expect(page.getByRole("link", { name: "重试" })).toBeVisible();
+      await expect(page.getByTestId("post-card")).toHaveCount(0);
+    }
+    await expectNoDiscoveryDisclosure(page);
+  });
+
+  test("D-07: UI[long-text] proves EDGE[SRCH-01/encoding] EDGE[SRCH-02/boundary] EDGE[SRCH-02/encoding] with escaped hostile Unicode and fail-closed bounds", async ({ page }) => {
+    const expectedOrigin = requireGeneratedOrigin(webOrigin, "E2E_WEB_ORIGIN");
+    const invalidQueries = [
+      "q=x&page=01",
+      "q=x&page=0",
+      "q=x&page=101",
+      "q=x&page=1.5",
+      "q=x&page=%2B1",
+      "q=x&q=y",
+      "q=x&unknown=y",
+      `q=${"a".repeat(257)}`,
+      `q=${encodeURIComponent("界".repeat(81))}`,
+    ];
+    for (const query of invalidQueries) {
+      await page.goto(`${expectedOrigin}/search?${query}`);
+      await expect(page.getByRole("heading", { name: "搜索条件无效" })).toBeVisible();
+      await expect(page.getByTestId("post-card")).toHaveCount(0);
+    }
+    const statsAfterInvalid = await fixtureControl(page, "stats");
+    expect(Object.keys(statsAfterInvalid.search)).toHaveLength(0);
+
+    await page.goto(`${expectedOrigin}/search?q=${encodeURIComponent("hostile %ZZ + & 中文 e\u0301 😀")}`);
+    const card = page.getByTestId("post-card");
+    await expect(card).toHaveCount(1);
+    await expect(card.getByText('<script>alert("escaped")</script>', { exact: true })).toBeVisible();
+    await expect(card.locator("script, img")).toHaveCount(0);
+    await expect(card.getByText("暂无摘要")).toBeVisible();
+    await expect(card.getByRole("link", { name: /分类：/ })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await expectNoDiscoveryDisclosure(page);
+
+    await page.goto(`${expectedOrigin}/search?q=${encodeURIComponent("界".repeat(80))}&page=100`);
+    await expect(page.getByRole("heading", { name: "没有找到匹配文章" })).toBeVisible();
+    const stats = await fixtureControl(page, "stats");
+    expect(stats.search["界".repeat(80)]).toBeGreaterThan(0);
+  });
+
+  test("D-06 D-07 D-16: EDGE[SRCH-01/concurrency] EDGE[SRCH-02/concurrency] keeps repeat body/head deterministic, canonical honest and every observation same-origin", async ({ page, context }) => {
+    const expectedOrigin = requireGeneratedOrigin(webOrigin, "E2E_WEB_ORIGIN");
+    const pages = [page, await context.newPage(), await context.newPage()];
+    const requests: string[] = [];
+    for (const item of pages) item.on("request", (request) => {
+      if (/^https?:/.test(request.url())) requests.push(request.url());
+    });
+    await Promise.all(pages.map((item) => item.goto(`${expectedOrigin}/search?q=matrix-eleven&page=2`)));
+    for (const item of pages) {
+      await expect(item.getByTestId("post-card").locator("h3")).toHaveText(["矩阵结果 11"]);
+      await expectSearchHead(item, `${expectedOrigin}/search?q=matrix-eleven&page=2`);
+      await expectNoDiscoveryDisclosure(item);
+    }
+    expect(requests.length).toBeGreaterThan(0);
+    expect(requests.every((request) => new URL(request).origin === expectedOrigin)).toBe(true);
+    const searchSmoke = await page.request.get(`${expectedOrigin}/api/public/search?q=matrix-one&page=1`);
+    expect(searchSmoke.status()).toBe(200);
+    expect(new URL(searchSmoke.url()).origin).toBe(expectedOrigin);
+    const relatedSmoke = await page.request.get(`${expectedOrigin}/api/public/articles/related-one/related`);
+    expect(relatedSmoke.status()).toBe(200);
+    expect(new URL(relatedSmoke.url()).origin).toBe(expectedOrigin);
+  });
+
+  test("D-11 D-12 D-13 D-14 D-15: UI[error] UI[overflow] proves EDGE[READ-08/adjacency] EDGE[READ-08/empty] EDGE[READ-08/ordering] and EDGE[READ-09/adjacency] EDGE[READ-09/empty] EDGE[READ-09/ordering] EDGE[READ-09/idempotency] EDGE[READ-09/concurrency]", async ({ page, context }) => {
+    const expectedOrigin = requireGeneratedOrigin(webOrigin, "E2E_WEB_ORIGIN");
+    await page.goto(`${expectedOrigin}/posts/related-one`);
+    await expect(page.getByTestId("related-reading").getByTestId("post-card")).toHaveCount(1);
+    await expect(page.getByTestId("related-reading")).not.toContainText("主文章 related-one");
+
+    await page.goto(`${expectedOrigin}/posts/related-populated`);
+    await expect(page.getByTestId("related-reading").getByTestId("post-card").locator("h3")).toHaveText(
+      [1, 2, 3, 4].map((position) => `相关阅读 ${position}：保持 API 顺序`),
+    );
+    await expect(page.getByTestId("related-reading")).not.toContainText(/score|rank|shared|markdown|sourceId/i);
+
+    await page.goto(`${expectedOrigin}/posts/related-zero`);
+    await expect(page.getByTestId("related-reading")).toHaveCount(0);
+    await expect(page.getByTestId("related-recovery")).toHaveCount(0);
+
+    for (const slug of ["related-failure", "related-malformed", "related-refusal"]) {
+      await page.goto(`${expectedOrigin}/posts/${slug}`);
+      await expect(page.getByTestId("article-body")).toContainText("完整正文内容仍然可读。");
+      await expect(page.getByTestId("related-recovery").getByRole("heading", { name: "相关文章暂时不可用" })).toBeVisible();
+      await expect(page.getByText("没有找到这个页面")).toHaveCount(0);
+    }
+
+    await page.goto(`${expectedOrigin}/posts/related-lifecycle`);
+    await expect(page.getByTestId("related-reading").getByTestId("post-card")).toHaveCount(1);
+    await page.goto(`${expectedOrigin}/posts/related-lifecycle`);
+    await expect(page.getByTestId("related-reading")).toHaveCount(0);
+    await expect(page.getByTestId("related-recovery")).toHaveCount(0);
+
+    const concurrentPages = [await context.newPage(), await context.newPage()];
+    await Promise.all(concurrentPages.map((item) => item.goto(`${expectedOrigin}/posts/related-concurrent`)));
+    for (const item of concurrentPages) {
+      await expect(item.getByTestId("article-body")).toContainText("完整正文内容仍然可读。");
+      await expect(item.getByTestId("related-reading").getByTestId("post-card").locator("h3")).toHaveText([
+        "相关阅读 1：保持 API 顺序",
+        "相关阅读 2：保持 API 顺序",
+      ]);
+    }
+
+    for (const viewport of [{ width: 375, columns: 1 }, { width: 768, columns: 2 }, { width: 1280, columns: 2 }]) {
+      await page.setViewportSize({ width: viewport.width, height: 900 });
+      await page.goto(`${expectedOrigin}/posts/related-populated`);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+      const columns = await page.getByTestId("related-reading").locator(":scope > div").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").filter(Boolean).length);
+      expect(columns).toBe(viewport.columns);
+    }
+    await expectNoDiscoveryDisclosure(page);
+  });
+
+  test("D-07: search metadata, Sitemap and RSS keep the exact noindex canonical matrix and unchanged public distribution", async ({ page }) => {
+    const expectedOrigin = requireGeneratedOrigin(webOrigin, "E2E_WEB_ORIGIN");
+    const cases: Array<[string, string | undefined]> = [
+      ["/search", undefined],
+      ["/search?q=matrix-one", `${expectedOrigin}/search?q=matrix-one`],
+      ["/search?q=matrix-one&page=1", `${expectedOrigin}/search?q=matrix-one`],
+      ["/search?q=matrix-eleven&page=2", `${expectedOrigin}/search?q=matrix-eleven&page=2`],
+      ["/search?q=hidden-only", `${expectedOrigin}/search?q=hidden-only`],
+      ["/search?q=matrix-eleven&page=3", undefined],
+      ["/search?q=http-503", undefined],
+      ["/search?q=x&q=y", undefined],
+      ["/search?q=x&unknown=y", undefined],
+    ];
+    for (const [path, canonical] of cases) {
+      await page.goto(`${expectedOrigin}${path}`);
+      await expectSearchHead(page, canonical);
+    }
+
+    const sitemap = await page.request.get(`${expectedOrigin}/sitemap.xml`);
+    expect(sitemap.status()).toBe(200);
+    const sitemapText = await sitemap.text();
+    expect(sitemapText).toContain(`${expectedOrigin}/posts/trusted-search-result`);
+    expect(sitemapText).not.toContain(`${expectedOrigin}/search`);
+    const rss = await page.request.get(`${expectedOrigin}/rss.xml`);
+    expect(rss.status()).toBe(200);
+    const rssText = await rss.text();
+    expect(rssText).toContain(`${expectedOrigin}/posts/trusted-search-result`);
+    expect(rssText).not.toContain(`${expectedOrigin}/search`);
+    await expectNoDiscoveryDisclosure(page);
   });
 });
