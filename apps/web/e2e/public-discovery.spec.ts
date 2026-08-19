@@ -197,6 +197,18 @@ test.describe("related populated zero and failure", () => {
     await expect(page.getByTestId("related-recovery")).toHaveCount(0);
   });
 
+  test("removes the source and later duplicate while preserving first-occurrence API order", async ({ page }) => {
+    const expectedOrigin = requireGeneratedOrigin(webOrigin, "E2E_WEB_ORIGIN");
+    await page.goto(`${expectedOrigin}/posts/related-dedup`);
+    const related = page.getByTestId("related-reading");
+    await expect(related.getByTestId("post-card").locator("h3")).toHaveText([
+      "相关阅读 1：保持 API 顺序",
+      "相关阅读 2：保持 API 顺序",
+    ]);
+    await expect(related).not.toContainText("主文章不应出现在相关阅读");
+    await expect(related).not.toContainText("重复项不应覆盖第一次出现");
+  });
+
   for (const slug of ["related-failure", "related-malformed"] as const) {
     test(`keeps the primary article and renders local recovery for ${slug}`, async ({ page }) => {
       const expectedOrigin = requireGeneratedOrigin(webOrigin, "E2E_WEB_ORIGIN");
@@ -448,8 +460,8 @@ test.describe("phase 7 edge and privacy matrix", () => {
       await expect(page.getByText("搜索服务似乎暂时不可用，请重试或返回最新文章。")).toBeVisible();
       await expect(page.getByRole("link", { name: "重试" })).toBeVisible();
       await expect(page.getByTestId("post-card")).toHaveCount(0);
+      await expectNoDiscoveryDisclosure(page);
     }
-    await expectNoDiscoveryDisclosure(page);
   });
 
   test("D-07: UI[long-text] proves EDGE[SRCH-01/encoding] EDGE[SRCH-02/boundary] EDGE[SRCH-02/encoding] with escaped hostile Unicode and fail-closed bounds", async ({ page }) => {

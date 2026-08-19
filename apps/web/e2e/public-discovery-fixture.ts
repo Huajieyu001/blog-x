@@ -36,6 +36,7 @@ const relatedSlugs = [
   "related-refusal",
   "related-lifecycle",
   "related-concurrent",
+  "related-dedup",
 ] as const;
 
 const searchCounts = new Map<string, number>();
@@ -79,6 +80,15 @@ function articleDetail(slug: (typeof relatedSlugs)[number]) {
 
 const populatedRelated = publicRelatedPostsResponseSchema.parse({
   items: [1, 2, 3, 4].map(relatedCard),
+});
+
+const dedupRelated = publicRelatedPostsResponseSchema.parse({
+  items: [
+    { ...relatedCard(4), title: "主文章不应出现在相关阅读", slug: "related-dedup" },
+    relatedCard(1),
+    { ...relatedCard(1), title: "重复项不应覆盖第一次出现" },
+    relatedCard(2),
+  ],
 });
 
 const emptyRelated = publicRelatedPostsResponseSchema.parse({ items: [] });
@@ -186,6 +196,7 @@ const server = createServer((request, response) => {
   if (relatedSlug === "related-one") return json(response, 200, oneRelated);
   if (relatedSlug === "related-zero") return json(response, 200, emptyRelated);
   if (relatedSlug === "related-concurrent") return json(response, 200, twoRelated);
+  if (relatedSlug === "related-dedup") return json(response, 200, dedupRelated);
   if (relatedSlug === "related-lifecycle") {
     return json(response, 200, (relatedCounts.get(relatedSlug) ?? 0) === 1 ? oneRelated : emptyRelated);
   }
@@ -218,7 +229,22 @@ const server = createServer((request, response) => {
       return;
     }
     if (query === "malformed-dto") {
-      return json(response, 200, { state: "results", query, page, pageSize: 10, totalItems: 1, totalPages: 1, items: [{ title: "incomplete result" }] });
+      return json(response, 200, {
+        state: "results",
+        query,
+        page,
+        pageSize: 10,
+        totalItems: 1,
+        totalPages: 1,
+        items: [{
+          ...matrixResults[0],
+          draftTitle: "DRAFT_PRIVATE_SENTINEL",
+          unpublishedBody: "UNPUBLISHED_PRIVATE_SENTINEL",
+          deletedBody: "DELETED_PRIVATE_SENTINEL",
+          markdown: "RAW_MARKDOWN_PRIVATE_SENTINEL",
+          stack: "STACK_PRIVATE_SENTINEL",
+        }],
+      });
     }
     if (query === "contradictory-totals") {
       return json(response, 200, { state: "results", query, page, pageSize: 10, totalItems: 11, totalPages: 1, items: [matrixResults[0]] });
