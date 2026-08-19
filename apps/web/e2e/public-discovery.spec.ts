@@ -247,6 +247,9 @@ test.describe("responsive discovery implementation", () => {
       const resultCards = page.getByTestId("post-card");
       await expect(resultCards).toHaveCount(10);
       await expect(resultCards.locator("h3")).toHaveText(responsiveTitles);
+      for (const control of await resultCards.locator('[aria-label="文章分类和标签"] a').all()) {
+        await expectMinimumHeight(control);
+      }
       expect(await resultCards.first().locator("h3").evaluate((element) => ({
         fits: element.scrollWidth <= element.clientWidth,
         ellipsis: getComputedStyle(element).textOverflow === "ellipsis",
@@ -271,6 +274,9 @@ test.describe("responsive discovery implementation", () => {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
       const related = page.getByTestId("related-reading");
       await expect(related.getByTestId("post-card").locator("h3")).toHaveText(relatedTitles);
+      for (const control of await related.locator('[aria-label="文章分类和标签"] a').all()) {
+        await expectMinimumHeight(control);
+      }
       const columns = await related.locator(":scope > div").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").filter(Boolean).length);
       expect(columns).toBe(viewport.relatedColumns);
     }
