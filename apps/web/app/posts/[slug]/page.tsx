@@ -3,15 +3,26 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import ArticleBody from "../../_components/ArticleBody";
 import ArticleToc from "../../_components/ArticleToc";
-import { getPublicPost } from "../../lib/api";
+import PostCard from "../../_components/PostCard";
+import { getPublicPost, getPublicRelatedPosts } from "../../lib/api";
 import { pageMetadata } from "../../lib/site-metadata";
 import styles from "../../public.module.css";
 
 export default async function PublicArticlePage({ params }: { params: Promise<{ slug: string }> }) {
-  const result = await getPublicPost((await params).slug);
+  const { slug } = await params;
+  const result = await getPublicPost(slug);
   if (result.kind === "not_found") notFound();
   if (result.kind === "upstream_error") throw new Error("public content unavailable");
   const article = result.data;
+  const relatedResult = await getPublicRelatedPosts(slug);
+  const seenSlugs = new Set([article.slug]);
+  const relatedItems = relatedResult.kind === "ok"
+    ? relatedResult.data.items.filter((item) => {
+      if (seenSlugs.has(item.slug)) return false;
+      seenSlugs.add(item.slug);
+      return true;
+    })
+    : [];
   return (
     <main className={styles.page}>
       <article className={styles.articleShell}>
@@ -45,6 +56,21 @@ export default async function PublicArticlePage({ params }: { params: Promise<{ 
           <ArticleToc entries={article.toc} />
           <ArticleBody renderedHtml={article.renderedHtml} />
         </div>
+        {relatedResult.kind === "ok" && relatedItems.length > 0 ? (
+          <section className={styles.relatedSection} data-testid="related-reading" aria-labelledby="related-heading">
+            <h2 id="related-heading">继续阅读</h2>
+            <div className={styles.relatedGrid}>
+              {relatedItems.map((post) => <PostCard key={post.slug} post={post} variant="compact" />)}
+            </div>
+          </section>
+        ) : null}
+        {relatedResult.kind !== "ok" ? (
+          <aside className={styles.relatedRecovery} data-testid="related-recovery" aria-labelledby="related-recovery-heading">
+            <h2 id="related-recovery-heading">相关文章暂时不可用</h2>
+            <p>文章内容不受影响，你可以继续阅读或返回最新文章。</p>
+            <Link href="/">返回最新文章</Link>
+          </aside>
+        ) : null}
       </article>
     </main>
   );

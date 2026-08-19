@@ -92,3 +92,71 @@ test("desktop search tracer", async ({ page, browser }) => {
   expect(await noScriptPage.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await noScript.close();
 });
+
+test.describe("related populated zero and failure", () => {
+  test("renders four strict related cards after the complete article in API order", async ({ page }) => {
+    const expectedOrigin = requireGeneratedOrigin(webOrigin, "E2E_WEB_ORIGIN");
+    const forbiddenFixtureOrigin = requireGeneratedOrigin(fixtureOrigin, "E2E_DISCOVERY_FIXTURE_ORIGIN");
+    const browserRequests: string[] = [];
+    page.on("request", (request) => {
+      if (/^https?:/.test(request.url())) browserRequests.push(request.url());
+    });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const response = await page.goto(`${expectedOrigin}/posts/related-populated`);
+    expect(response?.status()).toBe(200);
+    await expect(page.getByRole("heading", { level: 1, name: "主文章 related-populated" })).toBeVisible();
+    await expect(page.getByTestId("article-body")).toContainText("完整正文内容仍然可读。");
+    await expect(page.getByRole("link", { name: "正文尾部的永久链接" })).toHaveAttribute("href", "#article-ending");
+
+    const related = page.getByTestId("related-reading");
+    await expect(related.getByRole("heading", { level: 2, name: "继续阅读" })).toBeVisible();
+    const cards = related.getByTestId("post-card");
+    await expect(cards).toHaveCount(4);
+    await expect(cards.locator("h3")).toHaveText([
+      "相关阅读 1：保持 API 顺序",
+      "相关阅读 2：保持 API 顺序",
+      "相关阅读 3：保持 API 顺序",
+      "相关阅读 4：保持 API 顺序",
+    ]);
+    await expect(related.getByText("主文章 related-populated")).toHaveCount(0);
+    await expect(related).not.toContainText(/markdown|score|rank|shared|internal|draft|deleted/i);
+    expect(await page.evaluate(() => {
+      const body = document.querySelector('[data-testid="article-body"]');
+      const relatedSection = document.querySelector('[data-testid="related-reading"]');
+      return Boolean(body && relatedSection && (body.compareDocumentPosition(relatedSection) & Node.DOCUMENT_POSITION_FOLLOWING));
+    })).toBe(true);
+
+    for (const url of browserRequests) expect(new URL(url).origin).toBe(expectedOrigin);
+    expect(await page.content()).not.toContain(forbiddenFixtureOrigin);
+  });
+
+  test("hides the complete related section for a strict zero response", async ({ page }) => {
+    const expectedOrigin = requireGeneratedOrigin(webOrigin, "E2E_WEB_ORIGIN");
+    await page.goto(`${expectedOrigin}/posts/related-zero`);
+    await expect(page.getByRole("heading", { level: 1, name: "主文章 related-zero" })).toBeVisible();
+    await expect(page.getByTestId("article-body")).toContainText("完整正文内容仍然可读。");
+    await expect(page.getByTestId("related-reading")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "继续阅读" })).toHaveCount(0);
+    await expect(page.getByTestId("related-recovery")).toHaveCount(0);
+  });
+
+  for (const slug of ["related-failure", "related-malformed"] as const) {
+    test(`keeps the primary article and renders local recovery for ${slug}`, async ({ page }) => {
+      const expectedOrigin = requireGeneratedOrigin(webOrigin, "E2E_WEB_ORIGIN");
+      const response = await page.goto(`${expectedOrigin}/posts/${slug}`);
+      expect(response?.status()).toBe(200);
+      await expect(page).toHaveURL(`${expectedOrigin}/posts/${slug}`);
+      await expect(page.getByRole("heading", { level: 1, name: `主文章 ${slug}` })).toBeVisible();
+      await expect(page.getByTestId("article-body")).toContainText("完整正文内容仍然可读。");
+      await expect(page.getByRole("link", { name: "正文尾部的永久链接" })).toHaveAttribute("href", "#article-ending");
+      const recovery = page.getByTestId("related-recovery");
+      await expect(recovery.getByRole("heading", { level: 2, name: "相关文章暂时不可用" })).toBeVisible();
+      await expect(recovery).toContainText("文章内容不受影响，你可以继续阅读或返回最新文章。");
+      await expect(recovery.getByRole("link", { name: "返回最新文章" })).toHaveAttribute("href", "/");
+      await expect(page.getByTestId("related-reading")).toHaveCount(0);
+      await expect(page.getByText("没有找到这个页面")).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "继续阅读" })).toHaveCount(0);
+    });
+  }
+});
