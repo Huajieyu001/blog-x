@@ -1,0 +1,16 @@
+{
+  "id": "historical-phase5-synthetic-result",
+  "suiteId": "receipt-fixture",
+  "implementationRevision": "0123456789abcdef0123456789abcdef01234567",
+  "derivationPrefix": "phase5-semantic-pass",
+  "derivedBytes": "phase5-semantic-pass:receipt-fixture:0123456789abcdef0123456789abcdef01234567",
+  "resultSha256": "35dbba7a13eb062dd0c9d249c17eb457679f2c67ef6fe75a8cfcdbecdd4373e4",
+  "legacyResult": {
+    "tests": 1,
+    "passed": 1,
+    "failed": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0
+  }
+}

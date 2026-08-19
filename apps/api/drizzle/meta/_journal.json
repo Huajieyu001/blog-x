@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1786031758031,
+      "tag": "0000_phase1_walking_skeleton",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786113242790,
+      "tag": "0001_vengeful_trish_tilby",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786182028900,
+      "tag": "0002_wet_captain_america",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786189860689,
+      "tag": "0003_needy_albert_cleary",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786190113530,
+      "tag": "0004_sturdy_wrecker",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786204673123,
+      "tag": "0005_curved_magus",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786289178793,
+      "tag": "0006_phase5_media_policy",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "id": "captured-phase5-actual-result",
+  "suite": {
+    "id": "actual-receipt-fixture",
+    "kind": "node",
+    "path": "scripts/phase5-receipt-prohibitions.test.mjs",
+    "sourceSha256": "2468ace02468ace02468ace02468ace02468ace02468ace02468ace02468ace0"
+  },
+  "capturedOutput": "TAP version 13\nok 1 - parses captured output\nok 2 - binds canonical bytes\nok 3 - rejects mutations\n1..3\n# tests 3\n# pass 3\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n",
+  "timing": {
+    "startedAt": "2026-08-14T12:00:00.000Z",
+    "completedAt": "2026-08-14T12:00:01.250Z"
+  },
+  "expected": {
+    "counts": {
+      "tests": 3,
+      "passed": 3,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "normalizedOutputBytes": 167,
+    "normalizedOutputSha256": "b2c77f674c13b3efc23b94e8e9037b4542156c663ee2b4d7aad1a81bd3cf75e8",
+    "resultSha256": "f6a353a7bcba3c7cb44f98ac9473b28b5b3c9909196fbdff5d3e4ae62216ecd7"
+  }
+}

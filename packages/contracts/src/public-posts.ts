@@ -1,0 +1,66 @@
+import { z } from "zod";
+import { publicTaxonomyTermSchema } from "./taxonomy";
+import { mediaUsageReferenceSchema } from "./media";
+
+export const publicPostPageSize = 10;
+
+const pageSchema = z.preprocess(
+  (value) => value === undefined ? "1" : value,
+  z.string()
+    .regex(/^[1-9]\d*$/)
+    .transform(Number)
+    .pipe(z.number().int().positive().max(Math.floor(Number.MAX_SAFE_INTEGER / publicPostPageSize))),
+);
+
+export const publicPostPageQuerySchema = z.object({
+  page: pageSchema,
+}).strict();
+
+export const publicPostListItemSchema = z.object({
+  title: z.string(),
+  summary: z.string(),
+  slug: z.string(),
+  publishedAt: z.string().datetime({ offset: true }),
+  status: z.literal("published"),
+  category: publicTaxonomyTermSchema.pick({ name: true, slug: true }).nullable().optional(),
+  tags: z.array(publicTaxonomyTermSchema.pick({ name: true, slug: true })),
+}).strict();
+
+export const publicPostListResponseSchema = z.object({
+  page: z.number().int().positive(),
+  pageSize: z.literal(publicPostPageSize),
+  totalItems: z.number().int().nonnegative(),
+  totalPages: z.number().int().nonnegative(),
+  items: z.array(publicPostListItemSchema),
+}).strict();
+
+export const tocEntrySchema = z.object({
+  id: z.string().min(1),
+  depth: z.union([z.literal(2), z.literal(3)]),
+  text: z.string(),
+}).strict();
+
+export const publicPostDetailSchema = publicPostListItemSchema.extend({
+  seoDescription: z.string(),
+  renderedHtml: z.string(),
+  toc: z.array(tocEntrySchema),
+  cover: mediaUsageReferenceSchema.nullable().optional(),
+}).strict();
+
+export const publicTaxonomyPostListSchema = z.object({
+  term: publicTaxonomyTermSchema,
+  posts: publicPostListResponseSchema,
+}).strict();
+
+export const publicPostNotFoundResponseSchema = z.object({
+  error: z.literal("not_found"),
+}).strict();
+
+export const invalidPublicPageResponseSchema = z.object({
+  error: z.literal("invalid_page"),
+}).strict();
+
+export type PublicPostListItem = z.infer<typeof publicPostListItemSchema>;
+export type PublicPostListResponse = z.infer<typeof publicPostListResponseSchema>;
+export type PublicPostDetail = z.infer<typeof publicPostDetailSchema>;
+export type TocEntry = z.infer<typeof tocEntrySchema>;

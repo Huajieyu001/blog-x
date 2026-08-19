@@ -1,0 +1,2 @@
+ALTER TABLE "articles" ADD COLUMN "legacy_media_review" text DEFAULT 'pending' NOT NULL;--> statement-breakpoint
+ALTER TABLE "articles" ADD CONSTRAINT "articles_legacy_media_review_check" CHECK ("articles"."legacy_media_review" in ('pending', 'clear', 'review_required'));

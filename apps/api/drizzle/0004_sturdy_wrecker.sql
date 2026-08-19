@@ -1,0 +1,2 @@
+ALTER TABLE "site_pages" ADD CONSTRAINT "site_pages_key_about_check" CHECK ("site_pages"."key" = 'about');--> statement-breakpoint
+ALTER TABLE "site_pages" ADD CONSTRAINT "site_pages_status_check" CHECK ("site_pages"."status" in ('draft', 'published'));

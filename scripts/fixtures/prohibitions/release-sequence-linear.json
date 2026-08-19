@@ -1,0 +1,6 @@
+{
+  "expectedPostDecision": "POST_RELEASE_VERIFIED",
+  "id": "release-sequence-linear",
+  "requiresActualBytePredecessor": true,
+  "version": 1
+}

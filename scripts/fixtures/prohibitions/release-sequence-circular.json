@@ -1,0 +1,6 @@
+{
+  "expectedPreDecision": "PRE_RELEASE_READY",
+  "expectedPostWithoutPredecessor": "BLOCKED",
+  "id": "release-sequence-circular",
+  "version": 1
+}

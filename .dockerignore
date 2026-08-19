@@ -1,0 +1,14 @@
+.git
+.codex
+.planning
+node_modules
+**/node_modules
+**/.next
+**/dist
+backups
+test-results
+playwright-report
+*.log
+.env
+.env.*
+!.env.example

@@ -1,0 +1,35 @@
+{
+  "name": "blog-x",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@11.20.0",
+  "engines": { "node": ">=24.15.0" },
+  "scripts": {
+    "dev:api": "corepack pnpm --filter @blog-x/api dev",
+    "dev:web": "corepack pnpm --filter @blog-x/web dev",
+    "build": "corepack pnpm -r build",
+    "typecheck": "corepack pnpm -r typecheck",
+    "test": "corepack pnpm -r test",
+    "test:ops": "node --test scripts/local-verify.test.mjs",
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "local:verify": "node scripts/local-verify.mjs",
+    "db:generate:check": "corepack pnpm --filter @blog-x/api db:generate:check",
+    "db:migrate": "corepack pnpm --filter @blog-x/api db:migrate",
+    "db:seed": "corepack pnpm --filter @blog-x/api db:seed",
+    "db:schema:verify": "corepack pnpm --filter @blog-x/api db:schema:verify",
+    "test:e2e": "corepack pnpm --filter @blog-x/web test:e2e",
+    "test:e2e:auth": "corepack pnpm --filter @blog-x/web test:e2e:auth"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@types/node": "26.1.2",
+    "@types/pg": "8.20.4",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "drizzle-kit": "0.31.10",
+    "drizzle-orm": "0.45.2",
+    "tsx": "4.23.7",
+    "typescript": "7.0.2"
+  }
+}

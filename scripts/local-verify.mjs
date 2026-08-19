@@ -1,0 +1,1333 @@
+import { spawn } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
+import { basename, dirname, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { auditRepository, evaluateRepositoryBoundaries } from "./check-boundaries.mjs";
+import { createBackupSet } from "./backup/create.mjs";
+import { verifyBackupSet } from "./backup/manifest.mjs";
+import { cleanupGeneratedBackupRoot } from "./backup/paths.mjs";
+import { cleanupGeneratedRestoreRoot, restoreBackupSet } from "./backup/restore.mjs";
+import { runProductionPipeline } from "./backup/production-pipeline.mjs";
+import {
+  acquirePhase5ReceiptWriterLock,
+  canonicalPhase5ResultBytes,
+  hashPhase5ResultRecord,
+  releasePhase5ReceiptWriterLock,
+  writePhase5ReceiptAtomic,
+} from "./phase5-receipt.mjs";
+import { productionBackupResultSchema } from "./backup/production/results.mjs";
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const scriptPath = fileURLToPath(import.meta.url);
+const composeFile = resolve(root, "compose.yaml");
+const apiImage = "blog-x-api-verify:phase2";
+const webImage = "blog-x-web-verify:phase2";
+
+export function validateNamespace(value) {
+  if (!/^blogxverify_[a-z0-9]{8,32}$/.test(value ?? "")) {
+    throw new Error("verification namespace must match blogxverify_[a-z0-9]{8,32}");
+  }
+  return value;
+}
+
+export function validateMediaVolume(value, namespace) {
+  validateNamespace(namespace);
+  if (value !== `${namespace}_media-data`) throw new Error("verification media volume must exactly match its generated namespace");
+  return value;
+}
+
+export function validateDatabaseName(value, namespace) {
+  validateNamespace(namespace);
+  if (value !== `blog_x_${namespace.slice("blogxverify_".length)}`) {
+    throw new Error("verification database must exactly match its generated namespace");
+  }
+  return value;
+}
+
+export function validateLoopbackHttpOrigin(value) {
+  let url;
+  try { url = new URL(value); } catch { throw new Error("verification public origin must be an absolute loopback HTTP origin"); }
+  if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+    throw new Error("verification public origin must be an absolute loopback HTTP origin");
+  }
+  return url.origin;
+}
+
+export function phase3Selection(mode) {
+  const api = ["PHASE3_TEST_DATABASE_URL", "apps/api/test/public-distribution.test.ts"];
+  const exportApi = ["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"];
+  const metadata = "apps/web/app/lib/site-metadata.test.ts";
+  const browser = "apps/web/e2e/phase3-distribution.spec.ts";
+  const selections = {
+    api: { databaseSuites: [api], webSuites: [] },
+    metadata: { databaseSuites: [], webSuites: [metadata, browser] },
+    full: { databaseSuites: [api, exportApi], webSuites: [metadata, browser] },
+    "export-api": { databaseSuites: [exportApi], webSuites: [] },
+    "export-browser": { databaseSuites: [], webSuites: [browser] },
+  };
+  const selection = selections[mode];
+  if (!selection) throw new Error(`Phase 3 selection is not recognized: ${mode}`);
+  return selection;
+}
+
+export function phase4Selection(mode) {
+  const security = {
+    databaseSuites: [
+        ["AUTH_TEST_DATABASE_URL", "apps/api/test/auth-session.test.ts"],
+        ["ARTICLE_TEST_DATABASE_URL", "apps/api/test/article-draft-preview.test.ts"],
+        ["LIFECYCLE_TEST_DATABASE_URL", "apps/api/test/article-lifecycle.test.ts"],
+        ["PUBLIC_LIST_TEST_DATABASE_URL", "apps/api/test/public-list.test.ts"],
+        ["PUBLIC_VISIBILITY_TEST_DATABASE_URL", "apps/api/test/public-visibility.test.ts"],
+        ["AUTH_TEST_DATABASE_URL", "apps/api/test/taxonomy.test.ts"],
+        ["AUTH_TEST_DATABASE_URL", "apps/api/test/pages-archive.test.ts"],
+        ["AUTH_TEST_DATABASE_URL", "apps/api/test/media.test.ts"],
+        ["PHASE2_TEST_DATABASE_URL", "apps/api/test/phase2-public-visibility.test.ts"],
+        ["PHASE3_TEST_DATABASE_URL", "apps/api/test/public-distribution.test.ts"],
+        ["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"],
+    ],
+    apiSuites: [
+        "apps/api/test/security-hardening.test.ts",
+        "apps/api/test/markdown-renderer.test.ts",
+    ],
+  };
+  const operations = { nodeSuites: ["scripts/ops-status.test.mjs", "scripts/backup/backup.test.mjs", "scripts/local-verify.test.mjs"] };
+  const restore = {
+    nodeSuites: ["scripts/backup/restore.test.mjs", "scripts/local-verify.test.mjs"],
+    databaseSuite: "apps/api/test/backup-restore.test.ts",
+    browserSuite: "apps/web/e2e/phase4-restore.spec.ts",
+  };
+  const selection = {
+    security,
+    operations,
+    restore,
+    full: {
+      databaseSuites: security.databaseSuites,
+      apiSuites: security.apiSuites,
+      nodeSuites: [...new Set([...operations.nodeSuites, ...restore.nodeSuites, "scripts/release-gate.test.mjs"])],
+      browserSuites: ["apps/web/e2e/phase2-reading.spec.ts", "apps/web/e2e/phase3-distribution.spec.ts", restore.browserSuite],
+    },
+  }[mode];
+  if (!selection) throw new Error(`Phase 4 selection is not recognized: ${mode}`);
+  return selection;
+}
+
+export function phase5MediaSelection() {
+  return {
+    databaseSuites: [
+      ["ARTICLE_TEST_DATABASE_URL", "apps/api/test/article-draft-preview.test.ts"],
+      ["LIFECYCLE_TEST_DATABASE_URL", "apps/api/test/article-lifecycle.test.ts"],
+      ["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"],
+    ],
+    apiSuites: ["apps/api/test/markdown-renderer.test.ts"],
+    nodeSuites: ["scripts/prohibitions/media-policy.test.mjs", "scripts/local-verify.test.mjs"],
+    databaseSuite: "apps/api/test/backup-restore.test.ts",
+    browserSuites: ["apps/web/e2e/phase1-publishing.spec.ts", "apps/web/e2e/phase4-restore.spec.ts"],
+  };
+}
+
+function uniqueSuites(suites) {
+  return [...new Map(suites.map((suite) => [Array.isArray(suite) ? suite[1] : suite, suite])).values()];
+}
+
+export function phase5Selection(mode) {
+  if (mode !== "full") throw new Error(`Phase 5 selection is not recognized: ${mode}`);
+  const phase4 = phase4Selection("full");
+  const media = phase5MediaSelection();
+  return {
+    databaseSuites: uniqueSuites([...phase4.databaseSuites, ...media.databaseSuites]),
+    apiSuites: uniqueSuites([...phase4.apiSuites, ...media.apiSuites]),
+    nodeSuites: uniqueSuites([
+      ...phase4.nodeSuites,
+      ...media.nodeSuites,
+      "scripts/backup/production.test.mjs",
+      "scripts/phase5-receipt.test.mjs",
+      "scripts/phase5-receipt-prohibitions.test.mjs",
+      "scripts/phase5-receipt-concurrency.test.mjs",
+    ]),
+    databaseSuite: media.databaseSuite,
+    browserSuites: uniqueSuites([...phase4.browserSuites, ...media.browserSuites]),
+  };
+}
+
+export function phase6Selection(mode) {
+  if (mode !== "data") throw new Error(`Phase 6 selection is not recognized: ${mode}`);
+  return {
+    databaseSuites: [
+      ["PUBLIC_DISCOVERY_TEST_DATABASE_URL", "apps/api/test/public-discovery.test.ts"],
+      ["PUBLIC_LIST_TEST_DATABASE_URL", "apps/api/test/public-list.test.ts"],
+      ["PUBLIC_VISIBILITY_TEST_DATABASE_URL", "apps/api/test/public-visibility.test.ts"],
+      ["AUTH_TEST_DATABASE_URL", "apps/api/test/taxonomy.test.ts"],
+      ["PHASE2_TEST_DATABASE_URL", "apps/api/test/phase2-public-visibility.test.ts"],
+    ],
+    nodeSuites: ["scripts/local-verify.test.mjs"],
+    boundarySuite: "scripts/check-boundaries.mjs",
+  };
+}
+
+export function validateTopologyPolicy(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("topology policy must be an object");
+  const policy = value;
+  if (Object.keys(policy).sort().join(",") !== "browser,format,futurePrivateLink,services,version") throw new Error("topology policy has unsupported fields");
+  if (policy.format !== "blog-x-topology-policy" || policy.version !== 1) throw new Error("topology policy format is unsupported");
+  if (!policy.browser || typeof policy.browser !== "object" || Array.isArray(policy.browser)
+    || Object.keys(policy.browser).sort().join(",") !== "directDataPlane,relativeRoutes"
+    || policy.browser.directDataPlane !== false
+    || JSON.stringify(policy.browser.relativeRoutes) !== JSON.stringify(["/api", "/media"])) throw new Error("topology policy must keep browser traffic relative");
+  if (!policy.services || typeof policy.services !== "object" || Array.isArray(policy.services)
+    || Object.keys(policy.services).sort().join(",") !== "api,postgres,web") throw new Error("topology policy services are invalid");
+  const { web, api, postgres } = policy.services;
+  if (!web || web.hostPublished !== true || web.bind !== "edge-only"
+    || !api || api.hostPublished !== false
+    || !postgres || postgres.hostPublished !== false) throw new Error("topology policy exposes a data plane");
+  if (!policy.futurePrivateLink || policy.futurePrivateLink.required !== true || policy.futurePrivateLink.status !== "unresolved") {
+    throw new Error("topology policy must retain unresolved private-link evidence");
+  }
+  return policy;
+}
+
+function exactSummaryCount(lines, name, parser) {
+  const values = lines.filter((line) => parser.test(line)).map((line) => Number(line.replace(parser, "$1")));
+  if (values.length !== 1) throw new Error(`semantic test output has an incomplete or conflicting ${name} footer`);
+  return values[0];
+}
+
+export function parseSemanticTapResult(output) {
+  const tap = String(output).replace(/\r\n?/g, "\n");
+  const lines = tap.split("\n");
+  if (!/^TAP version 13\s*$/m.test(tap)) throw new Error("semantic test output is not TAP version 13");
+  const directive = lines.find((line) => /#\s*(?:SKIP|TODO)\b/i.test(line)
+    && !/^\s*#\s*(?:skipped|todo)\s+\d+\s*$/i.test(line));
+  if (directive) throw new Error(`semantic test output contains a skip/todo directive: ${redactText(directive)}`);
+  const nonPassSummary = lines.find((line) => /^\s*#\s*(?:skipped|todo|cancelled|fail)\s+[1-9]\d*\s*$/i.test(line));
+  if (nonPassSummary) throw new Error(`semantic test output contains a non-pass summary: ${redactText(nonPassSummary)}`);
+  const tests = exactSummaryCount(lines, "tests", /^\s*#\s*tests\s+(\d+)\s*$/i);
+  if (!tests) throw new Error("semantic test output reported zero semantic tests");
+  const passed = exactSummaryCount(lines, "pass", /^\s*#\s*pass\s+(\d+)\s*$/i);
+  const failed = exactSummaryCount(lines, "fail", /^\s*#\s*fail\s+(\d+)\s*$/i);
+  const cancelled = exactSummaryCount(lines, "cancelled", /^\s*#\s*cancelled\s+(\d+)\s*$/i);
+  const skipped = exactSummaryCount(lines, "skipped", /^\s*#\s*skipped\s+(\d+)\s*$/i);
+  const todo = exactSummaryCount(lines, "todo", /^\s*#\s*todo\s+(\d+)\s*$/i);
+  if (tests !== passed + failed + cancelled + skipped + todo) throw new Error("semantic test output footer arithmetic is inconsistent");
+  if (!passed) throw new Error("semantic test output reported zero semantic tests");
+  if (failed || cancelled || skipped || todo) throw new Error("semantic test output contains a non-pass result");
+  return { tests, passed, failed, cancelled, skipped, todo };
+}
+
+export function assertSemanticTap(output) { return parseSemanticTapResult(output); }
+
+export function parsePlaywrightResult(output) {
+  const text = String(output).replace(/\r\n?/g, "\n");
+  const running = [...text.matchAll(/^Running\s+(\d+)\s+tests?\s+using\s+\d+\s+workers?\s*$/gmi)];
+  if (running.length !== 1) throw new Error("Playwright journey has an incomplete or conflicting launch count");
+  const tests = Number(running[0][1]);
+  const count = (name) => [...text.matchAll(new RegExp(`^\\s*(\\d+)\\s+${name}\\b`, "gmi"))].reduce((total, match) => total + Number(match[1]), 0);
+  const passed = count("passed");
+  const failed = count("failed");
+  const skipped = count("skipped");
+  const didNotRun = count("did not run");
+  const flaky = count("flaky");
+  const interrupted = count("interrupted");
+  if (failed || skipped || didNotRun || flaky || interrupted) throw new Error("Playwright journey contains a non-pass result");
+  if (!tests || !passed) throw new Error("Playwright journey reported zero completed tests");
+  if (tests !== passed + failed + skipped + didNotRun) throw new Error("Playwright journey result count does not match launch count");
+  return { tests, passed, failed, cancelled: interrupted, skipped, todo: 0 };
+}
+
+export function assertPlaywrightJourney(output) { return parsePlaywrightResult(output); }
+
+export function parseBoundaryResult(output) {
+  const lines = String(output).replace(/\r\n?/g, "\n").split("\n").filter((line) => line.startsWith("BLOG X BOUNDARY RESULT "));
+  if (lines.length !== 1) throw new Error("repository boundary output is missing its machine result");
+  let value;
+  try { value = JSON.parse(lines[0].slice("BLOG X BOUNDARY RESULT ".length)); } catch { throw new Error("repository boundary result is invalid"); }
+  if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).sort().join(",") !== "filesChecked,findings,outcome"
+    || !Number.isSafeInteger(value.filesChecked) || value.filesChecked <= 0 || !Number.isSafeInteger(value.findings) || value.findings !== 0 || value.outcome !== "pass") {
+    throw new Error("repository boundary result is not a complete pass");
+  }
+  return { tests: value.filesChecked, passed: value.filesChecked, failed: 0, cancelled: 0, skipped: 0, todo: 0 };
+}
+
+export function semanticTestCommand(file) {
+  return ["node", "--import", "tsx", "--test", "--test-reporter=tap", file];
+}
+
+export async function cleanupGeneratedMediaRoot(value) {
+  const resolved = resolve(value ?? "");
+  if (dirname(resolved) !== resolve(tmpdir()) || !/^blog-x-media-verify-[A-Za-z0-9_-]{6,64}$/.test(basename(resolved))) {
+    throw new Error("cleanup target is not an exact generated media root");
+  }
+  await rm(resolved, { recursive: true, force: true });
+}
+
+export function redactText(text, secrets = []) {
+  let redacted = String(text);
+  for (const secret of secrets.filter(Boolean).sort((a, b) => b.length - a.length)) {
+    redacted = redacted.split(secret).join("[REDACTED]");
+  }
+  redacted = redacted
+    .replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "[REDACTED_DATABASE_URL]")
+    .replace(/((?:set-)?cookie\s*:\s*[^\n]*blog_x_session=)[^;\s]+/gi, "$1[REDACTED]")
+    .replace(/(blog_x_session=)[^;\s]+/gi, "$1[REDACTED]");
+  return redacted;
+}
+
+function normalizeCapturedOutput(value, secrets) {
+  return redactText(value, secrets)
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/\r\n?/g, "\n");
+}
+
+function hashText(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function parserForSuiteKind(kind) {
+  return ({ node: "node-tap-v13", database: "node-tap-v13", browser: "playwright-line-v1", pipeline: "production-backup-result-v1", boundary: "repository-boundary-result-v1" })[kind];
+}
+
+function sumCounts(records) {
+  return records.reduce((total, item) => {
+    for (const key of ["tests", "passed", "failed", "cancelled", "skipped", "todo"]) total[key] += item[key];
+    return total;
+  }, { tests: 0, passed: 0, failed: 0, cancelled: 0, skipped: 0, todo: 0 });
+}
+
+export function createPhase5ResultRecorder(manifest, secrets = []) {
+  if (!manifest || manifest.format !== "blog-x-phase5-suite-manifest" || manifest.version !== 2 || !Array.isArray(manifest.suites)) throw new Error("Phase 5 result recorder requires a v2 manifest");
+  const byId = new Map(manifest.suites.map((suite) => [suite.id, suite]));
+  if (byId.size !== manifest.suites.length) throw new Error("Phase 5 result recorder manifest IDs are not unique");
+  const entries = new Map();
+  const record = (suiteId, parser, commandResult, counts, safeOutput) => {
+    const suite = byId.get(suiteId);
+    if (!suite || parser !== parserForSuiteKind(suite.kind)) throw new Error("Phase 5 result recorder received an unknown or mismatched suite");
+    if (!commandResult || commandResult.exitCode !== 0 || commandResult.signal !== null) throw new Error("Phase 5 result recorder requires a successful completed command");
+    const output = normalizeCapturedOutput(safeOutput ?? commandResult.combined, secrets);
+    if (!output.length) throw new Error("Phase 5 result recorder requires captured output");
+    const invocation = {
+      ordinal: (entries.get(suiteId)?.length ?? 0) + 1,
+      parser,
+      startedAt: commandResult.startedAt,
+      completedAt: commandResult.completedAt,
+      exitCode: commandResult.exitCode,
+      signal: commandResult.signal,
+      redactedOutputBytes: Buffer.byteLength(output),
+      redactedOutputSha256: hashText(output),
+      counts,
+    };
+    if (!Number.isFinite(Date.parse(invocation.startedAt)) || !Number.isFinite(Date.parse(invocation.completedAt))) throw new Error("Phase 5 result recorder command timing is invalid");
+    entries.set(suiteId, [...(entries.get(suiteId) ?? []), invocation]);
+    return invocation;
+  };
+  return {
+    recordCommand(suiteId, parser, commandResult, parserFunction) {
+      return record(suiteId, parser, commandResult, parserFunction(commandResult.combined));
+    },
+    recordStructured(suiteId, parser, commandResult, value, counts) {
+      return record(suiteId, parser, commandResult, counts, JSON.stringify(value));
+    },
+    finalize() {
+      if (entries.size !== manifest.suites.length) throw new Error("Phase 5 result recorder is missing a manifest suite");
+      return manifest.suites.map((suite) => {
+        const invocations = entries.get(suite.id);
+        if (!invocations?.length) throw new Error("Phase 5 result recorder is missing suite invocations");
+        const counts = sumCounts(invocations.map((item) => item.counts));
+        const resultRecord = {
+          format: "blog-x-phase5-execution-result", version: 1, suiteId: suite.id, kind: suite.kind, sourceSha256: suite.sourceSha256,
+          invocations, counts, outcome: "pass",
+        };
+        return { id: suite.id, sourceSha256: suite.sourceSha256, resultRecord, resultSha256: hashPhase5ResultRecord(resultRecord) };
+      });
+    },
+    has(suiteId) { return entries.has(suiteId); },
+  };
+}
+
+function recordPhase5Command(context, file, parser, result) {
+  const suiteId = context.phase5SuiteIds?.get(file);
+  if (!suiteId || !context.phase5Recorder) return;
+  const parserFunction = parser === "node-tap-v13" ? parseSemanticTapResult : parsePlaywrightResult;
+  context.phase5Recorder.recordCommand(suiteId, parser, result, parserFunction);
+}
+
+function generatedNamespace() {
+  return validateNamespace(`blogxverify_${randomBytes(6).toString("hex")}`);
+}
+
+function generatedRestoreNamespace() {
+  return `blogxrestore_${randomBytes(6).toString("hex")}`;
+}
+
+async function freePort() {
+  return new Promise((accept, reject) => {
+    const server = createServer();
+    server.unref();
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") return reject(new Error("unable to allocate a local verification port"));
+      server.close(() => accept(address.port));
+    });
+  });
+}
+
+function command(commandName, args, options = {}) {
+  return new Promise((accept, reject) => {
+    const startedAt = new Date().toISOString();
+    const child = spawn(commandName, args, {
+      cwd: options.cwd ?? root,
+      env: options.env ?? process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    let combined = "";
+    child.stdout.on("data", (chunk) => { const value = String(chunk); stdout += value; combined += value; options.onOutput?.(value); });
+    child.stderr.on("data", (chunk) => { const value = String(chunk); stderr += value; combined += value; options.onOutput?.(value); });
+    child.on("error", reject);
+    child.on("close", (code, signal) => {
+      const result = { startedAt, completedAt: new Date().toISOString(), exitCode: code ?? 1, signal: signal ?? null, stdout, stderr, combined };
+      if (result.exitCode === 0 && result.signal === null || options.allowFailure) accept(result);
+      else reject(Object.assign(new Error(`${commandName} exited with ${result.exitCode}`), { result }));
+    });
+  });
+}
+
+function composeEnvironment(context) {
+  return {
+    ...process.env,
+    BLOG_X_API_IMAGE: apiImage,
+    BLOG_X_WEB_IMAGE: webImage,
+    BLOG_X_POSTGRES_DB: context.database,
+    BLOG_X_POSTGRES_USER: "blog_x",
+    BLOG_X_WEB_PORT: String(context.webPort),
+    BLOG_X_PUBLIC_ORIGIN: context.publicOrigin,
+  };
+}
+
+function composeArgs(context, ...args) {
+  return ["-p", context.namespace, "-f", composeFile, ...args];
+}
+
+async function runStep(context, label, commandName, args, options = {}) {
+  process.stdout.write(`[local-verify] ${label}\n`);
+  try {
+    const result = await command(commandName, args, { ...options, env: options.env ?? composeEnvironment(context) });
+    context.logs.push(result.combined);
+    return result;
+  } catch (error) {
+    const output = error?.result?.combined ?? error?.message ?? String(error);
+    throw new Error(`${label} failed\n${redactText(output, context.secrets)}`);
+  }
+}
+
+async function compose(context, label, ...args) {
+  return runStep(context, label, "docker-compose", composeArgs(context, ...args));
+}
+
+async function waitForHttp(url, attempts = 100) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try { if ((await fetch(url)).ok) return; } catch { /* service is still starting */ }
+    await new Promise((accept) => setTimeout(accept, 250));
+  }
+  throw new Error(`timed out waiting for ${url}`);
+}
+
+function psqlArgs(context, query) {
+  return ["exec", "-T", "postgres", "psql", "-U", "blog_x", "-d", context.database, "-Atqc", query];
+}
+
+async function inspectSchema(context) {
+  const result = await compose(context, "inspect migration ledger and schema", ...psqlArgs(context, [
+    "select (select count(*) from blog_x_schema_ledger),",
+    "(select migration_count from blog_x_schema_ledger where scope = 'phase1'),",
+    "(select count(*) from pg_tables where schemaname = 'public' and tablename = any(array['administrators','articles','sessions','categories','tags','article_tags','site_pages','media'])),",
+    "(select count(*) from pg_constraint where conname = any(array['site_pages_key_about_check','site_pages_status_check','articles_cover_alt_check','articles_legacy_media_review_check'])),",
+    "(select count(*) from pg_indexes where schemaname = 'public' and indexname = any(array['taxonomy_category_slug_unique','taxonomy_tag_slug_unique','article_tags_article_tag_unique','site_pages_key_unique','media_source_key_unique','media_derivative_key_unique']));",
+  ].join(" ")));
+  const values = result.stdout.trim().split("|").map(Number);
+  if (values.length !== 5 || values[0] !== 1 || values[1] !== 7 || values[2] !== 8 || values[3] !== 4 || values[4] !== 6) {
+    throw new Error(`unexpected schema inspection result: ${result.stdout.trim()}`);
+  }
+}
+
+async function runMigration(context, label) {
+  return compose(context, label, "run", "--rm", "-T", "-e", `DATABASE_URL=${context.databaseUrl}`, "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:migrate");
+}
+
+async function interruptionCheck(context) {
+  const volume = `${context.namespace}_postgres-data`;
+  const container = `${context.namespace}_migration_interrupt`;
+  const before = await runStep(context, "record verification volume", "docker", ["volume", "inspect", "--format", "{{.CreatedAt}}", volume]);
+  const started = await compose(context, "start interruptible migration", "run", "-d", "--name", container,
+    "-e", `DATABASE_URL=${context.databaseUrl}`, "-e", "BLOG_X_MIGRATION_HOLD_MS=30000",
+    "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:migrate");
+  if (!started.stdout.trim()) throw new Error("interruptible migration container did not start");
+  let marker = false;
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const logs = await command("docker", ["logs", container], { allowFailure: true });
+    if (logs.combined.includes("migration lock acquired")) { marker = true; break; }
+    await new Promise((accept) => setTimeout(accept, 250));
+  }
+  if (!marker) throw new Error("migration did not reach the advisory-lock checkpoint");
+  await runStep(context, "interrupt migration process", "docker", ["kill", container]);
+  await runStep(context, "remove interrupted migration container", "docker", ["rm", "-f", container]);
+  const removed = await command("docker", ["inspect", container], { allowFailure: true });
+  if (removed.exitCode === 0) throw new Error("generated interruption container remained after removal");
+  await Promise.all([runMigration(context, "retry migration A"), runMigration(context, "retry migration B")]);
+  await inspectSchema(context);
+  await migrationRetryPreservation(context);
+  const advisoryLocks = await compose(context, "confirm migration advisory lock released", ...psqlArgs(context,
+    "select count(*) from pg_locks where locktype = 'advisory' and granted;"));
+  if (advisoryLocks.stdout.trim() !== "0") throw new Error("generated migration retained an advisory lock owner");
+  const after = await runStep(context, "confirm verification volume identity", "docker", ["volume", "inspect", "--format", "{{.CreatedAt}}", volume]);
+  if (before.stdout.trim() !== after.stdout.trim()) throw new Error("interruption recovery replaced the PostgreSQL volume");
+}
+
+async function migrationRetryPreservation(context) {
+  const slug = `${context.runId}-migration-retained`;
+  await compose(context, "insert migration retry sentinel", ...psqlArgs(context,
+    `insert into articles (title, slug, markdown, status) values ('Migration retry sentinel', '${slug}', 'retained source', 'draft');`));
+  await Promise.all([runMigration(context, "preservation retry migration A"), runMigration(context, "preservation retry migration B")]);
+  await inspectSchema(context);
+  const retained = await compose(context, "confirm migration retry preserved article", ...psqlArgs(context,
+    `select count(*) from articles where slug = '${slug}' and markdown = 'retained source';`));
+  if (retained.stdout.trim() !== "1") throw new Error("migration retry did not preserve the existing article");
+}
+
+async function assertCleanLogs(context) {
+  const result = await compose(context, "capture service logs", "logs", "--no-color", "postgres", "api", "web");
+  const raw = `${context.logs.join("")}\n${result.combined}`;
+  for (const secret of context.secrets) {
+    if (secret && raw.includes(secret)) throw new Error("captured logs contain generated secret material");
+  }
+  if (/blog_x_session=[^;\s\[]/i.test(raw)) throw new Error("captured logs contain a session cookie value");
+}
+
+async function seed(context) {
+  await compose(context, "seed generated administrator", "exec", "-T",
+    "-e", `DATABASE_URL=${context.databaseUrl}`,
+    "-e", `ADMIN_USERNAME=${context.username}`,
+    "-e", `ADMIN_PASSWORD=${context.password}`,
+    "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:seed");
+}
+
+async function resetAcceptanceData(context, label) {
+  await compose(context, label, "exec", "-T", "postgres", "psql", "-U", "blog_x", "-d", context.database,
+    "-c", "truncate table sessions, article_tags, articles, categories, tags, site_pages, media, administrators cascade");
+  await seed(context);
+}
+
+async function runDatabaseSuite(context, variable, file) {
+  const authority = [
+    "-e", `DATABASE_URL=${context.databaseUrl}`,
+    "-e", `${variable}=${context.databaseUrl}`,
+  ];
+  const result = context.phase6Data
+    ? await compose(context, `run ${file}`, "run", "--rm", "-T",
+        "--volume", `${resolve(root, "apps/api")}:/workspace/apps/api:ro`,
+        "--volume", `${resolve(root, "packages/contracts")}:/workspace/packages/contracts:ro`,
+        ...authority, "api", ...semanticTestCommand(file))
+    : await compose(context, `run ${file}`, "exec", "-T", ...authority, "api", ...semanticTestCommand(file));
+  assertSemanticTap(result.combined);
+  recordPhase5Command(context, file, "node-tap-v13", result);
+}
+
+function startManaged(context, label, commandName, args, env) {
+  process.stdout.write(`[local-verify] ${label}\n`);
+  const child = spawn(commandName, args, { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
+  const collect = (chunk) => { context.logs.push(String(chunk)); };
+  child.stdout.on("data", collect);
+  child.stderr.on("data", collect);
+  context.children.push(child);
+  return child;
+}
+
+async function stopManaged(context) {
+  const children = context.children.splice(0).reverse();
+  await Promise.all(children.map((child) => new Promise((accept) => {
+    if (child.exitCode !== null || child.signalCode !== null) return accept();
+    child.once("close", accept);
+    child.kill("SIGTERM");
+    const timer = setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); }, 3_000);
+    timer.unref();
+  })));
+}
+
+async function runFailureRecoveryJourney(context) {
+  const [fixturePort, errorWebPort] = await Promise.all([freePort(), freePort()]);
+  const fixtureOrigin = `http://127.0.0.1:${fixturePort}`;
+  const errorWebOrigin = `http://127.0.0.1:${errorWebPort}`;
+  startManaged(context, "start local unavailable-response fixture", process.execPath,
+    ["--import", "tsx", "apps/web/e2e/public-error-fixture.ts"], { ...process.env, ERROR_FIXTURE_PORT: String(fixturePort) });
+  await waitForHttp(`${fixtureOrigin}/health`);
+  startManaged(context, "start local recovery Web", process.execPath,
+    ["apps/web/node_modules/next/dist/bin/next", "start", "apps/web", "-p", String(errorWebPort)],
+    { ...process.env, INTERNAL_API_ORIGIN: fixtureOrigin, PUBLIC_ORIGIN: errorWebOrigin });
+  await waitForHttp(errorWebOrigin);
+  await runStep(context, "run Phase 2 unavailable/retry browser journey", "corepack",
+    ["pnpm", "exec", "playwright", "test", "apps/web/e2e/public-errors.spec.ts", "--workers=1"],
+    { env: { ...process.env, E2E_ERROR_WEB_ORIGIN: errorWebOrigin, E2E_ERROR_FIXTURE_ORIGIN: fixtureOrigin } });
+  await stopManaged(context);
+}
+
+async function fullPhaseChecks(context, phase2Full) {
+  await runStep(context, "typecheck workspace", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
+  await runStep(context, "build workspace", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin } });
+  await runStep(context, "run operations safety fixtures", "corepack", ["pnpm", "test:ops"], { env: process.env });
+  const databaseSuites = [
+    ["AUTH_TEST_DATABASE_URL", "apps/api/test/auth-session.test.ts"],
+    ["ARTICLE_TEST_DATABASE_URL", "apps/api/test/article-draft-preview.test.ts"],
+    ["LIFECYCLE_TEST_DATABASE_URL", "apps/api/test/article-lifecycle.test.ts"],
+    ["PUBLIC_LIST_TEST_DATABASE_URL", "apps/api/test/public-list.test.ts"],
+    ["PUBLIC_VISIBILITY_TEST_DATABASE_URL", "apps/api/test/public-visibility.test.ts"],
+    ...(phase2Full ? [
+      ["AUTH_TEST_DATABASE_URL", "apps/api/test/taxonomy.test.ts"],
+      ["AUTH_TEST_DATABASE_URL", "apps/api/test/pages-archive.test.ts"],
+      ["AUTH_TEST_DATABASE_URL", "apps/api/test/media.test.ts"],
+      ["PHASE2_TEST_DATABASE_URL", "apps/api/test/phase2-public-visibility.test.ts"],
+    ] : []),
+  ];
+  for (const [variable, file] of databaseSuites) {
+    await runDatabaseSuite(context, variable, file);
+  }
+  await resetAcceptanceData(context, "clear Phase acceptance data");
+  const playwrightEnvironment = {
+    ...process.env,
+    E2E_WEB_ORIGIN: context.webOrigin,
+    E2E_ADMIN_USERNAME: context.username,
+    E2E_ADMIN_PASSWORD: context.password,
+    E2E_RUN_ID: context.runId,
+  };
+  const journey = phase2Full ? "apps/web/e2e/phase2-reading.spec.ts" : "apps/web/e2e/phase1-publishing.spec.ts";
+  const browser = await runStep(context, `run whole ${phase2Full ? "Phase 2" : "Phase 1"} browser journey`, "corepack", ["pnpm", "exec", "playwright", "test", journey, "--workers=1"], { env: playwrightEnvironment });
+  assertPlaywrightJourney(browser.combined);
+  recordPhase5Command(context, journey, "playwright-line-v1", browser);
+  if (phase2Full) await runFailureRecoveryJourney(context);
+  if (!phase2Full) {
+    const retainedSlug = `${context.runId}-changed`;
+    const retained = await compose(context, "verify soft-deleted source retention", ...psqlArgs(context,
+      `select count(*) from articles where slug = '${retainedSlug}' and deleted_at is not null and length(markdown) > 0;`));
+    if (retained.stdout.trim() !== "1") throw new Error("soft-deleted source/slug retention diagnostic failed");
+  }
+}
+
+async function runPhase3Checks(context, mode) {
+  const selection = phase3Selection(mode);
+  for (const [variable, file] of selection.databaseSuites) await runDatabaseSuite(context, variable, file);
+  if (selection.webSuites.length) await resetAcceptanceData(context, "clear Phase 3 browser acceptance data");
+  for (const file of selection.webSuites) {
+    if (file.endsWith(".test.ts")) {
+      const result = await runStep(context, `run ${file}`, "corepack", ["pnpm", "exec", "tsx", "--test", "--test-reporter=tap", file], { env: process.env });
+      assertSemanticTap(result.combined);
+      recordPhase5Command(context, file, "node-tap-v13", result);
+      continue;
+    }
+    const result = await runStep(context, `run ${file}`, "corepack", ["pnpm", "exec", "playwright", "test", file, "--workers=1"], {
+      env: {
+        ...process.env,
+        E2E_WEB_ORIGIN: context.publicOrigin,
+        E2E_ADMIN_USERNAME: context.username,
+        E2E_ADMIN_PASSWORD: context.password,
+        E2E_RUN_ID: context.runId,
+      },
+    });
+    assertPlaywrightJourney(result.combined);
+    recordPhase5Command(context, file, "playwright-line-v1", result);
+  }
+}
+
+async function runPhase4SecurityChecks(context, options = {}) {
+  const selection = phase4Selection("security");
+  if (!options.skipWorkspace) {
+    await runStep(context, "typecheck workspace", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
+    await runStep(context, "build workspace", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin } });
+    await runStep(context, "run operations safety fixtures", "corepack", ["pnpm", "test:ops"], { env: process.env });
+  }
+  if (!options.skipPriorDatabase) for (const [variable, file] of selection.databaseSuites) await runDatabaseSuite(context, variable, file);
+  for (const file of selection.apiSuites) await runDatabaseSuite(context, "AUTH_TEST_DATABASE_URL", file);
+}
+
+async function preflightCachedImages(context) {
+  await runStep(context, "preflight exact cached base images", "docker", ["image", "inspect", "node:24.15.0-alpine", "postgres:18-alpine"]);
+}
+
+async function preflightOfflinePrerequisites(context) {
+  process.stdout.write("[local-verify] preflight complete offline dependency and image authority\n");
+  try {
+    for (const path of ["package.json", "pnpm-lock.yaml", "node_modules", "node_modules/.pnpm"]) {
+      const info = await lstat(resolve(root, path));
+      if (path.startsWith("node_modules") ? !info.isDirectory() : !info.isFile()) throw new Error("dependency authority type mismatch");
+    }
+    await command("corepack", ["pnpm", "-r", "list", "--depth", "0"], { env: process.env });
+    const images = await command("docker", ["image", "inspect", "--format", "{{.Id}}", "node:24.15.0-alpine", "postgres:18-alpine", apiImage, webImage]);
+    const ids = images.stdout.trim().split(/\r?\n/);
+    if (ids.length !== 4 || ids.some((id) => !/^sha256:[a-f0-9]{64}$/.test(id))) throw new Error("cached image identity is unavailable");
+    for (const image of [apiImage, webImage]) {
+      const history = await command("docker", ["history", "--no-trunc", image]);
+      if (!/pnpm install --frozen-lockfile/.test(history.combined)) throw new Error("dependency installation cache record is unavailable");
+    }
+  } catch {
+    throw new Error("OFFLINE PREREQUISITE MISSING: prepared dependency tree, pinned base images, verifier images, and install cache are required");
+  }
+}
+
+async function exerciseApiRecovery(context) {
+  const postgresVolume = `${context.namespace}_postgres-data`;
+  const beforeVolumes = await Promise.all([postgresVolume, context.mediaVolume].map((volume) => command("docker", ["volume", "inspect", "--format", "{{.CreatedAt}}", volume])));
+  const apiContainer = await compose(context, "resolve exact API container", "ps", "-q", "api");
+  const containerId = apiContainer.stdout.trim();
+  if (!/^[a-f0-9]{12,64}$/.test(containerId)) throw new Error("exact API container could not be resolved");
+  const before = await runStep(context, "record API restart count", "docker", ["inspect", "--format", "{{.RestartCount}}", containerId]);
+  // Docker activates restart policies only after a container has stayed up for
+  // roughly ten seconds; make that daemon contract explicit before fault injection.
+  await new Promise((accept) => setTimeout(accept, 10_000));
+  const processList = await runStep(context, "resolve actual API process", "docker", ["exec", containerId, "ps", "-o", "pid,ppid,args"]);
+  const applicationLine = processList.stdout.split(/\r?\n/).find((line) => line.includes("src/app.ts") && line.includes("node --require"));
+  const applicationPid = applicationLine?.trim().split(/\s+/, 1)[0];
+  if (!applicationPid || !/^\d+$/.test(applicationPid) || applicationPid === "1") throw new Error("actual API application process could not be resolved");
+  await runStep(context, "terminate generated API process", "docker", ["exec", containerId, "kill", "-KILL", applicationPid]);
+  const deadline = Date.now() + 30_000;
+  let recovered = false;
+  let restartCount = Number(before.stdout.trim());
+  while (Date.now() < deadline) {
+    try {
+      const current = await command("docker", ["inspect", "--format", "{{.RestartCount}}", containerId], { allowFailure: true });
+      restartCount = Number(current.stdout.trim());
+      if (restartCount > Number(before.stdout.trim())) {
+        const response = await fetch(`${context.webOrigin}/api/health`);
+        if (response.ok) { recovered = true; break; }
+      }
+    } catch { /* bounded recovery is still in progress */ }
+    await new Promise((accept) => setTimeout(accept, 250));
+  }
+  if (!recovered) throw new Error("generated API did not recover through the Web origin within 30 seconds");
+  process.stdout.write(`[local-verify] confirm API restart count ${restartCount}\n`);
+  await compose(context, "wait for recovered service health", "up", "-d", "--wait", "api", "web");
+  const afterVolumes = await Promise.all([postgresVolume, context.mediaVolume].map((volume) => command("docker", ["volume", "inspect", "--format", "{{.CreatedAt}}", volume])));
+  if (beforeVolumes.some((value, index) => value.stdout.trim() !== afterVolumes[index].stdout.trim())) throw new Error("API recovery replaced a persistent volume");
+}
+
+async function runPhase4OperationsChecks(context) {
+  const selection = phase4Selection("operations");
+  process.stdout.write("[local-verify] inspect effective operations config\n");
+  const effective = await command("docker-compose", composeArgs(context, "config", "--format", "json"), { env: composeEnvironment(context) });
+  if (!effective.stdout.includes('"restart": "unless-stopped"') || !effective.stdout.includes('"driver": "local"')) throw new Error("effective operations config is missing lifecycle or log policy");
+  for (const file of selection.nodeSuites) {
+    const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
+    assertSemanticTap(result.combined);
+    recordPhase5Command(context, file, "node-tap-v13", result);
+  }
+  await exerciseApiRecovery(context);
+  const status = await runStep(context, "run redacted local operator status", "node", ["scripts/ops-status.mjs", `--project=${context.namespace}`, `--web-origin=${context.webOrigin}`]);
+  if (!status.stdout.includes("BLOG X STATUS PASS") || !status.stdout.includes("TLS NOT_EVALUATED")) throw new Error("local operator status did not pass with TLS not evaluated");
+  const backupRoot = await mkdtemp(resolve(tmpdir(), "blog-x-backup-verify-"));
+  try {
+    process.stdout.write("[local-verify] create complete atomic backup set\n");
+    const backup = await createBackupSet({
+      format: "blog-x-backup-policy", version: 1, destination_root: backupRoot,
+      off_host_destination_ref: "external:off-host-destination", retention_decision_ref: "external:retention-decision",
+      encryption_key_ref: "external:encryption-authority", alert_recipient_ref: "external:alert-recipient",
+      secret_authority_ref: "external:service-secret-authority", schedule: "daily",
+      compose_project: context.namespace, database_name: context.database, media_root: "/var/lib/blog-x/media",
+      config_inventory_sources: ["compose.yaml", "ops/production-config.names.json", "ops/topology-policy.json"],
+    }, { env: composeEnvironment(context) });
+    await verifyBackupSet(backup.finalRoot);
+    process.stdout.write(`[local-verify] ${backup.message}\n`);
+  } finally {
+    await cleanupGeneratedBackupRoot(backupRoot);
+  }
+}
+
+function generatedBackupPolicy(context, backupRoot) {
+  return {
+    format: "blog-x-backup-policy", version: 1, destination_root: backupRoot,
+    off_host_destination_ref: "external:off-host-destination", retention_decision_ref: "external:retention-decision",
+    encryption_key_ref: "external:encryption-authority", alert_recipient_ref: "external:alert-recipient",
+    secret_authority_ref: "external:service-secret-authority", schedule: "daily",
+    compose_project: context.namespace, database_name: context.database, media_root: "/var/lib/blog-x/media",
+    config_inventory_sources: ["compose.yaml", "ops/production-config.names.json", "ops/topology-policy.json"],
+  };
+}
+
+async function seedRestoreFixture(context, includePhase5Legacy = false) {
+  await resetAcceptanceData(context, "clear restore source fixture data");
+  await resetGeneratedAcceptanceMedia(context);
+  const mediaId = "44444444-4444-4444-8444-444444444444";
+  const categoryId = "11111111-1111-4111-8111-111111111111";
+  const tagId = "22222222-2222-4222-8222-222222222222";
+  const articleIds = [
+    "33333333-3333-4333-8333-333333333331", "33333333-3333-4333-8333-333333333332",
+    "33333333-3333-4333-8333-333333333333", "33333333-3333-4333-8333-333333333334",
+    "33333333-3333-4333-8333-333333333335",
+  ];
+  const publishedSlug = `${context.runId}-restore-published`;
+  const legacyArticleId = "66666666-6666-4666-8666-666666666666";
+  const legacyArticleSlug = `${context.runId}-legacy-review-required`;
+  const hiddenSlugs = ["draft", "offline", "deleted", "null-publication"].map((state) => `${context.runId}-restore-${state}`);
+  const publishedTitle = `恢复演练公开文章 ${context.runId}`;
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+  const mediaRoot = await mkdtemp(resolve(tmpdir(), "blog-x-media-verify-"));
+  try {
+    const sourcePath = resolve(mediaRoot, `${mediaId}.bin`);
+    const derivativePath = resolve(mediaRoot, `${mediaId}.png`);
+    await writeFile(sourcePath, png);
+    await writeFile(derivativePath, png);
+    const api = await compose(context, "resolve source API for media fixture", "ps", "-q", "api");
+    const containerId = api.stdout.trim();
+    if (!/^[a-f0-9]{12,64}$/.test(containerId)) throw new Error("source API container is unavailable for restore fixture");
+    await runStep(context, "create source media fixture directories", "docker", ["exec", containerId, "mkdir", "-p", "/var/lib/blog-x/media/source", "/var/lib/blog-x/media/derivative"]);
+    await runStep(context, "copy source media fixture", "docker", ["cp", sourcePath, `${containerId}:/var/lib/blog-x/media/source/${mediaId}.bin`]);
+    await runStep(context, "copy derivative media fixture", "docker", ["cp", derivativePath, `${containerId}:/var/lib/blog-x/media/derivative/${mediaId}.png`]);
+  } finally {
+    await cleanupGeneratedMediaRoot(mediaRoot);
+  }
+  const timestamp = "2026-08-09T12:00:00.000Z";
+  const query = [
+    `insert into categories (id,name,slug,created_at,updated_at) values ('${categoryId}','恢复分类','restore-category','${timestamp}','${timestamp}');`,
+    `insert into tags (id,name,slug,created_at,updated_at) values ('${tagId}','恢复标签','restore-tag','${timestamp}','${timestamp}');`,
+    `insert into media (id,source_key,derivative_key,source_mime_type,derivative_mime_type,source_bytes,derivative_bytes,width,height,created_at) values ('${mediaId}','source/${mediaId}.bin','derivative/${mediaId}.png','image/png','image/png',${png.length},${png.length},1,1,'${timestamp}');`,
+    `insert into articles (id,title,summary,slug,markdown,seo_description,status,published_at,created_at,updated_at,category_id,cover_media_id,cover_alt,cover_decorative) values ('${articleIds[0]}','${publishedTitle}','完整恢复后的公开摘要','${publishedSlug}','# 恢复正文\\n\\n![恢复图片](/media/${mediaId})','恢复演练','published','${timestamp}','${timestamp}','${timestamp}','${categoryId}','${mediaId}','恢复演练封面',false);`,
+    `insert into articles (id,title,summary,slug,markdown,status,created_at,updated_at,category_id) values ('${articleIds[1]}','恢复草稿','draft-secret','${hiddenSlugs[0]}','# draft-secret','draft','${timestamp}','${timestamp}','${categoryId}');`,
+    `insert into articles (id,title,summary,slug,markdown,status,published_at,created_at,updated_at) values ('${articleIds[2]}','恢复下线','offline-secret','${hiddenSlugs[1]}','# offline-secret','unpublished','${timestamp}','${timestamp}','${timestamp}');`,
+    `insert into articles (id,title,summary,slug,markdown,status,published_at,deleted_at,created_at,updated_at) values ('${articleIds[3]}','恢复删除','deleted-secret','${hiddenSlugs[2]}','# deleted-secret','published','${timestamp}','${timestamp}','${timestamp}','${timestamp}');`,
+    `insert into articles (id,title,summary,slug,markdown,status,published_at,created_at,updated_at) values ('${articleIds[4]}','恢复空发布时间','null-secret','${hiddenSlugs[3]}','# null-secret','published',null,'${timestamp}','${timestamp}');`,
+    ...(includePhase5Legacy ? [`insert into articles (id,title,summary,cover_url,slug,markdown,status,published_at,created_at,updated_at) values ('${legacyArticleId}','遗留媒体复原文章','保留原始遗留媒体数据','https://images.example.test/legacy-cover.png','${legacyArticleSlug}','# 遗留媒体\\n\\n![历史图片](https://images.example.test/legacy-image.png)\\n\\n[外部文档](https://docs.example.test/legacy)','published','${timestamp}','${timestamp}','${timestamp}');`] : []),
+    `insert into article_tags (article_id,tag_id) values ('${articleIds[0]}','${tagId}'),('${articleIds[1]}','${tagId}');`,
+    `insert into site_pages (id,key,title,markdown,status,version,created_at,updated_at) values ('55555555-5555-4555-8555-555555555555','about','恢复后的关于页','# 关于恢复','published','${timestamp}','${timestamp}','${timestamp}');`,
+  ].join(" ");
+  await compose(context, "seed retained restore authority fixture", ...psqlArgs(context, query));
+  await runMigration(context, "classify retained restore media state");
+  await inspectSchema(context);
+  return { mediaId, publishedSlug, publishedTitle, hiddenSlugs, ...(includePhase5Legacy ? { legacyArticleId, legacyArticleSlug } : {}) };
+}
+
+async function runPhase4RestoreChecks(context, includePhase5Legacy = false, browserSuite = phase4Selection("restore").browserSuite) {
+  const selection = phase4Selection("restore");
+  for (const file of selection.nodeSuites) {
+    const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
+    assertSemanticTap(result.combined);
+    recordPhase5Command(context, file, "node-tap-v13", result);
+  }
+  const fixture = await seedRestoreFixture(context, includePhase5Legacy);
+  const backupRoot = await mkdtemp(resolve(tmpdir(), "blog-x-backup-verify-"));
+  const restoreNamespace = generatedRestoreNamespace();
+  const suffix = restoreNamespace.slice("blogxrestore_".length);
+  const restorePort = await freePort();
+  const restoreContext = {
+    namespace: restoreNamespace, database: `blog_x_restore_${suffix}`, webPort: restorePort,
+    publicOrigin: `http://127.0.0.1:${restorePort}`, webOrigin: `http://127.0.0.1:${restorePort}`,
+    mediaVolume: `${restoreNamespace}_media-data`, logs: context.logs, secrets: context.secrets,
+    phase5Recorder: context.phase5Recorder, phase5SuiteIds: context.phase5SuiteIds,
+  };
+  const restoreRoot = resolve(tmpdir(), `blog-x-restore-verify-${randomBytes(6).toString("hex")}`);
+  try {
+    process.stdout.write("[local-verify] create source backup for isolated restore\n");
+    const backup = await createBackupSet(generatedBackupPolicy(context, backupRoot), { env: composeEnvironment(context) });
+    await verifyBackupSet(backup.finalRoot);
+    process.stdout.write("[local-verify] preflight and restore into generated namespace\n");
+    const restored = await restoreBackupSet({
+      backupRoot: backup.finalRoot, restoreRoot, namespace: restoreContext.namespace,
+      database: restoreContext.database, mediaVolume: restoreContext.mediaVolume, webOrigin: restoreContext.webOrigin,
+    }, { env: composeEnvironment(restoreContext) });
+    if (restored.message !== `RESTORE READY ${restoreContext.namespace}`) throw new Error("restore did not report its exact generated namespace");
+    await waitForHttp(restoreContext.webOrigin);
+    const api = await compose(restoreContext, "resolve restored API for authority comparison", "ps", "-q", "api");
+    const containerId = api.stdout.trim();
+    if (!/^[a-f0-9]{12,64}$/.test(containerId)) throw new Error("restored API container is unavailable");
+    await runStep(context, "create restored comparison root", "docker", ["exec", containerId, "mkdir", "-p", "/tmp/blog-x-restore-expected"]);
+    await runStep(context, "copy immutable backup evidence for comparison", "docker", ["cp", `${backup.finalRoot}/.`, `${containerId}:/tmp/blog-x-restore-expected`]);
+    const authorityEnvironment = [
+      "-e", `DATABASE_URL=postgres://blog_x@postgres:5432/${restoreContext.database}`,
+      "-e", `BACKUP_RESTORE_TEST_DATABASE_URL=postgres://blog_x@postgres:5432/${restoreContext.database}`,
+      "-e", "BACKUP_RESTORE_EXPECTED_ROOT=/tmp/blog-x-restore-expected",
+      "-e", "MEDIA_ROOT=/var/lib/blog-x/media",
+      ...(includePhase5Legacy ? ["-e", `PHASE5_LEGACY_ARTICLE_ID=${fixture.legacyArticleId}`] : []),
+    ];
+    const authority = await compose(restoreContext, `run ${selection.databaseSuite}`, "exec", "-T",
+      ...authorityEnvironment, "api", ...semanticTestCommand(selection.databaseSuite));
+    assertSemanticTap(authority.combined);
+    recordPhase5Command(restoreContext, selection.databaseSuite, "node-tap-v13", authority);
+    const browser = await runStep(context, `run ${browserSuite}`, "corepack",
+      ["pnpm", "exec", "playwright", "test", browserSuite, "--workers=1"], {
+        env: { ...process.env, E2E_WEB_ORIGIN: restoreContext.webOrigin, E2E_RESTORE_WEB_ORIGIN: restoreContext.webOrigin,
+          E2E_RESTORE_PUBLISHED_SLUG: fixture.publishedSlug, E2E_RESTORE_PUBLISHED_TITLE: fixture.publishedTitle,
+          E2E_RESTORE_MEDIA_ID: fixture.mediaId, E2E_RESTORE_HIDDEN_SLUGS: fixture.hiddenSlugs.join(","),
+          ...(includePhase5Legacy ? { PHASE5_LEGACY_ARTICLE_ID: fixture.legacyArticleId, PHASE5_LEGACY_ARTICLE_SLUG: fixture.legacyArticleSlug } : {}) },
+      });
+    assertPlaywrightJourney(browser.combined);
+    recordPhase5Command(context, browserSuite, "playwright-line-v1", browser);
+    await verifyBackupSet(backup.finalRoot);
+  } finally {
+    await command("docker-compose", composeArgs(restoreContext, "down", "--remove-orphans", "--volumes"), { env: composeEnvironment(restoreContext), allowFailure: true });
+    await cleanupGeneratedRestoreRoot(restoreRoot);
+    await cleanupGeneratedBackupRoot(backupRoot);
+  }
+}
+
+async function runPhase4ReleaseChecks(context) {
+  const result = await runStep(context, "run scripts/release-gate.test.mjs", "node", ["--test", "--test-reporter=tap", "scripts/release-gate.test.mjs"], { env: process.env });
+  assertSemanticTap(result.combined);
+  recordPhase5Command(context, "scripts/release-gate.test.mjs", "node-tap-v13", result);
+  const blocked = await runStep(context, "confirm canonical production release remains BLOCKED", "node",
+    ["scripts/release-gate.mjs", "--evidence=ops/release-evidence.blocked.json", "--expect-blocked"], { env: process.env });
+  if (!blocked.stdout.startsWith("RELEASE BLOCKED ")) throw new Error("canonical release evidence did not remain explicitly BLOCKED");
+  context.canonicalDecision = blocked;
+}
+
+async function resetGeneratedAcceptanceMedia(context) {
+  validateNamespace(context.namespace);
+  validateMediaVolume(context.mediaVolume, context.namespace);
+  const api = await compose(context, "resolve exact generated API for media fixture reset", "ps", "-q", "api");
+  const containerId = api.stdout.trim();
+  if (!/^[a-f0-9]{12,64}$/.test(containerId)) throw new Error("generated API container is unavailable for media fixture reset");
+  const program = [
+    "const fs=require('node:fs');",
+    "const root=process.env.MEDIA_ROOT;",
+    "if(root!=='/var/lib/blog-x/media')process.exit(2);",
+    "for(const name of ['source','derivative']){const target=root+'/'+name;fs.rmSync(target,{recursive:true,force:true});fs.mkdirSync(target,{recursive:true,mode:0o700});}",
+  ].join("");
+  await runStep(context, "reset only generated acceptance media fixtures", "docker", ["exec", containerId, "node", "-e", program]);
+}
+
+async function runPhase4FullChecks(context, options = {}) {
+  phase4Selection("full");
+  await fullPhaseChecks(context, true);
+  await runPhase3Checks(context, "full");
+  await runPhase4SecurityChecks(context, { skipWorkspace: true, skipPriorDatabase: true });
+  await resetGeneratedAcceptanceMedia(context);
+  await runPhase4OperationsChecks(context);
+  await runPhase4RestoreChecks(context, options.includePhase5Legacy === true);
+  await runPhase4ReleaseChecks(context);
+  process.stdout.write("[local-verify] LOCAL PHASE 4 READINESS PASS; RELEASE BLOCKED\n");
+}
+
+async function runPhase6DataChecks(context) {
+  const selection = phase6Selection("data");
+  if (!context.internalRun) {
+    await runStep(context, "typecheck workspace", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
+    await runStep(context, "build workspace", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin } });
+  }
+  await resetAcceptanceData(context, "clear Phase 6 data acceptance fixtures");
+  for (const [variable, file] of selection.databaseSuites) await runDatabaseSuite(context, variable, file);
+  for (const file of selection.nodeSuites) {
+    const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
+    assertSemanticTap(result.combined);
+  }
+  await inspectSchema(context);
+  const boundary = await runStep(context, `run ${selection.boundarySuite}`, "corepack", ["pnpm", "check:boundaries"], { env: process.env });
+  parseBoundaryResult(boundary.combined);
+  const blocked = await runStep(context, "confirm canonical production release remains BLOCKED", "node",
+    ["scripts/release-gate.mjs", "--evidence=ops/release-evidence.blocked.json", "--expect-blocked"], { env: process.env });
+  if (!blocked.stdout.startsWith("RELEASE BLOCKED ")) throw new Error("canonical release evidence did not remain explicitly BLOCKED");
+  process.stdout.write("[local-verify] LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED\n");
+}
+
+async function runPhase5MediaChecks(context, options = {}) {
+  const selection = phase5MediaSelection();
+  for (const [variable, file] of selection.databaseSuites) await runDatabaseSuite(context, variable, file);
+  for (const file of selection.apiSuites) {
+    const result = await compose(context, `run ${file}`, "exec", "-T", "api", ...semanticTestCommand(file));
+    assertSemanticTap(result.combined);
+    recordPhase5Command(context, file, "node-tap-v13", result);
+  }
+  for (const file of selection.nodeSuites) {
+    const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
+    assertSemanticTap(result.combined);
+    recordPhase5Command(context, file, "node-tap-v13", result);
+  }
+  await resetAcceptanceData(context, "clear Phase 5 fresh-browser acceptance data");
+  const freshBrowser = await runStep(context, `run ${selection.browserSuites[0]}`, "corepack",
+    ["pnpm", "exec", "playwright", "test", selection.browserSuites[0], "--workers=1"], {
+      env: {
+        ...process.env,
+        E2E_WEB_ORIGIN: context.webOrigin,
+        E2E_ADMIN_USERNAME: context.username,
+        E2E_ADMIN_PASSWORD: context.password,
+        E2E_RUN_ID: context.runId,
+      },
+    });
+  assertPlaywrightJourney(freshBrowser.combined);
+  recordPhase5Command(context, selection.browserSuites[0], "playwright-line-v1", freshBrowser);
+  if (options.includeRestore !== false) await runPhase4RestoreChecks(context, true, selection.browserSuites[1]);
+}
+
+function generatedProductionProject() {
+  return `blogxprodverify_${randomBytes(6).toString("hex")}`;
+}
+
+function validateGeneratedProductionPath(value, prefix) {
+  const target = resolve(value ?? "");
+  if (dirname(target) !== resolve(tmpdir()) || !new RegExp(`^${prefix}-[A-Za-z0-9_-]{6,64}$`).test(basename(target))) {
+    throw new Error("production-shaped cleanup target is not exact");
+  }
+  return target;
+}
+
+async function cleanupPhase5ProductionAuthorities(authorities) {
+  for (const [path, prefix] of Object.entries(authorities)) {
+    validateGeneratedProductionPath(path, prefix);
+    await rm(path, { recursive: true, force: true });
+  }
+}
+
+export async function createPhase5SuiteManifest() {
+  const selection = phase5Selection("full");
+  const sources = [
+    ...selection.databaseSuites.map((item) => ["database", item[1]]),
+    ...selection.apiSuites.map((path) => ["database", path]),
+    ...selection.nodeSuites.map((path) => ["node", path]),
+    ...selection.browserSuites.map((path) => ["browser", path]),
+    ["database", selection.databaseSuite],
+    ["pipeline", "scripts/backup/production-pipeline.mjs"],
+    ["boundary", "scripts/check-boundaries.mjs"],
+  ];
+  const suites = await Promise.all(sources.map(async ([kind, path], index) => ({
+    id: `suite-${String(index + 1).padStart(2, "0")}`,
+    kind,
+    path,
+    sourceSha256: hashText(await readFile(resolve(root, path))),
+  })));
+  if (new Set(suites.map((suite) => suite.path)).size !== suites.length || suites.length !== 30) throw new Error("Phase 5 suite manifest must contain exactly 30 unique sources");
+  return { format: "blog-x-phase5-suite-manifest", version: 2, suites };
+}
+
+async function runPhase5GeneratedPipeline() {
+  const project = generatedProductionProject();
+  const suffix = project.slice("blogxprodverify_".length);
+  const authorities = {
+    sourceBase: await mkdtemp(resolve(tmpdir(), "blog-x-production-source-")),
+    mediaRoot: resolve(tmpdir(), `blog-x-production-media-${suffix}`),
+    mountRoot: await mkdtemp(resolve(tmpdir(), "blog-x-production-mount-")),
+    keyRoot: await mkdtemp(resolve(tmpdir(), "blog-x-production-key-")),
+    resultRoot: await mkdtemp(resolve(tmpdir(), "blog-x-production-result-")),
+    alertRoot: await mkdtemp(resolve(tmpdir(), "blog-x-production-alert-")),
+  };
+  try {
+    await mkdir(authorities.mediaRoot, { mode: 0o700 });
+    await Promise.all(Object.entries(authorities).filter(([name]) => name !== "sourceBase" && name !== "mediaRoot").map(([, path]) => chmod(path, 0o700)));
+    const profileId = "blog-x-mounted-directory-v1";
+    await writeFile(resolve(authorities.mountRoot, "identity.json"), JSON.stringify({ format: "blog-x-mounted-directory", version: 1, profileId }), { mode: 0o600 });
+    const keyPath = resolve(authorities.keyRoot, "data.key");
+    await writeFile(keyPath, randomBytes(32), { mode: 0o600 });
+    const mediaId = "11111111-1111-4111-8111-111111111111";
+    const source = Buffer.from(`phase5-source-${suffix}`);
+    const derivative = Buffer.from(`phase5-derivative-${suffix}`);
+    const inventoryDigest = hashText(`${project}-inventory`);
+    const imageDigest = (name) => `sha256:${hashText(`${project}-${name}`)}`;
+    const policy = {
+      format: "blog-x-production-pipeline-policy", version: 1,
+      sourceAuthority: { kind: "generated-test", sourceBase: authorities.sourceBase },
+      collector: { project, database: `blog_x_prod_${suffix}`, mediaRoot: authorities.mediaRoot },
+      destination: { kind: "generated-test", mountRoot: authorities.mountRoot, profileId },
+      keyAuthority: { kind: "generated-test", keyPath },
+      retention: { policyId: "daily-v1", minimumKnownGood: 1 },
+      resultAuthority: { kind: "generated-test", root: authorities.resultRoot },
+      alertAuthority: { kind: "generated-test", root: authorities.alertRoot },
+    };
+    const result = await runProductionPipeline(policy, {
+      dumpPostgresCustom: async () => Buffer.from(`PGDMP-${project}`),
+      writePortableExportV1: async () => JSON.stringify({ format: "blog-x-portable-export", version: 1, exportedAt: new Date().toISOString(), articles: [], categories: [], tags: [], about: null, media: [{ id: mediaId, width: 1, height: 1, mimeType: "image/webp", createdAt: new Date().toISOString() }] }),
+      copyApiMedia: async () => [{ id: mediaId, sourceKey: `source/${mediaId}.bin`, derivativeKey: `derivative/${mediaId}.webp`, source, derivative }],
+      readAllowlistedInventory: async () => ({
+        migration: { count: 7, fingerprint: inventoryDigest },
+        images: { api: imageDigest("api"), web: imageDigest("web"), postgres: imageDigest("postgres") },
+        configChecksums: [{ path: "compose.yaml", sha256: hashText(await readFile(resolve(root, "compose.yaml"))) }],
+        variableNamesPresent: ["DATABASE_URL", "MEDIA_ROOT", "PUBLIC_ORIGIN"],
+        secretAuthorityRef: "external:service-secret-authority",
+      }),
+      inspectMount: async (mountRoot) => ({ isMountPoint: true, root: mountRoot }),
+    });
+    if (result.scope !== "generated-production-pipeline") throw new Error("generated production pipeline did not retain its exact local scope");
+    return result;
+  } finally {
+    await cleanupPhase5ProductionAuthorities({
+      [authorities.sourceBase]: "blog-x-production-source",
+      [authorities.mediaRoot]: "blog-x-production-media",
+      [authorities.mountRoot]: "blog-x-production-mount",
+      [authorities.keyRoot]: "blog-x-production-key",
+      [authorities.resultRoot]: "blog-x-production-result",
+      [authorities.alertRoot]: "blog-x-production-alert",
+    });
+  }
+}
+
+async function committedImplementationHead({ writerAuthority } = {}) {
+  const dirty = await command("git", ["status", "--porcelain"], { env: process.env });
+  // The writer lock is deliberately held through the final HEAD check and the
+  // atomic replace. It is verifier-owned coordination state, not an
+  // implementation change; every other tracked or untracked path must remain
+  // clean.
+  const permittedLock = writerAuthority ? `?? ${writerAuthority.lockPath.slice(root.length + 1)}` : null;
+  const unexpected = dirty.stdout.split("\n").filter((line) => line && line !== permittedLock);
+  if (unexpected.length) throw new Error("Phase 5 receipt requires a clean committed implementation worktree");
+  const head = await command("git", ["rev-parse", "HEAD"], { env: process.env });
+  const revision = head.stdout.trim();
+  if (!/^[a-f0-9]{40}$/.test(revision)) throw new Error("Phase 5 implementation revision is invalid");
+  return revision;
+}
+
+async function runPhase5FullChecks(context) {
+  const implementationRevision = context.implementationRevision;
+  if (!/^[a-f0-9]{40}$/.test(implementationRevision ?? "")) throw new Error("Phase 5 full gate requires its pre-run committed implementation revision");
+  const startedAt = new Date().toISOString();
+  const manifest = await createPhase5SuiteManifest();
+  context.phase5SuiteIds = new Map(manifest.suites.map((suite) => [suite.path, suite.id]));
+  context.phase5Recorder = createPhase5ResultRecorder(manifest, context.secrets);
+  await runPhase4FullChecks(context, { includePhase5Legacy: true });
+  await runPhase5MediaChecks(context, { includeRestore: false });
+  for (const file of [
+    "scripts/backup/production.test.mjs",
+    "scripts/phase5-receipt.test.mjs",
+    "scripts/phase5-receipt-prohibitions.test.mjs",
+    "scripts/phase5-receipt-concurrency.test.mjs",
+  ]) {
+    const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
+    assertSemanticTap(result.combined);
+    recordPhase5Command(context, file, "node-tap-v13", result);
+  }
+  const pipelineSuiteId = context.phase5SuiteIds.get("scripts/backup/production-pipeline.mjs");
+  const pipelineRuns = await Promise.all([0, 1].map(async () => {
+    const pipelineStartedAt = new Date().toISOString();
+    const result = productionBackupResultSchema.parse(await runPhase5GeneratedPipeline());
+    const commandResult = { startedAt: pipelineStartedAt, completedAt: new Date().toISOString(), exitCode: 0, signal: null, combined: "" };
+    return { result, commandResult };
+  }));
+  const pipelineResults = pipelineRuns.map((run) => run.result);
+  if (pipelineResults.some((result) => result.scope !== "generated-production-pipeline" || result.alertOutcome !== "recorded")
+    || new Set(pipelineResults.map((result) => result.setId)).size !== 2 || new Set(pipelineResults.map((result) => result.receiptSha256)).size !== 2) {
+    throw new Error("parallel generated production pipeline did not retain its local scope");
+  }
+  for (const run of pipelineRuns) context.phase5Recorder.recordStructured(pipelineSuiteId, "production-backup-result-v1", run.commandResult, run.result,
+    { tests: 1, passed: 1, failed: 0, cancelled: 0, skipped: 0, todo: 0 });
+  const boundary = await runStep(context, "run Phase 5 boundary audit", "corepack", ["pnpm", "check:boundaries"], { env: process.env });
+  const boundarySuiteId = context.phase5SuiteIds.get("scripts/check-boundaries.mjs");
+  context.phase5Recorder.recordCommand(boundarySuiteId, "repository-boundary-result-v1", boundary, parseBoundaryResult);
+  await runPhase4ReleaseChecks(context);
+  if (!context.canonicalDecision) throw new Error("Phase 5 full gate did not capture its terminal canonical decision");
+  const suites = context.phase5Recorder.finalize();
+  context.phase5Receipt = {
+    format: "blog-x-phase5-full-gate-receipt", version: 2, implementationRevision,
+    command: ["corepack", "pnpm", "local:verify", "--", "--phase5-full", "--interruption-check", "--parallel-check"],
+    mode: "phase5-full", scope: "local-generated-production-pipeline-and-fake-fault-only", startedAt, completedAt: new Date().toISOString(),
+    suiteManifest: manifest, suiteManifestSha256: hashText(canonicalPhase5ResultBytes(manifest)), suites,
+    canonicalEvidenceSha256: hashText(await readFile(resolve(root, "ops/release-evidence.blocked.json"))),
+    canonicalDecisionSha256: hashText(normalizeCapturedOutput(context.canonicalDecision.combined, context.secrets)), canonicalDecisionState: "BLOCKED",
+  };
+  process.stdout.write("[local-verify] LOCAL PHASE 5 READINESS PASS; RELEASE BLOCKED\n");
+}
+
+async function restoreVerifierOwnedNextEnvironment(before) {
+  const path = resolve(root, "apps/web/next-env.d.ts");
+  const current = await readFile(path, "utf8");
+  if (current !== before) await writeFile(path, before);
+}
+
+async function runSingle(options) {
+  const namespace = validateNamespace(options.namespace ?? generatedNamespace());
+  const database = validateDatabaseName(`blog_x_${namespace.slice("blogxverify_".length)}`, namespace);
+  const webPort = options.webPort ?? await freePort();
+  const phaseLabel = options.phase6Data ? "phase6-" : options.phase5Media || options.phase5Full ? "phase5-" : options.phase4Mode ? "phase4-" : options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
+  const runId = namespace.replace("blogxverify_", phaseLabel);
+  const publicOrigin = validateLoopbackHttpOrigin(`http://127.0.0.1:${webPort}`);
+  const context = {
+    namespace,
+    database,
+    webPort,
+    runId,
+    webOrigin: publicOrigin,
+    publicOrigin,
+    internalApiOrigin: "http://api:3001",
+    databaseUrl: `postgres://blog_x@postgres:5432/${database}`,
+    username: `admin-${runId}`,
+    password: randomBytes(24).toString("base64url"),
+    mediaVolume: validateMediaVolume(`${namespace}_media-data`, namespace),
+    logs: [],
+    secrets: [],
+    children: [],
+    implementationRevision: options.implementationRevision,
+    phase6Data: options.phase6Data,
+    internalRun: options.internalRun,
+  };
+  context.secrets.push(context.password, context.databaseUrl);
+  if (context.publicOrigin === context.internalApiOrigin) throw new Error("public and internal API origins must remain separate");
+  const nextEnvironmentBefore = await readFile(resolve(root, "apps/web/next-env.d.ts"), "utf8");
+  let phase5Receipt;
+
+  try {
+    if (options.phase6Data && !options.skipBuild) {
+      await preflightOfflinePrerequisites(context);
+      process.stdout.write("[local-verify] use prevalidated verifier dependency images with read-only committed Phase 6 sources\n");
+    }
+    else if (options.phase5Full && !options.skipBuild) {
+      await preflightOfflinePrerequisites(context);
+      process.stdout.write("[local-verify] use prevalidated local verifier images for the Phase 5 offline gate\n");
+    }
+    else if ((options.phase4Mode === "full" || options.phase5Media) && !options.skipBuild) await preflightOfflinePrerequisites(context);
+    else if (["operations", "restore"].includes(options.phase4Mode) && !options.skipBuild) await preflightCachedImages(context);
+    if (!options.skipBuild && !options.phase5Full && !options.phase6Data) await compose(context, "build local API and Web images", "build", "api", "web");
+    await compose(context, "start isolated PostgreSQL", "up", "-d", "--wait", "postgres");
+    if (options.interruptionCheck) await interruptionCheck(context);
+    else {
+      await Promise.all([runMigration(context, "concurrent migration A"), runMigration(context, "concurrent migration B")]);
+      await inspectSchema(context);
+    }
+    if (!options.interruptionCheck) await migrationRetryPreservation(context);
+    await compose(context, "start isolated API and Web", "up", "-d", "--wait", "api", "web");
+    await runStep(context, "confirm exact generated media volume", "docker", ["volume", "inspect", context.mediaVolume]);
+    await waitForHttp(context.webOrigin);
+    await compose(context, "verify active schema", "exec", "-T", "-e", `DATABASE_URL=${context.databaseUrl}`,
+      "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:schema:verify");
+    await seed(context);
+    if (options.phase6Data) {
+      await runPhase6DataChecks(context);
+    }
+    else if (options.phase4Mode === "security") {
+      await runPhase4SecurityChecks(context);
+    }
+    else if (options.phase4Mode === "operations") {
+      await runPhase4OperationsChecks(context);
+    }
+    else if (options.phase4Mode === "restore") {
+      await runPhase4RestoreChecks(context);
+    }
+    else if (options.phase4Mode === "full") {
+      await runPhase4FullChecks(context);
+    }
+    else if (options.phase5Full) {
+      await runPhase5FullChecks(context);
+      phase5Receipt = context.phase5Receipt;
+    }
+    else if (options.phase5Media) {
+      await runPhase5MediaChecks(context);
+    }
+    else if (options.phase3Mode === "full") {
+      await fullPhaseChecks(context, true);
+      await runPhase3Checks(context, "full");
+    }
+    else if (options.phase3Mode) await runPhase3Checks(context, options.phase3Mode);
+    else if (options.fullPhase) await fullPhaseChecks(context, options.phase2Full);
+    await assertCleanLogs(context);
+    process.stdout.write(`[local-verify] ${namespace} passed\n`);
+  } finally {
+    await stopManaged(context);
+    validateNamespace(context.namespace);
+    validateDatabaseName(context.database, context.namespace);
+    validateMediaVolume(context.mediaVolume, context.namespace);
+    await command("docker-compose", composeArgs(context, "down", "--remove-orphans", "--volumes"), {
+      env: composeEnvironment(context), allowFailure: true,
+    });
+    await restoreVerifierOwnedNextEnvironment(nextEnvironmentBefore);
+  }
+  return phase5Receipt;
+}
+
+async function parallelCheck(options) {
+  const first = generatedNamespace();
+  const second = generatedNamespace();
+  if (first === second) throw new Error("parallel verification namespaces collided");
+  const [firstPort, secondPort] = await Promise.all([freePort(), freePort()]);
+  if (firstPort === secondPort) throw new Error("parallel verification ports collided");
+  const childMode = options.phase6Data ? "--phase6-data" : ["restore", "full"].includes(options.phase4Mode) ? "--phase4-restore" : "--infrastructure-only";
+  const child = (namespace, webPort) => command(process.execPath,
+    options.phase6Data
+      ? [scriptPath, "--internal-run", "--phase6-data", "--skip-build", `--namespace=${namespace}`, `--web-port=${webPort}`]
+      : [scriptPath, "--internal-run", childMode, "--skip-build", `--namespace=${namespace}`, `--web-port=${webPort}`],
+    { env: process.env });
+  process.stdout.write("[local-verify] run two isolated namespaces in parallel\n");
+  const settled = await Promise.allSettled([child(first, firstPort), child(second, secondPort)]);
+  const failed = settled.find((item) => item.status === "rejected");
+  if (failed) {
+    const output = failed.reason?.result?.combined ?? failed.reason?.message ?? "parallel child failed";
+    throw new Error(`parallel verification child failed\n${redactText(output)}`);
+  }
+  const results = settled.map((item) => item.value);
+  if (!results[0].stdout.includes(`${first} passed`) || !results[1].stdout.includes(`${second} passed`)) {
+    throw new Error("parallel verification did not preserve namespace identity");
+  }
+  if (options.phase6Data && results.some((result) => !result.stdout.includes("LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED"))) {
+    throw new Error("parallel Phase 6 child omitted its terminal data-pass/BLOCKED marker");
+  }
+  if (options.phase6Data) {
+    for (const namespace of [first, second]) {
+      process.stdout.write(`[local-verify] ${namespace} parallel child passed; LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED\n`);
+    }
+  }
+  await Promise.all([confirmGeneratedProjectAbsent(first), confirmGeneratedProjectAbsent(second)]);
+}
+
+async function confirmGeneratedProjectAbsent(namespace) {
+  validateNamespace(namespace);
+  const containers = await command("docker", ["ps", "-aq", "--filter", `label=com.docker.compose.project=${namespace}`]);
+  if (containers.stdout.trim()) throw new Error(`generated project ${namespace} retained a container`);
+  for (const volume of [`${namespace}_postgres-data`, `${namespace}_media-data`]) {
+    const inspected = await command("docker", ["volume", "inspect", volume], { allowFailure: true });
+    if (inspected.exitCode === 0) throw new Error(`generated project ${namespace} retained volume ${volume}`);
+  }
+}
+
+function optionValue(name) {
+  const prefix = `--${name}=`;
+  return process.argv.find((argument) => argument.startsWith(prefix))?.slice(prefix.length);
+}
+
+async function main() {
+  const flags = new Set(process.argv.slice(2));
+  const phase3Modes = ["api", "metadata", "full", "export-api", "export-browser"].filter((mode) => flags.has(`--phase3-${mode}`));
+  const phase4Modes = ["security", "operations", "restore", "full"].filter((mode) => flags.has(`--phase4-${mode}`));
+  const phase5Media = flags.has("--phase5-media");
+  const phase5Full = flags.has("--phase5-full");
+  const phase6Data = flags.has("--phase6-data");
+  if (phase3Modes.length + phase4Modes.length + Number(phase5Media) + Number(phase5Full) + Number(phase6Data) > 1) throw new Error("choose at most one Phase 3, Phase 4, Phase 5, or Phase 6 verification selection");
+  const options = {
+    namespace: optionValue("namespace"),
+    webPort: optionValue("web-port") ? Number(optionValue("web-port")) : undefined,
+    phase2Full: flags.has("--phase2-full"),
+    phase3Mode: phase3Modes[0],
+    phase4Mode: phase4Modes[0],
+    phase5Media,
+    phase5Full,
+    phase6Data,
+    internalRun: flags.has("--internal-run"),
+    fullPhase: !phase4Modes.length && !phase5Media && !phase5Full && !phase6Data && (flags.has("--full-phase") || flags.has("--phase2-full") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run"))),
+    interruptionCheck: flags.has("--interruption-check"),
+    parallelCheck: flags.has("--parallel-check"),
+    skipBuild: flags.has("--skip-build"),
+  };
+
+  if (flags.has("--internal-run") && phase5Full) throw new Error("internal verification children cannot acquire Phase 5 receipt authority");
+
+  await command("docker", ["info"]);
+  await command("docker-compose", ["version"]);
+  const boundaryIssues = await auditRepository(root);
+  if (boundaryIssues.length) throw new Error(boundaryIssues.map((finding) => `${finding.code}: ${finding.path}`).join("\n"));
+  let authority;
+  try {
+    if (options.phase5Full) {
+      options.implementationRevision = await committedImplementationHead();
+      authority = await acquirePhase5ReceiptWriterLock();
+    }
+    const receipt = await runSingle(options);
+    if (options.parallelCheck) await parallelCheck(options);
+    if (options.phase5Full) {
+      if (!receipt) throw new Error("Phase 5 full gate did not produce terminal receipt input");
+      const revision = await committedImplementationHead({ writerAuthority: authority });
+      if (revision !== receipt.implementationRevision || revision !== options.implementationRevision) throw new Error("Phase 5 receipt revision changed after gate execution");
+      await writePhase5ReceiptAtomic(receipt, {
+        cleanWorktree: true, expectedRevision: revision, authority, expectedPredecessor: authority.expectedPredecessor,
+      });
+    }
+  } finally {
+    if (authority) await releasePhase5ReceiptWriterLock(authority);
+  }
+  process.stdout.write("[local-verify] all requested checks passed\n");
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === scriptPath) {
+  main().catch((error) => {
+    console.error(redactText(error instanceof Error ? error.message : String(error)));
+    process.exitCode = 1;
+  });
+}

@@ -1,0 +1,11 @@
+{
+  "format": "blog-x-topology-policy",
+  "version": 1,
+  "browser": { "relativeRoutes": ["/api", "/media"], "directDataPlane": true },
+  "services": {
+    "web": { "hostPublished": true, "bind": "wildcard" },
+    "api": { "hostPublished": true },
+    "postgres": { "hostPublished": true }
+  },
+  "futurePrivateLink": { "required": true, "status": "unresolved" }
+}

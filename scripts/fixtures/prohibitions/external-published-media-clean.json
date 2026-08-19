@@ -1,0 +1,10 @@
+{
+  "format": "blog-x-media-policy",
+  "version": 1,
+  "images": [
+    "/media/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+  ],
+  "coverUrl": "",
+  "legacyMediaReview": "clear",
+  "externalAnchor": "https://docs.example.test/guide"
+}
