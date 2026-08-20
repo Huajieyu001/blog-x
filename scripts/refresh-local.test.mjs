@@ -175,6 +175,35 @@ function atomicFaultFs(base, artifact, site) {
   };
 }
 
+function withdrawalFaultFs(base, site) {
+  const evidencePath = `/virtual-workspace/${LOCAL_DELIVERY_EVIDENCE_PATH}`;
+  const evidenceParent = "/virtual-workspace/ops";
+  let armed = false;
+  let fired = false;
+  const fault = () => {
+    fired = true;
+    throw Object.assign(new Error(`evidence withdrawal ${site} fault`), { code: "EIO" });
+  };
+  return {
+    entries: base.entries,
+    arm() { armed = true; },
+    async lstat(path) { if (armed && !fired && site === "lstat" && path === evidencePath) fault(); return base.lstat(path); },
+    async realpath(path) { if (armed && !fired && site === "realpath" && path === evidencePath) fault(); return base.realpath(path); },
+    readdir: (...args) => base.readdir(...args),
+    mkdir: (...args) => base.mkdir(...args),
+    readFile: (...args) => base.readFile(...args),
+    link: (...args) => base.link(...args),
+    async unlink(path) { if (armed && !fired && site === "unlink" && path === evidencePath) fault(); return base.unlink(path); },
+    async open(path, flags, mode) {
+      const handle = await base.open(path, flags, mode);
+      if (armed && !fired && site === "directory_sync" && path === evidenceParent && flags === "r") {
+        return { ...handle, async sync() { fault(); } };
+      }
+      return handle;
+    },
+  };
+}
+
 test("seed relocation computes both pnpm paths with exact argv and preserves a versioned store", async (t) => {
   const { root, source, neutral } = await fixtureStore(t);
   const runner = fakeRunner([source, neutral]);
@@ -742,7 +771,7 @@ function targetImage(app, id, revision, lock, seedId) {
   return { Id: id, Config: { Image: `blog-x-${app}-local:${revision.slice(0, 12)}`, WorkingDir: "/refresh-workspace", Cmd: ["corepack", "pnpm", "--filter", `@blog-x/${app}`, "start"], Labels: { "org.opencontainers.image.revision": revision, "io.blog-x.lockfile-sha256": lock, "io.blog-x.seed-image-id": seedId, "io.blog-x.application": app, "io.blog-x.public-origin": "http://127.0.0.1:3100", "io.blog-x.refresh-kind": "v1.1-offline-local-delivery" } } };
 }
 
-function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, seedPrerequisite, acceptanceStdout = acceptanceOutput } = {}) {
+function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, rollbackCutoverFault = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, withdrawalFault, seedPrerequisite, acceptanceStdout = acceptanceOutput } = {}) {
   const revision = "a".repeat(40); const lock = createHash("sha256").update("raw-lock\n").digest("hex");
   const old = { api: SHA("a"), web: SHA("b") }; const targetIds = { api: SHA("e"), web: SHA("f") };
   const plan = createRefreshPlan({ revision, lockSha256: lock, apiSeedId: old.api, webSeedId: old.web });
@@ -777,7 +806,10 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
     if (command === "docker") return { stdout: "" };
     if (command === "docker-compose") {
       const joined = args.join(" "); const sql = args.at(-1);
-      if (args.includes("up") && options.env?.BLOG_X_API_IMAGE === old.api) rolledBack = true;
+      if (args.includes("up") && options.env?.BLOG_X_API_IMAGE === old.api) {
+        if (rollbackCutoverFault) throw new Error("old image rollback cutover fault");
+        rolledBack = true;
+      }
       if (joined.endsWith("config --services")) return { stdout: "api\npostgres\nweb\n" };
       if (joined.endsWith("ps --all --format json")) return { stdout: JSON.stringify([{ Service: "api" }, { Service: "postgres" }, { Service: "web" }]) };
       if (args.includes("pg_dump")) return { stdout: "1\tarticle\n2\tarticle\n" };
@@ -800,7 +832,8 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
     throw new Error(`unexpected raw fake argv: ${command} ${args.join(" ")}`);
   };
   evidenceBaseFs = memoryArtifactFs();
-  const evidenceFs = atomicFault ? atomicFaultFs(evidenceBaseFs, "evidence", atomicFault) : evidenceBaseFs;
+  const evidenceFs = atomicFault ? atomicFaultFs(evidenceBaseFs, "evidence", atomicFault)
+    : withdrawalFault ? withdrawalFaultFs(evidenceBaseFs, withdrawalFault) : evidenceBaseFs;
   const fetch = async (url, options) => {
     const path = url.slice("http://127.0.0.1:3100".length);
     if (path === "/api/public/articles?page=1") {
@@ -818,7 +851,10 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
     routeFetches.push({ path, snapshot, rolledBack, stale, options: structuredClone(options) });
     return fakeRouteResponse(url, responses[path]);
   };
-  const runtime = createRefreshTestRuntime({ processBoundary: runner, fs: evidenceFs, fetch, clock(stage) { if (recollectionFault && stage === "failure_recollection" || stageFaults.includes(stage)) throw new Error(`${stage} fault`); }, randomHex: () => "3".repeat(24) });
+  const runtime = createRefreshTestRuntime({ processBoundary: runner, fs: evidenceFs, fetch, clock(stage) {
+    if (stage === "evidence_verification") evidenceFs.arm?.();
+    if (recollectionFault && stage === "failure_recollection" || stageFaults.includes(stage)) throw new Error(`${stage} fault`);
+  }, randomHex: () => "3".repeat(24) });
   const adapter = runtime.createAdapter();
   return { adapter, calls, evidenceFs, old, plan, revision, routeFetches, targetIds, runtime, beginVerification() { verificationMode = true; }, serveStaleVerification() { staleVerification = true; }, serveFinalVerification() { staleVerification = false; } };
 }
@@ -1013,6 +1049,32 @@ test("outer evidence and terminal failures retain rollback authority and cannot 
   await assert.rejects(fixture.evidenceFs.readFile(evidencePath), /ENOENT/);
   assert.doesNotMatch(writes.join(""), /^REVISION |^EVIDENCE |^RELEASE BLOCKED$/m);
   assert.equal((await fixture.runtime.createAttemptStore().assertFailureReportPresent(fixture.revision)).report.stage, "final_output");
+});
+
+test("evidence withdrawal faults cannot block old-image rollback or its verified facts", async () => {
+  for (const withdrawalFault of ["lstat", "realpath", "unlink", "directory_sync"]) {
+    const fixture = liveFixture({ stageFaults: ["final_output"], withdrawalFault });
+    await assert.rejects(fixture.runtime.runCli(), /verify-rollback/i, withdrawalFault);
+    const cutovers = fixture.calls.filter((call) => call.command === "docker-compose" && call.args.includes("up"));
+    assert.deepEqual(cutovers.map((call) => call.options.env), [
+      { BLOG_X_API_IMAGE: fixture.targetIds.api, BLOG_X_WEB_IMAGE: fixture.targetIds.web },
+      { BLOG_X_API_IMAGE: fixture.old.api, BLOG_X_WEB_IMAGE: fixture.old.web },
+    ], withdrawalFault);
+    assert.equal(fixture.routeFetches.some(({ rolledBack, stale }) => rolledBack && stale), true, withdrawalFault);
+    const report = await fixture.runtime.createAttemptStore().assertFailureReportPresent(fixture.revision);
+    assert.equal(report.report.stage, "verify-rollback", withdrawalFault);
+    assert.equal(report.report.errorClass, "evidence_cleanup_error_after_verified_rollback", withdrawalFault);
+    assert.match(report.report.facts.rollback, /^[a-f0-9]{64}$/, withdrawalFault);
+  }
+});
+
+test("runtime rollback and evidence cleanup failures remain jointly classified", async () => {
+  const fixture = liveFixture({ stageFaults: ["final_output"], rollbackCutoverFault: true, withdrawalFault: "unlink" });
+  await assert.rejects(fixture.runtime.runCli(), /rollback-api-web/i);
+  const report = await fixture.runtime.createAttemptStore().assertFailureReportPresent(fixture.revision);
+  assert.equal(report.report.stage, "rollback-api-web");
+  assert.equal(report.report.errorClass, "runtime_rollback_and_evidence_cleanup_error");
+  assert.equal(fixture.calls.filter((call) => call.command === "docker-compose" && call.args.includes("up")).length, 2);
 });
 
 test("stale preflight reaches both builds but exact observation drift stops before cutover", async () => {

@@ -79,6 +79,15 @@ function validDigest(value) { return typeof value === "string" && /^[a-f0-9]{64}
 function validImageId(value) { return typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value); }
 function validBranchRef(value) { return typeof value === "string" && /^refs\/heads\/[^\s\x00-\x1f]+$/.test(value); }
 function same(left, right) { return JSON.stringify(left) === JSON.stringify(right); }
+function rollbackAggregate(kind, errors, message) {
+  const error = new AggregateError(errors, message);
+  Object.defineProperty(error, "rollbackFailureKind", { value: kind });
+  return error;
+}
+function sanitizedErrorClass(error) {
+  if (typeof error?.rollbackFailureKind === "string" && /^[a-z][a-z0-9_-]*$/.test(error.rollbackFailureKind)) return error.rollbackFailureKind;
+  return String(error?.name ?? "error").toLowerCase().replace(/[^a-z0-9_-]/g, "_") || "error";
+}
 function exactKeys(value, keys, label) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !same(Object.keys(value).sort(), [...keys].sort())) fail(`${label} keys are not exact`);
 }
@@ -504,7 +513,8 @@ export function createRawRefreshFactSources({ run, fetch, root = process.cwd(), 
       const status = cleanOutput(await run("git", ["status", "--porcelain"]));
       const ref = cleanOutput(await run("git", ["symbolic-ref", "--quiet", "HEAD"]));
       const implementationRevision = cleanOutput(await run("git", ["rev-parse", "HEAD"]));
-      if (status || !validBranchRef(ref) || !validRevision(implementationRevision)) fail("Git authority is not one clean branch-qualified full revision");
+      const receiptOnlyDuringRollback = state.allowSuccessorReceiptStatus === true && status === `?? ${LOCAL_DELIVERY_EVIDENCE_PATH}`;
+      if (status && !receiptOnlyDuringRollback || !validBranchRef(ref) || !validRevision(implementationRevision)) fail("Git authority is not one clean branch-qualified full revision");
       return { implementationRevision, clean: true, lockfileSha256: digest(await fs.readFile(resolve(root, "pnpm-lock.yaml"))), ref };
     },
     async database() {
@@ -595,7 +605,7 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
   if (!claimStore || !evidenceFs || typeof root !== "string" || typeof randomEvidenceHex !== "function") fail("live adapter raw boundaries are incomplete");
   const run = async (command, args, options = {}) => { assertAllowedRefreshCommand(command, args, options); return runArgv(command, args, options); };
   const tick = (stage) => { try { clock(stage); } catch (error) { error.refreshStage = stage; if (stage === "cutover-api-web") error.refreshBeforeMutation = true; throw error; } };
-  const state = { facts: {}, claim: undefined, acceptance: undefined, targets: {}, targetFacts: { api: null, web: null }, seeds: { api: null, web: null }, oldImages: {}, cutover: false, migrationOneoff: undefined, phase: "constructed" };
+  const state = { facts: {}, claim: undefined, acceptance: undefined, targets: {}, targetFacts: { api: null, web: null }, seeds: { api: null, web: null }, oldImages: {}, cutover: false, migrationOneoff: undefined, rollbackCleanupErrors: [], allowSuccessorReceiptStatus: false, phase: "constructed" };
   let sources; let collect;
   const initializeCollectors = () => {
     if (sources) return;
@@ -771,14 +781,45 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
       }
       if (phase === "rollback-api-web") {
         if (!state.cutover) return;
-        await withdrawPublishedEvidence();
-        if (state.migrationOneoff) { await run("docker", ["rm", "-f", state.migrationOneoff]); state.migrationOneoff = undefined; }
-        await run("docker-compose", ["-p", PROJECT, "-f", COMPOSE_FILE, "up", "-d", "--wait", "--no-build", "--no-deps", "api", "web"], { env: { BLOG_X_API_IMAGE: state.oldImages.api, BLOG_X_WEB_IMAGE: state.oldImages.web } }); return;
+        state.allowSuccessorReceiptStatus = true;
+        const cleanupErrors = [];
+        let runtimeRollbackError;
+        try {
+          await run("docker-compose", ["-p", PROJECT, "-f", COMPOSE_FILE, "up", "-d", "--wait", "--no-build", "--no-deps", "api", "web"], { env: { BLOG_X_API_IMAGE: state.oldImages.api, BLOG_X_WEB_IMAGE: state.oldImages.web } });
+        } catch (error) {
+          runtimeRollbackError = error;
+        }
+        if (state.migrationOneoff) {
+          try { await run("docker", ["rm", "-f", state.migrationOneoff]); }
+          catch (error) { cleanupErrors.push(error); }
+          finally { state.migrationOneoff = undefined; }
+        }
+        try { await withdrawPublishedEvidence(); }
+        catch (error) { cleanupErrors.push(error); }
+        state.rollbackCleanupErrors = cleanupErrors;
+        if (runtimeRollbackError) {
+          throw rollbackAggregate(
+            cleanupErrors.length ? "runtime_rollback_and_evidence_cleanup_error" : "runtime_rollback_error",
+            [runtimeRollbackError, ...cleanupErrors],
+            cleanupErrors.length ? "runtime rollback and evidence cleanup both failed" : "runtime rollback failed",
+          );
+        }
+        return;
       }
       if (phase === "verify-rollback") {
         state.facts.rollback = await collect();
         assertPersistenceTransition(state.facts.postMigration, state.facts.rollback, { stage: "rollback", oldImageIds: state.oldImages, preflightRoutes: state.facts.preflight.routes });
-        await assertEvidenceAbsent(); return;
+        let absenceError;
+        try { await assertEvidenceAbsent(); } catch (error) { absenceError = error; }
+        const cleanupErrors = [...state.rollbackCleanupErrors, ...(absenceError ? [absenceError] : [])];
+        if (cleanupErrors.length) {
+          throw rollbackAggregate(
+            "evidence_cleanup_error_after_verified_rollback",
+            cleanupErrors,
+            "runtime rollback verified but evidence cleanup did not complete durably",
+          );
+        }
+        return;
       }
       fail(`unknown live refresh phase ${phase}`);
     },
@@ -1047,7 +1088,7 @@ export async function runRefreshCliBoundary({ argv, resolveRevision, attemptStor
       catch { failureStage = "failure_recollection"; detail = { baseline: "applicable", recollection: "failed", preservation: "unproved", facts: { preflight: null, current: null, rollback: null } }; }
     }
     if (claim) {
-      const failureReport = { format: "blog-x-local-refresh-failure", version: 1, implementationRevision: revision, claimSha256: claim.sha256, stage: failureStage, errorClass: String(failureError?.name ?? "error").toLowerCase().replace(/[^a-z0-9_-]/g, "_") || "error", ...detail };
+      const failureReport = { format: "blog-x-local-refresh-failure", version: 1, implementationRevision: revision, claimSha256: claim.sha256, stage: failureStage, errorClass: sanitizedErrorClass(failureError), ...detail };
       try { stageBoundary("failure_report_publication"); await attemptStore.writeFailureReport(failureReport); }
       catch (reportError) {
         failureStage = "failure_report_publication";
