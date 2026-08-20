@@ -38,19 +38,35 @@ function sumCounts(values) {
 }
 
 function normalizedRedactedOutput(value) {
-  const output = String(value).replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\r\n?/g, "\n");
-  return output
+  const secretKey = String.raw`(?:password|passwd|pwd|token|secret|api[_-]?key|access[_-]?token|refresh[_-]?token)`;
+  const structuredKey = String.raw`(?:${secretKey}|authorization|cookie)`;
+  let output = String(value).replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\r\n?/g, "\n")
     .replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "[REDACTED_DATABASE_URL]")
-    .replace(/((?:set-)?cookie\s*:\s*[^\n]*blog_x_session=)[^;\s]+/gi, "$1[REDACTED]")
     .replace(/(blog_x_session=)[^;\s]+/gi, "$1[REDACTED]")
-    .replace(/\b(password|token|secret)\s*=\s*[^\s]+/gi, "$1=[REDACTED]");
+    .replace(/(\bauthorization\s*[=:]\s*bearer\s+)[^\s,;]+/gi, "$1[REDACTED]")
+    .replace(/(^|\n)(authorization\s*:\s*)[^\n]*/gi, "$1$2[REDACTED]");
+  output = output.replace(/(^|\n)((?:set-)?cookie\s*:\s*)([^\n]*)/gi, (line, start, header, body) => {
+    const redacted = body.split(";").map((part) => part.replace(/^(\s*[^=;\s]+\s*=\s*).*$/, "$1[REDACTED]")).join(";");
+    return `${start}${header}${redacted}`;
+  });
+  output = output
+    .replace(new RegExp(`("${structuredKey}"\\s*:\\s*)"(?:\\\\.|[^"\\\\])*"`, "gi"), '$1"[REDACTED]"')
+    .replace(new RegExp(`(\\b${secretKey}\\b\\s*:\\s*)(?:"(?:\\\\.|[^"\\\\])*"|'[^'\\r\\n]*'|[^\\s,;}]+)`, "gi"), "$1[REDACTED]")
+    .replace(new RegExp(`(\\b${secretKey}\\b\\s*=\\s*)(?:"(?:\\\\.|[^"\\\\])*"|'[^'\\r\\n]*'|[^\\s,;}]+)`, "gi"), "$1[REDACTED]");
+  assertNoRawSecrets(output, "normalized acceptance");
+  return output;
 }
 
 function assertNoRawSecrets(value, label) {
   const output = String(value);
+  const secretKey = String.raw`(?:password|passwd|pwd|token|secret|api[_-]?key|access[_-]?token|refresh[_-]?token)`;
+  const structuredKey = String.raw`(?:${secretKey}|authorization|cookie)`;
   if (/postgres(?:ql)?:\/\/[^\s]+/i.test(output)
     || /blog_x_session=(?!\[REDACTED\])[^;\s]+/i.test(output)
-    || /\b(?:password|token|secret)\s*=\s*(?!\[REDACTED\])[^\s]+/i.test(output)) {
+    || /\bauthorization\s*[=:]\s*bearer(?!\s+\[REDACTED\])\s+/i.test(output)
+    || new RegExp(`"${structuredKey}"\\s*:\\s*"(?!\\[REDACTED\\])`, "i").test(output)
+    || new RegExp(`\\b${secretKey}\\b\\s*[=:](?!\\s*\\[REDACTED\\])`, "i").test(output)
+    || output.split("\n").filter((line) => /^(?:set-)?cookie\s*:/i.test(line)).some((line) => line.split(":").slice(1).join(":").split(";").some((part) => /=/.test(part) && !/=\s*\[REDACTED\]\s*$/.test(part)))) {
     throw new Error(`${label} output contains raw secret-bearing material`);
   }
 }
@@ -124,8 +140,6 @@ export function parseLocalDeliveryAcceptanceRecord(value) {
 }
 
 export function parseLocalDeliveryAcceptanceOutputs({ phase6Output, phase7Output }) {
-  assertNoRawSecrets(phase6Output, "Phase 6");
-  assertNoRawSecrets(phase7Output, "Phase 7");
   const phase6Lines = String(phase6Output).replace(/\r\n?/g, "\n").split("\n").filter((line) => line.startsWith(phase6Prefix));
   if (phase6Lines.length !== 3) throw new Error("local delivery acceptance requires exactly three Phase 6 result records");
   const phase6Records = phase6Lines.map((line) => parsePhase6Record(JSON.parse(line.slice(phase6Prefix.length))));

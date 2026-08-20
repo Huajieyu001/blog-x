@@ -45,14 +45,12 @@ test("local delivery acceptance only accepts complete BLOCKED Phase 6/7 records 
   assert.deepEqual(parseLocalDeliveryAcceptanceRecord(result), result);
 });
 
-test("local delivery acceptance rejects incomplete, stale, non-pass, unclean, and secret-bearing evidence", () => {
-  const rawDatabaseUrl = ["postgres://user", "password@host/db"].join(":");
+test("local delivery acceptance rejects incomplete, stale, non-pass, and unclean evidence", () => {
   const replacements = [
     [phase6Output.replace(/BLOG X PHASE6 DATA RESULT.*\n/, ""), phase7Output, /three|record/i],
     [phase6Output.replace("GENERATED PARALLEL CLEANUP PASS", ""), phase7Output, /cleanup/i],
     [phase6Output, phase7Output.replace('"version":1', '"version":2'), /format|version/i],
     [phase6Output, phase7Output.replace("CLEANUP PASS", "CLEANUP FAIL"), /cleanup/i],
-    [`${phase6Output}\n${rawDatabaseUrl}`, phase7Output, /secret|credential|database/i],
     [phase6Output, `${phase7Output}\nBLOG X PHASE7 BROWSER RESULT ${JSON.stringify(phase7Result)}`, /exactly one/i],
     [phase6Output.replace('"tests":3,"passed":3', '"tests":0,"passed":0'), phase7Output, /zero|pass-only/i],
     [phase6Output.replace('"failed":0', '"failed":1'), phase7Output, /pass-only|counts/i],
@@ -61,6 +59,25 @@ test("local delivery acceptance rejects incomplete, stale, non-pass, unclean, an
   ];
   for (const [badPhase6, badPhase7, matcher] of replacements) {
     assert.throws(() => parseLocalDeliveryAcceptanceOutputs({ phase6Output: badPhase6, phase7Output: badPhase7 }), matcher);
+  }
+});
+
+test("structured JSON colon Bearer and Cookie secrets are redacted before stable output hashing", () => {
+  const firstDatabaseUrl = ["postgres://user", "alpha-password@host/db"].join(":");
+  const secondDatabaseUrl = ["postgres://user", "beta-password@host/db"].join(":");
+  const variants = [
+    ['{"password":"alpha-json"}', '{"password":"beta-json"}'],
+    ["token: alpha-colon", "token: beta-colon"],
+    ["Authorization: Bearer alpha-bearer", "Authorization: Bearer beta-bearer"],
+    ["Cookie: account=alpha-cookie; preference=alpha-pref", "Cookie: account=beta-cookie; preference=beta-pref"],
+    ["Set-Cookie: account=alpha-cookie; HttpOnly=true", "Set-Cookie: account=beta-cookie; HttpOnly=false"],
+    [firstDatabaseUrl, secondDatabaseUrl],
+  ];
+  for (const [firstSecret, secondSecret] of variants) {
+    const first = parseLocalDeliveryAcceptanceOutputs({ phase6Output: `${phase6Output}\n${firstSecret}`, phase7Output });
+    const second = parseLocalDeliveryAcceptanceOutputs({ phase6Output: `${phase6Output}\n${secondSecret}`, phase7Output });
+    assert.equal(first.phase6Data.outputSha256, second.phase6Data.outputSha256, firstSecret);
+    assert.deepEqual(first.phase6Data.counts, second.phase6Data.counts);
   }
 });
 
