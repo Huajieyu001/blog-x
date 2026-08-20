@@ -72,13 +72,13 @@ Plans:
 **Depends on:** Phase 7
 **Requirements:** DEVX-01, DEVX-02, DEVX-03
 **UI hint:** no
-**Plans:** 2/3 plans complete; 08-03 next
+**Plans:** 3/3 plans complete; phase verification next
 
 Plans:
 
 - [x] 08-01-PLAN.md — Seal the fixed local-delivery command, v1.1 authority, offline provenance and pre-mutation safety checks. (completed 2026-08-20)
 - [x] 08-02-PLAN.md — Turn complete Phase 6/7 gates into one sealed generated-authority acceptance result. (completed 2026-08-20)
-- [ ] 08-03-PLAN.md — Bind acceptance before cutover, verify fixed routes and publish the final BLOCKED v1.1 receipt.
+- [x] 08-03-PLAN.md — Bind acceptance before cutover, verify fixed routes and publish the final BLOCKED v1.1 receipt. (completed 2026-08-20)
 
 **Wave 1:** 08-01
 
@@ -100,4 +100,4 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 6. Public Discovery Data | v1.1 | 8/8 active | Complete | 2026-08-17 |
 | 7. Responsive Discovery Experience | v1.1 | 4/4 | Complete    | 2026-08-19 |
-| 8. Reliable Local Delivery | v1.1 | 2/3 | In progress | — |
+| 8. Reliable Local Delivery | v1.1 | 3/3 | In verification | — |

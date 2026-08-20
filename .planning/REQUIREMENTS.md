@@ -18,9 +18,9 @@
 
 ### Local Delivery
 
-- [ ] **DEVX-01**: 开发者可用一条固定命令更新 `blogxlocal` Web/API，保留 PostgreSQL 与媒体卷，执行幂等迁移并等待健康状态。
-- [ ] **DEVX-02**: 本地更新在 registry 不可用时优先复用已安装依赖完成离线构建，且不会误建另一 Compose 项目或把临时验收 URL 固化到 `3100`。
-- [ ] **DEVX-03**: 每个 v1.1 大步骤完成后，自动化验收必须检查当前 Git revision 对应的本地页面、API 健康和主要公开路由，并报告可见变化。
+- [x] **DEVX-01**: 开发者可用一条固定命令更新 `blogxlocal` Web/API，保留 PostgreSQL 与媒体卷，执行幂等迁移并等待健康状态。
+- [x] **DEVX-02**: 本地更新在 registry 不可用时优先复用已安装依赖完成离线构建，且不会误建另一 Compose 项目或把临时验收 URL 固化到 `3100`。
+- [x] **DEVX-03**: 每个 v1.1 大步骤完成后，自动化验收必须检查当前 Git revision 对应的本地页面、API 健康和主要公开路由，并报告可见变化。
 
 ## Acceptance Constraints
 
@@ -49,15 +49,15 @@
 | SRCH-03 | Phase 6 | Complete |
 | READ-08 | Phase 6 | Complete |
 | READ-09 | Phase 7 | Complete |
-| DEVX-01 | Phase 8 | Pending |
-| DEVX-02 | Phase 8 | Pending |
-| DEVX-03 | Phase 8 | Pending |
+| DEVX-01 | Phase 8 | Complete |
+| DEVX-02 | Phase 8 | Complete |
+| DEVX-03 | Phase 8 | Complete |
 
 **Coverage:**
 
 - v1.1 requirements: 8 total
 - Mapped to phases: 8
-- Complete: 0
+- Complete: 8
 - Unmapped: 0 ✓
 
 ---

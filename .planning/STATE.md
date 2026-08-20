@@ -4,17 +4,17 @@ milestone: v1.1
 milestone_name: Content Discovery
 current_phase: 08
 current_phase_name: Reliable Local Delivery
-status: executing
-stopped_at: 08-02 complete; ready to execute 08-03
-last_updated: "2026-08-20T07:00:05Z"
+status: verifying
+stopped_at: 08-03 complete; ready for Phase 08 verification
+last_updated: "2026-08-20T14:19:52Z"
 last_activity: 2026-08-20
-last_activity_desc: Phase 08 Plan 02 sealed isolated delivery acceptance completed
+last_activity_desc: Phase 08 Plan 03 fixed local delivery completed with verified BLOCKED receipt
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 15
-  completed_plans: 13
-  percent: 87
+  completed_plans: 14
+  percent: 93
 ---
 
 # Project State
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-08-15)
 
 ## Current Position
 
-Phase: 08 (Reliable Local Delivery) — EXECUTING
+Phase: 08 (Reliable Local Delivery) — VERIFYING
 Plan: 3 of 3
-Status: 08-02 complete; 08-03 next
-Last activity: 2026-08-20 — 08-02 sealed isolated delivery acceptance completed
+Status: 08-03 complete; phase verification next
+Last activity: 2026-08-20 — fixed local delivery completed with verified BLOCKED receipt
 
 ## Performance Metrics
 
@@ -173,6 +173,9 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 07]: Verify runner cleanup through exact child handles and generated-origin closure only. — This proves isolation without inspecting or terminating unrelated processes.
 - [Phase 08]: Local delivery uses one immutable v1.1 receipt path, branch-qualified clean revision facts and a canonical Docker port-owner proof. — A short Docker ps ID is accepted only as a validated prefix of the inspected full Web container ID plus exact name/Compose labels.
 - [Phase 08]: Seed prerequisite remediation is classified only from trusted validation branches and printed only after the bound failure report. — Raw child output and authority-changing advice cannot leak into operator instructions.
+- [Phase 08]: A relocated seed store is reusable only when the exact versioned neutral directory is nonempty. — Repeated offline delivery remains idempotent without retrieval fallback or unsafe store deletion.
+- [Phase 08]: Every claimed revision is terminal, including pre-migration build failures. — Remediation requires a new clean commit before another formal attempt.
+- [Phase 08]: The fixed local receipt binds implementation revision 4414710b605ecd8a770a1c3a60afef479c9b4eb7 to 1,353 pass-only acceptance tests and exact canonical runtime facts. — Local completion never changes production beyond BLOCKED.
 
 ### Blockers/Concerns
 
@@ -183,11 +186,11 @@ Decisions are logged in PROJECT.md Key Decisions table.
 
 ## Session Continuity
 
-Last session: 2026-08-20T02:42:14Z
-Stopped at: 08-02 complete; ready to execute 08-03
-Resume file: .planning/phases/08-reliable-local-delivery/08-03-PLAN.md
+Last session: 2026-08-20T14:19:52Z
+Stopped at: 08-03 complete; ready for Phase 08 verification
+Resume file: .planning/phases/08-reliable-local-delivery/08-03-SUMMARY.md
 
 ## Operator Next Steps
 
-- Execute Phase 08 Wave 3 with `$gsd-execute-phase 8`.
-- Keep both cloud servers out of scope; Phase 8 execution is local-only and must finish with `releaseState: BLOCKED`.
+- Run Phase 08 code review and goal verification against the committed v1.1 receipt and live fixed runtime.
+- Keep both cloud servers out of scope; local completion retains `releaseState: BLOCKED`.
