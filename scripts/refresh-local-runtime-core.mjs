@@ -629,6 +629,18 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
     const names = await evidenceFs.readdir(dirname(evidencePath));
     if (names.some((name) => name.startsWith(prefix) && name.endsWith(".tmp"))) fail("refresh evidence temporary already exists");
   }
+  async function withdrawPublishedEvidence() {
+    let item;
+    try { item = await evidenceFs.lstat(evidencePath); }
+    catch (error) { if (error?.code === "ENOENT") return; throw error; }
+    const uid = process.getuid?.();
+    if (!item?.isFile?.() || item.isSymbolicLink?.() || item.uid !== uid || mode(item) !== 0o600 || await evidenceFs.realpath(evidencePath) !== evidencePath) {
+      fail("published evidence authority is unsafe to withdraw");
+    }
+    await evidenceFs.unlink(evidencePath);
+    const directory = await evidenceFs.open(dirname(evidencePath), "r");
+    try { await directory.sync(); } finally { await directory.close(); }
+  }
   async function inspectTargetOneoff(plan) {
     const api = plan.targets.find((target) => target.application === "api");
     const oneoff = (parseJson((await run("docker", ["container", "inspect", state.migrationOneoff])).stdout, "target API oneoff inspect"))[0];
@@ -749,6 +761,7 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
       }
       if (phase === "rollback-api-web") {
         if (!state.cutover) return;
+        await withdrawPublishedEvidence();
         if (state.migrationOneoff) { await run("docker", ["rm", "-f", state.migrationOneoff]); state.migrationOneoff = undefined; }
         await run("docker-compose", ["-p", PROJECT, "-f", COMPOSE_FILE, "up", "-d", "--wait", "--no-build", "--no-deps", "api", "web"], { env: { BLOG_X_API_IMAGE: state.oldImages.api, BLOG_X_WEB_IMAGE: state.oldImages.web } }); return;
       }
@@ -942,7 +955,9 @@ export async function runRefreshCliBoundary({ argv, resolveRevision, attemptStor
   }
   if (argv.length) fail("unknown refresh CLI option");
   const report = (stage, status) => output.write(formatRefreshStageProgress(stage, status));
-  let revision; let claim; let adapter; let executingRefresh = false; let failureStage = "cli_validation";
+  const safeReport = (stage, status) => { try { output.write(formatRefreshStageProgress(stage, status)); } catch { /* recovery cannot depend on a writable terminal */ } };
+  const safeFailureOutput = (value) => { try { output.write(value); } catch { /* the durable failure report remains authoritative */ } };
+  let revision; let claim; let adapter; let plan; let executingRefresh = false; let refreshCompleted = false; let failureStage = "cli_validation";
   try {
     report("cli_validation", "start");
     stageBoundary("cli_validation");
@@ -968,50 +983,69 @@ export async function runRefreshCliBoundary({ argv, resolveRevision, attemptStor
     adapter.attachAttemptClaim(claim);
     report(failureStage, "complete");
     failureStage = "lockfile_plan_materialization"; report(failureStage, "start"); stageBoundary(failureStage);
-    const plan = materializePlan(await readLockfile(), revision);
+    plan = materializePlan(await readLockfile(), revision);
     report(failureStage, "complete");
     failureStage = "preflight_collection";
     executingRefresh = true;
     const result = await executeRefresh(adapter, plan, { onStage: (record) => output.write(record) });
     executingRefresh = false;
+    refreshCompleted = true;
     failureStage = "evidence_verification"; report(failureStage, "start");
     stageBoundary(failureStage);
     const evidence = await verifyEvidence();
     report(failureStage, "complete");
     failureStage = "final_output"; report(failureStage, "start");
     stageBoundary(failureStage);
-    output.write(`REVISION ${evidence.implementationRevision}\n`);
-    output.write(`URL ${ORIGIN}\n`);
-    output.write(`ROUTES /search=${evidence.stages.postCutover.routes["/search"].status} /api/health=${evidence.stages.postCutover.routes["/api/health"].status}\n`);
-    output.write(`READING ${evidence.stages.postCutover.reading.state}\n`);
-    output.write(`VISIBLE search=${evidence.stages.postCutover.routes["/search"].status} reading=${evidence.stages.postCutover.reading.state}\n`);
-    output.write(`ACCEPTANCE phase6=${evidence.acceptance.phase6Data.counts.passed} phase7=${evidence.acceptance.phase7Browser.counts.passed} total=${evidence.acceptance.counts.passed}\n`);
-    output.write(`EVIDENCE ${LOCAL_DELIVERY_EVIDENCE_PATH}\n`);
-    output.write("RELEASE BLOCKED\n");
-    report(failureStage, "complete");
+    output.write([
+      `REVISION ${evidence.implementationRevision}`,
+      `URL ${ORIGIN}`,
+      `ROUTES /search=${evidence.stages.postCutover.routes["/search"].status} /api/health=${evidence.stages.postCutover.routes["/api/health"].status}`,
+      `READING ${evidence.stages.postCutover.reading.state}`,
+      `VISIBLE search=${evidence.stages.postCutover.routes["/search"].status} reading=${evidence.stages.postCutover.reading.state}`,
+      `ACCEPTANCE phase6=${evidence.acceptance.phase6Data.counts.passed} phase7=${evidence.acceptance.phase7Browser.counts.passed} total=${evidence.acceptance.counts.passed}`,
+      `EVIDENCE ${LOCAL_DELIVERY_EVIDENCE_PATH}`,
+      "RELEASE BLOCKED",
+      formatRefreshStageProgress(failureStage, "complete").trimEnd(),
+      "",
+    ].join("\n"));
     return result;
   } catch (error) {
-    const phase = error?.refreshStage ?? adapter?.currentPhase?.();
-    if ((error?.refreshStage || executingRefresh) && phase && phase !== "constructed") failureStage = PHASE_REPORT_STAGE[phase] ?? phase;
+    let failureError = error;
+    if (refreshCompleted && adapter && plan) {
+      try {
+        safeReport("rollback-api-web", "start");
+        await adapter.execute("rollback-api-web", plan);
+        safeReport("rollback-api-web", "complete");
+        safeReport("verify-rollback", "start");
+        await adapter.execute("verify-rollback", plan);
+        safeReport("verify-rollback", "complete");
+      } catch (recoveryError) {
+        recoveryError.refreshStage ??= adapter.currentPhase?.() ?? "rollback-api-web";
+        failureError = recoveryError;
+        failureStage = PHASE_REPORT_STAGE[recoveryError.refreshStage] ?? recoveryError.refreshStage;
+      }
+    }
+    const phase = failureError?.refreshStage ?? adapter?.currentPhase?.();
+    if ((failureError?.refreshStage || executingRefresh) && phase && phase !== "constructed") failureStage = PHASE_REPORT_STAGE[phase] ?? phase;
     let detail = { baseline: "not_applicable", recollection: "not_attempted", preservation: "not_applicable_pre_runtime", facts: { preflight: null, current: null, rollback: null } };
     if (claim && adapter?.recollectFailure && !["claim_attachment", "lockfile_plan_materialization"].includes(failureStage)) {
-      try { stageBoundary("failure_recollection"); detail = await adapter.recollectFailure(error); }
+      try { stageBoundary("failure_recollection"); detail = await adapter.recollectFailure(failureError); }
       catch { failureStage = "failure_recollection"; detail = { baseline: "applicable", recollection: "failed", preservation: "unproved", facts: { preflight: null, current: null, rollback: null } }; }
     }
     if (claim) {
-      const failureReport = { format: "blog-x-local-refresh-failure", version: 1, implementationRevision: revision, claimSha256: claim.sha256, stage: failureStage, errorClass: String(error?.name ?? "error").toLowerCase().replace(/[^a-z0-9_-]/g, "_") || "error", ...detail };
+      const failureReport = { format: "blog-x-local-refresh-failure", version: 1, implementationRevision: revision, claimSha256: claim.sha256, stage: failureStage, errorClass: String(failureError?.name ?? "error").toLowerCase().replace(/[^a-z0-9_-]/g, "_") || "error", ...detail };
       try { stageBoundary("failure_report_publication"); await attemptStore.writeFailureReport(failureReport); }
       catch (reportError) {
         failureStage = "failure_report_publication";
         const recovery = safeRecoveryForRefreshFailure({ stage: failureStage, error: reportError });
-        output.write(formatRefreshFailure({ stage: failureStage, recovery }));
+        safeFailureOutput(formatRefreshFailure({ stage: failureStage, recovery }));
         const reported = new Error(`local delivery failed at ${failureStage}`);
         Object.defineProperty(reported, "refreshFailureReported", { value: true });
         throw reported;
       }
     }
-    const recovery = safeRecoveryForRefreshFailure({ stage: failureStage, error });
-    output.write(formatRefreshFailure({ stage: failureStage, recovery }));
+    const recovery = safeRecoveryForRefreshFailure({ stage: failureStage, error: failureError });
+    safeFailureOutput(formatRefreshFailure({ stage: failureStage, recovery }));
     const reported = new Error(`local delivery failed at ${failureStage}`);
     Object.defineProperty(reported, "refreshFailureReported", { value: true });
     throw reported;

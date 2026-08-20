@@ -956,6 +956,37 @@ test("post-cutover fact failure rolls back API/Web by immutable IDs and suppress
   assert.equal(fixture.calls.some((call) => call.args.includes("down") || call.args.includes("postgres") && call.args[0] === "rm" || call.command === "docker" && call.args[0] === "volume" && call.args[1] !== "inspect"), false);
 });
 
+test("outer evidence and terminal failures retain rollback authority and cannot leave false success", async () => {
+  const evidencePath = "/virtual-workspace/ops/v1.1-local-delivery-evidence.json";
+  for (const stage of ["evidence_verification", "final_output"]) {
+    const fixture = liveFixture({ stageFaults: [stage] }); const writes = [];
+    await assert.rejects(fixture.runtime.runCli({ output: { write(value) { writes.push(value); } } }), new RegExp(stage));
+    const cutovers = fixture.calls.filter((call) => call.command === "docker-compose" && call.args.includes("up"));
+    assert.deepEqual(cutovers.map((call) => call.options.env), [
+      { BLOG_X_API_IMAGE: fixture.targetIds.api, BLOG_X_WEB_IMAGE: fixture.targetIds.web },
+      { BLOG_X_API_IMAGE: fixture.old.api, BLOG_X_WEB_IMAGE: fixture.old.web },
+    ], stage);
+    assert.equal(fixture.routeFetches.some(({ rolledBack, stale }) => rolledBack && stale), true, stage);
+    await assert.rejects(fixture.evidenceFs.readFile(evidencePath), /ENOENT/, stage);
+    assert.doesNotMatch(writes.join(""), /^REVISION |^EVIDENCE |^RELEASE BLOCKED$/m, stage);
+    assert.equal((await fixture.runtime.createAttemptStore().assertFailureReportPresent(fixture.revision)).report.stage, stage);
+  }
+
+  const fixture = liveFixture(); const writes = [];
+  await assert.rejects(fixture.runtime.runCli({ output: { write(value) {
+    if (String(value).startsWith("REVISION ")) throw new Error("terminal write fault");
+    writes.push(value);
+  } } }), /final_output/);
+  const cutovers = fixture.calls.filter((call) => call.command === "docker-compose" && call.args.includes("up"));
+  assert.deepEqual(cutovers.map((call) => call.options.env), [
+    { BLOG_X_API_IMAGE: fixture.targetIds.api, BLOG_X_WEB_IMAGE: fixture.targetIds.web },
+    { BLOG_X_API_IMAGE: fixture.old.api, BLOG_X_WEB_IMAGE: fixture.old.web },
+  ]);
+  await assert.rejects(fixture.evidenceFs.readFile(evidencePath), /ENOENT/);
+  assert.doesNotMatch(writes.join(""), /^REVISION |^EVIDENCE |^RELEASE BLOCKED$/m);
+  assert.equal((await fixture.runtime.createAttemptStore().assertFailureReportPresent(fixture.revision)).report.stage, "final_output");
+});
+
 test("stale preflight reaches both builds but exact observation drift stops before cutover", async () => {
   const fixture = liveFixture({ preCutoverRouteDrift: true });
   await assert.rejects(runLocalRefresh({ adapter: fixture.adapter, plan: fixture.plan }), /route|observation|pre-cutover/i);
