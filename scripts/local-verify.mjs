@@ -19,12 +19,14 @@ import {
   writePhase5ReceiptAtomic,
 } from "./phase5-receipt.mjs";
 import { productionBackupResultSchema } from "./backup/production/results.mjs";
+import { installCooperativeShutdown } from "./local-delivery-child-tree.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = fileURLToPath(import.meta.url);
 const composeFile = resolve(root, "compose.yaml");
 const apiImage = "blog-x-api-verify:phase2";
 const webImage = "blog-x-web-verify:phase2";
+let shutdownSignal;
 
 export const PHASE6_DATA_RESULT_FORMAT = "blog-x-phase6-data-result";
 const PHASE6_DATA_RESULT_PREFIX = "BLOG X PHASE6 DATA RESULT ";
@@ -429,6 +431,7 @@ async function freePort() {
 
 function command(commandName, args, options = {}) {
   return new Promise((accept, reject) => {
+    if (!options.allowDuringShutdown) shutdownSignal?.throwIfAborted();
     const startedAt = new Date().toISOString();
     const child = spawn(commandName, args, {
       cwd: options.cwd ?? root,
@@ -438,10 +441,18 @@ function command(commandName, args, options = {}) {
     let stdout = "";
     let stderr = "";
     let combined = "";
+    const abort = () => {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+    };
+    if (!options.allowDuringShutdown) shutdownSignal?.addEventListener("abort", abort, { once: true });
     child.stdout.on("data", (chunk) => { const value = String(chunk); stdout += value; combined += value; options.onOutput?.(value); });
     child.stderr.on("data", (chunk) => { const value = String(chunk); stderr += value; combined += value; options.onOutput?.(value); });
-    child.on("error", reject);
+    child.on("error", (error) => {
+      shutdownSignal?.removeEventListener("abort", abort);
+      reject(error);
+    });
     child.on("close", (code, signal) => {
+      shutdownSignal?.removeEventListener("abort", abort);
       const result = { startedAt, completedAt: new Date().toISOString(), exitCode: code ?? 1, signal: signal ?? null, stdout, stderr, combined };
       if (result.exitCode === 0 && result.signal === null || options.allowFailure) accept(result);
       else reject(Object.assign(new Error(`${commandName} exited with ${result.exitCode}`), { result }));
@@ -483,6 +494,7 @@ async function compose(context, label, ...args) {
 
 async function waitForHttp(url, attempts = 100) {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
+    shutdownSignal?.throwIfAborted();
     try { if ((await fetch(url)).ok) return; } catch { /* service is still starting */ }
     await new Promise((accept) => setTimeout(accept, 250));
   }
@@ -1279,9 +1291,9 @@ async function runSingle(options) {
     validateDatabaseName(context.database, context.namespace);
     validateMediaVolume(context.mediaVolume, context.namespace);
     await command("docker-compose", composeArgs(context, "down", "--remove-orphans", "--volumes"), {
-      env: composeEnvironment(context), allowFailure: true,
+      env: composeEnvironment(context), allowFailure: true, allowDuringShutdown: true,
     });
-    await confirmGeneratedProjectAbsent(context.namespace);
+    await confirmGeneratedProjectAbsent(context.namespace, { allowDuringShutdown: true });
     process.stdout.write("[local-verify] GENERATED CLEANUP PASS\n");
     await restoreVerifierOwnedNextEnvironment(nextEnvironmentBefore);
   }
@@ -1331,12 +1343,12 @@ async function parallelCheck(options) {
   await Promise.all([confirmGeneratedProjectAbsent(first), confirmGeneratedProjectAbsent(second)]);
 }
 
-async function confirmGeneratedProjectAbsent(namespace) {
+async function confirmGeneratedProjectAbsent(namespace, options = {}) {
   validateNamespace(namespace);
-  const containers = await command("docker", ["ps", "-aq", "--filter", `label=com.docker.compose.project=${namespace}`]);
+  const containers = await command("docker", ["ps", "-aq", "--filter", `label=com.docker.compose.project=${namespace}`], options);
   if (containers.stdout.trim()) throw new Error(`generated project ${namespace} retained a container`);
   for (const volume of [`${namespace}_postgres-data`, `${namespace}_media-data`]) {
-    const inspected = await command("docker", ["volume", "inspect", volume], { allowFailure: true });
+    const inspected = await command("docker", ["volume", "inspect", volume], { allowFailure: true, ...options });
     if (inspected.exitCode === 0) throw new Error(`generated project ${namespace} retained volume ${volume}`);
   }
 }
@@ -1399,8 +1411,16 @@ async function main() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === scriptPath) {
+  const controller = new AbortController();
+  shutdownSignal = controller.signal;
+  const shutdown = installCooperativeShutdown((signal) => {
+    controller.abort(new Error(`local verification received ${signal}`));
+  });
   main().catch((error) => {
     console.error(redactText(error instanceof Error ? error.message : String(error)));
     process.exitCode = 1;
+  }).finally(async () => {
+    await shutdown.wait();
+    shutdown.dispose();
   });
 }

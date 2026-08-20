@@ -3,6 +3,7 @@ import { copyFile, cp, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { createServer } from "node:net";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { installCooperativeShutdown } from "./local-delivery-child-tree.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const children = [];
@@ -10,6 +11,8 @@ const maximumCapturedBytes = 8 * 1024 * 1024;
 const playwrightTimeoutMs = 300_000;
 const forcedPlaywrightTimeoutMs = 1_500;
 const exactProcessGroups = process.platform !== "win32";
+let shutdownSignal;
+let signalCleanupPromise;
 
 export const PHASE7_BROWSER_RESULT_FORMAT = "blog-x-phase7-browser-result";
 const PHASE7_BROWSER_RESULT_PREFIX = "BLOG X PHASE7 BROWSER RESULT ";
@@ -50,6 +53,7 @@ async function freePort() {
 }
 
 function start(label, command, args, env) {
+  shutdownSignal?.throwIfAborted();
   process.stdout.write(`[phase7-browser] ${label}\n`);
   const child = spawn(command, args, {
     cwd: root,
@@ -103,11 +107,17 @@ async function stopExactChild(child) {
 
 async function stopExactChildren() {
   const active = children.splice(0).reverse();
-  for (const child of active) await stopExactChild(child);
+  for (const child of active) if (exactTreeIsAlive(child)) signalExactTree(child, "SIGTERM");
+  await Promise.all(active.map((child) => waitForTreeClose(child, 2_000)));
+  const remaining = active.filter(exactTreeIsAlive);
+  for (const child of remaining) signalExactTree(child, "SIGKILL");
+  const closed = await Promise.all(remaining.map((child) => waitForTreeClose(child, 2_000)));
+  if (closed.some((value) => !value)) throw new Error("generated Phase 7 child tree cleanup was not confirmed");
 }
 
 async function waitForHttp(url, attempts = 120) {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
+    shutdownSignal?.throwIfAborted();
     try {
       const response = await fetch(url);
       if (response.ok) return;
@@ -152,6 +162,7 @@ async function assertAcceptanceSpecEnabled() {
 
 async function runPlaywright(args, env, timeoutMs = playwrightTimeoutMs) {
   return new Promise((accept, reject) => {
+    shutdownSignal?.throwIfAborted();
     const child = spawn("corepack", args, {
       cwd: root,
       env,
@@ -178,12 +189,16 @@ async function runPlaywright(args, env, timeoutMs = playwrightTimeoutMs) {
     child.stdout.on("data", (chunk) => capture(chunk, process.stdout));
     child.stderr.on("data", (chunk) => capture(chunk, process.stderr));
     const timeout = setTimeout(terminateBounded, timeoutMs);
+    const abort = () => terminateBounded();
+    shutdownSignal?.addEventListener("abort", abort, { once: true });
     child.once("error", (error) => {
       clearTimeout(timeout);
+      shutdownSignal?.removeEventListener("abort", abort);
       reject(error);
     });
     child.once("close", async (code, signal) => {
       clearTimeout(timeout);
+      shutdownSignal?.removeEventListener("abort", abort);
       await terminationPromise;
       if (terminationError) return reject(terminationError);
       if (timedOut) return reject(new Error("Phase 7 Playwright exceeded its bounded time or output"));
@@ -229,10 +244,13 @@ async function expectHttpClosed(url) {
 }
 
 async function main() {
+  shutdownSignal?.throwIfAborted();
   const options = parseOptions(process.argv.slice(2));
   await assertAcceptanceSpecEnabled();
+  shutdownSignal?.throwIfAborted();
   const [fixturePort, webPort] = await Promise.all([freePort(), freePort()]);
   const isolatedWebRoot = await createIsolatedWebRoot(options.forceSetupFailure);
+  shutdownSignal?.throwIfAborted();
   const fixtureOrigin = `http://127.0.0.1:${fixturePort}`;
   const webOrigin = `http://127.0.0.1:${webPort}`;
   const fixtureEnv = { ...process.env, DISCOVERY_FIXTURE_PORT: String(fixturePort) };
@@ -260,6 +278,7 @@ async function main() {
     process.stdout.write(`${PHASE7_BROWSER_RESULT_PREFIX}${JSON.stringify(record)}\n`);
     process.stdout.write("[phase7-browser] PASS\n");
   } finally {
+    await signalCleanupPromise;
     await stopExactChildren();
     await Promise.all([expectHttpClosed(`${fixtureOrigin}/health`), expectHttpClosed(webOrigin)]);
     if (!isolatedWebRoot.startsWith(resolve(root, "apps/.phase7-web-"))) {
@@ -271,8 +290,18 @@ async function main() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const controller = new AbortController();
+  shutdownSignal = controller.signal;
+  const shutdown = installCooperativeShutdown(async (signal) => {
+    controller.abort(new Error(`Phase 7 browser verification received ${signal}`));
+    signalCleanupPromise ??= stopExactChildren();
+    await signalCleanupPromise;
+  });
   main().catch((error) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
+  }).finally(async () => {
+    await shutdown.wait();
+    shutdown.dispose();
   });
 }

@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
-import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runBoundedChildTree } from "./local-delivery-child-tree.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = fileURLToPath(import.meta.url);
 const maximumOutputBytes = 8 * 1024 * 1024;
 const childTimeoutMs = 10 * 60_000;
+const childTerminationGraceMs = 5_000;
+const childKillGraceMs = 3_000;
 const phase6Prefix = "BLOG X PHASE6 DATA RESULT ";
 const phase7Prefix = "BLOG X PHASE7 BROWSER RESULT ";
 const acceptancePrefix = "BLOG X V1.1 ACCEPTANCE RESULT ";
@@ -153,28 +155,13 @@ function minimalEnvironment() {
 }
 
 function runBounded(command, args) {
-  return new Promise((resolveResult, reject) => {
-    const child = spawn(command, args, { cwd: root, env: minimalEnvironment(), stdio: ["ignore", "pipe", "pipe"] });
-    let combined = "";
-    let overflow = false;
-    const capture = (chunk) => {
-      if (overflow) return;
-      combined += String(chunk);
-      if (Buffer.byteLength(combined) > maximumOutputBytes) {
-        overflow = true;
-        child.kill("SIGTERM");
-      }
-    };
-    child.stdout.on("data", capture);
-    child.stderr.on("data", capture);
-    const timer = setTimeout(() => child.kill("SIGTERM"), childTimeoutMs);
-    child.once("error", (error) => { clearTimeout(timer); reject(error); });
-    child.once("close", (exitCode, signal) => {
-      clearTimeout(timer);
-      if (overflow) return reject(new Error("local delivery acceptance child exceeded bounded output"));
-      if (exitCode !== 0 || signal !== null) return reject(new Error("local delivery acceptance child did not complete successfully"));
-      resolveResult(combined);
-    });
+  return runBoundedChildTree(command, args, {
+    cwd: root,
+    env: minimalEnvironment(),
+    maximumOutputBytes,
+    timeoutMs: childTimeoutMs,
+    terminationGraceMs: childTerminationGraceMs,
+    killGraceMs: childKillGraceMs,
   });
 }
 

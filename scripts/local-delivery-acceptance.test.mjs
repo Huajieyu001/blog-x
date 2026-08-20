@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { createServer, connect } from "node:net";
 import test from "node:test";
 import {
   LOCAL_DELIVERY_ACCEPTANCE_FORMAT,
@@ -10,6 +11,7 @@ import {
 } from "./local-delivery-acceptance.mjs";
 import { createLocalDeliveryAcceptanceTestRuntime } from "./local-delivery-acceptance-test-core.mjs";
 import { createPhase6DataResult, phase6Selection } from "./local-verify.mjs";
+import { runBoundedChildTree } from "./local-delivery-child-tree.mjs";
 
 const counts = { tests: 3, passed: 3, failed: 0, cancelled: 0, skipped: 0, todo: 0 };
 const phase6Result = createPhase6DataResult([
@@ -88,6 +90,8 @@ test("test-only runtime records the only two sealed child argv families and reje
 
 test("production coordinator is sealed, zero-argument, and has no test-core, canonical-data, or remote authority", async () => {
   const source = await readFile(join(process.cwd(), "scripts/local-delivery-acceptance.mjs"), "utf8");
+  const phase6Source = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
+  const phase7Source = await readFile(join(process.cwd(), "scripts/phase7-browser-verify.mjs"), "utf8");
   assert.match(source, /export async function runLocalDeliveryAcceptance\(\.\.\.args\)/);
   assert.match(source, /args\.length/);
   assert.doesNotMatch(source, /local-delivery-acceptance-test-core|createLocalDeliveryAcceptanceTestRuntime|blogxlocal|docker-compose|migration|cutover|\b(?:ssh|scp|rsync|fetch\()/i);
@@ -96,5 +100,44 @@ test("production coordinator is sealed, zero-argument, and has no test-core, can
   assert.doesNotMatch(source, /grep/);
   assert.match(source, /maximumOutputBytes/);
   assert.match(source, /childTimeoutMs/);
+  assert.match(source, /runBoundedChildTree/);
+  assert.match(phase6Source, /installCooperativeShutdown[\s\S]*allowDuringShutdown[\s\S]*confirmGeneratedProjectAbsent/);
+  assert.match(phase7Source, /installCooperativeShutdown[\s\S]*signalCleanupPromise[\s\S]*stopExactChildren/);
   await assert.rejects(runLocalDeliveryAcceptance("--partial"), /zero arguments/i);
+});
+
+async function freePort() {
+  return new Promise((accept, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") return reject(new Error("unable to allocate helper port"));
+      server.close(() => accept(address.port));
+    });
+  });
+}
+
+async function portIsClosed(port) {
+  return new Promise((accept) => {
+    const socket = connect(port, "127.0.0.1");
+    socket.once("connect", () => { socket.destroy(); accept(false); });
+    socket.once("error", () => accept(true));
+  });
+}
+
+test("production bounded controller kills an exact TERM-ignoring helper tree and closes its generated authority", { skip: process.platform === "win32" }, async () => {
+  const port = await freePort(); const output = []; const started = Date.now();
+  await assert.rejects(runBoundedChildTree(process.execPath, ["scripts/fixtures/local-delivery-child-tree-helper.mjs", String(port)], {
+    cwd: process.cwd(), env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", TMPDIR: process.env.TMPDIR ?? "/tmp", LANG: "C" },
+    maximumOutputBytes: 64 * 1024, timeoutMs: 750, terminationGraceMs: 150, killGraceMs: 2_000,
+    onOutput(value) { output.push(value); },
+  }), /bounded time.*cleanup confirmed/i);
+  assert.ok(Date.now() - started < 4_000, "controller must settle inside its advertised timeout and kill grace");
+  const combined = output.join("");
+  assert.match(combined, /PARENT_READY \d+/);
+  const descendantPid = Number(/DESCENDANT_READY (\d+)/.exec(combined)?.[1]);
+  assert.ok(Number.isSafeInteger(descendantPid));
+  assert.equal(await portIsClosed(port), true, "generated listener remained reachable");
+  assert.throws(() => process.kill(descendantPid, 0), (error) => error?.code === "ESRCH");
 });
