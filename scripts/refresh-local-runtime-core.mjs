@@ -16,8 +16,11 @@ import {
   projectSanitizedFacts,
 } from "./refresh-local-facts.mjs";
 
-const CLAIM_ROOT = "/private/tmp/blog-x-refresh-attempts";
-export const LOCAL_DELIVERY_EVIDENCE_PATH = "ops/v1.1-local-delivery-evidence.json";
+export const HISTORICAL_LOCAL_DELIVERY_EVIDENCE_PATH = "ops/v1.1-local-delivery-evidence.json";
+export const LOCAL_DELIVERY_EVIDENCE_PATH = "ops/v1.1-local-delivery-evidence.successor-2.json";
+export const LOCAL_DELIVERY_ATTEMPT_AUTHORITY = "blog-x-v1.1-local-delivery-successor-2";
+const HISTORICAL_CLAIM_ROOT = "/private/tmp/blog-x-refresh-attempts";
+const CLAIM_ROOT = "/private/tmp/blog-x-refresh-attempts-v1.1-successor-2";
 export const LOCAL_DELIVERY_FORMAT = "blog-x-v1.1-local-delivery-evidence";
 export const LOCAL_DELIVERY_VERSION = 1;
 export const LOCAL_DELIVERY_REFRESH_KIND = "v1.1-offline-local-delivery";
@@ -120,7 +123,13 @@ export function assertSeedPrerequisiteFacts({ application, expectedId, image, lo
 }
 function canonicalClaim(revision) {
   if (!validRevision(revision)) fail("attempt claim revision must be lowercase full SHA");
-  return `${JSON.stringify({ format: "blog-x-local-refresh-attempt", version: 1, implementationRevision: revision })}\n`;
+  return `${JSON.stringify({
+    format: "blog-x-local-refresh-attempt",
+    version: 2,
+    authority: LOCAL_DELIVERY_ATTEMPT_AUTHORITY,
+    evidencePath: LOCAL_DELIVERY_EVIDENCE_PATH,
+    implementationRevision: revision,
+  })}\n`;
 }
 const FAILURE_KEYS = ["baseline", "claimSha256", "errorClass", "facts", "format", "implementationRevision", "preservation", "recollection", "stage", "version"];
 function canonicalFailureReport(report) {
@@ -288,7 +297,7 @@ export function createRefreshAttemptStore({ fs = nativeFs, identity = { uid: pro
     await assertClaimFile(path);
     const bytes = await fs.readFile(path, "utf8");
     if (bytes !== canonicalClaim(revision)) fail("attempt claim bytes are not canonical");
-    return { present: true, bytes, sha256: digest(bytes) };
+    return { present: true, authority: LOCAL_DELIVERY_ATTEMPT_AUTHORITY, evidencePath: LOCAL_DELIVERY_EVIDENCE_PATH, bytes, sha256: digest(bytes) };
   }
   return Object.freeze({
     root: CLAIM_ROOT,
@@ -311,7 +320,7 @@ export function createRefreshAttemptStore({ fs = nativeFs, identity = { uid: pro
       const suffix = randomHex();
       if (!/^[a-f0-9]{24}$/.test(suffix)) fail("attempt claim temporary token is invalid");
       await publishFile(finalPath, bytes, suffix, "claim");
-      return { implementationRevision: revision, bytes, sha256: digest(bytes) };
+      return { implementationRevision: revision, authority: LOCAL_DELIVERY_ATTEMPT_AUTHORITY, evidencePath: LOCAL_DELIVERY_EVIDENCE_PATH, bytes, sha256: digest(bytes) };
     },
     async assertFailureReportAbsent(revision) {
       const path = failurePathFor(revision);
@@ -650,7 +659,8 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
   return Object.freeze({
     assertAllowedArgv: assertAllowedRefreshCommand,
     attachAttemptClaim(claim) {
-      if (state.claim || claim?.implementationRevision === undefined || !validDigest(claim.sha256)) fail("attempt claim attachment is invalid");
+      if (state.claim || claim?.implementationRevision === undefined || claim.authority !== LOCAL_DELIVERY_ATTEMPT_AUTHORITY
+        || claim.evidencePath !== LOCAL_DELIVERY_EVIDENCE_PATH || !validDigest(claim.sha256)) fail("attempt claim attachment is invalid");
       state.claim = claim;
     },
     async recollectFailure() {
@@ -756,7 +766,7 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
         const postMigration = projectSanitizedFacts(state.facts.postMigration, { routeContract: "observed" });
         if (!factsEqual(preflight.routes, postMigration.routes)) fail("evidence pre-cutover route observations changed");
         if (!state.acceptance) fail("accepted v1.1 result is absent");
-        const evidence = { format: LOCAL_DELIVERY_FORMAT, version: LOCAL_DELIVERY_VERSION, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, attemptClaim: { implementationRevision: plan.revision, sha256: state.claim.sha256 }, acceptance: { ...state.acceptance.record, sha256: state.acceptance.sha256 }, oldImages: state.oldImages, seeds: state.seeds, targets: targetEvidence, stages: { preflight, postMigration, postCutover: projectSanitizedFacts(state.facts.postCutover, { routeContract: "final" }) }, releaseState: "BLOCKED" };
+        const evidence = { format: LOCAL_DELIVERY_FORMAT, version: LOCAL_DELIVERY_VERSION, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, attemptClaim: { authority: LOCAL_DELIVERY_ATTEMPT_AUTHORITY, evidencePath: LOCAL_DELIVERY_EVIDENCE_PATH, implementationRevision: plan.revision, sha256: state.claim.sha256 }, acceptance: { ...state.acceptance.record, sha256: state.acceptance.sha256 }, oldImages: state.oldImages, seeds: state.seeds, targets: targetEvidence, stages: { preflight, postMigration, postCutover: projectSanitizedFacts(state.facts.postCutover, { routeContract: "final" }) }, releaseState: "BLOCKED" };
         await publishEvidence(evidenceFs, evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, randomEvidenceHex); return;
       }
       if (phase === "rollback-api-web") {
@@ -829,7 +839,7 @@ function assertProjectionSchema(value, label, { routeContract = "final" } = {}) 
 function assertEvidenceSchema(evidence) {
   exactKeys(evidence, EVIDENCE_KEYS, "evidence");
   if (evidence.format !== LOCAL_DELIVERY_FORMAT || evidence.version !== LOCAL_DELIVERY_VERSION || evidence.releaseState !== "BLOCKED" || !validRevision(evidence.implementationRevision) || !validDigest(evidence.lockfileSha256)) fail("evidence is not a strict blocked v1.1 local delivery record");
-  exactKeys(evidence.attemptClaim, ["implementationRevision", "sha256"], "evidence claim");
+  exactKeys(evidence.attemptClaim, ["authority", "evidencePath", "implementationRevision", "sha256"], "evidence claim");
   exactKeys(evidence.acceptance, ["counts", "format", "phase6Data", "phase7Browser", "releaseState", "sha256", "version"], "evidence acceptance");
   const { sha256: acceptanceSha256, ...acceptanceRecord } = evidence.acceptance;
   parseLocalDeliveryAcceptanceRecord(acceptanceRecord);
@@ -838,7 +848,9 @@ function assertEvidenceSchema(evidence) {
   exactKeys(evidence.seeds, ["api", "web"], "evidence seeds");
   exactKeys(evidence.targets, ["api", "web"], "evidence targets");
   exactKeys(evidence.stages, ["postCutover", "postMigration", "preflight"], "evidence stages");
-  if (evidence.attemptClaim.implementationRevision !== evidence.implementationRevision || !validDigest(evidence.attemptClaim.sha256) || !Object.values(evidence.oldImages).every(validImageId)) fail("evidence immutable identity is invalid");
+  if (evidence.attemptClaim.authority !== LOCAL_DELIVERY_ATTEMPT_AUTHORITY || evidence.attemptClaim.evidencePath !== LOCAL_DELIVERY_EVIDENCE_PATH
+    || evidence.attemptClaim.implementationRevision !== evidence.implementationRevision || !validDigest(evidence.attemptClaim.sha256)
+    || !Object.values(evidence.oldImages).every(validImageId)) fail("evidence immutable identity is invalid");
   for (const app of ["api", "web"]) { exactKeys(evidence.seeds[app], ["inspectedId", "reference"], `evidence ${app} seed`); if (!validImageId(evidence.seeds[app].inspectedId) || typeof evidence.seeds[app].reference !== "string") fail(`evidence ${app} seed is invalid`); }
   for (const app of ["api", "web"]) {
     const target = evidence.targets[app];
@@ -872,10 +884,12 @@ function assertEvidenceSchema(evidence) {
 
 export async function verifyRawRefreshEvidence(path, { claimStore, fs, runArgv, fetch, root } = {}) {
   if (!claimStore || !fs || typeof runArgv !== "function" || typeof fetch !== "function" || typeof root !== "string") fail("raw evidence verification boundaries are incomplete");
+  if (resolve(path) !== resolve(root, LOCAL_DELIVERY_EVIDENCE_PATH)) fail("raw evidence verification accepts only the successor receipt authority");
   const before = await fs.readFile(path, "utf8");
   const evidence = parseJson(before, "evidence"); assertEvidenceSchema(evidence);
   const claim = await claimStore.assertPresent(evidence.implementationRevision);
-  if (claim.sha256 !== evidence.attemptClaim.sha256) fail("evidence attempt claim digest mismatch");
+  if (claim.authority !== LOCAL_DELIVERY_ATTEMPT_AUTHORITY || claim.evidencePath !== LOCAL_DELIVERY_EVIDENCE_PATH
+    || claim.sha256 !== evidence.attemptClaim.sha256) fail("evidence attempt claim authority or digest mismatch");
   const run = async (command, args, options = {}) => { assertAllowedRefreshCommand(command, args, options); return runArgv(command, args, options); };
   let verifiedGit;
   {
@@ -1052,4 +1066,4 @@ export async function runRefreshCliBoundary({ argv, resolveRevision, attemptStor
   }
 }
 
-export { CLAIM_ROOT, nativeFs };
+export { CLAIM_ROOT, HISTORICAL_CLAIM_ROOT, nativeFs };

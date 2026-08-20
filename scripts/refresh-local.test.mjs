@@ -23,6 +23,10 @@ import {
 import { createRefreshTestRuntime } from "./refresh-local-test-core.mjs";
 import {
   SEED_PREREQUISITE_KINDS,
+  CLAIM_ROOT,
+  HISTORICAL_CLAIM_ROOT,
+  HISTORICAL_LOCAL_DELIVERY_EVIDENCE_PATH,
+  LOCAL_DELIVERY_ATTEMPT_AUTHORITY,
   LOCAL_DELIVERY_EVIDENCE_PATH,
   REFRESH_TERMINAL_STAGES,
   SAFE_RECOVERY_BY_STAGE,
@@ -135,7 +139,7 @@ function memoryArtifactFs(root = "/virtual-workspace") {
 function atomicFaultFs(base, artifact, site) {
   let active = false; let fired = false; let directorySequence = 0; let cleanup = false;
   const fault = () => { fired = true; throw Object.assign(new Error(`${artifact}:${site}`), { code: "EIO" }); };
-  const matches = (path) => artifact === "evidence" ? path.includes("v1.1-local-delivery-evidence.json")
+  const matches = (path) => artifact === "evidence" ? path.includes("v1.1-local-delivery-evidence.successor-2.json")
     : artifact === "failure-report" ? path.includes(".failure.json")
       : path.includes("blog-x-refresh-attempts") && path.includes(".json") && !path.includes(".failure.json");
   const maybe = (name) => { if (!fired && site === name) fault(); };
@@ -331,7 +335,7 @@ test("successful refresh writes sanitized evidence only after route and BLOCKED 
 
 test("evidence verification is read-only and refuses malformed or non-BLOCKED records", async () => {
   const fs = memoryArtifactFs();
-  const path = "/virtual-workspace/ops/v1.1-local-delivery-evidence.json";
+  const path = `/virtual-workspace/${LOCAL_DELIVERY_EVIDENCE_PATH}`;
   fs.entries.set(path, { kind: "file", bytes: JSON.stringify({ format: "blog-x-v1.1-local-delivery-evidence", version: 1, implementationRevision: "short", lockfileSha256: "b".repeat(64), releaseState: "READY" }), uid: 501, mode: 0o600 });
   const before = await fs.readFile(path);
   await assert.rejects(testRuntime(fs).verifyEvidence(path), /evidence/i);
@@ -380,7 +384,23 @@ test("branch-qualified source authority rejects dirty, detached and malformed re
     await assert.rejects(runtime.runCli(), /source_authority/i);
     assert.equal(runtime.calls.some((call) => call.command === "docker"), false);
   }
-  assert.equal(LOCAL_DELIVERY_EVIDENCE_PATH, "ops/v1.1-local-delivery-evidence.json");
+  assert.equal(HISTORICAL_LOCAL_DELIVERY_EVIDENCE_PATH, "ops/v1.1-local-delivery-evidence.json");
+  assert.equal(LOCAL_DELIVERY_EVIDENCE_PATH, "ops/v1.1-local-delivery-evidence.successor-2.json");
+  assert.equal(LOCAL_DELIVERY_ATTEMPT_AUTHORITY, "blog-x-v1.1-local-delivery-successor-2");
+  assert.equal(HISTORICAL_CLAIM_ROOT, "/private/tmp/blog-x-refresh-attempts");
+  assert.equal(CLAIM_ROOT, "/private/tmp/blog-x-refresh-attempts-v1.1-successor-2");
+  assert.notEqual(CLAIM_ROOT, HISTORICAL_CLAIM_ROOT);
+});
+
+test("successor delivery authority preserves the committed v1.1 receipt as immutable history", async () => {
+  const historicalBytes = await readFile(HISTORICAL_LOCAL_DELIVERY_EVIDENCE_PATH, "utf8");
+  const historical = JSON.parse(historicalBytes);
+  assert.equal(historical.implementationRevision, "4414710b605ecd8a770a1c3a60afef479c9b4eb7");
+  assert.equal(historical.releaseState, "BLOCKED");
+  assert.equal(Object.hasOwn(historical.attemptClaim, "authority"), false);
+  const fs = memoryArtifactFs();
+  fs.entries.set(`/virtual-workspace/${HISTORICAL_LOCAL_DELIVERY_EVIDENCE_PATH}`, { kind: "file", bytes: historicalBytes, uid: 501, mode: 0o600 });
+  await assert.rejects(testRuntime(fs).verifyEvidence(`/virtual-workspace/${HISTORICAL_LOCAL_DELIVERY_EVIDENCE_PATH}`), /successor receipt authority/i);
 });
 
 test("attempt claims are canonical, exclusive, revision-bound, and leave second cli calls before adapter construction", async () => {
@@ -389,7 +409,15 @@ test("attempt claims are canonical, exclusive, revision-bound, and leave second 
   const first = await store.claimRefreshAttempt(revision);
   assert.match(first.sha256, /^[a-f0-9]{64}$/);
   assert.equal((await store.assertPresent(revision)).sha256, first.sha256);
-  assert.deepEqual(JSON.parse(first.bytes.trim()), { format: "blog-x-local-refresh-attempt", version: 1, implementationRevision: revision });
+  assert.deepEqual(JSON.parse(first.bytes.trim()), {
+    format: "blog-x-local-refresh-attempt",
+    version: 2,
+    authority: LOCAL_DELIVERY_ATTEMPT_AUTHORITY,
+    evidencePath: LOCAL_DELIVERY_EVIDENCE_PATH,
+    implementationRevision: revision,
+  });
+  assert.equal(first.authority, LOCAL_DELIVERY_ATTEMPT_AUTHORITY);
+  assert.equal(first.evidencePath, LOCAL_DELIVERY_EVIDENCE_PATH);
   await assert.rejects(store.claimRefreshAttempt(revision), /claimed|exists/i);
   const runtime = createRefreshTestRuntime({ fs: storeFs, randomHex: () => "2".repeat(24), fetch: async () => { throw new Error("unused"); }, clock: () => undefined, processBoundary: async (command, args) => ({ stdout: command === "git" && args[0] === "symbolic-ref" ? "refs/heads/dev\n" : command === "git" && args[0] === "rev-parse" ? `${revision}\n` : "" }) });
   await assert.rejects(runtime.runCli(), /attempt_claim_preflight/i);
@@ -760,13 +788,13 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
       if (args.includes("api") && args.includes("node") && args.includes("-e")) return { stdout: JSON.stringify(failPostCutover && snapshot === 3 ? [{ relativePath: "asset", bytes: 8, sha256: "9".repeat(64) }] : [{ relativePath: "asset", bytes: 7, sha256: "8".repeat(64) }]) };
       return { stdout: "" };
     }
-    if (command === "git" && args[0] === "status") return { stdout: !verificationMode && evidenceBaseFs?.entries.has("/virtual-workspace/ops/v1.1-local-delivery-evidence.json") ? "?? ops/v1.1-local-delivery-evidence.json\n" : "" };
+    if (command === "git" && args[0] === "status") return { stdout: !verificationMode && evidenceBaseFs?.entries.has(`/virtual-workspace/${LOCAL_DELIVERY_EVIDENCE_PATH}`) ? `?? ${LOCAL_DELIVERY_EVIDENCE_PATH}\n` : "" };
     if (command === "git" && args[0] === "symbolic-ref") return { stdout: "refs/heads/dev\n" };
     if (command === "git" && args[0] === "rev-parse") return { stdout: `${verificationMode ? "c".repeat(40) : revision}\n` };
     if (command === "git" && args[0] === "ls-files") return { stdout: "" };
     if (command === "git" && args[0] === "show") return { stdout: "raw-lock\n" };
     if (command === "git" && args[0] === "merge-base") return { stdout: "" };
-    if (command === "git" && args[0] === "diff") return { stdout: "ops/v1.1-local-delivery-evidence.json\n" };
+    if (command === "git" && args[0] === "diff") return { stdout: `${LOCAL_DELIVERY_EVIDENCE_PATH}\n` };
     if (command === "node" && args.join(" ") === "scripts/local-delivery-acceptance.mjs") return { stdout: acceptanceStdout };
     if (command === "node") return { stdout: "" };
     throw new Error(`unexpected raw fake argv: ${command} ${args.join(" ")}`);
@@ -827,7 +855,7 @@ test("normal delivery emits exact progress and a verified evidence-derived BLOCK
   assert.match(output, /READING verified/);
   assert.match(output, /VISIBLE search=200 reading=verified/);
   assert.match(output, /ACCEPTANCE phase6=18 phase7=6 total=24/);
-  assert.match(output, /EVIDENCE ops\/v1\.1-local-delivery-evidence\.json\nRELEASE BLOCKED/);
+  assert.match(output, /EVIDENCE ops\/v1\.1-local-delivery-evidence\.successor-2\.json\nRELEASE BLOCKED/);
   assert.doesNotMatch(output, /hello-world|postgres:\/\/|blog_x_session=|token=|\/Users\/|sha256:/i);
 });
 
@@ -861,7 +889,7 @@ test("complete fake live refresh uses target API one-off, immutable cutover and 
   assert.equal(migration.args[1], oneoff); assert.equal(schema.args[1], oneoff);
   assert.ok(fixture.calls.some((call) => call.command === "docker-compose" && call.args.includes("run") && call.options.env.BLOG_X_API_IMAGE === fixture.plan.targets[0].tag));
   assert.ok(fixture.calls.some((call) => call.command === "docker-compose" && call.args.includes("up") && call.options.env.BLOG_X_API_IMAGE === fixture.targetIds.api && call.options.env.BLOG_X_WEB_IMAGE === fixture.targetIds.web));
-  const bytes = await fixture.evidenceFs.readFile("/virtual-workspace/ops/v1.1-local-delivery-evidence.json");
+  const bytes = await fixture.evidenceFs.readFile(`/virtual-workspace/${LOCAL_DELIVERY_EVIDENCE_PATH}`);
   const evidence = JSON.parse(bytes);
   assert.equal(evidence.version, 1); assert.equal(evidence.format, "blog-x-v1.1-local-delivery-evidence"); assert.equal(evidence.releaseState, "BLOCKED");
   assert.deepEqual(evidence.acceptance.counts, acceptanceRecord.counts);
@@ -881,7 +909,7 @@ test("complete fake live refresh uses target API one-off, immutable cutover and 
   assert.doesNotMatch(bytes, /Mountpoint|relativePath|migration_fingerprint|applied_at|environment|command|private\/var|legacy search route missing|legacy_route_missing|content-type|problem\+json/i);
   assert.equal([...fixture.evidenceFs.entries.keys()].some((path) => path.endsWith(".tmp")), false);
   assert.deepEqual(fixture.calls.filter((call) => call.command === "docker" && call.args[0] === "rm").map((call) => call.args), [["rm", "-f", oneoff]]);
-  const evidencePath = "/virtual-workspace/ops/v1.1-local-delivery-evidence.json";
+  const evidencePath = `/virtual-workspace/${LOCAL_DELIVERY_EVIDENCE_PATH}`;
   const singularEvidence = structuredClone(evidence);
   for (const facts of Object.values(singularEvidence.stages)) {
     facts.routes[singularArchive] = facts.routes["/archives"];
@@ -906,8 +934,8 @@ test("complete fake live refresh uses target API one-off, immutable cutover and 
   await assert.rejects(fixture.runtime.verifyEvidence(evidencePath), /Git|ref|linkage|inconsistent/i);
   fixture.evidenceFs.entries.get(evidencePath).bytes = bytes;
   fixture.beginVerification();
-  assert.equal((await fixture.runtime.verifyEvidence("/virtual-workspace/ops/v1.1-local-delivery-evidence.json")).releaseState, "BLOCKED");
-  assert.equal(await fixture.evidenceFs.readFile("/virtual-workspace/ops/v1.1-local-delivery-evidence.json"), bytes);
+  assert.equal((await fixture.runtime.verifyEvidence(`/virtual-workspace/${LOCAL_DELIVERY_EVIDENCE_PATH}`)).releaseState, "BLOCKED");
+  assert.equal(await fixture.evidenceFs.readFile(`/virtual-workspace/${LOCAL_DELIVERY_EVIDENCE_PATH}`), bytes);
   assert.ok(fixture.calls.some((call) => call.command === "git" && call.args[0] === "show"));
   assert.ok(fixture.calls.some((call) => call.command === "git" && call.args[0] === "merge-base"));
   assert.ok(fixture.calls.some((call) => call.command === "git" && call.args[0] === "diff"));
@@ -920,7 +948,7 @@ test("complete fake live refresh uses target API one-off, immutable cutover and 
   await assert.rejects(fixture.runtime.verifyEvidence(evidencePath), /route|contract|drift|search/i);
   fixture.serveFinalVerification();
   fixture.evidenceFs.entries.get("/virtual-workspace/ops/phase5-full-gate-receipt.json").bytes = "raw drift\n";
-  await assert.rejects(fixture.runtime.verifyEvidence("/virtual-workspace/ops/v1.1-local-delivery-evidence.json"), /drift/i);
+  await assert.rejects(fixture.runtime.verifyEvidence(`/virtual-workspace/${LOCAL_DELIVERY_EVIDENCE_PATH}`), /drift/i);
 });
 
 test("seed prerequisites classify only trusted validation failures before every build and print one redacted pre-warm instruction", async () => {
@@ -952,12 +980,12 @@ test("post-cutover fact failure rolls back API/Web by immutable IDs and suppress
     { BLOG_X_API_IMAGE: fixture.targetIds.api, BLOG_X_WEB_IMAGE: fixture.targetIds.web },
     { BLOG_X_API_IMAGE: fixture.old.api, BLOG_X_WEB_IMAGE: fixture.old.web },
   ]);
-  await assert.rejects(fixture.evidenceFs.readFile("/virtual-workspace/ops/v1.1-local-delivery-evidence.json"), /ENOENT/);
+  await assert.rejects(fixture.evidenceFs.readFile(`/virtual-workspace/${LOCAL_DELIVERY_EVIDENCE_PATH}`), /ENOENT/);
   assert.equal(fixture.calls.some((call) => call.args.includes("down") || call.args.includes("postgres") && call.args[0] === "rm" || call.command === "docker" && call.args[0] === "volume" && call.args[1] !== "inspect"), false);
 });
 
 test("outer evidence and terminal failures retain rollback authority and cannot leave false success", async () => {
-  const evidencePath = "/virtual-workspace/ops/v1.1-local-delivery-evidence.json";
+  const evidencePath = `/virtual-workspace/${LOCAL_DELIVERY_EVIDENCE_PATH}`;
   for (const stage of ["evidence_verification", "final_output"]) {
     const fixture = liveFixture({ stageFaults: [stage] }); const writes = [];
     await assert.rejects(fixture.runtime.runCli({ output: { write(value) { writes.push(value); } } }), new RegExp(stage));
@@ -1278,7 +1306,7 @@ test("claim report and evidence atomic writers cover every operation and cleanup
         const store = testRuntime(fs, () => "8".repeat(24)).createAttemptStore(); finalPath = store.failurePathFor(revision);
         operation = () => store.writeFailureReport({ format: "blog-x-local-refresh-failure", version: 1, implementationRevision: revision, claimSha256: claim.sha256, stage: "write-evidence", errorClass: "error", baseline: "applicable", recollection: "failed", preservation: "unproved", facts: { preflight: null, current: null, rollback: null } });
       } else {
-        const fixture = liveFixture({ atomicFault: site }); entries = fixture.evidenceFs.entries; finalPath = "/virtual-workspace/ops/v1.1-local-delivery-evidence.json";
+        const fixture = liveFixture({ atomicFault: site }); entries = fixture.evidenceFs.entries; finalPath = `/virtual-workspace/${LOCAL_DELIVERY_EVIDENCE_PATH}`;
         operation = () => runLocalRefresh({ adapter: fixture.adapter, plan: fixture.plan });
       }
       await assert.rejects(operation(), new RegExp(`UNRECOVERABLE_${artifact.toUpperCase().replace("-", "_")}_INVARIANT:EIO`), `${artifact}:${site}`);
