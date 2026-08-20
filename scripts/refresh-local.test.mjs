@@ -197,6 +197,32 @@ test("seed relocation waits for a verified complete copy before it deletes a sto
   assert.equal((await readFile(join(neutral, "files", "package.tgz"), "utf8")), "seed-package");
 });
 
+test("seed relocation reuses an already-neutral nonempty store without deleting or copying it", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "blog-x-refresh-neutral-seed-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const neutral = join(root, "pnpm-store", "v11");
+  const refreshWorkspace = join(root, "refresh-workspace");
+  await mkdir(join(neutral, "files"), { recursive: true });
+  await writeFile(join(neutral, "files", "package.tgz"), "seed-package");
+  await mkdir(refreshWorkspace, { recursive: true });
+  await writeFile(join(refreshWorkspace, "stale-marker"), "stale-workspace");
+  const runner = fakeRunner([neutral, neutral]);
+  let copied = false;
+
+  const result = await prepareSeedStore({
+    cwd: refreshWorkspace,
+    run: runner.run,
+    copy: async () => { copied = true; },
+    neutralRoot: join(root, "pnpm-store"),
+    refreshWorkspace,
+  });
+
+  assert.equal(result.alreadyNeutral, true);
+  assert.equal(copied, false);
+  assert.equal(await readFile(join(neutral, "files", "package.tgz"), "utf8"), "seed-package");
+  await assert.rejects(readFile(join(refreshWorkspace, "stale-marker")));
+});
+
 test("unsafe, equal, root, unversioned and flattened store paths fail before deletion", async (t) => {
   const { root, source, neutral } = await fixtureStore(t);
   for (const paths of [

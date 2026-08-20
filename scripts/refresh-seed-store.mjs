@@ -22,10 +22,9 @@ export function validateStorePaths({ sourceStore, neutralStore, neutralRoot = NE
   const neutral = resolve(neutralStore);
   const root = resolve(neutralRoot);
   if ([source, neutral, root].some((value) => value === resolve("/"))) fail("store path cannot be root");
-  if (source === neutral) fail("source and neutral stores must be distinct");
   if (!VERSION_DIRECTORY.test(basename(source)) || basename(source) !== basename(neutral)) fail("store paths must use the same pnpm version directory");
   if (!isBelow(neutral, root)) fail("neutral store must be strictly below /pnpm-store");
-  return { sourceStore: source, neutralStore: neutral, neutralRoot: root };
+  return { sourceStore: source, neutralStore: neutral, neutralRoot: root, alreadyNeutral: source === neutral };
 }
 
 export async function createStoreManifest(root) {
@@ -77,13 +76,17 @@ export async function prepareSeedStore({ cwd = process.cwd(), run = spawnForStdo
   const neutralStore = neutralResult.stdout.trim();
   const paths = validateStorePaths({ sourceStore, neutralStore, neutralRoot });
   const sourceManifest = await createStoreManifest(paths.sourceStore);
-  await mkdir(paths.neutralStore, { recursive: true });
-  await copy(paths.sourceStore, paths.neutralStore, { recursive: true, force: true, errorOnExist: false, verbatimSymlinks: true });
-  const neutralManifest = await createStoreManifest(paths.neutralStore);
-  if (JSON.stringify(sourceManifest) !== JSON.stringify(neutralManifest)) fail("copied store manifest does not match source");
+  if (paths.alreadyNeutral && sourceManifest.length === 0) fail("already-neutral store must not be empty");
+  let neutralManifest = sourceManifest;
+  if (!paths.alreadyNeutral) {
+    await mkdir(paths.neutralStore, { recursive: true });
+    await copy(paths.sourceStore, paths.neutralStore, { recursive: true, force: true, errorOnExist: false, verbatimSymlinks: true });
+    neutralManifest = await createStoreManifest(paths.neutralStore);
+    if (JSON.stringify(sourceManifest) !== JSON.stringify(neutralManifest)) fail("copied store manifest does not match source");
+  }
 
   // The copy is verified before any inherited application or source-store tree is removed.
-  await rm(paths.sourceStore, { recursive: true, force: true });
+  if (!paths.alreadyNeutral) await rm(paths.sourceStore, { recursive: true, force: true });
   await rm(cwd === "/workspace" ? "/workspace" : resolve(cwd, "workspace"), { recursive: true, force: true });
   await rm(refreshWorkspace, { recursive: true, force: true });
   await mkdir(refreshWorkspace, { recursive: true });
