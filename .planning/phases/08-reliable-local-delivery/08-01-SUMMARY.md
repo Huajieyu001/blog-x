@@ -127,6 +127,8 @@ The interrupted executor left uncommitted Task 1 and Task 2 runtime changes inte
 ## Issues Encountered
 
 - The inherited candidate changed v1.1 naming and Git facts but did not implement Task 2. Recovery completed the missing port-owner and seed-prerequisite behavior and added its coverage.
+- The post-wave workspace build initially lacked the required production origin; rerunning with the locked `PUBLIC_ORIGIN=http://127.0.0.1:3100` and local internal API origin passed for contracts, API and Web.
+- The generic recursive test command is not a valid standalone integration gate for this repository: database/backup suites require runner-owned PostgreSQL and managed media roots. The project `local:verify` runner was attempted as the proper isolated replacement, but its verification-image build stopped before tests because Corepack could not resolve `registry.npmjs.org`. This environmental DNS result is recorded as inconclusive, not passed; the focused 49-test refresh suite and boundary scan remain the evidence for 08-01, while 08-02/08-03 own complete isolated acceptance and final delivery.
 
 ## Next Phase Readiness
 
