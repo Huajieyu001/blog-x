@@ -75,10 +75,17 @@ export async function prepareSeedStore({ cwd = process.cwd(), run = spawnForStdo
   const sourceStore = sourceResult.stdout.trim();
   const neutralStore = neutralResult.stdout.trim();
   const paths = validateStorePaths({ sourceStore, neutralStore, neutralRoot });
-  const sourceManifest = await createStoreManifest(paths.sourceStore);
-  if (paths.alreadyNeutral && sourceManifest.length === 0) fail("already-neutral store must not be empty");
-  let neutralManifest = sourceManifest;
-  if (!paths.alreadyNeutral) {
+  const sourceDetails = await lstat(paths.sourceStore).catch((error) => {
+    if (error?.code === "ENOENT") return undefined;
+    throw error;
+  });
+  const alreadyNeutral = paths.alreadyNeutral || sourceDetails === undefined;
+  let neutralManifest;
+  if (alreadyNeutral) {
+    neutralManifest = await createStoreManifest(paths.neutralStore);
+    if (neutralManifest.length === 0) fail("already-neutral store must not be empty");
+  } else {
+    const sourceManifest = await createStoreManifest(paths.sourceStore);
     await mkdir(paths.neutralStore, { recursive: true });
     await copy(paths.sourceStore, paths.neutralStore, { recursive: true, force: true, errorOnExist: false, verbatimSymlinks: true });
     neutralManifest = await createStoreManifest(paths.neutralStore);
@@ -86,11 +93,11 @@ export async function prepareSeedStore({ cwd = process.cwd(), run = spawnForStdo
   }
 
   // The copy is verified before any inherited application or source-store tree is removed.
-  if (!paths.alreadyNeutral) await rm(paths.sourceStore, { recursive: true, force: true });
+  if (!alreadyNeutral) await rm(paths.sourceStore, { recursive: true, force: true });
   await rm(cwd === "/workspace" ? "/workspace" : resolve(cwd, "workspace"), { recursive: true, force: true });
   await rm(refreshWorkspace, { recursive: true, force: true });
   await mkdir(refreshWorkspace, { recursive: true });
-  return { ...paths, manifest: neutralManifest, removedWorkspace: true };
+  return { ...paths, alreadyNeutral, manifest: neutralManifest, removedWorkspace: true };
 }
 
 async function main() {

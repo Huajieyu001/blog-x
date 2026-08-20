@@ -223,6 +223,39 @@ test("seed relocation reuses an already-neutral nonempty store without deleting 
   await assert.rejects(readFile(join(refreshWorkspace, "stale-marker")));
 });
 
+test("seed relocation reuses the exact nonempty neutral store after the original source was removed", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "blog-x-refresh-relocated-seed-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const missingSource = join(root, "root-store", "v11");
+  const neutral = join(root, "pnpm-store", "v11");
+  const refreshWorkspace = join(root, "refresh-workspace");
+  await mkdir(join(neutral, "files"), { recursive: true });
+  await writeFile(join(neutral, "files", "package.tgz"), "seed-package");
+  await mkdir(refreshWorkspace, { recursive: true });
+  const runner = fakeRunner([missingSource, neutral]);
+  let copied = false;
+
+  const result = await prepareSeedStore({
+    cwd: refreshWorkspace,
+    run: runner.run,
+    copy: async () => { copied = true; },
+    neutralRoot: join(root, "pnpm-store"),
+    refreshWorkspace,
+  });
+
+  assert.equal(result.alreadyNeutral, true);
+  assert.equal(copied, false);
+  assert.equal(await readFile(join(neutral, "files", "package.tgz"), "utf8"), "seed-package");
+
+  const absentRunner = fakeRunner([join(root, "missing-source", "v11"), join(root, "missing-neutral", "v11")]);
+  await assert.rejects(prepareSeedStore({
+    cwd: refreshWorkspace,
+    run: absentRunner.run,
+    neutralRoot: join(root, "missing-neutral"),
+    refreshWorkspace,
+  }), /store.*exist/i);
+});
+
 test("unsafe, equal, root, unversioned and flattened store paths fail before deletion", async (t) => {
   const { root, source, neutral } = await fixtureStore(t);
   for (const paths of [
