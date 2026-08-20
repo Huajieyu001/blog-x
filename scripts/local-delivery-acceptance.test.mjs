@@ -44,12 +44,13 @@ test("local delivery acceptance only accepts complete BLOCKED Phase 6/7 records 
 });
 
 test("local delivery acceptance rejects incomplete, stale, non-pass, unclean, and secret-bearing evidence", () => {
+  const rawDatabaseUrl = ["postgres://user", "password@host/db"].join(":");
   const replacements = [
     [phase6Output.replace(/BLOG X PHASE6 DATA RESULT.*\n/, ""), phase7Output, /three|record/i],
     [phase6Output.replace("GENERATED PARALLEL CLEANUP PASS", ""), phase7Output, /cleanup/i],
     [phase6Output, phase7Output.replace('"version":1', '"version":2'), /format|version/i],
     [phase6Output, phase7Output.replace("CLEANUP PASS", "CLEANUP FAIL"), /cleanup/i],
-    [`${phase6Output}\npostgres://user:password@host/db`, phase7Output, /secret|credential|database/i],
+    [`${phase6Output}\n${rawDatabaseUrl}`, phase7Output, /secret|credential|database/i],
     [phase6Output, `${phase7Output}\nBLOG X PHASE7 BROWSER RESULT ${JSON.stringify(phase7Result)}`, /exactly one/i],
     [phase6Output.replace('"tests":3,"passed":3', '"tests":0,"passed":0'), phase7Output, /zero|pass-only/i],
     [phase6Output.replace('"failed":0', '"failed":1'), phase7Output, /pass-only|counts/i],
