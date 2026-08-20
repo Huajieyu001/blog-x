@@ -8,10 +8,12 @@ import { verifyPhase5Receipt } from "./phase5-receipt.mjs";
 import {
   assertSemanticTap,
   assertPlaywrightJourney,
+  createPhase6DataResult,
   createPhase5ResultRecorder,
   parseBoundaryResult,
   parsePlaywrightResult,
   parseSemanticTapResult,
+  PHASE6_DATA_RESULT_FORMAT,
   cleanupGeneratedMediaRoot,
   phase3Selection,
   phase4Selection,
@@ -26,6 +28,7 @@ import {
   validateNamespace,
   validateTopologyPolicy,
 } from "./local-verify.mjs";
+import { assertPlaywrightResult, PHASE7_BROWSER_RESULT_FORMAT } from "./phase7-browser-verify.mjs";
 
 test("verification namespaces are narrow and safe cleanup targets", () => {
   assert.equal(validateNamespace("blogxverify_a1b2c3d4"), "blogxverify_a1b2c3d4");
@@ -198,9 +201,42 @@ test("Phase 6 interruption and parallel paths keep exact generated authority", a
   assert.match(parallel, /firstPort === secondPort/);
   assert.match(parallel, /--internal-run", "--phase6-data", "--skip-build/);
   assert.match(parallel, /LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED/);
+  assert.match(parallel, /GENERATED PARALLEL CLEANUP PASS/);
   assert.match(parallel, /parallel child passed; LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED/);
   assert.match(parallel, /confirmGeneratedProjectAbsent/);
+  assert.match(runner, /GENERATED CLEANUP PASS/);
   assert.doesNotMatch(parallel, /phase5|receipt/i);
+});
+
+test("Phase 8 machine records require every exact Phase 6 suite to pass with nonzero parser counts", () => {
+  const suites = [
+    ...phase6Selection("data").databaseSuites.map(([, id]) => ({ id, kind: "database", counts: { tests: 2, passed: 2, failed: 0, cancelled: 0, skipped: 0, todo: 0 } })),
+    ...phase6Selection("data").nodeSuites.map((id) => ({ id, kind: "node", counts: { tests: 3, passed: 3, failed: 0, cancelled: 0, skipped: 0, todo: 0 } })),
+    { id: phase6Selection("data").boundarySuite, kind: "boundary", counts: { tests: 4, passed: 4, failed: 0, cancelled: 0, skipped: 0, todo: 0 } },
+  ];
+  const result = createPhase6DataResult(suites);
+  assert.equal(PHASE6_DATA_RESULT_FORMAT, "blog-x-phase6-data-result");
+  assert.equal(result.format, PHASE6_DATA_RESULT_FORMAT);
+  assert.equal(result.version, 1);
+  assert.equal(result.releaseState, "BLOCKED");
+  assert.equal(result.suites.length, 7);
+  assert.deepEqual(result.counts, { tests: 17, passed: 17, failed: 0, cancelled: 0, skipped: 0, todo: 0 });
+  assert.throws(() => createPhase6DataResult(suites.slice(1)), /exact|complete|missing/i);
+  assert.throws(() => createPhase6DataResult([...suites, suites[0]]), /exact|duplicate/i);
+  assert.throws(() => createPhase6DataResult(suites.map((suite, index) => index ? suite : { ...suite, counts: { ...suite.counts, tests: 0, passed: 0 } })), /zero|pass/i);
+});
+
+test("Phase 8 Phase 7 parser is import-safe and returns exact pass-only counts", () => {
+  assert.equal(PHASE7_BROWSER_RESULT_FORMAT, "blog-x-phase7-browser-result");
+  assert.deepEqual(assertPlaywrightResult("Running 3 tests using 1 worker\n  3 passed"), {
+    tests: 3, passed: 3, failed: 0, cancelled: 0, skipped: 0, todo: 0,
+  });
+  for (const output of [
+    "Running 0 tests using 1 worker\n  0 passed",
+    "Running 3 tests using 1 worker\n  2 passed\n  1 skipped",
+    "Running 3 tests using 1 worker\n  2 passed\n  1 failed",
+    "Running 3 tests using 1 worker\n  2 passed",
+  ]) assert.throws(() => assertPlaywrightResult(output), /zero|non-pass|mismatch|incomplete/i);
 });
 
 test("a replacement passed audit rejects body/frontmatter receipt revision disagreement", async () => {

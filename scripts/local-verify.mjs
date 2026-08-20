@@ -26,6 +26,9 @@ const composeFile = resolve(root, "compose.yaml");
 const apiImage = "blog-x-api-verify:phase2";
 const webImage = "blog-x-web-verify:phase2";
 
+export const PHASE6_DATA_RESULT_FORMAT = "blog-x-phase6-data-result";
+const PHASE6_DATA_RESULT_PREFIX = "BLOG X PHASE6 DATA RESULT ";
+
 export function validateNamespace(value) {
   if (!/^blogxverify_[a-z0-9]{8,32}$/.test(value ?? "")) {
     throw new Error("verification namespace must match blogxverify_[a-z0-9]{8,32}");
@@ -295,6 +298,57 @@ function sumCounts(records) {
   }, { tests: 0, passed: 0, failed: 0, cancelled: 0, skipped: 0, todo: 0 });
 }
 
+function assertPassOnlyCounts(counts, label) {
+  if (!counts || typeof counts !== "object" || Array.isArray(counts)
+    || Object.keys(counts).sort().join(",") !== "cancelled,failed,passed,skipped,tests,todo") {
+    throw new Error(`${label} counts are incomplete`);
+  }
+  for (const key of ["tests", "passed", "failed", "cancelled", "skipped", "todo"]) {
+    if (!Number.isSafeInteger(counts[key]) || counts[key] < 0) throw new Error(`${label} counts are invalid`);
+  }
+  if (!counts.tests || !counts.passed) throw new Error(`${label} reported zero tests`);
+  if (counts.tests !== counts.passed + counts.failed + counts.cancelled + counts.skipped + counts.todo
+    || counts.failed || counts.cancelled || counts.skipped || counts.todo) throw new Error(`${label} is not pass-only`);
+  return counts;
+}
+
+export function createPhase6DataResult(suiteRecords) {
+  if (!Array.isArray(suiteRecords)) throw new Error("Phase 6 data result requires exact suite records");
+  const selection = phase6Selection("data");
+  const expected = [
+    ...selection.databaseSuites.map(([, id]) => ({ id, kind: "database" })),
+    ...selection.nodeSuites.map((id) => ({ id, kind: "node" })),
+    { id: selection.boundarySuite, kind: "boundary" },
+  ];
+  if (suiteRecords.length !== expected.length) throw new Error("Phase 6 data result exact suite selection is missing, duplicate, or contains extras");
+  const suites = suiteRecords.map((record) => {
+    if (!record || typeof record !== "object" || Array.isArray(record)
+      || Object.keys(record).sort().join(",") !== "counts,id,kind"
+      || typeof record.id !== "string" || typeof record.kind !== "string") {
+      throw new Error("Phase 6 data result suite schema is invalid");
+    }
+    assertPassOnlyCounts(record.counts, `Phase 6 suite ${record.id}`);
+    return { id: record.id, kind: record.kind, counts: { ...record.counts } };
+  });
+  const byId = new Map(suites.map((suite) => [suite.id, suite]));
+  if (byId.size !== suites.length || expected.some(({ id, kind }) => byId.get(id)?.kind !== kind)) {
+    throw new Error("Phase 6 data result suite selection is not exact");
+  }
+  const counts = sumCounts(suites.map((suite) => suite.counts));
+  assertPassOnlyCounts(counts, "Phase 6 data result");
+  return { format: PHASE6_DATA_RESULT_FORMAT, version: 1, suites, counts, releaseState: "BLOCKED" };
+}
+
+function parsePhase6DataResultLine(output) {
+  const lines = String(output).replace(/\r\n?/g, "\n").split("\n").filter((line) => line.startsWith(PHASE6_DATA_RESULT_PREFIX));
+  if (lines.length !== 1) throw new Error("Phase 6 data output must contain exactly one machine result");
+  let result;
+  try { result = JSON.parse(lines[0].slice(PHASE6_DATA_RESULT_PREFIX.length)); } catch { throw new Error("Phase 6 data result is invalid JSON"); }
+  const canonical = createPhase6DataResult(result?.suites);
+  if (JSON.stringify(result) !== JSON.stringify(canonical)) throw new Error("Phase 6 data result schema or counts drifted");
+  return { line: `${PHASE6_DATA_RESULT_PREFIX}${JSON.stringify(canonical)}`, result: canonical };
+}
+
 export function createPhase5ResultRecorder(manifest, secrets = []) {
   if (!manifest || manifest.format !== "blog-x-phase5-suite-manifest" || manifest.version !== 2 || !Array.isArray(manifest.suites)) throw new Error("Phase 5 result recorder requires a v2 manifest");
   const byId = new Map(manifest.suites.map((suite) => [suite.id, suite]));
@@ -531,8 +585,9 @@ async function runDatabaseSuite(context, variable, file) {
         "--volume", `${resolve(root, "packages/contracts")}:/workspace/packages/contracts:ro`,
         ...authority, "api", ...semanticTestCommand(file))
     : await compose(context, `run ${file}`, "exec", "-T", ...authority, "api", ...semanticTestCommand(file));
-  assertSemanticTap(result.combined);
+  const counts = parseSemanticTapResult(result.combined);
   recordPhase5Command(context, file, "node-tap-v13", result);
+  return counts;
 }
 
 function startManaged(context, label, commandName, args, env) {
@@ -911,18 +966,25 @@ async function runPhase6DataChecks(context) {
     await runStep(context, "build workspace", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin } });
   }
   await resetAcceptanceData(context, "clear Phase 6 data acceptance fixtures");
-  for (const [variable, file] of selection.databaseSuites) await runDatabaseSuite(context, variable, file);
+  const suites = [];
+  for (const [variable, file] of selection.databaseSuites) {
+    suites.push({ id: file, kind: "database", counts: await runDatabaseSuite(context, variable, file) });
+  }
   for (const file of selection.nodeSuites) {
     const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
     assertSemanticTap(result.combined);
+    suites.push({ id: file, kind: "node", counts: parseSemanticTapResult(result.combined) });
   }
   await inspectSchema(context);
   const boundary = await runStep(context, `run ${selection.boundarySuite}`, "corepack", ["pnpm", "check:boundaries"], { env: process.env });
-  parseBoundaryResult(boundary.combined);
+  suites.push({ id: selection.boundarySuite, kind: "boundary", counts: parseBoundaryResult(boundary.combined) });
   const blocked = await runStep(context, "confirm canonical production release remains BLOCKED", "node",
     ["scripts/release-gate.mjs", "--evidence=ops/release-evidence.blocked.json", "--expect-blocked"], { env: process.env });
   if (!blocked.stdout.startsWith("RELEASE BLOCKED ")) throw new Error("canonical release evidence did not remain explicitly BLOCKED");
+  const record = createPhase6DataResult(suites);
+  process.stdout.write(`${PHASE6_DATA_RESULT_PREFIX}${JSON.stringify(record)}\n`);
   process.stdout.write("[local-verify] LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED\n");
+  return record;
 }
 
 async function runPhase5MediaChecks(context, options = {}) {
@@ -1219,6 +1281,8 @@ async function runSingle(options) {
     await command("docker-compose", composeArgs(context, "down", "--remove-orphans", "--volumes"), {
       env: composeEnvironment(context), allowFailure: true,
     });
+    await confirmGeneratedProjectAbsent(context.namespace);
+    process.stdout.write("[local-verify] GENERATED CLEANUP PASS\n");
     await restoreVerifierOwnedNextEnvironment(nextEnvironmentBefore);
   }
   return phase5Receipt;
@@ -1251,7 +1315,16 @@ async function parallelCheck(options) {
     throw new Error("parallel Phase 6 child omitted its terminal data-pass/BLOCKED marker");
   }
   if (options.phase6Data) {
-    for (const namespace of [first, second]) {
+    const records = results.map((result) => parsePhase6DataResultLine(result.combined));
+    if (JSON.stringify(records[0].result) !== JSON.stringify(records[1].result)) {
+      throw new Error("parallel Phase 6 child result counts or schema drifted");
+    }
+    for (const [index, namespace] of [first, second].entries()) {
+      process.stdout.write(`${records[index].line}\n`);
+      if (!results[index].stdout.includes("GENERATED CLEANUP PASS")) {
+        throw new Error("parallel Phase 6 child omitted exact generated cleanup proof");
+      }
+      process.stdout.write("[local-verify] GENERATED PARALLEL CLEANUP PASS\n");
       process.stdout.write(`[local-verify] ${namespace} parallel child passed; LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED\n`);
     }
   }

@@ -11,6 +11,9 @@ const playwrightTimeoutMs = 300_000;
 const forcedPlaywrightTimeoutMs = 1_500;
 const exactProcessGroups = process.platform !== "win32";
 
+export const PHASE7_BROWSER_RESULT_FORMAT = "blog-x-phase7-browser-result";
+const PHASE7_BROWSER_RESULT_PREFIX = "BLOG X PHASE7 BROWSER RESULT ";
+
 async function createIsolatedWebRoot(forceSetupFailure = false) {
   const source = resolve(root, "apps/web");
   const isolated = await mkdtemp(resolve(root, "apps/.phase7-web-"));
@@ -120,7 +123,7 @@ function stripAnsi(value) {
   return value.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "");
 }
 
-function assertPlaywrightResult(output) {
+export function assertPlaywrightResult(output) {
   const text = stripAnsi(output);
   const discovered = /Running\s+(\d+)\s+tests?\s+using\s+\d+\s+workers?/i.exec(text);
   if (!discovered || Number(discovered[1]) < 1) throw new Error("Phase 7 Playwright discovered zero tests");
@@ -132,7 +135,9 @@ function assertPlaywrightResult(output) {
   if (passed !== Number(discovered[1])) {
     throw new Error(`Phase 7 Playwright result mismatch: discovered ${discovered[1]}, passed ${passed}`);
   }
+  const counts = { tests: Number(discovered[1]), passed, failed: 0, cancelled: 0, skipped: 0, todo: 0 };
   process.stdout.write(`[phase7-browser] RESULT ${passed}/${discovered[1]} tests passed; 0 skipped/TODO\n`);
+  return counts;
 }
 
 async function assertAcceptanceSpecEnabled() {
@@ -184,8 +189,7 @@ async function runPlaywright(args, env, timeoutMs = playwrightTimeoutMs) {
       if (timedOut) return reject(new Error("Phase 7 Playwright exceeded its bounded time or output"));
       if (code !== 0 || signal !== null) return reject(new Error(`corepack exited with ${code ?? signal}`));
       try {
-        assertPlaywrightResult(output);
-        accept();
+        accept(assertPlaywrightResult(output));
       } catch (error) {
         reject(error);
       }
@@ -247,11 +251,13 @@ async function main() {
       ["apps/web/node_modules/next/dist/bin/next", "dev", isolatedWebRoot, "-p", String(webPort)], webEnv);
     await waitForHttp(webOrigin);
     if (options.forceFailure) throw new Error("forced failure after local children became healthy");
-    await runPlaywright(playwrightArgs(options.grep), {
+    const counts = await runPlaywright(playwrightArgs(options.grep), {
       ...process.env,
       E2E_WEB_ORIGIN: webOrigin,
       E2E_DISCOVERY_FIXTURE_ORIGIN: fixtureOrigin,
     }, options.forceTimeout ? forcedPlaywrightTimeoutMs : playwrightTimeoutMs);
+    const record = { format: PHASE7_BROWSER_RESULT_FORMAT, version: 1, counts, releaseState: "BLOCKED" };
+    process.stdout.write(`${PHASE7_BROWSER_RESULT_PREFIX}${JSON.stringify(record)}\n`);
     process.stdout.write("[phase7-browser] PASS\n");
   } finally {
     await stopExactChildren();
@@ -264,7 +270,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}
