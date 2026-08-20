@@ -1,16 +1,18 @@
 ---
 phase: 08-reliable-local-delivery
-reviewed: 2026-08-20T14:30:01Z
+reviewed: 2026-08-20T15:34:21Z
 depth: standard
-files_reviewed: 17
+files_reviewed: 19
 files_reviewed_list:
   - apps/api/Dockerfile.refresh
   - apps/web/Dockerfile.refresh
   - ops/v1.1-local-delivery-evidence.json
   - package.json
+  - scripts/fixtures/local-delivery-child-tree-helper.mjs
   - scripts/local-delivery-acceptance-test-core.mjs
   - scripts/local-delivery-acceptance.mjs
   - scripts/local-delivery-acceptance.test.mjs
+  - scripts/local-delivery-child-tree.mjs
   - scripts/local-verify.mjs
   - scripts/local-verify.test.mjs
   - scripts/phase7-browser-verify.mjs
@@ -22,62 +24,92 @@ files_reviewed_list:
   - scripts/refresh-local.test.mjs
   - scripts/refresh-seed-store.mjs
 findings:
-  critical: 2
+  critical: 3
   warning: 1
   info: 0
-  total: 3
+  total: 4
 status: issues_found
 ---
 
 # Phase 08: Code Review Report
 
-**Reviewed:** 2026-08-20T14:30:01Z
+**Reviewed:** 2026-08-20T15:34:21Z
 **Depth:** standard
-**Files Reviewed:** 17
+**Files Reviewed:** 19
 **Status:** issues_found
+**Iteration:** 2
 
 ## Summary
 
-The fixed local-delivery implementation has strong exact-argv, immutable-image, receipt-schema, and local-authority validation, but two failure paths violate its core recovery guarantees. Failures after the refresh executor returns do not roll back the already-cut-over runtime, and the outer acceptance timeout is not actually bounded or cleanup-safe. The acceptance digest sanitizer also misses common structured credential forms.
+Iteration 1's fixes add useful rollback coverage, an isolated process-group controller, cooperative signal handling, and broader output redaction. The focused suites pass, but the phase is not ready to close. The committed receipt no longer verifies the current source revision, receipt withdrawal can still prevent the required image rollback, and the new process controller proves only OS-process exit rather than cleanup of the generated Docker/filesystem authorities. Cookie redaction also retains a structured-form gap.
 
 ## Narrative Findings (AI reviewer)
 
 ## Critical Issues
 
-### CR-01: Post-cutover verifier and terminal-output failures bypass rollback
+### CR-01: The committed delivery receipt no longer proves the current implementation
 
 **Classification:** BLOCKER
 
-**File:** `scripts/refresh-local-runtime-core.mjs:975-1017`
+**Files:** `ops/v1.1-local-delivery-evidence.json:4`, `scripts/refresh-local-runtime-core.mjs:885-890`
 
-**Issue:** `executeRefresh()` owns the only rollback-capable `runLocalRefresh()` scope, but it returns before `verifyEvidence()` and the `final_output` stage run. If evidence reconstruction fails at line 979, or a terminal-output stage boundary/write fails after cutover, the outer catch only recollects facts and writes a failure report. It never invokes `rollback-api-web` or `verify-rollback`. The canonical API/Web containers can therefore remain on an unverified target revision even though the command reports failure. This directly contradicts D-13 and the Phase 08 must-have that every failure after cutover begins restores the exact preflight image IDs and route baseline. The stage-fault regression at `scripts/refresh-local.test.mjs:1259-1275` also omits `evidence_verification` and `final_output`, which is why the gap passes the suite.
+**Issue:** The sole receipt binds implementation revision `4414710b605ecd8a770a1c3a60afef479c9b4eb7`, while the reviewed HEAD is `de5ebda211cd2ea85a59cd4d2cfed073e3855672` and contains source changes in the rollback, process-tree, signal-cleanup, and redaction paths. The read-only production verifier fails with `intervening Git paths exceed the evidence/docs-only allowlist`, exactly as the verifier should. Therefore the phase's core claim that current committed code is the code visibly delivered at fixed `3100` is false for the reviewed HEAD. The existing immutable v1.1 path also cannot simply be overwritten.
 
-**Fix:** Keep rollback authority alive through evidence verification and terminal completion. One safe shape is to run current-runtime verification before final receipt publication, then publish the final receipt only after verification succeeds; alternatively expose a sealed adapter recovery operation to `runRefreshCliBoundary` and call `rollback-api-web` plus `verify-rollback` for every post-cutover outer failure. Add fault-injection tests for both `evidence_verification` and `final_output` that assert the old immutable API/Web IDs, original route observations, and absence of a success receipt.
+**Fix:** Preserve the historical receipt, define a planned successor receipt/attempt authority that remains non-overwriting, then perform one formal delivery from a clean commit containing all accepted review fixes. Independently verify that successor receipt against the same commit and fixed runtime before phase completion. Do not weaken the verifier's source-path allowlist or treat source changes as documentation-only drift.
 
-### CR-02: Acceptance timeout/output limits can hang forever and leak generated runtimes
+### CR-02: Receipt withdrawal failure still prevents post-cutover image rollback
 
 **Classification:** BLOCKER
 
-**File:** `scripts/local-delivery-acceptance.mjs:155-177`
+**File:** `scripts/refresh-local-runtime-core.mjs:632-642,762-766`
 
-**Issue:** `runBounded()` starts the Phase 6/7 coordinator child as an ordinary process and, on timeout or output overflow, sends one `SIGTERM` only to that PID. There is no grace deadline, `SIGKILL` escalation, process-group termination, or signal-aware cleanup handshake. If the child ignores or delays `SIGTERM`, the promise never settles because it waits indefinitely for `close`, so the advertised ten-minute/output bound is not a bound. More importantly, killing `local-verify.mjs` or `phase7-browser-verify.mjs` at the parent PID can prevent their `finally` cleanup from running while spawned Compose containers, volumes, Next, fixture, or Playwright descendants continue running. The test-only runtime merely supplies synthetic `timedOut`/`overflow` result objects and never exercises the production process tree, so passing tests do not prove cleanup.
+**Issue:** `rollback-api-web` calls `withdrawPublishedEvidence()` before it runs the immutable old-image Compose cutover. Any `lstat`, authority, `unlink`, directory-open, or directory-sync failure therefore aborts recovery while the unverified target API/Web images remain serving. This is especially relevant to the newly covered `evidence_verification` and `final_output` failures: the fix retains rollback authority only when receipt withdrawal succeeds. It still violates D-13's unconditional post-cutover restore guarantee and has no fault regression for final-receipt unlink/fsync failure.
 
-**Fix:** Implement a bounded child-tree controller: launch an isolated process group where supported, request cooperative termination, wait a short fixed grace period, then terminate the exact group with `SIGKILL` and reject only after the group is confirmed closed. Add SIGTERM handlers in the Phase 6 and Phase 7 entrypoints that await their namespace/root cleanup before exiting, and add a real helper-process regression that deliberately ignores TERM/spawns a descendant and proves bounded completion plus exact generated-authority cleanup.
+**Fix:** Make runtime rollback independent of receipt cleanup. Attempt and verify the exact old-image cutover even if evidence withdrawal fails, retain both failure causes without masking either, and fail closed on the remaining artifact inconsistency only after old images/routes are restored. Add post-publication fault injection for evidence `lstat`/`realpath`/`unlink`/directory sync and assert the old-image Compose invocation and rollback facts still complete.
+
+### CR-03: Process-group exit is reported as cleanup without proving generated Docker/root cleanup
+
+**Classification:** BLOCKER
+
+**Files:** `scripts/local-delivery-child-tree.mjs:71-81`, `scripts/local-verify.mjs:432-458`, `scripts/phase7-browser-verify.mjs:251-264,280-289`
+
+**Issue:** `runBoundedChildTree()` declares "exact child tree cleanup confirmed" as soon as the OS process group disappears. That does not prove Phase 6's daemon-owned Compose containers/volumes were removed or Phase 7's generated Web root was deleted. Phase 6 aborts an active command with only direct-child `SIGTERM`; if that child does not close within the outer five-second grace, the outer `SIGKILL` can terminate `local-verify.mjs` before its `finally` finishes Docker cleanup. Phase 7 also creates `isolatedWebRoot` and then checks `throwIfAborted()` before entering the `try/finally`, so a signal during port allocation or root setup can leave the directory outside cleanup ownership. The real regression covers only a TERM-ignoring listener process and cannot detect either retained authority.
+
+**Fix:** Put each generated authority under cleanup ownership from the moment it is allocated, including Phase 7 root creation. Add a bounded cooperative-cleanup acknowledgement that proves the exact Phase 6 namespace/volumes and Phase 7 root/origins are absent before the controller may report cleanup; forced group termination must not be called confirmed without those checks. Add real signal regressions for pre-try Phase 7 setup and an active generated Phase 6 Compose namespace, including the forced-kill path.
 
 ## Warnings
 
-### WR-01: Sanitized output digests still accept common structured secret forms
+### WR-01: Whitespace-prefixed Cookie headers still change the supposedly sanitized digest
 
 **Classification:** WARNING
 
-**File:** `scripts/local-delivery-acceptance.mjs:38-52`
+**File:** `scripts/local-delivery-acceptance.mjs:47-69`
 
-**Issue:** Both the redactor and raw-secret assertion recognize `password=...`, `token=...`, `secret=...`, PostgreSQL URLs, and `blog_x_session`, but not common forms such as `{"password":"value"}`, `token: value`, `Authorization: Bearer value`, or non-session cookie credentials. Such a line can pass `assertNoRawSecrets()` and be hashed unchanged into `outputSha256`. The receipt does not contain the cleartext, but a deterministic digest of known surrounding output and a low-entropy credential can still support offline guessing and does not meet the stated sanitized-digest contract.
+**Issue:** Both Cookie redaction and the post-redaction raw-secret check require `Cookie:` or `Set-Cookie:` at column zero. Captured/log-indented forms such as `  Cookie: account=alpha` pass validation unchanged. A focused reproduction showed that replacing only `alpha` with `beta` changes `phase6Data.outputSha256`, so the original structured-secret digest contract is still incomplete.
 
-**Fix:** Normalize and redact structured `key=value`, `key: value`, JSON credential fields, authorization headers, and cookie values before hashing, then run the raw-secret assertion against the normalized redacted form. Add fixtures for JSON, colon-delimited, bearer-token, and cookie variants and assert that changing only the secret does not change the sanitized output digest.
+**Fix:** Recognize optional indentation and ordinary log prefixes before Cookie/Set-Cookie header fields, or parse header-shaped segments before hashing. Extend the paired-secret tests with whitespace-prefixed/prefixed Cookie and JSON `set-cookie` forms and require secret-only changes to leave the digest identical.
+
+## Prior Finding Closure
+
+- Previous CR-01: partially closed. Normal evidence-verification/final-output failures now enter rollback, but CR-02 above shows receipt-cleanup faults can still prevent restoration.
+- Previous CR-02: partially closed. OS descendants are bounded and the helper listener closes, but CR-03 above shows generated Docker/filesystem authority is not actually confirmed.
+- Previous WR-01: partially closed. JSON, colon, Bearer, database URL, and column-zero Cookie fixtures are redacted, but WR-01 above remains.
+
+## Verification Performed
+
+- `node --test scripts/refresh-local.test.mjs` — 57 passed, 0 failed/cancelled/skipped/TODO.
+- `node --test scripts/local-delivery-acceptance.test.mjs` — 6 passed, including the TERM-ignoring process-tree helper; 0 failed/cancelled/skipped/TODO.
+- `node --test scripts/local-verify.test.mjs` — 29 passed, 0 failed/cancelled/skipped/TODO.
+- Syntax checks passed for all changed/new `.mjs` files.
+- `node scripts/check-boundaries.mjs` — 409 files checked, 0 findings.
+- `git diff --check` — passed.
+- Read-only production evidence verification — failed as expected because current source changes exceed the receipt/docs-only allowlist.
+- Focused whitespace-prefixed Cookie reproduction — accepted both variants and produced different sanitized output digests.
+- `local:deliver` was not run; the receipt was not modified; no server operation was performed.
 
 ---
 
-_Reviewed: 2026-08-20T14:30:01Z_
-_Reviewer: the agent (gsd-code-reviewer)_
+_Reviewed: 2026-08-20T15:34:21Z_
+_Reviewer: the agent (gsd-code-reviewer generic-agent workaround)_
 _Depth: standard_
+_Iteration: 2_
