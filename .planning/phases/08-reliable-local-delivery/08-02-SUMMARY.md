@@ -79,6 +79,7 @@ coverage:
 
 1. **Task 1: Emit strict complete machine records from Phase 6 and Phase 7** — `8c1f6e6` (`feat`)
 2. **Task 2: Coordinate only the complete isolated v1.1 acceptance path** — `767a0f4` (`feat`)
+3. **Task 2 follow-up: Keep secret-bearing negative fixture scanner-safe** — `4a36c90` (`fix`)
 
 ## Files Created/Modified
 
@@ -101,6 +102,7 @@ None - plan executed exactly as written.
 ## Issues Encountered
 
 - The repository's prior 08-01 verification recorded unreliable registry DNS during a full generated runner build. This plan did not rerun the final canonical delivery command reserved for 08-03; all source-level and focused parser/orchestration verification passed without adding fallback authority or a dependency.
+- Final boundary verification initially caught a credential-shaped literal in the negative test fixture. The fixture now constructs the same runtime test value without tracking credential-shaped source text; the full focused suite and boundary scan then passed.
 
 ## User Setup Required
 
