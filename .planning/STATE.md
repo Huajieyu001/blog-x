@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Content Discovery
-current_phase: 8
+current_phase: 08
 current_phase_name: Reliable Local Delivery
 status: executing
-stopped_at: Phase 8 planned; ready to execute 08-01
-last_updated: "2026-08-19T17:24:00.978Z"
+stopped_at: 08-01 complete; ready to execute 08-02
+last_updated: "2026-08-20T02:42:14Z"
 last_activity: 2026-08-20
-last_activity_desc: Phase 8 research and three-plan execution contract verified
+last_activity_desc: Phase 08 Plan 01 sealed local-delivery authority completed
 progress:
   total_phases: 3
   completed_phases: 2
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-15)
 
 **Core value:** 博主能够可靠地发布和保存 Markdown 内容，访客能够持续、快速地通过博客域名阅读已发布文章。  
-**Current focus:** Phase 8 — Reliable Local Delivery
+**Current focus:** Phase 08 — Reliable Local Delivery
 
 ## Current Position
 
-Phase: 8 — Reliable Local Delivery
-Plan: 3 plans ready; 08-01 is next
-Status: Ready to execute
-Last activity: 2026-08-20 — Phase 8 research and three-plan execution contract verified
+Phase: 08 (Reliable Local Delivery) — EXECUTING
+Plan: 2 of 3
+Status: 08-01 complete; 08-02 next
+Last activity: 2026-08-20 — 08-01 sealed local-delivery authority completed
 
 ## Performance Metrics
 
@@ -92,6 +92,7 @@ Last activity: 2026-08-20 — Phase 8 research and three-plan execution contract
 | Phase 07 P02 | 17min | 2 tasks | 13 files |
 | Phase 07 P03 | 8min | 2 tasks | 5 files |
 | Phase 07 P04 | 18min | 2 tasks | 3 files |
+| Phase 08 P01 | recovery <1h | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -169,6 +170,8 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 07]: Keep one discovery DOM order across responsive widths. — Existing 700px and 1023px CSS authorities adapt geometry without hiding or reordering information.
 - [Phase 07]: Require generated-port Playwright to prove nonzero exact pass counts and zero skip/TODO before Phase 7 acceptance can pass. — A process exit code alone cannot prove the complete visitor matrix executed.
 - [Phase 07]: Verify runner cleanup through exact child handles and generated-origin closure only. — This proves isolation without inspecting or terminating unrelated processes.
+- [Phase 08]: Local delivery uses one immutable v1.1 receipt path, branch-qualified clean revision facts and a canonical Docker port-owner proof. — A short Docker ps ID is accepted only as a validated prefix of the inspected full Web container ID plus exact name/Compose labels.
+- [Phase 08]: Seed prerequisite remediation is classified only from trusted validation branches and printed only after the bound failure report. — Raw child output and authority-changing advice cannot leak into operator instructions.
 
 ### Blockers/Concerns
 
@@ -179,11 +182,11 @@ Decisions are logged in PROJECT.md Key Decisions table.
 
 ## Session Continuity
 
-Last session: 2026-08-19T17:24:00.968Z
-Stopped at: Phase 8 planned; ready to execute 08-01
-Resume file: .planning/phases/08-reliable-local-delivery/08-01-PLAN.md
+Last session: 2026-08-20T02:42:14Z
+Stopped at: 08-01 complete; ready to execute 08-02
+Resume file: .planning/phases/08-reliable-local-delivery/08-02-PLAN.md
 
 ## Operator Next Steps
 
-- Execute Phase 08 Wave 1 with `$gsd-execute-phase 8`.
+- Execute Phase 08 Wave 2 with `$gsd-execute-phase 8`.
 - Keep both cloud servers out of scope; Phase 8 execution is local-only and must finish with `releaseState: BLOCKED`.
