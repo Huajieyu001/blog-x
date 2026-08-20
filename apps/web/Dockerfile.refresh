@@ -11,7 +11,7 @@ LABEL org.opencontainers.image.revision=${REFRESH_REVISION} \
   io.blog-x.seed-image-id=${SEED_IMAGE_ID} \
   io.blog-x.application=web \
   io.blog-x.public-origin=${PUBLIC_ORIGIN} \
-  io.blog-x.refresh-kind=phase6-offline
+  io.blog-x.refresh-kind=v1.1-offline-local-delivery
 
 COPY scripts/refresh-seed-store.mjs /usr/local/lib/refresh-seed-store.mjs
 RUN node /usr/local/lib/refresh-seed-store.mjs

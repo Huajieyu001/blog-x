@@ -3,6 +3,7 @@ import { lstat, link, mkdir, open, readFile, readdir, realpath, unlink } from "n
 import { basename, dirname, resolve } from "node:path";
 import {
   REFRESH_AUTHORITY,
+  assertCanonicalPortOwner,
   assertFixedRuntimeAuthority,
   assertPersistenceTransition,
   assertRouteFacts,
@@ -14,7 +15,11 @@ import {
 } from "./refresh-local-facts.mjs";
 
 const CLAIM_ROOT = "/private/tmp/blog-x-refresh-attempts";
-const EVIDENCE_PATH = "ops/phase6-local-refresh-evidence.json";
+export const LOCAL_DELIVERY_EVIDENCE_PATH = "ops/v1.1-local-delivery-evidence.json";
+export const LOCAL_DELIVERY_FORMAT = "blog-x-v1.1-local-delivery-evidence";
+export const LOCAL_DELIVERY_VERSION = 1;
+export const LOCAL_DELIVERY_REFRESH_KIND = "v1.1-offline-local-delivery";
+export const SEED_PREREQUISITE_KINDS = Object.freeze(["missing", "stale", "incompatible", "lock-drifted", "incomplete-store"]);
 const COMPOSE_FILE = "compose.yaml";
 const PROJECT = "blogxlocal";
 const ORIGIN = "http://127.0.0.1:3100";
@@ -23,6 +28,7 @@ const VOLUMES = ["blogxlocal_postgres-data", "blogxlocal_media-data"];
 const REQUIRED_IMAGE_LABELS = ["org.opencontainers.image.revision", "io.blog-x.lockfile-sha256", "io.blog-x.seed-image-id", "io.blog-x.application", "io.blog-x.public-origin", "io.blog-x.refresh-kind"];
 const MEDIA_PROGRAM = "const fs=require('node:fs'),crypto=require('node:crypto'),path=require('node:path');const root='/var/lib/blog-x/media';const out=[];function walk(dir){for(const name of fs.readdirSync(dir).sort()){const full=path.join(dir,name),st=fs.lstatSync(full);if(st.isSymbolicLink())throw new Error('symlink');if(st.isDirectory())walk(full);else if(st.isFile()){const bytes=fs.readFileSync(full);out.push({relativePath:path.relative(root,full),bytes:bytes.length,sha256:crypto.createHash('sha256').update(bytes).digest('hex')});}}}if(fs.existsSync(root))walk(root);process.stdout.write(JSON.stringify(out));";
 const TARGET_FS_PROGRAM = "const fs=require('node:fs');const app=process.argv[1],store=process.argv[2],required=app==='web'?['/refresh-workspace/apps/web/.next','/refresh-workspace/node_modules']:['/refresh-workspace/apps/api/src/app.ts','/refresh-workspace/node_modules'],forbidden=['/workspace','/pnpm-store/files',app==='web'?'/refresh-workspace/apps/web/dist':'/refresh-workspace/apps/api/dist'],roots=fs.readdirSync('/pnpm-store');if(!/^\\/pnpm-store\\/v\\d+$/.test(store)||roots.length!==1||!/^v\\d+$/.test(roots[0])||required.some(p=>!fs.existsSync(p))||forbidden.some(p=>fs.existsSync(p)))process.exit(42);";
+const SEED_PREREQUISITE_PROGRAM = "const fs=require('node:fs');const app=process.argv[1],root='/pnpm-store',versions=fs.readdirSync(root);if(versions.length!==1||!/^v\\d+$/.test(versions[0])||fs.readdirSync(root+'/'+versions[0]).length===0||!fs.existsSync('/refresh-workspace/apps/'+app))process.exit(42);";
 const ONEOFF_PROGRAM = "setInterval(()=>{},2147483647)";
 const BUSINESS_ARGS = ["-p", PROJECT, "-f", COMPOSE_FILE, "exec", "-T", "postgres", "pg_dump", "--data-only", "--no-owner", "--no-privileges", "--exclude-table=public.blog_x_schema_ledger", "--dbname=postgres://blog_x@127.0.0.1:5432/blog_x"];
 const SEQUENCE_SQL = "SELECT COALESCE(json_agg(x ORDER BY schemaname,sequencename),'[]'::json) FROM (SELECT schemaname,sequencename,sequenceowner,data_type,start_value,min_value,max_value,increment_by,cycle,cache_size,last_value FROM pg_sequences WHERE schemaname='public') x;";
@@ -36,9 +42,36 @@ function digest(value) { return createHash("sha256").update(value).digest("hex")
 function validRevision(value) { return typeof value === "string" && /^[a-f0-9]{40}$/.test(value); }
 function validDigest(value) { return typeof value === "string" && /^[a-f0-9]{64}$/.test(value); }
 function validImageId(value) { return typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value); }
+function validBranchRef(value) { return typeof value === "string" && /^refs\/heads\/[^\s\x00-\x1f]+$/.test(value); }
 function same(left, right) { return JSON.stringify(left) === JSON.stringify(right); }
 function exactKeys(value, keys, label) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !same(Object.keys(value).sort(), [...keys].sort())) fail(`${label} keys are not exact`);
+}
+function seedPrerequisiteError(kind, cause) {
+  if (!SEED_PREREQUISITE_KINDS.includes(kind)) fail("seed prerequisite classification is invalid");
+  return new Error(`seed prerequisite ${kind}`, { cause });
+}
+function isSeedPrerequisiteError(error) { return SEED_PREREQUISITE_KINDS.includes(error?.seedPrerequisite); }
+function typedSeedPrerequisiteError(kind, cause) {
+  const error = seedPrerequisiteError(kind, cause);
+  Object.defineProperty(error, "seedPrerequisite", { value: kind });
+  return error;
+}
+export function classifySeedPrerequisiteFailure(error) {
+  return isSeedPrerequisiteError(error) ? error.seedPrerequisite : null;
+}
+export function formatSeedPrewarmInstruction(classification) {
+  if (!SEED_PREREQUISITE_KINDS.includes(classification)) fail("seed prerequisite pre-warm classification is invalid");
+  return `LOCAL DELIVERY SEED PRE-WARM REQUIRED (${classification}): repair the repository-managed API and Web seed images for the committed lock, verify the fixed offline probe, commit that remediation, then retry once from the new clean revision.`;
+}
+export function assertSeedPrerequisiteFacts({ application, expectedId, image, lockfileSha256 } = {}) {
+  if (!["api", "web"].includes(application) || !validImageId(expectedId) || !validDigest(lockfileSha256)) fail("seed prerequisite facts are invalid");
+  if (!image || typeof image !== "object" || !validImageId(image.Id)) throw typedSeedPrerequisiteError("missing");
+  if (image.Id !== expectedId) throw typedSeedPrerequisiteError("stale");
+  const labels = image.Config?.Labels;
+  if (!labels || typeof labels !== "object" || Array.isArray(labels) || image.Config?.WorkingDir !== "/refresh-workspace" || labels["io.blog-x.application"] !== application || labels["io.blog-x.public-origin"] !== ORIGIN) throw typedSeedPrerequisiteError("incompatible");
+  if (labels["io.blog-x.lockfile-sha256"] !== lockfileSha256) throw typedSeedPrerequisiteError("lock-drifted");
+  return true;
 }
 function canonicalClaim(revision) {
   if (!validRevision(revision)) fail("attempt claim revision must be lowercase full SHA");
@@ -281,16 +314,18 @@ function assertEnv(options, expected) {
 export function assertAllowedRefreshCommand(command, args, options = {}) {
   if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string" || arg.includes("\0"))) fail("command argv is invalid");
   let allowed = false;
-  if (command === "git") allowed = exact(command, args, ["git", ["status", "--porcelain"]]) || exact(command, args, ["git", ["rev-parse", "HEAD"]]) || exact(command, args, ["git", ["hash-object", "pnpm-lock.yaml"]]) || exact(command, args, ["git", ["ls-files", ".planning/milestones"]]) || (args.length === 2 && args[0] === "show" && /^[a-f0-9]{40}:pnpm-lock\.yaml$/.test(args[1])) || (args.length === 4 && same(args.slice(0, 2), ["merge-base", "--is-ancestor"]) && validRevision(args[2]) && validRevision(args[3])) || (args.length === 4 && same(args.slice(0, 2), ["diff", "--name-only"]) && /^[a-f0-9]{40}\.\.[a-f0-9]{40}$/.test(args[2]) && args[3] === "--");
+  if (command === "git") allowed = exact(command, args, ["git", ["status", "--porcelain"]]) || exact(command, args, ["git", ["symbolic-ref", "--quiet", "HEAD"]]) || exact(command, args, ["git", ["rev-parse", "HEAD"]]) || exact(command, args, ["git", ["hash-object", "pnpm-lock.yaml"]]) || exact(command, args, ["git", ["ls-files", ".planning/milestones"]]) || (args.length === 2 && args[0] === "show" && /^[a-f0-9]{40}:pnpm-lock\.yaml$/.test(args[1])) || (args.length === 4 && same(args.slice(0, 2), ["merge-base", "--is-ancestor"]) && validRevision(args[2]) && validRevision(args[3])) || (args.length === 4 && same(args.slice(0, 2), ["diff", "--name-only"]) && /^[a-f0-9]{40}\.\.[a-f0-9]{40}$/.test(args[2]) && args[3] === "--");
   if (command === "docker") {
     allowed = same(args, ["context", "show"])
       || (args.length === 3 && same(args.slice(0, 2), ["context", "inspect"]) && ["colima", "default"].includes(args[2]))
+      || same(args, ["ps", "--filter", "publish=3100", "--format", "{{json .}}"])
       || buildArgsMatch(args)
       || (same(args.slice(0, 2), ["image", "inspect"]) && args.length === 3 && validRef(args[2]))
       || (same(args.slice(0, 2), ["container", "inspect"]) && ((args.length === 5 && same(args.slice(2), CONTAINERS)) || (args.length === 3 && validOneoff(args[2]))))
       || (same(args.slice(0, 2), ["volume", "inspect"]) && args.length === 4 && same(args.slice(2), VOLUMES))
       || (args.length === 10 && same(args.slice(0, 5), ["run", "--rm", "--network=none", "--entrypoint", "corepack"]) && validRef(args[5]) && same(args.slice(6), ["pnpm", "--store-dir=/pnpm-store", "store", "path"]))
       || (args.length === 10 && same(args.slice(0, 5), ["run", "--rm", "--network=none", "--entrypoint", "node"]) && validRef(args[5]) && args[6] === "-e" && args[7] === TARGET_FS_PROGRAM && ["api", "web"].includes(args[8]) && /^\/pnpm-store\/v\d+$/.test(args[9]))
+      || (args.length === 9 && same(args.slice(0, 5), ["run", "--rm", "--network=none", "--entrypoint", "node"]) && validImageId(args[5]) && args[6] === "-e" && args[7] === SEED_PREREQUISITE_PROGRAM && ["api", "web"].includes(args[8]))
       || (args.length === 3 && args[0] === "exec" && validOneoff(args[1]) && args[2] === "true")
       || (args.length === 7 && args[0] === "exec" && validOneoff(args[1]) && same(args.slice(2, 6), ["corepack", "pnpm", "--filter", "@blog-x/api"]) && ["db:migrate", "db:schema:verify"].includes(args[6]))
       || (args.length === 3 && same(args.slice(0, 2), ["rm", "-f"]) && validOneoff(args[2]));
@@ -357,6 +392,7 @@ export function createRawRefreshFactSources({ run, fetch, root = process.cwd(), 
       return { services, ps };
     },
     async containers() { return parseJson((await run("docker", ["container", "inspect", ...CONTAINERS])).stdout, "container inspect"); },
+    async portOwner(containers) { return assertCanonicalPortOwner((await run("docker", ["ps", "--filter", "publish=3100", "--format", "{{json .}}"])).stdout, containers); },
     async volumes() { return parseJson((await run("docker", ["volume", "inspect", ...VOLUMES])).stdout, "volume inspect"); },
     async business() { const value = normalizeDump((await run("docker-compose", BUSINESS_ARGS)).stdout); return { count: value ? value.split("\n").length : 0, sha256: digest(value) }; },
     async sequences() { const rows = parseJson(cleanOutput(await run("docker-compose", [...PSQL_PREFIX, SEQUENCE_SQL])), "sequence query"); return { count: rows.length, sha256: factsSha256(rows) }; },
@@ -371,9 +407,10 @@ export function createRawRefreshFactSources({ run, fetch, root = process.cwd(), 
     },
     async git() {
       const status = cleanOutput(await run("git", ["status", "--porcelain"]));
+      const ref = cleanOutput(await run("git", ["symbolic-ref", "--quiet", "HEAD"]));
       const implementationRevision = cleanOutput(await run("git", ["rev-parse", "HEAD"]));
-      if (status || !validRevision(implementationRevision)) fail("Git authority is not one clean full revision");
-      return { implementationRevision, clean: true, lockfileSha256: digest(await fs.readFile(resolve(root, "pnpm-lock.yaml"))) };
+      if (status || !validBranchRef(ref) || !validRevision(implementationRevision)) fail("Git authority is not one clean branch-qualified full revision");
+      return { implementationRevision, clean: true, lockfileSha256: digest(await fs.readFile(resolve(root, "pnpm-lock.yaml"))), ref };
     },
     async database() {
       const identity = parseJson(cleanOutput(await run("docker-compose", [...PSQL_PREFIX, DATABASE_SQL])), "database identity");
@@ -474,10 +511,21 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
     for (const ref of refs) result.push(parseJson((await run("docker", ["image", "inspect", ref])).stdout, `image inspect ${ref}`)[0]);
     return result;
   };
-  const assertSeedsStable = async (plan) => {
+  const validateSeedPrerequisites = async (plan) => {
     for (const target of plan.targets) {
-      const image = (await inspectImages([target.seedReference]))[0];
-      if (image?.Id !== target.seedId) fail(`${target.application} seed reference drifted`);
+      let image;
+      try {
+        image = (await inspectImages([target.seedReference]))[0];
+      } catch (error) {
+        throw typedSeedPrerequisiteError("missing", error);
+      }
+      assertSeedPrerequisiteFacts({ application: target.application, expectedId: target.seedId, image, lockfileSha256: plan.lockSha256 });
+      try {
+        await run("docker", ["run", "--rm", "--network=none", "--entrypoint", "node", image.Id, "-e", SEED_PREREQUISITE_PROGRAM, target.application]);
+      } catch (error) {
+        throw typedSeedPrerequisiteError("incomplete-store", error);
+      }
+      state.seeds[target.application] = { reference: target.seedReference, inspectedId: image.Id };
     }
   };
   const probe = async (target, image) => {
@@ -487,7 +535,7 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
     validateTarget(image, target);
     return { storeSha256: digest(store), filesystemSha256: digest(`${target.application}:${image.Config.WorkingDir}:${JSON.stringify(image.Config.Cmd)}`), filesystemExact: true };
   };
-  const evidencePath = resolve(root, EVIDENCE_PATH);
+  const evidencePath = resolve(root, LOCAL_DELIVERY_EVIDENCE_PATH);
   async function assertEvidenceAbsent() {
     try { await evidenceFs.lstat(evidencePath); fail("refresh evidence final already exists"); } catch (error) { if (error?.code !== "ENOENT") throw error; }
     const prefix = `.${basename(evidencePath)}.`;
@@ -537,10 +585,8 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
         for (const target of plan.targets) {
           const running = imageByService(state.facts.preflight, target.application);
           if (!validImageId(running?.Image) || typeof running.Config?.Image !== "string") fail("fixed seed image authority is missing");
-          const seed = (await inspectImages([running.Config.Image]))[0];
-          if (seed?.Id !== running.Image) fail(`${target.application} seed tag does not resolve to the running image`);
-          target.seedId = seed.Id; target.seedReference = running.Config.Image; target.labels["io.blog-x.seed-image-id"] = seed.Id;
-          state.seeds[target.application] = { reference: running.Config.Image, inspectedId: seed.Id };
+          target.seedId = running.Image; target.seedReference = running.Config.Image; target.labels["io.blog-x.seed-image-id"] = running.Image;
+          state.seeds[target.application] = { reference: running.Config.Image, inspectedId: running.Image };
           state.oldImages[target.application] = running.Image;
         }
         state.facts.preflight.seeds = structuredClone(state.seeds);
@@ -549,14 +595,18 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
       }
       tick(PHASE_REPORT_STAGE[phase] ?? phase);
       if (!state.claim) fail("refresh attempt must be claimed before mutation");
+      if (phase === "seed-prerequisites") {
+        await validateSeedPrerequisites(plan);
+        state.facts.preflight.seeds = structuredClone(state.seeds);
+        return;
+      }
       if (phase === "build-api" || phase === "build-web") {
         const target = plan.targets.find((item) => item.application === phase.slice(6));
         await run("docker", buildCommand(target, plan));
         state.targets[target.application] = (await inspectImages([target.tag]))[0];
-        await assertSeedsStable(plan); return;
+        return;
       }
       if (phase === "inspect-target-images") {
-        await assertSeedsStable(plan);
         for (const target of plan.targets) { const image = state.targets[target.application]; validateTarget(image, target); state.targets[target.application].probe = await probe(target, image); }
         state.targetFacts = Object.fromEntries(["api", "web"].map((app) => [app, { id: state.targets[app].Id, labelsSha256: factsSha256(selectedLabels(state.targets[app].Config?.Labels)), filesystemSha256: state.targets[app].probe.filesystemSha256, storeSha256: state.targets[app].probe.storeSha256 }]));
         state.facts.preflight.targets = await sources.targets();
@@ -595,7 +645,7 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
         const preflight = projectSanitizedFacts(state.facts.preflight, { routeContract: "observed" });
         const postMigration = projectSanitizedFacts(state.facts.postMigration, { routeContract: "observed" });
         if (!factsEqual(preflight.routes, postMigration.routes)) fail("evidence pre-cutover route observations changed");
-        const evidence = { format: "blog-x-phase6-local-refresh-evidence", version: 4, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, attemptClaim: { implementationRevision: plan.revision, sha256: state.claim.sha256 }, oldImages: state.oldImages, seeds: state.seeds, targets: targetEvidence, stages: { preflight, postMigration, postCutover: projectSanitizedFacts(state.facts.postCutover, { routeContract: "final" }) }, releaseState: "BLOCKED" };
+        const evidence = { format: LOCAL_DELIVERY_FORMAT, version: LOCAL_DELIVERY_VERSION, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, attemptClaim: { implementationRevision: plan.revision, sha256: state.claim.sha256 }, oldImages: state.oldImages, seeds: state.seeds, targets: targetEvidence, stages: { preflight, postMigration, postCutover: projectSanitizedFacts(state.facts.postCutover, { routeContract: "final" }) }, releaseState: "BLOCKED" };
         await publishEvidence(evidenceFs, evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, randomEvidenceHex); return;
       }
       if (phase === "rollback-api-web") {
@@ -643,7 +693,8 @@ function assertProjectedRoutes(routes, label, routeContract) {
 function assertProjectionSchema(value, label, { routeContract = "final" } = {}) {
   exactKeys(value, PROJECTION_KEYS, label);
   for (const key of ["business", "protected", "sequences", "volumes"]) assertProjectedDigest(value[key], `${label} ${key}`);
-  exactKeys(value.git, ["clean", "implementationRevision", "lockfileSha256"], `${label} Git`);
+  exactKeys(value.git, ["clean", "implementationRevision", "lockfileSha256", "ref"], `${label} Git`);
+  if (value.git.clean !== true || !validRevision(value.git.implementationRevision) || !validDigest(value.git.lockfileSha256) || !validBranchRef(value.git.ref)) fail(`${label} Git projection is invalid`);
   exactKeys(value.database, ["name", "schemaRows", "schemaSha256", "systemIdentifier"], `${label} database`);
   exactKeys(value.seeds, ["api", "web"], `${label} seeds`); exactKeys(value.targets, ["api", "web"], `${label} targets`);
   assertProjectedDigest(value.media, `${label} media`, ["bytes"]);
@@ -658,12 +709,12 @@ function assertProjectionSchema(value, label, { routeContract = "final" } = {}) 
     if (container.healthy !== true || typeof container.id !== "string" || !container.id || typeof container.imageId !== "string" || !container.imageId.startsWith("sha256:") || !container.labels || typeof container.labels !== "object" || Array.isArray(container.labels)) fail(`${label} ${service} container projection is invalid`);
   }
   assertProjectedRoutes(value.routes, label, routeContract);
-  exactKeys(value.topology, ["containersHealthy", "fixedPortsExact", "project", "servicesExact"], `${label} topology`);
-  if (value.releaseState !== "BLOCKED" || value.topology.project !== PROJECT || [value.topology.containersHealthy, value.topology.fixedPortsExact, value.topology.servicesExact].some((item) => item !== true)) fail(`${label} authority is not exact`);
+  exactKeys(value.topology, ["containersHealthy", "fixedPortsExact", "portOwnerExact", "project", "servicesExact"], `${label} topology`);
+  if (value.releaseState !== "BLOCKED" || value.topology.project !== PROJECT || [value.topology.containersHealthy, value.topology.fixedPortsExact, value.topology.portOwnerExact, value.topology.servicesExact].some((item) => item !== true)) fail(`${label} authority is not exact`);
 }
 function assertEvidenceSchema(evidence) {
   exactKeys(evidence, EVIDENCE_KEYS, "evidence");
-  if (evidence.format !== "blog-x-phase6-local-refresh-evidence" || evidence.version !== 4 || evidence.releaseState !== "BLOCKED" || !validRevision(evidence.implementationRevision) || !validDigest(evidence.lockfileSha256)) fail("evidence is not a strict blocked v4 local refresh record");
+  if (evidence.format !== LOCAL_DELIVERY_FORMAT || evidence.version !== LOCAL_DELIVERY_VERSION || evidence.releaseState !== "BLOCKED" || !validRevision(evidence.implementationRevision) || !validDigest(evidence.lockfileSha256)) fail("evidence is not a strict blocked v1.1 local delivery record");
   exactKeys(evidence.attemptClaim, ["implementationRevision", "sha256"], "evidence claim");
   exactKeys(evidence.oldImages, ["api", "web"], "evidence old images");
   exactKeys(evidence.seeds, ["api", "web"], "evidence seeds");
@@ -676,14 +727,14 @@ function assertEvidenceSchema(evidence) {
     exactKeys(target, ["id", "labels", "probe"], `evidence ${app} target`);
     exactKeys(target.labels, REQUIRED_IMAGE_LABELS, `evidence ${app} labels`);
     exactKeys(target.probe, ["filesystemExact", "filesystemSha256", "storeSha256"], `evidence ${app} probe`);
-    if (!validImageId(target.id) || target.probe.filesystemExact !== true || !validDigest(target.probe.filesystemSha256) || !validDigest(target.probe.storeSha256) || target.labels["org.opencontainers.image.revision"] !== evidence.implementationRevision || target.labels["io.blog-x.lockfile-sha256"] !== evidence.lockfileSha256 || !validImageId(target.labels["io.blog-x.seed-image-id"]) || target.labels["io.blog-x.application"] !== app || target.labels["io.blog-x.public-origin"] !== ORIGIN || target.labels["io.blog-x.refresh-kind"] !== "phase6-offline") fail(`evidence ${app} target provenance is invalid`);
+    if (!validImageId(target.id) || target.probe.filesystemExact !== true || !validDigest(target.probe.filesystemSha256) || !validDigest(target.probe.storeSha256) || target.labels["org.opencontainers.image.revision"] !== evidence.implementationRevision || target.labels["io.blog-x.lockfile-sha256"] !== evidence.lockfileSha256 || !validImageId(target.labels["io.blog-x.seed-image-id"]) || target.labels["io.blog-x.application"] !== app || target.labels["io.blog-x.public-origin"] !== ORIGIN || target.labels["io.blog-x.refresh-kind"] !== LOCAL_DELIVERY_REFRESH_KIND) fail(`evidence ${app} target provenance is invalid`);
   }
   for (const name of ["preflight", "postMigration"]) assertProjectionSchema(evidence.stages[name], `evidence ${name}`, { routeContract: "observed" });
   assertProjectionSchema(evidence.stages.postCutover, "evidence postCutover", { routeContract: "final" });
   if (!factsEqual(evidence.stages.preflight.routes, evidence.stages.postMigration.routes)) fail("evidence pre-cutover route observations changed");
   for (const key of ["business", "database", "git", "media", "protected", "seeds", "sequences", "targets", "volumes"]) if (!factsEqual(evidence.stages.preflight[key], evidence.stages.postMigration[key]) || !factsEqual(evidence.stages.postMigration[key], evidence.stages.postCutover[key])) fail(`evidence ${key} stages are inconsistent`);
   for (const stage of Object.values(evidence.stages)) {
-    if (stage.git.clean !== true || stage.git.implementationRevision !== evidence.implementationRevision || stage.git.lockfileSha256 !== evidence.lockfileSha256 || !factsEqual(stage.seeds, evidence.seeds)) fail("evidence Git/lock/seed linkage is invalid");
+    if (stage.git.clean !== true || stage.git.implementationRevision !== evidence.implementationRevision || stage.git.lockfileSha256 !== evidence.lockfileSha256 || !validBranchRef(stage.git.ref) || !factsEqual(stage.git.ref, evidence.stages.preflight.git.ref) || !factsEqual(stage.seeds, evidence.seeds)) fail("evidence Git/lock/seed linkage is invalid");
     for (const app of ["api", "web"]) {
       const expected = { id: evidence.targets[app].id, labelsSha256: factsSha256(evidence.targets[app].labels), filesystemSha256: evidence.targets[app].probe.filesystemSha256, storeSha256: evidence.targets[app].probe.storeSha256 };
       if (!factsEqual(stage.targets[app], expected)) fail(`evidence ${app} target linkage is invalid`);
@@ -710,17 +761,18 @@ export async function verifyRawRefreshEvidence(path, { claimStore, fs, runArgv, 
   const run = async (command, args, options = {}) => { assertAllowedRefreshCommand(command, args, options); return runArgv(command, args, options); };
   let verifiedGit;
   {
-    const status = cleanOutput(await run("git", ["status", "--porcelain"])); const head = cleanOutput(await run("git", ["rev-parse", "HEAD"]));
-    if (status || !validRevision(head)) fail("verification Git worktree is not clean");
+    const status = cleanOutput(await run("git", ["status", "--porcelain"])); const ref = cleanOutput(await run("git", ["symbolic-ref", "--quiet", "HEAD"])); const head = cleanOutput(await run("git", ["rev-parse", "HEAD"]));
+    if (status || !validBranchRef(ref) || !validRevision(head)) fail("verification Git worktree is not a clean branch-qualified revision");
     if (head !== evidence.implementationRevision) {
       await run("git", ["merge-base", "--is-ancestor", evidence.implementationRevision, head]);
       const changed = cleanOutput(await run("git", ["diff", "--name-only", `${evidence.implementationRevision}..${head}`, "--"])).split("\n").filter(Boolean);
-      const allowed = new Set(["ops/phase6-local-refresh-evidence.json", ".planning/phases/06-public-discovery-data/06-03-SUMMARY.md", ".planning/phases/06-public-discovery-data/06-10-SUMMARY.md", ".planning/phases/06-public-discovery-data/06-11-SUMMARY.md"]);
+      const allowed = new Set([LOCAL_DELIVERY_EVIDENCE_PATH, ".planning/phases/06-public-discovery-data/06-03-SUMMARY.md", ".planning/phases/06-public-discovery-data/06-10-SUMMARY.md", ".planning/phases/06-public-discovery-data/06-11-SUMMARY.md"]);
       if (changed.some((item) => !allowed.has(item))) fail("intervening Git paths exceed the evidence/docs-only allowlist");
     }
     const committedLock = (await run("git", ["show", `${evidence.implementationRevision}:pnpm-lock.yaml`])).stdout;
     if (digest(committedLock) !== evidence.lockfileSha256) fail("committed raw lockfile digest does not match evidence");
-    verifiedGit = { clean: true, implementationRevision: evidence.implementationRevision, lockfileSha256: digest(committedLock) };
+    if (ref !== evidence.stages.postCutover.git.ref) fail("verification Git branch ref drifted from evidence");
+    verifiedGit = { clean: true, implementationRevision: evidence.implementationRevision, lockfileSha256: digest(committedLock), ref };
   }
   const verificationState = { seeds: structuredClone(evidence.seeds), targetFacts: {} };
   const reconstruct = () => collectRefreshFacts({ sources: createRawRefreshFactSources({ run, fetch, root, fs, state: verificationState }) });
@@ -759,7 +811,7 @@ const PHASE_REPORT_STAGE = Object.freeze({
 export async function runRefreshCliBoundary({ argv, resolveRevision, attemptStore, adapterFactory, output, readLockfile, materializePlan, executeRefresh, verifyEvidence, probeOffline, stageBoundary = () => undefined }) {
   const evidenceOption = argv.find((item) => item.startsWith("--verify-evidence="));
   if (evidenceOption) {
-    if (argv.length !== 1 || evidenceOption !== "--verify-evidence=ops/phase6-local-refresh-evidence.json") fail("evidence verification accepts only the fixed evidence path");
+    if (argv.length !== 1 || evidenceOption !== `--verify-evidence=${LOCAL_DELIVERY_EVIDENCE_PATH}`) fail("evidence verification accepts only the fixed evidence path");
     await verifyEvidence(); output.write("LOCAL REFRESH EVIDENCE VERIFIED; RELEASE BLOCKED\n"); return { releaseState: "BLOCKED" };
   }
   if (argv.includes("--probe-offline-builds")) {
@@ -811,8 +863,10 @@ export async function runRefreshCliBoundary({ argv, resolveRevision, attemptStor
       const code = String(reportError?.code ?? "publication_failed").replace(/[^A-Za-z0-9_-]/g, "_");
       throw new Error(`UNRECOVERABLE_FAILURE_REPORT_INVARIANT:${code}`, { cause: error });
     }
-    throw error;
+    const classification = classifySeedPrerequisiteFailure(error);
+    if (classification) output.write(`${formatSeedPrewarmInstruction(classification)}\n`);
+    throw classification ? new Error(`local refresh: seed prerequisite ${classification}`) : error;
   }
 }
 
-export { CLAIM_ROOT, EVIDENCE_PATH, nativeFs };
+export { CLAIM_ROOT, nativeFs };

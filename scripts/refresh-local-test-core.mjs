@@ -7,6 +7,7 @@ import {
   createRawRefreshRuntime,
   createRefreshAttemptStore,
   inspectRefreshAttemptClaimWithStore,
+  LOCAL_DELIVERY_EVIDENCE_PATH,
   verifyRawRefreshEvidence,
   runRefreshCliBoundary,
 } from "./refresh-local-runtime-core.mjs";
@@ -46,9 +47,11 @@ export function createRefreshTestRuntime(boundaries) {
     runCli({ argv = [], output = { write() {} } } = {}) {
       const resolveRevision = async () => {
         if (String((await processBoundary("git", ["status", "--porcelain"])).stdout ?? "").trim()) fail("raw Git worktree is dirty");
+        const ref = String((await processBoundary("git", ["symbolic-ref", "--quiet", "HEAD"])).stdout ?? "").trim();
+        if (!/^refs\/heads\/[^\s\x00-\x1f]+$/.test(ref)) fail("raw Git worktree is detached or has an invalid branch ref");
         return String((await processBoundary("git", ["rev-parse", "HEAD"])).stdout ?? "").trim();
       };
-      return runRefreshCliBoundary({ argv, resolveRevision, attemptStore: claimStore(), adapterFactory: () => runtime.createAdapter(), output, readLockfile: () => fs.readFile("/virtual-workspace/pnpm-lock.yaml"), materializePlan: (bytes, revision) => createRefreshPlan({ revision, lockSha256: sha256(bytes), apiSeedId: "sha256:0", webSeedId: "sha256:0" }), executeRefresh: (adapter, plan) => runLocalRefresh({ adapter, plan }), verifyEvidence: () => runtime.verifyEvidence("/virtual-workspace/ops/phase6-local-refresh-evidence.json"), probeOffline: async () => { throw new Error("probe is not available in unit boundaries"); }, stageBoundary: boundaries.clock });
+      return runRefreshCliBoundary({ argv, resolveRevision, attemptStore: claimStore(), adapterFactory: () => runtime.createAdapter(), output, readLockfile: () => fs.readFile("/virtual-workspace/pnpm-lock.yaml"), materializePlan: (bytes, revision) => createRefreshPlan({ revision, lockSha256: sha256(bytes), apiSeedId: "sha256:0", webSeedId: "sha256:0" }), executeRefresh: (adapter, plan) => runLocalRefresh({ adapter, plan }), verifyEvidence: () => runtime.verifyEvidence(`/virtual-workspace/${LOCAL_DELIVERY_EVIDENCE_PATH}`), probeOffline: async () => { throw new Error("probe is not available in unit boundaries"); }, stageBoundary: boundaries.clock });
     },
     stage(name) { return boundaries.clock(name); },
   };

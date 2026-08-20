@@ -12,8 +12,8 @@ export const REFRESH_AUTHORITY = Object.freeze({
   services: Object.freeze(["api", "postgres", "web"]),
 });
 
-const FACT_KEYS = ["business", "composeAuthority", "containers", "database", "git", "ledger", "media", "protected", "releaseState", "routes", "seeds", "sequences", "targets", "volumes"];
-const BASE_FACT_KEYS = ["business", "containers", "database", "git", "ledger", "media", "protected", "releaseState", "routes", "seeds", "sequences", "targets", "volumes"];
+const FACT_KEYS = ["business", "composeAuthority", "containers", "database", "git", "ledger", "media", "portOwnerExact", "protected", "releaseState", "routes", "seeds", "sequences", "targets", "volumes"];
+const BASE_FACT_KEYS = ["business", "containers", "database", "git", "ledger", "media", "portOwnerExact", "protected", "releaseState", "routes", "seeds", "sequences", "targets", "volumes"];
 const PROJECTION_KEYS = ["business", "containers", "database", "git", "ledger", "media", "protected", "releaseState", "routes", "seeds", "sequences", "targets", "topology", "volumes"];
 const ROUTE_KEYS = ["/", "/api/health", "/api/public/articles/phase6-unknown/related", "/api/public/search?q=", "/archives", "/categories", "/tags"];
 const SELECTED_LABELS = [
@@ -54,6 +54,7 @@ function canonical(value) {
 }
 function same(a, b) { return canonical(a) === canonical(b); }
 function copy(value) { return structuredClone(value); }
+function validBranchRef(value) { return typeof value === "string" && /^refs\/heads\/[^\s\x00-\x1f]+$/.test(value); }
 function assertDigestFact(value, label, extra = []) {
   exactKeys(value, ["count", "sha256", ...extra], label);
   if (!Number.isSafeInteger(value.count) || value.count < 0 || !/^[a-f0-9]{64}$/.test(value.sha256)) fail(`${label} digest/count is invalid`);
@@ -71,6 +72,46 @@ function assertPorts(service, actual) {
       ? { "5432/tcp": null }
       : { "3100/tcp": [{ HostIp: "127.0.0.1", HostPort: "3100" }] };
   if (!same(actual, expected)) fail(`${service} port authority is not exact`);
+}
+
+function parseDockerPsRecords(stdout) {
+  if (typeof stdout !== "string" || !stdout.trim()) fail("published-port owner output is empty");
+  const lines = stdout.trim().split("\n");
+  if (lines.some((line) => !line.trim())) fail("published-port owner output contains a blank record");
+  return lines.map((line) => {
+    try {
+      const record = JSON.parse(line);
+      if (!isPlain(record)) fail("published-port owner record is not JSON object");
+      return record;
+    } catch (error) {
+      if (/published-port owner/.test(error?.message ?? "")) throw error;
+      fail("published-port owner record is invalid JSON");
+    }
+  });
+}
+
+function parseDockerLabels(value) {
+  if (typeof value !== "string") fail("published-port owner labels are invalid");
+  const entries = value.split(",");
+  if (entries.some((entry) => !entry || !entry.includes("="))) fail("published-port owner labels are invalid");
+  const labels = Object.fromEntries(entries.map((entry) => {
+    const index = entry.indexOf("=");
+    return [entry.slice(0, index), entry.slice(index + 1)];
+  }));
+  if (Object.keys(labels).length !== entries.length) fail("published-port owner labels contain duplicates");
+  return labels;
+}
+
+/** Proves that the sole host listener selected by Docker is the inspected canonical Web container. */
+export function assertCanonicalPortOwner(stdout, containers) {
+  const records = parseDockerPsRecords(stdout);
+  if (!Array.isArray(containers) || records.length !== 1) fail("published port 3100 must have exactly one owner");
+  const web = containers.find((item) => item?.Config?.Labels?.["com.docker.compose.service"] === "web");
+  const record = records[0];
+  if (!web || typeof record.ID !== "string" || !/^[a-f0-9]{12,64}$/.test(record.ID) || typeof record.Names !== "string") fail("published-port owner identity is invalid");
+  const labels = parseDockerLabels(record.Labels);
+  if (!String(web.Id).startsWith(record.ID) || record.Names !== REFRESH_AUTHORITY.containers.web || labels["com.docker.compose.project"] !== REFRESH_AUTHORITY.project || labels["com.docker.compose.service"] !== "web") fail("published port 3100 owner is not the canonical Web container");
+  return true;
 }
 
 export function assertRouteObservations(routes) {
@@ -148,11 +189,12 @@ function assertPersistenceFacts(facts) {
   assertDigestFact(facts.media, "media", ["bytes"]);
   assertDigestFact(facts.protected, "protected");
   ledgerStable(facts.ledger);
-  exactKeys(facts.git, ["clean", "implementationRevision", "lockfileSha256"], "Git facts");
-  if (facts.git.clean !== true || !/^[a-f0-9]{40}$/.test(facts.git.implementationRevision) || !/^[a-f0-9]{64}$/.test(facts.git.lockfileSha256)) fail("Git facts are invalid");
+  exactKeys(facts.git, ["clean", "implementationRevision", "lockfileSha256", "ref"], "Git facts");
+  if (facts.git.clean !== true || !/^[a-f0-9]{40}$/.test(facts.git.implementationRevision) || !/^[a-f0-9]{64}$/.test(facts.git.lockfileSha256) || !validBranchRef(facts.git.ref)) fail("Git facts are invalid");
   exactKeys(facts.database, ["name", "schemaRows", "schemaSha256", "systemIdentifier"], "database facts");
   if (facts.database.name !== "blog_x" || typeof facts.database.systemIdentifier !== "string" || !facts.database.systemIdentifier || !Number.isSafeInteger(facts.database.schemaRows) || facts.database.schemaRows < 1 || !/^[a-f0-9]{64}$/.test(facts.database.schemaSha256)) fail("database facts are invalid");
   exactKeys(facts.seeds, ["api", "web"], "seed facts"); exactKeys(facts.targets, ["api", "web"], "target facts");
+  if (facts.portOwnerExact !== true) fail("published-port ownership is not exact");
 }
 function persistenceEqual(before, after) {
   for (const key of ["business", "database", "git", "media", "protected", "seeds", "sequences", "targets", "volumes"]) if (!same(before[key], after[key])) fail(`${key} persistence changed`);
@@ -244,7 +286,7 @@ export function projectSanitizedFacts(facts, { routeContract = "final" } = {}) {
     sequences: digestProjection(facts.sequences, "sequences"),
     seeds: copy(facts.seeds),
     targets: copy(facts.targets),
-    topology: { project: REFRESH_AUTHORITY.project, servicesExact: true, fixedPortsExact: true, containersHealthy: true },
+    topology: { project: REFRESH_AUTHORITY.project, servicesExact: true, fixedPortsExact: true, portOwnerExact: true, containersHealthy: true },
     volumes: { count: facts.volumes.length, sha256: sha256(canonical(facts.volumes)) },
   };
   exactKeys(projection, PROJECTION_KEYS, "sanitized projection");
@@ -256,7 +298,7 @@ function normalizeVolumes(volumes) {
 }
 
 export async function collectRefreshFacts({ sources } = {}) {
-  const required = ["composeAuthority", "containers", "volumes", "business", "sequences", "ledger", "media", "protected", "routes", "releaseState", "git", "database", "seeds", "targets"];
+  const required = ["composeAuthority", "containers", "portOwner", "volumes", "business", "sequences", "ledger", "media", "protected", "routes", "releaseState", "git", "database", "seeds", "targets"];
   if (!isPlain(sources) || required.some((key) => typeof sources[key] !== "function")) fail("collector requires every read-only source adapter");
   const facts = {
     composeAuthority: await sources.composeAuthority(),
@@ -270,6 +312,7 @@ export async function collectRefreshFacts({ sources } = {}) {
     routes: copy(await sources.routes()),
     releaseState: await sources.releaseState(),
   };
+  facts.portOwnerExact = await sources.portOwner(facts.containers);
   for (const key of ["git", "database", "seeds", "targets"]) facts[key] = copy(await sources[key]());
   assertFixedRuntimeAuthority(facts);
   assertPersistenceFacts(facts);

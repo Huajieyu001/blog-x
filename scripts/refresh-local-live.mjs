@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   CLAIM_ROOT,
-  EVIDENCE_PATH,
+  LOCAL_DELIVERY_EVIDENCE_PATH,
   assertAllowedRefreshArgv,
   assertAllowedRefreshCommand,
   assertLocalDockerAuthority,
@@ -46,7 +46,7 @@ export function createProductionLiveRefreshAdapter(...args) {
 
 export function verifyProductionLiveRefreshEvidence(...args) {
   if (args.length) fail("sealed production evidence verifier accepts no arguments or overrides");
-  return verifyRawRefreshEvidence(resolve(productionRoot, EVIDENCE_PATH), { claimStore: createProductionRefreshAttemptStore(), fs: nativeFs, runArgv: nativeProductionRun, fetch: globalThis.fetch, root: productionRoot });
+  return verifyRawRefreshEvidence(resolve(productionRoot, LOCAL_DELIVERY_EVIDENCE_PATH), { claimStore: createProductionRefreshAttemptStore(), fs: nativeFs, runArgv: nativeProductionRun, fetch: globalThis.fetch, root: productionRoot });
 }
 
 export function inspectRefreshAttemptClaim(revision, ...args) {
@@ -56,7 +56,7 @@ export function inspectRefreshAttemptClaim(revision, ...args) {
 
 export {
   CLAIM_ROOT,
-  EVIDENCE_PATH,
+  LOCAL_DELIVERY_EVIDENCE_PATH,
   assertAllowedRefreshArgv,
   assertAllowedRefreshCommand,
   assertLocalDockerAuthority,

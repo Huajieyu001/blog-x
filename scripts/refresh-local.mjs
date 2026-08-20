@@ -8,7 +8,12 @@ import {
   createProductionRefreshAttemptStore,
   verifyProductionLiveRefreshEvidence,
 } from "./refresh-local-live.mjs";
-import { runRefreshCliBoundary } from "./refresh-local-runtime-core.mjs";
+import {
+  LOCAL_DELIVERY_FORMAT,
+  LOCAL_DELIVERY_REFRESH_KIND,
+  LOCAL_DELIVERY_VERSION,
+  runRefreshCliBoundary,
+} from "./refresh-local-runtime-core.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const composeFile = resolve(root, "compose.yaml");
@@ -53,7 +58,7 @@ export function createRefreshPlan({ revision, lockSha256, apiSeedId, webSeedId }
       "io.blog-x.seed-image-id": seedId,
       "io.blog-x.application": application,
       "io.blog-x.public-origin": FIXED_REFRESH.origin,
-      "io.blog-x.refresh-kind": "phase6-offline",
+      "io.blog-x.refresh-kind": LOCAL_DELIVERY_REFRESH_KIND,
     },
   });
   return {
@@ -61,7 +66,7 @@ export function createRefreshPlan({ revision, lockSha256, apiSeedId, webSeedId }
     lockSha256,
     project: FIXED_REFRESH.project,
     targets: [target("api", apiSeedId), target("web", webSeedId)],
-    phases: ["preflight", "build-api", "build-web", "inspect-target-images", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence"],
+    phases: ["preflight", "seed-prerequisites", "build-api", "build-web", "inspect-target-images", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence"],
     preMutation: [
       { args: ["git", "status", "--porcelain"], readOnly: true },
       { args: ["docker", "build", "--network=none", "--pull=false"] },
@@ -93,7 +98,7 @@ export async function runLocalRefresh({ adapter, plan = createRefreshPlan({ revi
     }
     attemptedPhase = "write-evidence";
     await adapter.execute("write-evidence", plan);
-    return { format: "blog-x-phase6-local-refresh-evidence", version: 4, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, releaseState: "BLOCKED" };
+    return { format: LOCAL_DELIVERY_FORMAT, version: LOCAL_DELIVERY_VERSION, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, releaseState: "BLOCKED" };
   } catch (error) {
     error.refreshStage ??= adapter.currentPhase?.() ?? attemptedPhase;
     if (cutoverStarted && !error.refreshBeforeMutation) {
@@ -149,7 +154,7 @@ async function probeOne(application, seedImage, revision, lockSha256) {
     const image = await inspectImage(tag);
     const config = image.Config ?? {};
     const labels = config.Labels ?? {};
-    for (const [key, value] of Object.entries({ "org.opencontainers.image.revision": revision, "io.blog-x.lockfile-sha256": lockSha256, "io.blog-x.seed-image-id": seed.Id, "io.blog-x.application": application, "io.blog-x.public-origin": FIXED_REFRESH.origin, "io.blog-x.refresh-kind": "phase6-offline" })) {
+    for (const [key, value] of Object.entries({ "org.opencontainers.image.revision": revision, "io.blog-x.lockfile-sha256": lockSha256, "io.blog-x.seed-image-id": seed.Id, "io.blog-x.application": application, "io.blog-x.public-origin": FIXED_REFRESH.origin, "io.blog-x.refresh-kind": LOCAL_DELIVERY_REFRESH_KIND })) {
       if (labels[key] !== value) fail(`${application} probe label ${key} is not exact`);
     }
     const store = (await run("docker", ["run", "--rm", "--network=none", "--entrypoint", "corepack", tag, "pnpm", "--store-dir=/pnpm-store", "store", "path"])).stdout.trim();
@@ -176,6 +181,8 @@ export async function probeOfflineBuilds({ apiSeedImage = process.env.BLOG_X_API
 async function resolveCleanRevision() {
   const status = (await run("git", ["status", "--porcelain"])).stdout;
   if (status.trim()) fail("worktree must be clean before live refresh");
+  const ref = (await run("git", ["symbolic-ref", "--quiet", "HEAD"])).stdout.trim();
+  if (!/^refs\/heads\/[^\s\x00-\x1f]+$/.test(ref)) fail("worktree must be on a non-detached branch before live refresh");
   const revision = (await run("git", ["rev-parse", "HEAD"])).stdout.trim();
   shortRevision(revision);
   return revision;
