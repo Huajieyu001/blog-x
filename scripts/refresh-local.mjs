@@ -12,6 +12,8 @@ import {
   LOCAL_DELIVERY_FORMAT,
   LOCAL_DELIVERY_REFRESH_KIND,
   LOCAL_DELIVERY_VERSION,
+  formatRefreshFailure,
+  formatRefreshStageProgress,
   runRefreshCliBoundary,
 } from "./refresh-local-runtime-core.mjs";
 
@@ -86,25 +88,34 @@ export function inspectTargetFilesystem({ workdir, cmd, neutralStore, storePath,
   return true;
 }
 
-export async function runLocalRefresh({ adapter, plan = createRefreshPlan({ revision: "0".repeat(40), lockSha256: "0".repeat(64), apiSeedId: "sha256:0", webSeedId: "sha256:0" }) } = {}) {
+export async function runLocalRefresh({ adapter, plan = createRefreshPlan({ revision: "0".repeat(40), lockSha256: "0".repeat(64), apiSeedId: "sha256:0", webSeedId: "sha256:0" }), onStage = () => undefined } = {}) {
   if (!adapter?.execute) fail("a command adapter is required");
+  const report = (phase, status) => onStage(formatRefreshStageProgress(phase === "preflight" ? "preflight_collection" : phase, status));
   let cutoverStarted = false; let attemptedPhase = "preflight";
   try {
     for (const phase of plan.phases) {
       if (phase === "write-evidence") continue;
       attemptedPhase = phase;
       if (phase === "cutover-api-web") cutoverStarted = true;
+      report(phase, "start");
       await adapter.execute(phase, plan);
+      report(phase, "complete");
     }
     attemptedPhase = "write-evidence";
+    report("write-evidence", "start");
     await adapter.execute("write-evidence", plan);
+    report("write-evidence", "complete");
     return { format: LOCAL_DELIVERY_FORMAT, version: LOCAL_DELIVERY_VERSION, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, releaseState: "BLOCKED" };
   } catch (error) {
     error.refreshStage ??= adapter.currentPhase?.() ?? attemptedPhase;
     if (cutoverStarted && !error.refreshBeforeMutation) {
       try {
+        report("rollback-api-web", "start");
         await adapter.execute("rollback-api-web", plan);
+        report("rollback-api-web", "complete");
+        report("verify-rollback", "start");
         await adapter.execute("verify-rollback", plan);
+        report("verify-rollback", "complete");
       } catch (recoveryError) {
         if (/^UNRECOVERABLE_EVIDENCE_INVARIANT:/.test(error?.message ?? "")) throw error;
         recoveryError.refreshStage ??= adapter.currentPhase?.() ?? "rollback-api-web";
@@ -198,7 +209,7 @@ export async function runRefreshCli(...args) {
     output: process.stdout,
     readLockfile: () => readFile(lockfile),
     materializePlan: (bytes, revision) => createRefreshPlan({ revision, lockSha256: sha256(bytes), apiSeedId: "sha256:0", webSeedId: "sha256:0" }),
-    executeRefresh: (adapter, plan) => runLocalRefresh({ adapter, plan }),
+    executeRefresh: (adapter, plan, { onStage }) => runLocalRefresh({ adapter, plan, onStage }),
     verifyEvidence: verifyProductionLiveRefreshEvidence,
     probeOffline: probeOfflineBuilds,
   });
@@ -206,7 +217,7 @@ export async function runRefreshCli(...args) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   runRefreshCli().catch((error) => {
-    process.stderr.write(`${error.message}\n`);
+    if (!error?.refreshFailureReported) process.stderr.write(formatRefreshFailure({ stage: "cli_validation", recovery: "Correct the fixed invocation, commit the correction, and begin one new clean revision attempt." }));
     process.exitCode = 1;
   });
 }

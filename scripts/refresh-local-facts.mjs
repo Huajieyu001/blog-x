@@ -12,10 +12,10 @@ export const REFRESH_AUTHORITY = Object.freeze({
   services: Object.freeze(["api", "postgres", "web"]),
 });
 
-const FACT_KEYS = ["business", "composeAuthority", "containers", "database", "git", "ledger", "media", "portOwnerExact", "protected", "releaseState", "routes", "seeds", "sequences", "targets", "volumes"];
-const BASE_FACT_KEYS = ["business", "containers", "database", "git", "ledger", "media", "portOwnerExact", "protected", "releaseState", "routes", "seeds", "sequences", "targets", "volumes"];
-const PROJECTION_KEYS = ["business", "containers", "database", "git", "ledger", "media", "protected", "releaseState", "routes", "seeds", "sequences", "targets", "topology", "volumes"];
-const ROUTE_KEYS = ["/", "/api/health", "/api/public/articles/phase6-unknown/related", "/api/public/search?q=", "/archives", "/categories", "/tags"];
+const FACT_KEYS = ["business", "composeAuthority", "containers", "database", "git", "ledger", "media", "portOwnerExact", "protected", "reading", "releaseState", "routes", "seeds", "sequences", "targets", "volumes"];
+const BASE_FACT_KEYS = ["business", "containers", "database", "git", "ledger", "media", "portOwnerExact", "protected", "reading", "releaseState", "routes", "seeds", "sequences", "targets", "volumes"];
+const PROJECTION_KEYS = ["business", "containers", "database", "git", "ledger", "media", "protected", "reading", "releaseState", "routes", "seeds", "sequences", "targets", "topology", "volumes"];
+const ROUTE_KEYS = ["/", "/api/health", "/api/public/articles/phase6-unknown/related", "/api/public/search?q=", "/archives", "/categories", "/search", "/tags"];
 const SELECTED_LABELS = [
   "com.docker.compose.oneoff",
   "com.docker.compose.project",
@@ -127,7 +127,7 @@ export function assertRouteObservations(routes) {
 
 export function assertRouteFacts(routes) {
   assertRouteObservations(routes);
-  for (const path of ["/", "/categories", "/tags", "/archives"]) {
+  for (const path of ["/", "/categories", "/tags", "/archives", "/search"]) {
     exactKeys(routes[path], ["bodySha256", "status"], `route ${path}`);
     if (routes[path].status !== 200 || !/^[a-f0-9]{64}$/.test(routes[path].bodySha256)) fail(`route ${path} contract is invalid`);
   }
@@ -140,6 +140,16 @@ export function assertRouteFacts(routes) {
     exactKeys(routes[path], ["body", "bodySha256", "status"], `route ${path}`);
     if (routes[path].status !== expected.status || !same(routes[path].body, expected.body) || !/^[a-f0-9]{64}$/.test(routes[path].bodySha256)) fail(`route ${path} contract is not exact`);
   }
+  return true;
+}
+
+export function assertReadingFact(reading) {
+  const keys = ["state", "listStatus", "listBodySha256", "detailStatus", "detailBodySha256", "slugSha256"];
+  exactKeys(reading, keys, "reading fact");
+  if (!["verified", "empty_public_set"].includes(reading.state) || reading.listStatus !== 200 || !/^[a-f0-9]{64}$/.test(reading.listBodySha256)) fail("reading list fact is invalid");
+  if (reading.state === "verified") {
+    if (reading.detailStatus !== 200 || !/^[a-f0-9]{64}$/.test(reading.detailBodySha256) || !/^[a-f0-9]{64}$/.test(reading.slugSha256)) fail("verified reading fact is invalid");
+  } else if (reading.detailStatus !== null || reading.detailBodySha256 !== null || reading.slugSha256 !== null) fail("empty reading fact is invalid");
   return true;
 }
 
@@ -194,10 +204,11 @@ function assertPersistenceFacts(facts) {
   exactKeys(facts.database, ["name", "schemaRows", "schemaSha256", "systemIdentifier"], "database facts");
   if (facts.database.name !== "blog_x" || typeof facts.database.systemIdentifier !== "string" || !facts.database.systemIdentifier || !Number.isSafeInteger(facts.database.schemaRows) || facts.database.schemaRows < 1 || !/^[a-f0-9]{64}$/.test(facts.database.schemaSha256)) fail("database facts are invalid");
   exactKeys(facts.seeds, ["api", "web"], "seed facts"); exactKeys(facts.targets, ["api", "web"], "target facts");
+  assertReadingFact(facts.reading);
   if (facts.portOwnerExact !== true) fail("published-port ownership is not exact");
 }
 function persistenceEqual(before, after) {
-  for (const key of ["business", "database", "git", "media", "protected", "seeds", "sequences", "targets", "volumes"]) if (!same(before[key], after[key])) fail(`${key} persistence changed`);
+  for (const key of ["business", "database", "git", "media", "protected", "reading", "seeds", "sequences", "targets", "volumes"]) if (!same(before[key], after[key])) fail(`${key} persistence changed`);
   const beforePg = containerByService(before, "postgres");
   const afterPg = containerByService(after, "postgres");
   if (beforePg?.Id !== afterPg?.Id || beforePg?.Image !== afterPg?.Image) fail("PostgreSQL identity changed");
@@ -281,6 +292,7 @@ export function projectSanitizedFacts(facts, { routeContract = "final" } = {}) {
     ledger: { count: facts.ledger.length, rows, stableSha256: sha256(canonical(Object.fromEntries(Object.entries(rows).map(([scope, row]) => [scope, row.stableSha256])))), timestampSha256: sha256(canonical(Object.fromEntries(Object.entries(rows).map(([scope, row]) => [scope, row.appliedAt])))) },
     media: digestProjection(facts.media, "media", ["bytes"]),
     protected: digestProjection(facts.protected, "protected"),
+    reading: copy(facts.reading),
     releaseState: "BLOCKED",
     routes: routeProjection(facts.routes, routeContract),
     sequences: digestProjection(facts.sequences, "sequences"),
@@ -298,7 +310,7 @@ function normalizeVolumes(volumes) {
 }
 
 export async function collectRefreshFacts({ sources } = {}) {
-  const required = ["composeAuthority", "containers", "portOwner", "volumes", "business", "sequences", "ledger", "media", "protected", "routes", "releaseState", "git", "database", "seeds", "targets"];
+  const required = ["composeAuthority", "containers", "portOwner", "volumes", "business", "sequences", "ledger", "media", "protected", "routes", "reading", "releaseState", "git", "database", "seeds", "targets"];
   if (!isPlain(sources) || required.some((key) => typeof sources[key] !== "function")) fail("collector requires every read-only source adapter");
   const facts = {
     composeAuthority: await sources.composeAuthority(),
@@ -310,6 +322,7 @@ export async function collectRefreshFacts({ sources } = {}) {
     media: copy(await sources.media()),
     protected: copy(await sources.protected()),
     routes: copy(await sources.routes()),
+    reading: copy(await sources.reading()),
     releaseState: await sources.releaseState(),
   };
   facts.portOwnerExact = await sources.portOwner(facts.containers);

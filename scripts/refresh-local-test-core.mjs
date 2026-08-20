@@ -51,7 +51,7 @@ export function createRefreshTestRuntime(boundaries) {
         if (!/^refs\/heads\/[^\s\x00-\x1f]+$/.test(ref)) fail("raw Git worktree is detached or has an invalid branch ref");
         return String((await processBoundary("git", ["rev-parse", "HEAD"])).stdout ?? "").trim();
       };
-      return runRefreshCliBoundary({ argv, resolveRevision, attemptStore: claimStore(), adapterFactory: () => runtime.createAdapter(), output, readLockfile: () => fs.readFile("/virtual-workspace/pnpm-lock.yaml"), materializePlan: (bytes, revision) => createRefreshPlan({ revision, lockSha256: sha256(bytes), apiSeedId: "sha256:0", webSeedId: "sha256:0" }), executeRefresh: (adapter, plan) => runLocalRefresh({ adapter, plan }), verifyEvidence: () => runtime.verifyEvidence(`/virtual-workspace/${LOCAL_DELIVERY_EVIDENCE_PATH}`), probeOffline: async () => { throw new Error("probe is not available in unit boundaries"); }, stageBoundary: boundaries.clock });
+      return runRefreshCliBoundary({ argv, resolveRevision, attemptStore: claimStore(), adapterFactory: () => runtime.createAdapter(), output, readLockfile: () => fs.readFile("/virtual-workspace/pnpm-lock.yaml"), materializePlan: (bytes, revision) => createRefreshPlan({ revision, lockSha256: sha256(bytes), apiSeedId: "sha256:0", webSeedId: "sha256:0" }), executeRefresh: (adapter, plan, { onStage }) => runLocalRefresh({ adapter, plan, onStage }), verifyEvidence: () => runtime.verifyEvidence(`/virtual-workspace/${LOCAL_DELIVERY_EVIDENCE_PATH}`), probeOffline: async () => { throw new Error("probe is not available in unit boundaries"); }, stageBoundary: boundaries.clock });
     },
     stage(name) { return boundaries.clock(name); },
   };

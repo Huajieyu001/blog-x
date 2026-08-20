@@ -7,6 +7,7 @@ import {
   assertCanonicalPortOwner,
   assertFixedRuntimeAuthority,
   assertPersistenceTransition,
+  assertReadingFact,
   assertRouteFacts,
   assertRouteObservations,
   collectRefreshFacts,
@@ -21,6 +22,35 @@ export const LOCAL_DELIVERY_FORMAT = "blog-x-v1.1-local-delivery-evidence";
 export const LOCAL_DELIVERY_VERSION = 1;
 export const LOCAL_DELIVERY_REFRESH_KIND = "v1.1-offline-local-delivery";
 export const SEED_PREREQUISITE_KINDS = Object.freeze(["missing", "stale", "incompatible", "lock-drifted", "incomplete-store"]);
+export const REFRESH_TERMINAL_STAGES = Object.freeze(["cli_validation", "source_authority", "attempt_claim_preflight", "attempt_claim_publication", "adapter_construction", "claim_attachment", "lockfile_plan_materialization", "local_docker_authority", "preflight_collection", "seed-prerequisites", "build-api", "build-web", "inspect-target-images", "accept-v1.1", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence", "evidence_verification", "final_output", "rollback-api-web", "verify-rollback", "failure_recollection", "failure_report_publication"]);
+export const SAFE_RECOVERY_BY_STAGE = Object.freeze({
+  cli_validation: "Correct the fixed invocation, commit the correction, and begin one new clean revision attempt.",
+  source_authority: "Restore a clean attached branch revision, commit any correction, and begin one new revision attempt.",
+  attempt_claim_preflight: "Inspect and preserve the existing claim, failure record, and evidence before choosing a new revision.",
+  attempt_claim_publication: "Preserve claim artifacts, inspect publication authority read-only, and do not repeat this revision.",
+  adapter_construction: "Preserve the claim, restore the approved local adapter authority, and continue only from a new revision.",
+  claim_attachment: "Preserve the claim and inspect its binding read-only before creating a corrected revision.",
+  lockfile_plan_materialization: "Repair committed lockfile inputs, preserve the claim, and create a new clean revision.",
+  local_docker_authority: "Restore only the approved local Docker authority and inspect canonical facts read-only.",
+  preflight_collection: "Restore exact canonical local facts without changing retained data, then create a new revision.",
+  "seed-prerequisites": "Repair committed offline seed inputs and create a new clean revision after the fixed probe passes.",
+  "build-api": "Repair committed API offline inputs and create a new clean revision without retrieval fallback.",
+  "build-web": "Repair committed Web offline inputs and create a new clean revision without retrieval fallback.",
+  "inspect-target-images": "Repair committed target provenance and create a new clean revision after read-only inspection.",
+  "accept-v1.1": "Repair only the generated complete acceptance path, commit it, and begin a new revision attempt.",
+  migrate: "Apply a forward-only committed migration correction and begin a new clean revision attempt.",
+  "schema-verify": "Apply a forward-only committed schema correction and begin a new clean revision attempt.",
+  "cutover-api-web": "Inspect rollback and current facts read-only, preserve all artifacts, and stop automatic retry.",
+  routes: "Inspect rollback and current route facts read-only, preserve all artifacts, and stop automatic retry.",
+  "release-blocked": "Restore the committed blocked decision, inspect current facts read-only, and preserve all artifacts.",
+  "write-evidence": "Preserve claim and receipt artifacts, inspect publication state read-only, and stop automatic retry.",
+  evidence_verification: "Preserve receipt bytes and inspect current facts read-only before any new revision.",
+  final_output: "Preserve the verified receipt and inspect current facts read-only before any new revision.",
+  "rollback-api-web": "Stop automatic retry and inspect retained rollback authority and artifacts read-only.",
+  "verify-rollback": "Stop automatic retry and inspect retained current facts and artifacts read-only.",
+  failure_recollection: "Stop automatic retry and inspect retained claim and fact authority read-only.",
+  failure_report_publication: "Stop automatic retry and inspect retained claim and publication authority read-only.",
+});
 const COMPOSE_FILE = "compose.yaml";
 const PROJECT = "blogxlocal";
 const ORIGIN = "http://127.0.0.1:3100";
@@ -65,6 +95,19 @@ export function classifySeedPrerequisiteFailure(error) {
 export function formatSeedPrewarmInstruction(classification) {
   if (!SEED_PREREQUISITE_KINDS.includes(classification)) fail("seed prerequisite pre-warm classification is invalid");
   return `LOCAL DELIVERY SEED PRE-WARM REQUIRED (${classification}): repair the repository-managed API and Web seed images for the committed lock, verify the fixed offline probe, commit that remediation, then retry once from the new clean revision.`;
+}
+export function formatRefreshStageProgress(stage, status) {
+  if (!REFRESH_TERMINAL_STAGES.includes(stage) || !["start", "complete"].includes(status)) fail("refresh stage progress is invalid");
+  return `LOCAL DELIVERY STAGE ${stage} ${status.toUpperCase()}\n`;
+}
+export function safeRecoveryForRefreshFailure({ stage, error } = {}) {
+  if (!REFRESH_TERMINAL_STAGES.includes(stage)) fail("refresh failure stage is invalid");
+  const classification = stage === "seed-prerequisites" ? classifySeedPrerequisiteFailure(error) : null;
+  return classification ? formatSeedPrewarmInstruction(classification) : SAFE_RECOVERY_BY_STAGE[stage];
+}
+export function formatRefreshFailure({ stage, recovery } = {}) {
+  if (!REFRESH_TERMINAL_STAGES.includes(stage) || recovery !== SAFE_RECOVERY_BY_STAGE[stage] && !SEED_PREREQUISITE_KINDS.some((kind) => recovery === formatSeedPrewarmInstruction(kind))) fail("refresh failure output is invalid");
+  return `LOCAL DELIVERY FAILED\nSTAGE ${stage}\nRECOVERY ${recovery}\n`;
 }
 export function assertSeedPrerequisiteFacts({ application, expectedId, image, lockfileSha256 } = {}) {
   if (!["api", "web"].includes(application) || !validImageId(expectedId) || !validDigest(lockfileSha256)) fail("seed prerequisite facts are invalid");
@@ -368,7 +411,7 @@ export const assertAllowedRefreshArgv = assertAllowedRefreshCommand;
 function routeSource(fetch) {
   return async () => {
     const output = {};
-    for (const path of ["/", "/categories", "/tags", "/archives", "/api/health", "/api/public/search?q=", "/api/public/articles/phase6-unknown/related"]) {
+    for (const path of ["/", "/categories", "/tags", "/archives", "/search", "/api/health", "/api/public/search?q=", "/api/public/articles/phase6-unknown/related"]) {
       const requested = `${ORIGIN}${path}`;
       const response = await fetch(requested, { redirect: "error" });
       if (response.url !== requested || new URL(response.url).origin !== ORIGIN || response.status >= 300 && response.status < 400) fail(`route ${path} redirect or final URL authority is invalid`);
@@ -382,6 +425,45 @@ function routeSource(fetch) {
     }
     assertRouteObservations(output);
     return output;
+  };
+}
+
+function readingSource(fetch) {
+  const read = async (path) => {
+    const requested = `${ORIGIN}${path}`;
+    const response = await fetch(requested, { redirect: "error" });
+    if (response.url !== requested || new URL(response.url).origin !== ORIGIN || response.status >= 300 && response.status < 400) fail("reading route redirect or final URL authority is invalid");
+    const bytes = await response.text();
+    if (Buffer.byteLength(bytes) > 1_048_576) fail("reading route body exceeds the fixed bound");
+    return { response, bytes };
+  };
+  const term = (value, label) => {
+    exactKeys(value, ["name", "slug"], label);
+    if (typeof value.name !== "string" || typeof value.slug !== "string") fail(`${label} is invalid`);
+  };
+  return async () => {
+    const list = await read("/api/public/articles?page=1");
+    if (list.response.status !== 200) fail("public reading list status is invalid");
+    const body = parseJson(list.bytes, "public reading list");
+    exactKeys(body, ["page", "pageSize", "totalItems", "totalPages", "items"], "public reading list");
+    if (body.page !== 1 || body.pageSize !== 10 || !Number.isSafeInteger(body.totalItems) || body.totalItems < 0 || !Number.isSafeInteger(body.totalPages) || body.totalPages !== Math.ceil(body.totalItems / 10) || !Array.isArray(body.items) || body.items.length > 10 || body.items.length > body.totalItems || body.totalItems > 0 && body.items.length === 0) fail("public reading list pagination is invalid");
+    const slugs = new Set();
+    for (const item of body.items) {
+      exactKeys(item, ["title", "summary", "slug", "publishedAt", "status", "tags", ...(Object.hasOwn(item ?? {}, "category") ? ["category"] : [])], "public reading item");
+      if (![item.title, item.summary, item.slug, item.publishedAt].every((value) => typeof value === "string") || !item.slug || item.status !== "published" || Number.isNaN(Date.parse(item.publishedAt)) || !/(?:Z|[+-]\d{2}:\d{2})$/.test(item.publishedAt) || !Array.isArray(item.tags) || slugs.has(item.slug)) fail("public reading item is invalid or duplicated");
+      slugs.add(item.slug);
+      if (item.category !== undefined && item.category !== null) term(item.category, "public reading category");
+      for (const tag of item.tags) term(tag, "public reading tag");
+    }
+    const listBodySha256 = digest(list.bytes);
+    if (body.items.length === 0) {
+      if (body.totalItems !== 0 || body.totalPages !== 0) fail("empty public reading set is inconsistent");
+      return { state: "empty_public_set", listStatus: 200, listBodySha256, detailStatus: null, detailBodySha256: null, slugSha256: null };
+    }
+    const slug = body.items[0].slug;
+    const detail = await read(`/posts/${encodeURIComponent(slug)}`);
+    if (detail.response.status !== 200) fail("representative public reading status is invalid");
+    return { state: "verified", listStatus: 200, listBodySha256, detailStatus: 200, detailBodySha256: digest(detail.bytes), slugSha256: digest(slug) };
   };
 }
 
@@ -409,6 +491,7 @@ export function createRawRefreshFactSources({ run, fetch, root = process.cwd(), 
       return { count: hashes.length, sha256: factsSha256(hashes) };
     },
     async git() {
+      if (state.verifiedGit) return structuredClone(state.verifiedGit);
       const status = cleanOutput(await run("git", ["status", "--porcelain"]));
       const ref = cleanOutput(await run("git", ["symbolic-ref", "--quiet", "HEAD"]));
       const implementationRevision = cleanOutput(await run("git", ["rev-parse", "HEAD"]));
@@ -424,6 +507,7 @@ export function createRawRefreshFactSources({ run, fetch, root = process.cwd(), 
     async seeds() { return structuredClone(state.seeds); },
     async targets() { return structuredClone(state.targetFacts); },
     routes: routeSource(fetch),
+    reading: readingSource(fetch),
     async releaseState() { await run("node", ["scripts/release-gate.mjs", "--evidence=ops/release-evidence.blocked.json", "--expect-blocked"]); return "BLOCKED"; },
   });
 }
@@ -659,7 +743,8 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
         const preflight = projectSanitizedFacts(state.facts.preflight, { routeContract: "observed" });
         const postMigration = projectSanitizedFacts(state.facts.postMigration, { routeContract: "observed" });
         if (!factsEqual(preflight.routes, postMigration.routes)) fail("evidence pre-cutover route observations changed");
-        const evidence = { format: LOCAL_DELIVERY_FORMAT, version: LOCAL_DELIVERY_VERSION, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, attemptClaim: { implementationRevision: plan.revision, sha256: state.claim.sha256 }, oldImages: state.oldImages, seeds: state.seeds, targets: targetEvidence, stages: { preflight, postMigration, postCutover: projectSanitizedFacts(state.facts.postCutover, { routeContract: "final" }) }, releaseState: "BLOCKED" };
+        if (!state.acceptance) fail("accepted v1.1 result is absent");
+        const evidence = { format: LOCAL_DELIVERY_FORMAT, version: LOCAL_DELIVERY_VERSION, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, attemptClaim: { implementationRevision: plan.revision, sha256: state.claim.sha256 }, acceptance: { ...state.acceptance.record, sha256: state.acceptance.sha256 }, oldImages: state.oldImages, seeds: state.seeds, targets: targetEvidence, stages: { preflight, postMigration, postCutover: projectSanitizedFacts(state.facts.postCutover, { routeContract: "final" }) }, releaseState: "BLOCKED" };
         await publishEvidence(evidenceFs, evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, randomEvidenceHex); return;
       }
       if (phase === "rollback-api-web") {
@@ -677,9 +762,9 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
   });
 }
 
-const EVIDENCE_KEYS = ["attemptClaim", "format", "implementationRevision", "lockfileSha256", "oldImages", "releaseState", "seeds", "stages", "targets", "version"];
-const PROJECTION_KEYS = ["business", "containers", "database", "git", "ledger", "media", "protected", "releaseState", "routes", "seeds", "sequences", "targets", "topology", "volumes"];
-const ROUTE_KEYS = ["/", "/api/health", "/api/public/articles/phase6-unknown/related", "/api/public/search?q=", "/archives", "/categories", "/tags"];
+const EVIDENCE_KEYS = ["acceptance", "attemptClaim", "format", "implementationRevision", "lockfileSha256", "oldImages", "releaseState", "seeds", "stages", "targets", "version"];
+const PROJECTION_KEYS = ["business", "containers", "database", "git", "ledger", "media", "protected", "reading", "releaseState", "routes", "seeds", "sequences", "targets", "topology", "volumes"];
+const ROUTE_KEYS = ["/", "/api/health", "/api/public/articles/phase6-unknown/related", "/api/public/search?q=", "/archives", "/categories", "/search", "/tags"];
 function assertProjectedDigest(value, label, extras = []) {
   exactKeys(value, ["count", ...extras, "sha256"], label);
   if (!Number.isSafeInteger(value.count) || value.count < 0 || !validDigest(value.sha256) || extras.some((key) => !Number.isSafeInteger(value[key]) || value[key] < 0)) fail(`${label} digest/count is invalid`);
@@ -691,6 +776,7 @@ function assertProjectedRoutes(routes, label, routeContract) {
     "/categories": { status: 200 },
     "/tags": { status: 200 },
     "/archives": { status: 200 },
+    "/search": { status: 200 },
     "/api/health": { status: 200, contractSha256: factsSha256({ ok: true }) },
     "/api/public/search?q=": { status: 200, contractSha256: factsSha256({ state: "empty_query", query: "", page: 1, pageSize: 10, totalItems: 0, totalPages: 0, items: [] }) },
     "/api/public/articles/phase6-unknown/related": { status: 404, contractSha256: factsSha256({ error: "not_found" }) },
@@ -723,6 +809,7 @@ function assertProjectionSchema(value, label, { routeContract = "final" } = {}) 
     if (container.healthy !== true || typeof container.id !== "string" || !container.id || typeof container.imageId !== "string" || !container.imageId.startsWith("sha256:") || !container.labels || typeof container.labels !== "object" || Array.isArray(container.labels)) fail(`${label} ${service} container projection is invalid`);
   }
   assertProjectedRoutes(value.routes, label, routeContract);
+  assertReadingFact(value.reading);
   exactKeys(value.topology, ["containersHealthy", "fixedPortsExact", "portOwnerExact", "project", "servicesExact"], `${label} topology`);
   if (value.releaseState !== "BLOCKED" || value.topology.project !== PROJECT || [value.topology.containersHealthy, value.topology.fixedPortsExact, value.topology.portOwnerExact, value.topology.servicesExact].some((item) => item !== true)) fail(`${label} authority is not exact`);
 }
@@ -730,6 +817,10 @@ function assertEvidenceSchema(evidence) {
   exactKeys(evidence, EVIDENCE_KEYS, "evidence");
   if (evidence.format !== LOCAL_DELIVERY_FORMAT || evidence.version !== LOCAL_DELIVERY_VERSION || evidence.releaseState !== "BLOCKED" || !validRevision(evidence.implementationRevision) || !validDigest(evidence.lockfileSha256)) fail("evidence is not a strict blocked v1.1 local delivery record");
   exactKeys(evidence.attemptClaim, ["implementationRevision", "sha256"], "evidence claim");
+  exactKeys(evidence.acceptance, ["counts", "format", "phase6Data", "phase7Browser", "releaseState", "sha256", "version"], "evidence acceptance");
+  const { sha256: acceptanceSha256, ...acceptanceRecord } = evidence.acceptance;
+  parseLocalDeliveryAcceptanceRecord(acceptanceRecord);
+  if (!validDigest(acceptanceSha256) || acceptanceSha256 !== digest(JSON.stringify(acceptanceRecord))) fail("evidence acceptance digest is invalid");
   exactKeys(evidence.oldImages, ["api", "web"], "evidence old images");
   exactKeys(evidence.seeds, ["api", "web"], "evidence seeds");
   exactKeys(evidence.targets, ["api", "web"], "evidence targets");
@@ -746,7 +837,7 @@ function assertEvidenceSchema(evidence) {
   for (const name of ["preflight", "postMigration"]) assertProjectionSchema(evidence.stages[name], `evidence ${name}`, { routeContract: "observed" });
   assertProjectionSchema(evidence.stages.postCutover, "evidence postCutover", { routeContract: "final" });
   if (!factsEqual(evidence.stages.preflight.routes, evidence.stages.postMigration.routes)) fail("evidence pre-cutover route observations changed");
-  for (const key of ["business", "database", "git", "media", "protected", "seeds", "sequences", "targets", "volumes"]) if (!factsEqual(evidence.stages.preflight[key], evidence.stages.postMigration[key]) || !factsEqual(evidence.stages.postMigration[key], evidence.stages.postCutover[key])) fail(`evidence ${key} stages are inconsistent`);
+  for (const key of ["business", "database", "git", "media", "protected", "reading", "seeds", "sequences", "targets", "volumes"]) if (!factsEqual(evidence.stages.preflight[key], evidence.stages.postMigration[key]) || !factsEqual(evidence.stages.postMigration[key], evidence.stages.postCutover[key])) fail(`evidence ${key} stages are inconsistent`);
   for (const stage of Object.values(evidence.stages)) {
     if (stage.git.clean !== true || stage.git.implementationRevision !== evidence.implementationRevision || stage.git.lockfileSha256 !== evidence.lockfileSha256 || !validBranchRef(stage.git.ref) || !factsEqual(stage.git.ref, evidence.stages.preflight.git.ref) || !factsEqual(stage.seeds, evidence.seeds)) fail("evidence Git/lock/seed linkage is invalid");
     for (const app of ["api", "web"]) {
@@ -776,11 +867,13 @@ export async function verifyRawRefreshEvidence(path, { claimStore, fs, runArgv, 
   let verifiedGit;
   {
     const status = cleanOutput(await run("git", ["status", "--porcelain"])); const ref = cleanOutput(await run("git", ["symbolic-ref", "--quiet", "HEAD"])); const head = cleanOutput(await run("git", ["rev-parse", "HEAD"]));
-    if (status || !validBranchRef(ref) || !validRevision(head)) fail("verification Git worktree is not a clean branch-qualified revision");
+    const receiptOnlyStatus = status === `?? ${LOCAL_DELIVERY_EVIDENCE_PATH}`;
+    if (status && !receiptOnlyStatus || !validBranchRef(ref) || !validRevision(head)) fail("verification Git worktree is not a receipt-only branch-qualified revision");
     if (head !== evidence.implementationRevision) {
+      if (status) fail("later evidence verification requires a clean worktree");
       await run("git", ["merge-base", "--is-ancestor", evidence.implementationRevision, head]);
       const changed = cleanOutput(await run("git", ["diff", "--name-only", `${evidence.implementationRevision}..${head}`, "--"])).split("\n").filter(Boolean);
-      const allowed = new Set([LOCAL_DELIVERY_EVIDENCE_PATH, ".planning/phases/06-public-discovery-data/06-03-SUMMARY.md", ".planning/phases/06-public-discovery-data/06-10-SUMMARY.md", ".planning/phases/06-public-discovery-data/06-11-SUMMARY.md"]);
+      const allowed = new Set([LOCAL_DELIVERY_EVIDENCE_PATH, ".planning/phases/08-reliable-local-delivery/08-01-SUMMARY.md", ".planning/phases/08-reliable-local-delivery/08-02-SUMMARY.md", ".planning/phases/08-reliable-local-delivery/08-03-SUMMARY.md"]);
       if (changed.some((item) => !allowed.has(item))) fail("intervening Git paths exceed the evidence/docs-only allowlist");
     }
     const committedLock = (await run("git", ["show", `${evidence.implementationRevision}:pnpm-lock.yaml`])).stdout;
@@ -788,7 +881,7 @@ export async function verifyRawRefreshEvidence(path, { claimStore, fs, runArgv, 
     if (ref !== evidence.stages.postCutover.git.ref) fail("verification Git branch ref drifted from evidence");
     verifiedGit = { clean: true, implementationRevision: evidence.implementationRevision, lockfileSha256: digest(committedLock), ref };
   }
-  const verificationState = { seeds: structuredClone(evidence.seeds), targetFacts: {} };
+  const verificationState = { seeds: structuredClone(evidence.seeds), targetFacts: {}, verifiedGit };
   const reconstruct = () => collectRefreshFacts({ sources: createRawRefreshFactSources({ run, fetch, root, fs, state: verificationState }) });
   const probe = async (targets) => {
     for (const app of ["api", "web"]) {
@@ -819,7 +912,6 @@ export function inspectRefreshAttemptClaimWithStore(revision, claimStore) { retu
 
 const PHASE_REPORT_STAGE = Object.freeze({
   preflight: "preflight_collection",
-  "inspect-target-images": "build-web",
 });
 
 export async function runRefreshCliBoundary({ argv, resolveRevision, attemptStore, adapterFactory, output, readLockfile, materializePlan, executeRefresh, verifyEvidence, probeOffline, stageBoundary = () => undefined }) {
@@ -849,37 +941,80 @@ export async function runRefreshCliBoundary({ argv, resolveRevision, attemptStor
     output.write(modeValue === "absent" ? `REFRESH FAILURE REPORT ABSENT ${revision}\n` : `REFRESH FAILURE REPORT PRESENT ${revision} ${result.sha256}\n`); return result;
   }
   if (argv.length) fail("unknown refresh CLI option");
-  const revision = await resolveRevision();
-  if (!validRevision(revision)) fail("revision must be a clean full Git SHA");
-  await attemptStore.assertAbsent(revision);
-  const claim = await attemptStore.claimRefreshAttempt(revision);
-  let adapter; let failureStage = "adapter_construction";
+  const report = (stage, status) => output.write(formatRefreshStageProgress(stage, status));
+  let revision; let claim; let adapter; let executingRefresh = false; let failureStage = "cli_validation";
   try {
+    report("cli_validation", "start");
+    stageBoundary("cli_validation");
+    report("cli_validation", "complete");
+    failureStage = "source_authority"; report(failureStage, "start");
+    stageBoundary(failureStage);
+    revision = await resolveRevision();
+    if (!validRevision(revision)) fail("revision must be a clean full Git SHA");
+    report(failureStage, "complete");
+    failureStage = "attempt_claim_preflight"; report(failureStage, "start");
+    stageBoundary(failureStage);
+    await attemptStore.assertAbsent(revision);
+    report(failureStage, "complete");
+    failureStage = "attempt_claim_publication"; report(failureStage, "start");
+    stageBoundary(failureStage);
+    claim = await attemptStore.claimRefreshAttempt(revision);
+    report(failureStage, "complete");
+    failureStage = "adapter_construction"; report(failureStage, "start");
     stageBoundary(failureStage);
     adapter = await adapterFactory();
-    failureStage = "claim_attachment"; stageBoundary(failureStage);
+    report(failureStage, "complete");
+    failureStage = "claim_attachment"; report(failureStage, "start"); stageBoundary(failureStage);
     adapter.attachAttemptClaim(claim);
-    failureStage = "lockfile_plan_materialization"; stageBoundary(failureStage);
+    report(failureStage, "complete");
+    failureStage = "lockfile_plan_materialization"; report(failureStage, "start"); stageBoundary(failureStage);
     const plan = materializePlan(await readLockfile(), revision);
+    report(failureStage, "complete");
     failureStage = "preflight_collection";
-    return await executeRefresh(adapter, plan);
+    executingRefresh = true;
+    const result = await executeRefresh(adapter, plan, { onStage: (record) => output.write(record) });
+    executingRefresh = false;
+    failureStage = "evidence_verification"; report(failureStage, "start");
+    stageBoundary(failureStage);
+    const evidence = await verifyEvidence();
+    report(failureStage, "complete");
+    failureStage = "final_output"; report(failureStage, "start");
+    stageBoundary(failureStage);
+    output.write(`REVISION ${evidence.implementationRevision}\n`);
+    output.write(`URL ${ORIGIN}\n`);
+    output.write(`ROUTES /search=${evidence.stages.postCutover.routes["/search"].status} /api/health=${evidence.stages.postCutover.routes["/api/health"].status}\n`);
+    output.write(`READING ${evidence.stages.postCutover.reading.state}\n`);
+    output.write(`VISIBLE search=${evidence.stages.postCutover.routes["/search"].status} reading=${evidence.stages.postCutover.reading.state}\n`);
+    output.write(`ACCEPTANCE phase6=${evidence.acceptance.phase6Data.counts.passed} phase7=${evidence.acceptance.phase7Browser.counts.passed} total=${evidence.acceptance.counts.passed}\n`);
+    output.write(`EVIDENCE ${LOCAL_DELIVERY_EVIDENCE_PATH}\n`);
+    output.write("RELEASE BLOCKED\n");
+    report(failureStage, "complete");
+    return result;
   } catch (error) {
     const phase = error?.refreshStage ?? adapter?.currentPhase?.();
-    if (phase && phase !== "constructed") failureStage = PHASE_REPORT_STAGE[phase] ?? phase;
+    if ((error?.refreshStage || executingRefresh) && phase && phase !== "constructed") failureStage = PHASE_REPORT_STAGE[phase] ?? phase;
     let detail = { baseline: "not_applicable", recollection: "not_attempted", preservation: "not_applicable_pre_runtime", facts: { preflight: null, current: null, rollback: null } };
-    if (adapter?.recollectFailure && !["claim_attachment", "lockfile_plan_materialization"].includes(failureStage)) {
+    if (claim && adapter?.recollectFailure && !["claim_attachment", "lockfile_plan_materialization"].includes(failureStage)) {
       try { stageBoundary("failure_recollection"); detail = await adapter.recollectFailure(error); }
       catch { failureStage = "failure_recollection"; detail = { baseline: "applicable", recollection: "failed", preservation: "unproved", facts: { preflight: null, current: null, rollback: null } }; }
     }
-    const report = { format: "blog-x-local-refresh-failure", version: 1, implementationRevision: revision, claimSha256: claim.sha256, stage: failureStage, errorClass: String(error?.name ?? "error").toLowerCase().replace(/[^a-z0-9_-]/g, "_") || "error", ...detail };
-    try { stageBoundary("failure_report_publication"); await attemptStore.writeFailureReport(report); }
-    catch (reportError) {
-      const code = String(reportError?.code ?? "publication_failed").replace(/[^A-Za-z0-9_-]/g, "_");
-      throw new Error(`UNRECOVERABLE_FAILURE_REPORT_INVARIANT:${code}`, { cause: error });
+    if (claim) {
+      const failureReport = { format: "blog-x-local-refresh-failure", version: 1, implementationRevision: revision, claimSha256: claim.sha256, stage: failureStage, errorClass: String(error?.name ?? "error").toLowerCase().replace(/[^a-z0-9_-]/g, "_") || "error", ...detail };
+      try { stageBoundary("failure_report_publication"); await attemptStore.writeFailureReport(failureReport); }
+      catch (reportError) {
+        failureStage = "failure_report_publication";
+        const recovery = safeRecoveryForRefreshFailure({ stage: failureStage, error: reportError });
+        output.write(formatRefreshFailure({ stage: failureStage, recovery }));
+        const reported = new Error(`local delivery failed at ${failureStage}`);
+        Object.defineProperty(reported, "refreshFailureReported", { value: true });
+        throw reported;
+      }
     }
-    const classification = classifySeedPrerequisiteFailure(error);
-    if (classification) output.write(`${formatSeedPrewarmInstruction(classification)}\n`);
-    throw classification ? new Error(`local refresh: seed prerequisite ${classification}`) : error;
+    const recovery = safeRecoveryForRefreshFailure({ stage: failureStage, error });
+    output.write(formatRefreshFailure({ stage: failureStage, recovery }));
+    const reported = new Error(`local delivery failed at ${failureStage}`);
+    Object.defineProperty(reported, "refreshFailureReported", { value: true });
+    throw reported;
   }
 }
 
