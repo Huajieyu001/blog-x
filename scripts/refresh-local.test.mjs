@@ -219,7 +219,7 @@ test("refresh plan has one fixed local authority and offline two-image barrier b
     "blog-x-web-local:aaaaaaaaaaaa",
   ]);
   assert.ok(plan.preMutation.every((command) => command.args.includes("--network=none") || command.args.includes("--pull=false") || command.readOnly));
-  assert.ok(plan.phases.indexOf("inspect-target-images") < plan.phases.indexOf("migrate"));
+  assert.deepEqual(plan.phases.slice(plan.phases.indexOf("inspect-target-images"), plan.phases.indexOf("schema-verify") + 1), ["inspect-target-images", "accept-v1.1", "migrate", "schema-verify"]);
   assert.ok(plan.phases.indexOf("migrate") < plan.phases.indexOf("cutover-api-web"));
 });
 
@@ -251,7 +251,7 @@ test("a post-start failure rolls back only api and web and suppresses evidence",
       },
     },
   }), /route contract failed/);
-  assert.deepEqual(events, ["preflight", "seed-prerequisites", "build-api", "build-web", "inspect-target-images", "migrate", "schema-verify", "cutover-api-web", "routes", "rollback-api-web", "verify-rollback"]);
+  assert.deepEqual(events, ["preflight", "seed-prerequisites", "build-api", "build-web", "inspect-target-images", "accept-v1.1", "migrate", "schema-verify", "cutover-api-web", "routes", "rollback-api-web", "verify-rollback"]);
   assert.equal(events.includes("write-evidence"), false);
   assert.equal(events.some((event) => /postgres|volume|down/.test(event)), false);
 });
@@ -259,7 +259,7 @@ test("a post-start failure rolls back only api and web and suppresses evidence",
 test("successful refresh writes sanitized evidence only after route and BLOCKED checks", async () => {
   const events = [];
   const evidence = await runLocalRefresh({ adapter: { async execute(step) { events.push(step); } } });
-  assert.deepEqual(events, ["preflight", "seed-prerequisites", "build-api", "build-web", "inspect-target-images", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence"]);
+  assert.deepEqual(events, ["preflight", "seed-prerequisites", "build-api", "build-web", "inspect-target-images", "accept-v1.1", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence"]);
   assert.equal(evidence.releaseState, "BLOCKED");
   assert.equal("credentials" in evidence, false);
 });
@@ -346,12 +346,26 @@ test("concurrent fixed-root claims have exactly one winner and retain the canoni
 
 test("live command policy permits only fixed local argv", async () => {
   assert.doesNotThrow(() => assertAllowedRefreshCommand("docker", ["build", "--network=none", "--pull=false", "--file", "apps/api/Dockerfile.refresh", "--tag", "blog-x-api-local:aaaaaaaaaaaa", "--build-arg", `SEED_IMAGE=${SHA("c")}`, "--build-arg", `SEED_IMAGE_ID=${SHA("c")}`, "--build-arg", `REFRESH_REVISION=${"a".repeat(40)}`, "--build-arg", `LOCKFILE_SHA256=${"b".repeat(64)}`, "--build-arg", "PUBLIC_ORIGIN=http://127.0.0.1:3100", "."]));
+  assert.doesNotThrow(() => assertAllowedRefreshCommand("node", ["scripts/local-delivery-acceptance.mjs"]));
+  for (const args of [["scripts/local-delivery-acceptance.mjs", "--partial"], ["./scripts/local-delivery-acceptance.mjs"], ["scripts/local-delivery-acceptance.mjs", ""]]) {
+    assert.throws(() => assertAllowedRefreshCommand("node", args), /allowlisted|exact|argv/i);
+  }
   for (const [command, args] of [["docker-compose", ["-p", "other", "down"]], ["docker", ["build", "--network=host"]], ["ssh", ["root@example"]]]) {
     assert.throws(() => assertAllowedRefreshCommand(command, args), /not allowlisted|allowlisted shape|authority|network/i);
   }
 });
 
 const SHA = (letter) => `sha256:${letter.repeat(64)}`;
+const acceptanceCounts = { tests: 24, passed: 24, failed: 0, cancelled: 0, skipped: 0, todo: 0 };
+const acceptanceRecord = {
+  format: "blog-x-v1.1-local-delivery-acceptance",
+  version: 1,
+  phase6Data: { runs: 3, resultSha256: "1".repeat(64), outputSha256: "2".repeat(64), counts: { ...acceptanceCounts, tests: 18, passed: 18 } },
+  phase7Browser: { runs: 1, resultSha256: "3".repeat(64), outputSha256: "4".repeat(64), counts: { ...acceptanceCounts, tests: 6, passed: 6 } },
+  counts: acceptanceCounts,
+  releaseState: "BLOCKED",
+};
+const acceptanceOutput = `BLOG X V1.1 ACCEPTANCE RESULT ${JSON.stringify(acceptanceRecord)}\n`;
 const composeLabels = (service, oneoff = "False") => ({
   "com.docker.compose.project": "blogxlocal",
   "com.docker.compose.service": service,
@@ -611,7 +625,7 @@ function targetImage(app, id, revision, lock, seedId) {
   return { Id: id, Config: { Image: `blog-x-${app}-local:${revision.slice(0, 12)}`, WorkingDir: "/refresh-workspace", Cmd: ["corepack", "pnpm", "--filter", `@blog-x/${app}`, "start"], Labels: { "org.opencontainers.image.revision": revision, "io.blog-x.lockfile-sha256": lock, "io.blog-x.seed-image-id": seedId, "io.blog-x.application": app, "io.blog-x.public-origin": "http://127.0.0.1:3100", "io.blog-x.refresh-kind": "v1.1-offline-local-delivery" } } };
 }
 
-function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, seedPrerequisite } = {}) {
+function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, seedPrerequisite, acceptanceStdout = acceptanceOutput } = {}) {
   const revision = "a".repeat(40); const lock = createHash("sha256").update("raw-lock\n").digest("hex");
   const old = { api: SHA("a"), web: SHA("b") }; const targetIds = { api: SHA("e"), web: SHA("f") };
   const plan = createRefreshPlan({ revision, lockSha256: lock, apiSeedId: old.api, webSeedId: old.web });
@@ -663,6 +677,7 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
     if (command === "git" && args[0] === "show") return { stdout: "raw-lock\n" };
     if (command === "git" && args[0] === "merge-base") return { stdout: "" };
     if (command === "git" && args[0] === "diff") return { stdout: "ops/v1.1-local-delivery-evidence.json\n" };
+    if (command === "node" && args.join(" ") === "scripts/local-delivery-acceptance.mjs") return { stdout: acceptanceStdout };
     if (command === "node") return { stdout: "" };
     throw new Error(`unexpected raw fake argv: ${command} ${args.join(" ")}`);
   };
@@ -681,6 +696,23 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
   const adapter = runtime.createAdapter();
   return { adapter, calls, evidenceFs, old, plan, revision, routeFetches, targetIds, runtime, beginVerification() { verificationMode = true; }, serveStaleVerification() { staleVerification = true; }, serveFinalVerification() { staleVerification = false; } };
 }
+
+test("full isolated acceptance is one strict pre-cutover barrier and failure leaves canonical runtime untouched", async () => {
+  const good = liveFixture();
+  await runLocalRefresh({ adapter: good.adapter, plan: good.plan });
+  const acceptanceCall = good.calls.findIndex((call) => call.command === "node" && call.args.join(" ") === "scripts/local-delivery-acceptance.mjs");
+  const migrationCall = good.calls.findIndex((call) => call.command === "docker-compose" && call.args.includes("run"));
+  assert.ok(acceptanceCall >= 0 && acceptanceCall < migrationCall);
+
+  for (const acceptanceStdout of ["", `${acceptanceOutput}${acceptanceOutput}`, acceptanceOutput.replace('"releaseState":"BLOCKED"', '"releaseState":"READY"'), acceptanceOutput.replace('"tests":24,"passed":24', '"tests":0,"passed":0')]) {
+    const fixture = liveFixture({ acceptanceStdout });
+    await assert.rejects(fixture.runtime.runCli(), /acceptance|record|format|pass-only|counts/i);
+    assert.equal(fixture.calls.some((call) => call.command === "docker-compose" && (call.args.includes("run") || call.args.includes("up"))), false);
+    assert.equal(fixture.calls.some((call) => call.command === "docker" && call.args[0] === "rm"), false);
+    const report = await fixture.runtime.createAttemptStore().assertFailureReportPresent(fixture.revision);
+    assert.equal(report.report.stage, "accept-v1.1");
+  }
+});
 
 test("complete fake live refresh uses target API one-off, immutable cutover and sanitized atomic v4 evidence", async () => {
   const fixture = liveFixture();

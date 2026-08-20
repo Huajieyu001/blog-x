@@ -66,7 +66,7 @@ export function createRefreshPlan({ revision, lockSha256, apiSeedId, webSeedId }
     lockSha256,
     project: FIXED_REFRESH.project,
     targets: [target("api", apiSeedId), target("web", webSeedId)],
-    phases: ["preflight", "seed-prerequisites", "build-api", "build-web", "inspect-target-images", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence"],
+    phases: ["preflight", "seed-prerequisites", "build-api", "build-web", "inspect-target-images", "accept-v1.1", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence"],
     preMutation: [
       { args: ["git", "status", "--porcelain"], readOnly: true },
       { args: ["docker", "build", "--network=none", "--pull=false"] },

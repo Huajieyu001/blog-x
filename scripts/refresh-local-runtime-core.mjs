@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { lstat, link, mkdir, open, readFile, readdir, realpath, unlink } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
+import { parseLocalDeliveryAcceptanceRecord } from "./local-delivery-acceptance.mjs";
 import {
   REFRESH_AUTHORITY,
   assertCanonicalPortOwner,
@@ -36,6 +37,7 @@ const LEDGER_SQL = "SELECT COALESCE(json_agg(x ORDER BY scope),'[]'::json) FROM 
 const DATABASE_SQL = "SELECT json_build_object('name',current_database(),'systemIdentifier',(SELECT system_identifier::text FROM pg_control_system()));";
 const SCHEMA_SQL = "SELECT COALESCE(json_agg(x ORDER BY kind,name,detail),'[]'::json) FROM (SELECT 'column' kind,table_name||'.'||column_name name,data_type||':'||is_nullable||':'||COALESCE(column_default,'') detail FROM information_schema.columns WHERE table_schema='public' UNION ALL SELECT 'index',tablename||'.'||indexname,indexdef FROM pg_indexes WHERE schemaname='public' UNION ALL SELECT 'constraint',conrelid::regclass::text||'.'||conname,pg_get_constraintdef(oid) FROM pg_constraint WHERE connamespace='public'::regnamespace) x;";
 const PSQL_PREFIX = ["-p", PROJECT, "-f", COMPOSE_FILE, "exec", "-T", "postgres", "psql", "--no-psqlrc", "--tuples-only", "--no-align", "--dbname=postgres://blog_x@127.0.0.1:5432/blog_x", "--command"];
+const ACCEPTANCE_RESULT_PREFIX = "BLOG X V1.1 ACCEPTANCE RESULT ";
 
 function fail(message) { throw new Error(`local refresh: ${message}`); }
 function digest(value) { return createHash("sha256").update(value).digest("hex"); }
@@ -344,7 +346,8 @@ export function assertAllowedRefreshCommand(command, args, options = {}) {
       || (tail.length === 9 && same(tail.slice(0, 5), ["run", "--detach", "--no-deps", "--name", tail[4]]) && validOneoff(tail[4]) && same(tail.slice(5), ["api", "node", "-e", ONEOFF_PROGRAM]))
       || same(tail, ["up", "-d", "--wait", "--no-build", "--no-deps", "api", "web"]);
   }
-  if (command === "node") allowed = same(args, ["scripts/release-gate.mjs", "--evidence=ops/release-evidence.blocked.json", "--expect-blocked"]);
+  if (command === "node") allowed = same(args, ["scripts/release-gate.mjs", "--evidence=ops/release-evidence.blocked.json", "--expect-blocked"])
+    || same(args, ["scripts/local-delivery-acceptance.mjs"]);
   if (!allowed) fail(`command argv is not an exact allowlisted shape: ${command} ${args.join(" ")}`);
   if (options?.env !== undefined) {
     if (command === "docker-compose" && args.at(4) === "run") {
@@ -499,7 +502,7 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
   if (!claimStore || !evidenceFs || typeof root !== "string" || typeof randomEvidenceHex !== "function") fail("live adapter raw boundaries are incomplete");
   const run = async (command, args, options = {}) => { assertAllowedRefreshCommand(command, args, options); return runArgv(command, args, options); };
   const tick = (stage) => { try { clock(stage); } catch (error) { error.refreshStage = stage; if (stage === "cutover-api-web") error.refreshBeforeMutation = true; throw error; } };
-  const state = { facts: {}, claim: undefined, targets: {}, targetFacts: { api: null, web: null }, seeds: { api: null, web: null }, oldImages: {}, cutover: false, migrationOneoff: undefined, phase: "constructed" };
+  const state = { facts: {}, claim: undefined, acceptance: undefined, targets: {}, targetFacts: { api: null, web: null }, seeds: { api: null, web: null }, oldImages: {}, cutover: false, migrationOneoff: undefined, phase: "constructed" };
   let sources; let collect;
   const initializeCollectors = () => {
     if (sources) return;
@@ -610,6 +613,17 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
         for (const target of plan.targets) { const image = state.targets[target.application]; validateTarget(image, target); state.targets[target.application].probe = await probe(target, image); }
         state.targetFacts = Object.fromEntries(["api", "web"].map((app) => [app, { id: state.targets[app].Id, labelsSha256: factsSha256(selectedLabels(state.targets[app].Config?.Labels)), filesystemSha256: state.targets[app].probe.filesystemSha256, storeSha256: state.targets[app].probe.storeSha256 }]));
         state.facts.preflight.targets = await sources.targets();
+        return;
+      }
+      if (phase === "accept-v1.1") {
+        const result = await run("node", ["scripts/local-delivery-acceptance.mjs"]);
+        const records = String(result?.stdout ?? "").replace(/\r\n?/g, "\n").split("\n").filter((line) => line.startsWith(ACCEPTANCE_RESULT_PREFIX));
+        if (records.length !== 1) fail("acceptance output must contain exactly one result record");
+        let decoded;
+        try { decoded = JSON.parse(records[0].slice(ACCEPTANCE_RESULT_PREFIX.length)); }
+        catch { fail("acceptance result record is invalid JSON"); }
+        const record = parseLocalDeliveryAcceptanceRecord(decoded);
+        state.acceptance = { record: structuredClone(record), sha256: digest(JSON.stringify(record)) };
         return;
       }
       if (phase === "migrate") {
