@@ -22,6 +22,14 @@ import {
 } from "./refresh-local-live.mjs";
 import { createRefreshTestRuntime } from "./refresh-local-test-core.mjs";
 import {
+  SEED_PREREQUISITE_KINDS,
+  LOCAL_DELIVERY_EVIDENCE_PATH,
+  assertSeedPrerequisiteFacts,
+  classifySeedPrerequisiteFailure,
+  formatSeedPrewarmInstruction,
+} from "./refresh-local-runtime-core.mjs";
+import {
+  assertCanonicalPortOwner,
   assertFixedRuntimeAuthority,
   assertPersistenceTransition,
   assertRouteFacts,
@@ -121,7 +129,7 @@ function memoryArtifactFs(root = "/virtual-workspace") {
 function atomicFaultFs(base, artifact, site) {
   let active = false; let fired = false; let directorySequence = 0; let cleanup = false;
   const fault = () => { fired = true; throw Object.assign(new Error(`${artifact}:${site}`), { code: "EIO" }); };
-  const matches = (path) => artifact === "evidence" ? path.includes("phase6-local-refresh-evidence.json")
+  const matches = (path) => artifact === "evidence" ? path.includes("v1.1-local-delivery-evidence.json")
     : artifact === "failure-report" ? path.includes(".failure.json")
       : path.includes("blog-x-refresh-attempts") && path.includes(".json") && !path.includes(".failure.json");
   const maybe = (name) => { if (!fired && site === name) fault(); };
@@ -243,7 +251,7 @@ test("a post-start failure rolls back only api and web and suppresses evidence",
       },
     },
   }), /route contract failed/);
-  assert.deepEqual(events, ["preflight", "build-api", "build-web", "inspect-target-images", "migrate", "schema-verify", "cutover-api-web", "routes", "rollback-api-web", "verify-rollback"]);
+  assert.deepEqual(events, ["preflight", "seed-prerequisites", "build-api", "build-web", "inspect-target-images", "migrate", "schema-verify", "cutover-api-web", "routes", "rollback-api-web", "verify-rollback"]);
   assert.equal(events.includes("write-evidence"), false);
   assert.equal(events.some((event) => /postgres|volume|down/.test(event)), false);
 });
@@ -251,15 +259,15 @@ test("a post-start failure rolls back only api and web and suppresses evidence",
 test("successful refresh writes sanitized evidence only after route and BLOCKED checks", async () => {
   const events = [];
   const evidence = await runLocalRefresh({ adapter: { async execute(step) { events.push(step); } } });
-  assert.deepEqual(events, ["preflight", "build-api", "build-web", "inspect-target-images", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence"]);
+  assert.deepEqual(events, ["preflight", "seed-prerequisites", "build-api", "build-web", "inspect-target-images", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence"]);
   assert.equal(evidence.releaseState, "BLOCKED");
   assert.equal("credentials" in evidence, false);
 });
 
 test("evidence verification is read-only and refuses malformed or non-BLOCKED records", async () => {
   const fs = memoryArtifactFs();
-  const path = "/virtual-workspace/ops/phase6-local-refresh-evidence.json";
-  fs.entries.set(path, { kind: "file", bytes: JSON.stringify({ format: "blog-x-phase6-local-refresh-evidence", version: 1, implementationRevision: "short", lockfileSha256: "b".repeat(64), releaseState: "READY" }), uid: 501, mode: 0o600 });
+  const path = "/virtual-workspace/ops/v1.1-local-delivery-evidence.json";
+  fs.entries.set(path, { kind: "file", bytes: JSON.stringify({ format: "blog-x-v1.1-local-delivery-evidence", version: 1, implementationRevision: "short", lockfileSha256: "b".repeat(64), releaseState: "READY" }), uid: 501, mode: 0o600 });
   const before = await fs.readFile(path);
   await assert.rejects(testRuntime(fs).verifyEvidence(path), /evidence/i);
   assert.equal(await fs.readFile(path), before);
@@ -293,8 +301,21 @@ test("runRefreshCli consumes the raw test runtime only after publishing an absen
   assert.equal(result.implementationRevision, fixture.revision);
   assert.match((await fixture.runtime.inspectClaim(fixture.revision)).sha256, /^[a-f0-9]{64}$/);
   assert.ok(fixture.calls.some((call) => call.command === "docker" && call.args[0] === "context"));
-  await assert.rejects(fixture.runtime.runCli({ argv: ["--verify-evidence=/tmp/alternate.json"] }), /fixed evidence path/i);
+  await assert.rejects(fixture.runtime.runCli({ argv: ["--verify-evidence=ops/phase6-local-refresh-evidence.json"] }), /fixed evidence path/i);
   await assert.rejects(fixture.runtime.runCli({ argv: ["--probe-offline-builds", "extra"] }), /probe option.*exact/i);
+});
+
+test("branch-qualified source authority rejects dirty, detached and malformed refs before adapter mutation", async () => {
+  const revision = "c".repeat(40);
+  for (const [status, ref] of [[" M package.json\n", "refs/heads/dev\n"], ["", ""], ["", "refs/tags/v1\n"], ["", "refs/heads/bad branch\n"]]) {
+    const runtime = createRefreshTestRuntime({
+      fs: memoryArtifactFs(), randomHex: () => "1".repeat(24), fetch: async () => { throw new Error("unused"); }, clock: () => undefined,
+      processBoundary: async (command, args) => ({ stdout: command === "git" && args[0] === "status" ? status : command === "git" && args[0] === "symbolic-ref" ? ref : command === "git" && args[0] === "rev-parse" ? `${revision}\n` : "" }),
+    });
+    await assert.rejects(runtime.runCli(), /dirty|detached|branch ref|invalid/i);
+    assert.equal(runtime.calls.some((call) => call.command === "docker"), false);
+  }
+  assert.equal(LOCAL_DELIVERY_EVIDENCE_PATH, "ops/v1.1-local-delivery-evidence.json");
 });
 
 test("attempt claims are canonical, exclusive, revision-bound, and leave second cli calls before adapter construction", async () => {
@@ -305,7 +326,7 @@ test("attempt claims are canonical, exclusive, revision-bound, and leave second 
   assert.equal((await store.assertPresent(revision)).sha256, first.sha256);
   assert.deepEqual(JSON.parse(first.bytes.trim()), { format: "blog-x-local-refresh-attempt", version: 1, implementationRevision: revision });
   await assert.rejects(store.claimRefreshAttempt(revision), /claimed|exists/i);
-  const runtime = createRefreshTestRuntime({ fs: storeFs, randomHex: () => "2".repeat(24), fetch: async () => { throw new Error("unused"); }, clock: () => undefined, processBoundary: async (command, args) => ({ stdout: command === "git" && args[0] === "rev-parse" ? `${revision}\n` : "" }) });
+  const runtime = createRefreshTestRuntime({ fs: storeFs, randomHex: () => "2".repeat(24), fetch: async () => { throw new Error("unused"); }, clock: () => undefined, processBoundary: async (command, args) => ({ stdout: command === "git" && args[0] === "symbolic-ref" ? "refs/heads/dev\n" : command === "git" && args[0] === "rev-parse" ? `${revision}\n` : "" }) });
   await assert.rejects(runtime.runCli(), /claimed|exists/i);
   assert.equal(runtime.calls.filter((call) => call.command === "docker").length, 0);
   await assert.rejects(store.claimRefreshAttempt("F".repeat(40)), /revision/i);
@@ -341,7 +362,7 @@ function inspectContainer(service, image = SHA(service[0])) {
   const ports = service === "postgres" ? { "5432/tcp": null }
     : service === "api" ? { "3001/tcp": null }
       : { "3100/tcp": [{ HostIp: "127.0.0.1", HostPort: "3100" }] };
-  return { Id: `${service}-container`, Image: image, Name: `/${names[service]}`, Config: { Image: `blog-x-${service}-local`, Labels: composeLabels(service) }, State: { Health: { Status: "healthy" } }, NetworkSettings: { Ports: ports } };
+  return { Id: service === "web" ? "c".repeat(64) : service === "api" ? "a".repeat(64) : "b".repeat(64), Image: image, Name: `/${names[service]}`, Config: { Image: `blog-x-${service}-local`, Labels: composeLabels(service) }, State: { Health: { Status: "healthy" } }, NetworkSettings: { Ports: ports } };
 }
 const volumeFixture = (name) => ({ Name: name, Driver: "local", Mountpoint: `/private/var/lib/${name}`, CreatedAt: "2026-08-15T00:00:00Z", Scope: "local", Labels: { "com.docker.compose.project": "blogxlocal" }, Options: null });
 const exactRoutes = {
@@ -395,11 +416,11 @@ function factsFixture({ apiImage = SHA("a"), webImage = SHA("w"), phase1 = "2026
     business: { count: 3, sha256: "a".repeat(64) }, sequences: { count: 2, sha256: "b".repeat(64) },
     ledger: [{ scope: "phase1", migration_count: 7, migration_fingerprint: "fingerprint", applied_at: phase1 }],
     media: { count: 2, bytes: 42, sha256: "c".repeat(64) }, protected: { count: 9, sha256: "d".repeat(64) },
-    git: { implementationRevision: "a".repeat(40), clean: true, lockfileSha256: "b".repeat(64) },
+    git: { implementationRevision: "a".repeat(40), clean: true, lockfileSha256: "b".repeat(64), ref: "refs/heads/dev" },
     database: { name: "blog_x", systemIdentifier: "1".repeat(32), schemaSha256: "2".repeat(64), schemaRows: 12 },
     seeds: { api: { reference: "blog-x-api-local", inspectedId: SHA("a") }, web: { reference: "blog-x-web-local", inspectedId: SHA("b") } },
     targets: { api: { id: SHA("e"), labelsSha256: "3".repeat(64), filesystemSha256: "4".repeat(64), storeSha256: "5".repeat(64) }, web: { id: SHA("f"), labelsSha256: "6".repeat(64), filesystemSha256: "7".repeat(64), storeSha256: "8".repeat(64) } },
-    routes, releaseState: "BLOCKED",
+    portOwnerExact: true, routes, releaseState: "BLOCKED",
   };
 }
 
@@ -414,6 +435,17 @@ test("raw Docker Ports:null and exact Compose labels are the only fixed runtime 
     const copy = structuredClone(facts); mutate(copy);
     assert.throws(() => assertFixedRuntimeAuthority(copy), /authority|port|compose/i);
   }
+});
+
+test("published 3100 owner must be the sole inspected canonical Web container", () => {
+  const containers = factsFixture().containers;
+  const owner = { ID: "c".repeat(12), Names: "blogxlocal-web-1", Labels: "com.docker.compose.project=blogxlocal,com.docker.compose.service=web" };
+  assert.doesNotThrow(() => assertCanonicalPortOwner(`${JSON.stringify(owner)}\n`, containers));
+  for (const output of ["", `${JSON.stringify(owner)}\n${JSON.stringify(owner)}\n`, `${JSON.stringify({ ...owner, ID: "foreign" })}\n`, `${JSON.stringify({ ...owner, Names: "foreign-web" })}\n`, `${JSON.stringify({ ...owner, Labels: "com.docker.compose.project=other,com.docker.compose.service=web" })}\n`, "not-json\n"]) {
+    assert.throws(() => assertCanonicalPortOwner(output, containers), /port|owner|JSON|canonical|identity/i);
+  }
+  assert.doesNotThrow(() => assertAllowedRefreshCommand("docker", ["ps", "--filter", "publish=3100", "--format", "{{json .}}"]));
+  assert.throws(() => assertAllowedRefreshCommand("docker", ["ps", "--format", "{{json .}}", "--filter", "publish=3100"]), /allowlisted|argv|exact/i);
 });
 
 test("postMigration permits only phase1 timestamp advance and later stages preserve all persistence digests", () => {
@@ -495,6 +527,7 @@ test("collector uses fake argv/database/media/history adapters and rejects malfo
     sources: {
       async composeAuthority() { calls.push("compose"); return { services: ["api", "postgres", "web"], ps: ["api", "postgres", "web"] }; },
       async containers() { calls.push("containers"); return fixture.containers; },
+      async portOwner() { calls.push("port-owner"); return true; },
       async volumes() { calls.push("volumes"); return fixture.volumes; },
       async business() { calls.push("database"); return fixture.business; },
       async sequences() { return fixture.sequences; }, async ledger() { return fixture.ledger; },
@@ -503,10 +536,10 @@ test("collector uses fake argv/database/media/history adapters and rejects malfo
       async git() { return fixture.git; }, async database() { return fixture.database; }, async seeds() { return fixture.seeds; }, async targets() { return fixture.targets; },
     },
   });
-  assert.deepEqual(calls, ["compose", "containers", "volumes", "database", "media", "history"]);
+  assert.deepEqual(calls, ["compose", "containers", "volumes", "database", "media", "history", "port-owner"]);
   assertFixedRuntimeAuthority(collected);
   const bad = structuredClone(fixture.routes); bad["/api/public/search?q="].status = 302;
-  await assert.rejects(collectRefreshFacts({ sources: { composeAuthority: async () => ({ services: ["api", "postgres", "web"], ps: ["api", "postgres", "web"] }), containers: async () => fixture.containers, volumes: async () => fixture.volumes, business: async () => fixture.business, sequences: async () => fixture.sequences, ledger: async () => fixture.ledger, media: async () => fixture.media, protected: async () => fixture.protected, routes: async () => bad, releaseState: async () => "BLOCKED", git: async () => fixture.git, database: async () => fixture.database, seeds: async () => fixture.seeds, targets: async () => fixture.targets } }), /route|search|status|redirect|observation/i);
+  await assert.rejects(collectRefreshFacts({ sources: { composeAuthority: async () => ({ services: ["api", "postgres", "web"], ps: ["api", "postgres", "web"] }), containers: async () => fixture.containers, portOwner: async () => true, volumes: async () => fixture.volumes, business: async () => fixture.business, sequences: async () => fixture.sequences, ledger: async () => fixture.ledger, media: async () => fixture.media, protected: async () => fixture.protected, routes: async () => bad, releaseState: async () => "BLOCKED", git: async () => fixture.git, database: async () => fixture.database, seeds: async () => fixture.seeds, targets: async () => fixture.targets } }), /route|search|status|redirect|observation/i);
 });
 
 const COMPOSE_V5_PS_RECORDS = [
@@ -575,10 +608,10 @@ test("v4 verifier rejects extra evidence keys and any reconstructed runtime drif
 });
 
 function targetImage(app, id, revision, lock, seedId) {
-  return { Id: id, Config: { Image: `blog-x-${app}-local:${revision.slice(0, 12)}`, WorkingDir: "/refresh-workspace", Cmd: ["corepack", "pnpm", "--filter", `@blog-x/${app}`, "start"], Labels: { "org.opencontainers.image.revision": revision, "io.blog-x.lockfile-sha256": lock, "io.blog-x.seed-image-id": seedId, "io.blog-x.application": app, "io.blog-x.public-origin": "http://127.0.0.1:3100", "io.blog-x.refresh-kind": "phase6-offline" } } };
+  return { Id: id, Config: { Image: `blog-x-${app}-local:${revision.slice(0, 12)}`, WorkingDir: "/refresh-workspace", Cmd: ["corepack", "pnpm", "--filter", `@blog-x/${app}`, "start"], Labels: { "org.opencontainers.image.revision": revision, "io.blog-x.lockfile-sha256": lock, "io.blog-x.seed-image-id": seedId, "io.blog-x.application": app, "io.blog-x.public-origin": "http://127.0.0.1:3100", "io.blog-x.refresh-kind": "v1.1-offline-local-delivery" } } };
 }
 
-function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault } = {}) {
+function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, seedPrerequisite } = {}) {
   const revision = "a".repeat(40); const lock = createHash("sha256").update("raw-lock\n").digest("hex");
   const old = { api: SHA("a"), web: SHA("b") }; const targetIds = { api: SHA("e"), web: SHA("f") };
   const plan = createRefreshPlan({ revision, lockSha256: lock, apiSeedId: old.api, webSeedId: old.web });
@@ -590,13 +623,16 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
     if (command === "docker" && args[0] === "context" && args[1] === "inspect") return { stdout: JSON.stringify([{ Name: "colima", Endpoints: { docker: { Host: "unix:///Users/test/.colima/default/docker.sock" } } }]) };
     if (command === "docker" && args[0] === "image" && args[1] === "inspect") {
       const ref = args[2];
-      if (ref === "blog-x-api-local" || ref === old.api) return { stdout: JSON.stringify([{ Id: old.api }]) };
-      if (ref === "blog-x-web-local" || ref === old.web) return { stdout: JSON.stringify([{ Id: old.web }]) };
+      const seed = (application, id) => ({ Id: seedPrerequisite === "stale" ? SHA(application === "api" ? "c" : "d") : id, Config: { WorkingDir: seedPrerequisite === "incompatible" ? "/workspace" : "/refresh-workspace", Labels: { "io.blog-x.application": application, "io.blog-x.lockfile-sha256": seedPrerequisite === "lock-drifted" ? "0".repeat(64) : lock, "io.blog-x.public-origin": "http://127.0.0.1:3100", "io.blog-x.refresh-kind": "phase6-offline" } } });
+      if (seedPrerequisite === "missing" && ["blog-x-api-local", "blog-x-web-local"].includes(ref)) throw new Error("seed image unavailable: private registry reference");
+      if (ref === "blog-x-api-local" || ref === old.api) return { stdout: JSON.stringify([seed("api", old.api)]) };
+      if (ref === "blog-x-web-local" || ref === old.web) return { stdout: JSON.stringify([seed("web", old.web)]) };
       if (ref === plan.targets[0].tag) return { stdout: JSON.stringify([targets.api]) };
       if (ref === plan.targets[1].tag) return { stdout: JSON.stringify([targets.web]) };
       if (ref === targetIds.api) return { stdout: JSON.stringify([targets.api]) };
       if (ref === targetIds.web) return { stdout: JSON.stringify([targets.web]) };
     }
+    if (command === "docker" && args[0] === "ps") return { stdout: `${JSON.stringify({ ID: "c".repeat(12), Names: "blogxlocal-web-1", Labels: "com.docker.compose.project=blogxlocal,com.docker.compose.service=web" })}\n` };
     if (command === "docker" && args[0] === "container" && args.length === 5) {
       snapshot += 1;
       const live = snapshot >= 3 && !rolledBack && (!failPostCutover || snapshot === 3) ? targetIds : old;
@@ -604,6 +640,7 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
     }
     if (command === "docker" && args[0] === "container") return { stdout: JSON.stringify([{ Image: targetIds.api, Config: { Image: plan.targets[0].tag, Labels: composeLabels("api", "True") } }]) };
     if (command === "docker" && args[0] === "volume") return { stdout: JSON.stringify([volumeFixture("blogxlocal_postgres-data"), volumeFixture("blogxlocal_media-data")]) };
+    if (command === "docker" && args[0] === "run" && args[4] === "node" && [old.api, old.web].includes(args[5]) && seedPrerequisite === "incomplete-store") throw new Error("seed store path /private/secret failed");
     if (command === "docker" && args[0] === "run" && args.includes("corepack")) return { stdout: "/pnpm-store/v10\n" };
     if (command === "docker") return { stdout: "" };
     if (command === "docker-compose") {
@@ -620,11 +657,12 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
       return { stdout: "" };
     }
     if (command === "git" && args[0] === "status") return { stdout: "" };
+    if (command === "git" && args[0] === "symbolic-ref") return { stdout: "refs/heads/dev\n" };
     if (command === "git" && args[0] === "rev-parse") return { stdout: `${verificationMode ? "c".repeat(40) : revision}\n` };
     if (command === "git" && args[0] === "ls-files") return { stdout: "" };
     if (command === "git" && args[0] === "show") return { stdout: "raw-lock\n" };
     if (command === "git" && args[0] === "merge-base") return { stdout: "" };
-    if (command === "git" && args[0] === "diff") return { stdout: "ops/phase6-local-refresh-evidence.json\n" };
+    if (command === "git" && args[0] === "diff") return { stdout: "ops/v1.1-local-delivery-evidence.json\n" };
     if (command === "node") return { stdout: "" };
     throw new Error(`unexpected raw fake argv: ${command} ${args.join(" ")}`);
   };
@@ -653,9 +691,9 @@ test("complete fake live refresh uses target API one-off, immutable cutover and 
   assert.equal(migration.args[1], oneoff); assert.equal(schema.args[1], oneoff);
   assert.ok(fixture.calls.some((call) => call.command === "docker-compose" && call.args.includes("run") && call.options.env.BLOG_X_API_IMAGE === fixture.plan.targets[0].tag));
   assert.ok(fixture.calls.some((call) => call.command === "docker-compose" && call.args.includes("up") && call.options.env.BLOG_X_API_IMAGE === fixture.targetIds.api && call.options.env.BLOG_X_WEB_IMAGE === fixture.targetIds.web));
-  const bytes = await fixture.evidenceFs.readFile("/virtual-workspace/ops/phase6-local-refresh-evidence.json");
+  const bytes = await fixture.evidenceFs.readFile("/virtual-workspace/ops/v1.1-local-delivery-evidence.json");
   const evidence = JSON.parse(bytes);
-  assert.equal(evidence.version, 4); assert.equal(evidence.releaseState, "BLOCKED");
+  assert.equal(evidence.version, 1); assert.equal(evidence.format, "blog-x-v1.1-local-delivery-evidence"); assert.equal(evidence.releaseState, "BLOCKED");
   assert.deepEqual(evidence.stages.preflight.routes, evidence.stages.postMigration.routes);
   assert.equal(evidence.stages.preflight.routes["/api/public/search?q="].status, 404);
   assert.equal(evidence.stages.preflight.routes["/api/public/search?q="].contractSha256, null);
@@ -670,7 +708,7 @@ test("complete fake live refresh uses target API one-off, immutable cutover and 
   assert.doesNotMatch(bytes, /Mountpoint|relativePath|migration_fingerprint|applied_at|environment|command|private\/var|legacy search route missing|legacy_route_missing|content-type|problem\+json/i);
   assert.equal([...fixture.evidenceFs.entries.keys()].some((path) => path.endsWith(".tmp")), false);
   assert.deepEqual(fixture.calls.filter((call) => call.command === "docker" && call.args[0] === "rm").map((call) => call.args), [["rm", "-f", oneoff]]);
-  const evidencePath = "/virtual-workspace/ops/phase6-local-refresh-evidence.json";
+  const evidencePath = "/virtual-workspace/ops/v1.1-local-delivery-evidence.json";
   const singularEvidence = structuredClone(evidence);
   for (const facts of Object.values(singularEvidence.stages)) {
     facts.routes[singularArchive] = facts.routes["/archives"];
@@ -684,9 +722,14 @@ test("complete fake live refresh uses target API one-off, immutable cutover and 
   fixture.evidenceFs.entries.get(evidencePath).bytes = `${JSON.stringify(forgedFinal, null, 2)}\n`;
   await assert.rejects(fixture.runtime.verifyEvidence(evidencePath), /final|route|contract|evidence/i);
   fixture.evidenceFs.entries.get(evidencePath).bytes = bytes;
+  const refDrift = structuredClone(evidence);
+  refDrift.stages.postMigration.git.ref = "refs/heads/other";
+  fixture.evidenceFs.entries.get(evidencePath).bytes = `${JSON.stringify(refDrift, null, 2)}\n`;
+  await assert.rejects(fixture.runtime.verifyEvidence(evidencePath), /Git|ref|linkage|inconsistent/i);
+  fixture.evidenceFs.entries.get(evidencePath).bytes = bytes;
   fixture.beginVerification();
-  assert.equal((await fixture.runtime.verifyEvidence("/virtual-workspace/ops/phase6-local-refresh-evidence.json")).releaseState, "BLOCKED");
-  assert.equal(await fixture.evidenceFs.readFile("/virtual-workspace/ops/phase6-local-refresh-evidence.json"), bytes);
+  assert.equal((await fixture.runtime.verifyEvidence("/virtual-workspace/ops/v1.1-local-delivery-evidence.json")).releaseState, "BLOCKED");
+  assert.equal(await fixture.evidenceFs.readFile("/virtual-workspace/ops/v1.1-local-delivery-evidence.json"), bytes);
   assert.ok(fixture.calls.some((call) => call.command === "git" && call.args[0] === "show"));
   assert.ok(fixture.calls.some((call) => call.command === "git" && call.args[0] === "merge-base"));
   assert.ok(fixture.calls.some((call) => call.command === "git" && call.args[0] === "diff"));
@@ -699,7 +742,27 @@ test("complete fake live refresh uses target API one-off, immutable cutover and 
   await assert.rejects(fixture.runtime.verifyEvidence(evidencePath), /route|contract|drift|search/i);
   fixture.serveFinalVerification();
   fixture.evidenceFs.entries.get("/virtual-workspace/ops/phase5-full-gate-receipt.json").bytes = "raw drift\n";
-  await assert.rejects(fixture.runtime.verifyEvidence("/virtual-workspace/ops/phase6-local-refresh-evidence.json"), /drift/i);
+  await assert.rejects(fixture.runtime.verifyEvidence("/virtual-workspace/ops/v1.1-local-delivery-evidence.json"), /drift/i);
+});
+
+test("seed prerequisites classify only trusted validation failures before every build and print one redacted pre-warm instruction", async () => {
+  assert.deepEqual(SEED_PREREQUISITE_KINDS, ["missing", "stale", "incompatible", "lock-drifted", "incomplete-store"]);
+  const image = { Id: SHA("a"), Config: { WorkingDir: "/refresh-workspace", Labels: { "io.blog-x.application": "api", "io.blog-x.lockfile-sha256": "b".repeat(64), "io.blog-x.public-origin": "http://127.0.0.1:3100" } } };
+  assert.doesNotThrow(() => assertSeedPrerequisiteFacts({ application: "api", expectedId: SHA("a"), image, lockfileSha256: "b".repeat(64) }));
+  assert.equal(classifySeedPrerequisiteFailure(new Error("child stderr mentioned missing")), null);
+  for (const kind of SEED_PREREQUISITE_KINDS) {
+    const fixture = liveFixture({ seedPrerequisite: kind }); const output = [];
+    await assert.rejects(fixture.runtime.runCli({ output: { write(value) { output.push(value); } } }), new RegExp(`seed prerequisite ${kind}`));
+    assert.equal(output.length, 1, kind);
+    assert.equal(output[0], `${formatSeedPrewarmInstruction(kind)}\n`);
+    assert.doesNotMatch(output[0], /sha256:|private|registry|\/pnpm-store|\/private|3100|blogxlocal|digest|secret/i);
+    assert.equal(fixture.calls.some((call) => call.command === "docker" && call.args[0] === "build"), false, kind);
+    assert.equal(fixture.calls.some((call) => call.command === "docker-compose" && (call.args.includes("run") || call.args.includes("up"))), false, kind);
+    assert.equal((await fixture.runtime.createAttemptStore().assertFailureReportPresent(fixture.revision)).report.stage, "seed-prerequisites");
+  }
+  const nonSeed = liveFixture({ stageFaults: ["build-api"] }); const nonSeedOutput = [];
+  await assert.rejects(nonSeed.runtime.runCli({ output: { write(value) { nonSeedOutput.push(value); } } }), /build-api fault/);
+  assert.deepEqual(nonSeedOutput, []);
 });
 
 test("post-cutover fact failure rolls back API/Web by immutable IDs and suppresses evidence", async () => {
@@ -710,7 +773,7 @@ test("post-cutover fact failure rolls back API/Web by immutable IDs and suppress
     { BLOG_X_API_IMAGE: fixture.targetIds.api, BLOG_X_WEB_IMAGE: fixture.targetIds.web },
     { BLOG_X_API_IMAGE: fixture.old.api, BLOG_X_WEB_IMAGE: fixture.old.web },
   ]);
-  await assert.rejects(fixture.evidenceFs.readFile("/virtual-workspace/ops/phase6-local-refresh-evidence.json"), /ENOENT/);
+  await assert.rejects(fixture.evidenceFs.readFile("/virtual-workspace/ops/v1.1-local-delivery-evidence.json"), /ENOENT/);
   assert.equal(fixture.calls.some((call) => call.args.includes("down") || call.args.includes("postgres") && call.args[0] === "rm" || call.command === "docker" && call.args[0] === "volume" && call.args[1] !== "inspect"), false);
 });
 
@@ -751,13 +814,13 @@ test("failure recollection hashes stale route projections without retaining raw 
 
 test("v4 projection is revision and schema complete with row-addressed sanitized ledger transitions", () => {
   const facts = factsFixture();
-  facts.git = { implementationRevision: "a".repeat(40), clean: true, lockfileSha256: "b".repeat(64) };
+  facts.git = { implementationRevision: "a".repeat(40), clean: true, lockfileSha256: "b".repeat(64), ref: "refs/heads/dev" };
   facts.database = { name: "blog_x", systemIdentifier: "1".repeat(32), schemaSha256: "2".repeat(64), schemaRows: 12 };
   facts.seeds = { api: { reference: "blog-x-api-local", inspectedId: SHA("a") }, web: { reference: "blog-x-web-local", inspectedId: SHA("b") } };
   facts.targets = { api: { id: SHA("e"), labelsSha256: "3".repeat(64), filesystemSha256: "4".repeat(64), storeSha256: "5".repeat(64) }, web: { id: SHA("f"), labelsSha256: "6".repeat(64), filesystemSha256: "7".repeat(64), storeSha256: "8".repeat(64) } };
   facts.ledger.push({ scope: "phase5", migration_count: 2, migration_fingerprint: "secret-fingerprint", applied_at: "2026-08-15T00:00:00.000Z" });
   const projection = projectSanitizedFacts(facts);
-  assert.deepEqual(Object.keys(projection.git).sort(), ["clean", "implementationRevision", "lockfileSha256"]);
+  assert.deepEqual(Object.keys(projection.git).sort(), ["clean", "implementationRevision", "lockfileSha256", "ref"]);
   assert.deepEqual(Object.keys(projection.database).sort(), ["name", "schemaRows", "schemaSha256", "systemIdentifier"]);
   assert.deepEqual(Object.keys(projection.ledger.rows).sort(), ["phase1", "phase5"]);
   assert.deepEqual(Object.keys(projection.ledger.rows.phase1).sort(), ["appliedAt", "stableSha256"]);
@@ -766,7 +829,7 @@ test("v4 projection is revision and schema complete with row-addressed sanitized
 
 test("empty argv publishes claim before adapter construction and every later failure writes a durable report", async () => {
   const revision = "c".repeat(40); const fs = memoryArtifactFs();
-  const runtime = createRefreshTestRuntime({ fs, randomHex: () => "d".repeat(24), fetch: async () => { throw new Error("unused"); }, clock(stage) { if (stage === "adapter_construction") throw new Error("daemon rejected"); }, processBoundary: async (command, args) => ({ stdout: command === "git" && args[0] === "rev-parse" ? `${revision}\n` : "" }) });
+  const runtime = createRefreshTestRuntime({ fs, randomHex: () => "d".repeat(24), fetch: async () => { throw new Error("unused"); }, clock(stage) { if (stage === "adapter_construction") throw new Error("daemon rejected"); }, processBoundary: async (command, args) => ({ stdout: command === "git" && args[0] === "symbolic-ref" ? "refs/heads/dev\n" : command === "git" && args[0] === "rev-parse" ? `${revision}\n` : "" }) });
   await assert.rejects(runtime.runCli(), /daemon rejected/);
   const claim = await runtime.inspectClaim(revision);
   const report = await runtime.createAttemptStore().assertFailureReportPresent(revision);
@@ -816,6 +879,7 @@ test("test core traces production Git and PostgreSQL sources from raw boundary o
     async processBoundary(command, args) {
       calls.push([command, args]);
       if (command === "git" && args[0] === "status") return { stdout: "" };
+      if (command === "git" && args[0] === "symbolic-ref") return { stdout: "refs/heads/dev\n" };
       if (command === "git" && args[0] === "rev-parse") return { stdout: `${revision}\n` };
       if (args.at(-1).includes?.("current_database")) return { stdout: '{"name":"blog_x","systemIdentifier":"system-1"}\n' };
       if (args.at(-1).includes?.("information_schema.columns")) return { stdout: '[["schema-row"]]\n' };
@@ -825,8 +889,8 @@ test("test core traces production Git and PostgreSQL sources from raw boundary o
   const sources = runtime.createFactSources();
   assert.equal((await sources.git()).implementationRevision, revision);
   assert.deepEqual(await sources.database(), { name: "blog_x", systemIdentifier: "system-1", schemaRows: 1, schemaSha256: factsSha256([["schema-row"]]) });
-  assert.deepEqual(calls.slice(0, 2), [["git", ["status", "--porcelain"]], ["git", ["rev-parse", "HEAD"]]]);
-  assert.equal(calls.slice(2).every(([command, args]) => command === "docker-compose" && args.slice(0, 4).join(" ") === "-p blogxlocal -f compose.yaml"), true);
+  assert.deepEqual(calls.slice(0, 3), [["git", ["status", "--porcelain"]], ["git", ["symbolic-ref", "--quiet", "HEAD"]], ["git", ["rev-parse", "HEAD"]]]);
+  assert.equal(calls.slice(3).every(([command, args]) => command === "docker-compose" && args.slice(0, 4).join(" ") === "-p blogxlocal -f compose.yaml"), true);
 });
 
 test("route collection rejects redirects and final URL drift with redirect:error", async () => {
@@ -927,7 +991,7 @@ test("production module graph exposes only sealed refresh and verifier assembly"
 test("post-claim attachment materialization and recollection failures receive exact terminal stages", async () => {
   for (const stage of ["claim_attachment", "lockfile_plan_materialization"]) {
     const revision = stage === "claim_attachment" ? "7".repeat(40) : "6".repeat(40); const fs = memoryArtifactFs();
-    const runtime = createRefreshTestRuntime({ fs, randomHex: () => "6".repeat(24), fetch: async () => { throw new Error("unused"); }, clock(value) { if (value === stage) throw new Error(`${stage} fault`); }, processBoundary: async (command, args) => ({ stdout: command === "git" && args[0] === "rev-parse" ? `${revision}\n` : "" }) });
+    const runtime = createRefreshTestRuntime({ fs, randomHex: () => "6".repeat(24), fetch: async () => { throw new Error("unused"); }, clock(value) { if (value === stage) throw new Error(`${stage} fault`); }, processBoundary: async (command, args) => ({ stdout: command === "git" && args[0] === "symbolic-ref" ? "refs/heads/dev\n" : command === "git" && args[0] === "rev-parse" ? `${revision}\n` : "" }) });
     await assert.rejects(runtime.runCli(), new RegExp(`${stage} fault`));
     const claim = await runtime.inspectClaim(revision); const report = await runtime.createAttemptStore().assertFailureReportPresent(revision);
     assert.equal(report.report.stage, stage);
@@ -982,7 +1046,7 @@ test("claim report and evidence atomic writers cover every operation and cleanup
         const store = testRuntime(fs, () => "8".repeat(24)).createAttemptStore(); finalPath = store.failurePathFor(revision);
         operation = () => store.writeFailureReport({ format: "blog-x-local-refresh-failure", version: 1, implementationRevision: revision, claimSha256: claim.sha256, stage: "write-evidence", errorClass: "error", baseline: "applicable", recollection: "failed", preservation: "unproved", facts: { preflight: null, current: null, rollback: null } });
       } else {
-        const fixture = liveFixture({ atomicFault: site }); entries = fixture.evidenceFs.entries; finalPath = "/virtual-workspace/ops/phase6-local-refresh-evidence.json";
+        const fixture = liveFixture({ atomicFault: site }); entries = fixture.evidenceFs.entries; finalPath = "/virtual-workspace/ops/v1.1-local-delivery-evidence.json";
         operation = () => runLocalRefresh({ adapter: fixture.adapter, plan: fixture.plan });
       }
       await assert.rejects(operation(), new RegExp(`UNRECOVERABLE_${artifact.toUpperCase().replace("-", "_")}_INVARIANT:EIO`), `${artifact}:${site}`);
@@ -995,7 +1059,7 @@ test("every exact post-claim terminal stage retains the canonical claim and a bo
   const earlyStages = ["adapter_construction", "claim_attachment", "lockfile_plan_materialization"];
   for (const stage of earlyStages) {
     const revision = stage[0].charCodeAt(0).toString(16).padStart(40, "0"); const fs = memoryArtifactFs();
-    const runtime = createRefreshTestRuntime({ fs, randomHex: () => "5".repeat(24), fetch: async () => { throw new Error("unused"); }, clock(value) { if (value === stage) throw new Error(`${stage} fault`); }, processBoundary: async (command, args) => ({ stdout: command === "git" && args[0] === "rev-parse" ? `${revision}\n` : "" }) });
+    const runtime = createRefreshTestRuntime({ fs, randomHex: () => "5".repeat(24), fetch: async () => { throw new Error("unused"); }, clock(value) { if (value === stage) throw new Error(`${stage} fault`); }, processBoundary: async (command, args) => ({ stdout: command === "git" && args[0] === "symbolic-ref" ? "refs/heads/dev\n" : command === "git" && args[0] === "rev-parse" ? `${revision}\n` : "" }) });
     await assert.rejects(runtime.runCli(), new RegExp(`${stage} fault`));
     const claim = await runtime.inspectClaim(revision); const report = await runtime.createAttemptStore().assertFailureReportPresent(revision);
     assert.equal(report.report.stage, stage); assert.equal(report.report.claimSha256, claim.sha256); assert.equal(report.report.preservation, "not_applicable_pre_runtime");
@@ -1021,13 +1085,13 @@ test("every exact post-claim terminal stage retains the canonical claim and a bo
   assert.equal((await recollection.runtime.createAttemptStore().assertFailureReportPresent(recollection.revision)).report.stage, "failure_recollection");
 
   const revision = "9".repeat(40); const fs = memoryArtifactFs();
-  const reportFault = createRefreshTestRuntime({ fs, randomHex: () => "9".repeat(24), fetch: async () => { throw new Error("unused"); }, clock(stage) { if (["adapter_construction", "failure_report_publication"].includes(stage)) throw Object.assign(new Error(`${stage} fault`), { code: "EIO" }); }, processBoundary: async (command, args) => ({ stdout: command === "git" && args[0] === "rev-parse" ? `${revision}\n` : "" }) });
+  const reportFault = createRefreshTestRuntime({ fs, randomHex: () => "9".repeat(24), fetch: async () => { throw new Error("unused"); }, clock(stage) { if (["adapter_construction", "failure_report_publication"].includes(stage)) throw Object.assign(new Error(`${stage} fault`), { code: "EIO" }); }, processBoundary: async (command, args) => ({ stdout: command === "git" && args[0] === "symbolic-ref" ? "refs/heads/dev\n" : command === "git" && args[0] === "rev-parse" ? `${revision}\n` : "" }) });
   await assert.rejects(reportFault.runCli(), /UNRECOVERABLE_FAILURE_REPORT_INVARIANT:EIO/);
   await assert.doesNotReject(reportFault.inspectClaim(revision));
   await assert.rejects(reportFault.createAttemptStore().assertFailureReportPresent(revision), /failure report|authority|absent/i);
 
   const claimBase = memoryArtifactFs(); const claimFaultFs = atomicFaultFs(claimBase, "claim", "temp_open");
-  const claimFailure = createRefreshTestRuntime({ fs: claimFaultFs, randomHex: () => "8".repeat(24), fetch: async () => { throw new Error("unused"); }, clock: () => undefined, processBoundary: async (command, args) => ({ stdout: command === "git" && args[0] === "rev-parse" ? `${revision}\n` : "" }) });
+  const claimFailure = createRefreshTestRuntime({ fs: claimFaultFs, randomHex: () => "8".repeat(24), fetch: async () => { throw new Error("unused"); }, clock: () => undefined, processBoundary: async (command, args) => ({ stdout: command === "git" && args[0] === "symbolic-ref" ? "refs/heads/dev\n" : command === "git" && args[0] === "rev-parse" ? `${revision}\n` : "" }) });
   await assert.rejects(claimFailure.runCli(), /UNRECOVERABLE_CLAIM_INVARIANT:EIO/);
   assert.equal([...claimBase.entries.keys()].some((path) => path.endsWith(".failure.json")), false);
 });
