@@ -5,6 +5,8 @@ import { createServer, connect } from "node:net";
 import test from "node:test";
 import {
   LOCAL_DELIVERY_ACCEPTANCE_FORMAT,
+  assertPhase6CleanupAcknowledgement,
+  assertPhase7CleanupAcknowledgement,
   parseLocalDeliveryAcceptanceOutputs,
   parseLocalDeliveryAcceptanceRecord,
   runLocalDeliveryAcceptance,
@@ -25,10 +27,12 @@ const phase6Output = [
   ...Array.from({ length: 3 }, () => "[local-verify] LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED"),
   "[local-verify] GENERATED CLEANUP PASS",
   ...Array.from({ length: 2 }, () => "[local-verify] GENERATED PARALLEL CLEANUP PASS"),
+  `BLOG X PHASE6 CLEANUP ACK ${JSON.stringify({ format: "blog-x-phase6-cleanup-ack", version: 1, namespaces: ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc"].map((suffix) => ({ namespace: `blogxverify_${suffix}`, containersAbsent: true, volumes: [`blogxverify_${suffix}_postgres-data`, `blogxverify_${suffix}_media-data`], volumesAbsent: true })), releaseState: "BLOCKED" })}`,
 ].join("\n");
 const phase7Output = [
   `BLOG X PHASE7 BROWSER RESULT ${JSON.stringify(phase7Result)}`,
   "[phase7-browser] PASS",
+  `BLOG X PHASE7 CLEANUP ACK ${JSON.stringify({ format: "blog-x-phase7-cleanup-ack", version: 1, webRoot: join(process.cwd(), "apps/.phase7-web-fixture"), origins: ["http://127.0.0.1:41001", "http://127.0.0.1:41002"], childrenAbsent: true, rootAbsent: true, releaseState: "BLOCKED" })}`,
   "[phase7-browser] CLEANUP PASS",
 ].join("\n");
 
@@ -43,6 +47,8 @@ test("local delivery acceptance only accepts complete BLOCKED Phase 6/7 records 
   assert.match(result.phase7Browser.outputSha256, /^[a-f0-9]{64}$/);
   assert.equal(Object.keys(result).sort().join(","), "counts,format,phase6Data,phase7Browser,releaseState,version");
   assert.deepEqual(parseLocalDeliveryAcceptanceRecord(result), result);
+  assert.equal(assertPhase6CleanupAcknowledgement(phase6Output, { requireThree: true }).namespaces.length, 3);
+  assert.equal(assertPhase7CleanupAcknowledgement(phase7Output, { requireOrigins: true }).origins.length, 2);
 });
 
 test("local delivery acceptance rejects incomplete, stale, non-pass, and unclean evidence", () => {
@@ -59,6 +65,16 @@ test("local delivery acceptance rejects incomplete, stale, non-pass, and unclean
   ];
   for (const [badPhase6, badPhase7, matcher] of replacements) {
     assert.throws(() => parseLocalDeliveryAcceptanceOutputs({ phase6Output: badPhase6, phase7Output: badPhase7 }), matcher);
+  }
+  const phase6Acknowledgement = phase6Output.split("\n").find((line) => line.startsWith("BLOG X PHASE6 CLEANUP ACK "));
+  assert.ok(phase6Acknowledgement);
+  for (const invalid of [
+    phase6Acknowledgement.replace("blogxverify_aaaaaaaaaaaa", "blogxlocal"),
+    phase6Acknowledgement.replace("blogxverify_aaaaaaaaaaaa_postgres-data", "blogxlocal_postgres-data"),
+    phase6Acknowledgement.replace('"containersAbsent":true', '"containersAbsent":false'),
+    `${phase6Acknowledgement}\n${phase6Acknowledgement}`,
+  ]) {
+    assert.throws(() => assertPhase6CleanupAcknowledgement(invalid), /incomplete|invalid|exactly one/i);
   }
 });
 
@@ -119,7 +135,9 @@ test("production coordinator is sealed, zero-argument, and has no test-core, can
   assert.match(source, /childTimeoutMs/);
   assert.match(source, /runBoundedChildTree/);
   assert.match(phase6Source, /installCooperativeShutdown[\s\S]*allowDuringShutdown[\s\S]*confirmGeneratedProjectAbsent/);
+  assert.match(phase6Source, /BLOG X PHASE6 CLEANUP ACK/);
   assert.match(phase7Source, /installCooperativeShutdown[\s\S]*signalCleanupPromise[\s\S]*stopExactChildren/);
+  assert.match(phase7Source, /BLOG X PHASE7 CLEANUP ACK/);
   await assert.rejects(runLocalDeliveryAcceptance("--partial"), /zero arguments/i);
 });
 
@@ -143,13 +161,13 @@ async function portIsClosed(port) {
   });
 }
 
-test("production bounded controller kills an exact TERM-ignoring helper tree and closes its generated authority", { skip: process.platform === "win32" }, async () => {
+test("forced process-group termination does not claim generated-authority cleanup without acknowledgement", { skip: process.platform === "win32" }, async () => {
   const port = await freePort(); const output = []; const started = Date.now();
   await assert.rejects(runBoundedChildTree(process.execPath, ["scripts/fixtures/local-delivery-child-tree-helper.mjs", String(port)], {
     cwd: process.cwd(), env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", TMPDIR: process.env.TMPDIR ?? "/tmp", LANG: "C" },
     maximumOutputBytes: 64 * 1024, timeoutMs: 750, terminationGraceMs: 150, killGraceMs: 2_000,
     onOutput(value) { output.push(value); },
-  }), /bounded time.*cleanup confirmed/i);
+  }), /bounded time.*terminated without generated-authority acknowledgement/i);
   assert.ok(Date.now() - started < 4_000, "controller must settle inside its advertised timeout and kill grace");
   const combined = output.join("");
   assert.match(combined, /PARENT_READY \d+/);
@@ -157,4 +175,18 @@ test("production bounded controller kills an exact TERM-ignoring helper tree and
   assert.ok(Number.isSafeInteger(descendantPid));
   assert.equal(await portIsClosed(port), true, "generated listener remained reachable");
   assert.throws(() => process.kill(descendantPid, 0), (error) => error?.code === "ESRCH");
+});
+
+test("Phase 7 signal during generated-root setup acknowledges exact root cleanup", { skip: process.platform === "win32" }, async () => {
+  const output = [];
+  await assert.rejects(runBoundedChildTree(process.execPath, ["scripts/phase7-browser-verify.mjs", "--force-setup-wait"], {
+    cwd: process.cwd(), env: { ...process.env, LANG: "C" }, maximumOutputBytes: 1024 * 1024,
+    timeoutMs: 1_000, terminationGraceMs: 4_000, killGraceMs: 2_000,
+    confirmCleanup(value) { return Boolean(assertPhase7CleanupAcknowledgement(value)); },
+    onOutput(value) { output.push(value); },
+  }), /bounded time.*generated authority cleanup confirmed/i);
+  const combined = output.join("");
+  const acknowledgement = assertPhase7CleanupAcknowledgement(combined);
+  assert.equal(acknowledgement.origins.length, 0);
+  await assert.rejects(readFile(acknowledgement.webRoot), /ENOENT/);
 });

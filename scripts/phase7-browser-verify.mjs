@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { copyFile, cp, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
+import { copyFile, cp, lstat, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { createServer } from "node:net";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -213,11 +213,12 @@ async function runPlaywright(args, env, timeoutMs = playwrightTimeoutMs) {
 }
 
 function parseOptions(argv) {
-  const options = { forceFailure: false, forceSetupFailure: false, forceTimeout: false, grep: undefined };
+  const options = { forceFailure: false, forceSetupFailure: false, forceSetupWait: false, forceTimeout: false, grep: undefined };
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
     if (value === "--force-failure") options.forceFailure = true;
     else if (value === "--force-setup-failure") options.forceSetupFailure = true;
+    else if (value === "--force-setup-wait") options.forceSetupWait = true;
     else if (value === "--force-timeout") options.forceTimeout = true;
     else if (value === "--grep" && options.grep === undefined) {
       options.grep = argv[index + 1];
@@ -243,25 +244,46 @@ async function expectHttpClosed(url) {
   throw new Error(`managed local origin remained reachable after cleanup: ${url}`);
 }
 
+async function expectPathAbsent(path) {
+  try { await lstat(path); } catch (error) { if (error?.code === "ENOENT") return; throw error; }
+  throw new Error(`generated Phase 7 Web root remained after cleanup: ${path}`);
+}
+
+async function waitForShutdownSignal() {
+  shutdownSignal?.throwIfAborted();
+  await new Promise((accept) => {
+    const keepAlive = setInterval(() => undefined, 1_000);
+    const aborted = () => {
+      clearInterval(keepAlive);
+      accept();
+    };
+    shutdownSignal?.addEventListener("abort", aborted, { once: true });
+  });
+  shutdownSignal?.throwIfAborted();
+}
+
 async function main() {
   shutdownSignal?.throwIfAborted();
   const options = parseOptions(process.argv.slice(2));
   await assertAcceptanceSpecEnabled();
-  shutdownSignal?.throwIfAborted();
-  const [fixturePort, webPort] = await Promise.all([freePort(), freePort()]);
-  const isolatedWebRoot = await createIsolatedWebRoot(options.forceSetupFailure);
-  shutdownSignal?.throwIfAborted();
-  const fixtureOrigin = `http://127.0.0.1:${fixturePort}`;
-  const webOrigin = `http://127.0.0.1:${webPort}`;
-  const fixtureEnv = { ...process.env, DISCOVERY_FIXTURE_PORT: String(fixturePort) };
-  const webEnv = {
-    ...process.env,
-    INTERNAL_API_ORIGIN: fixtureOrigin,
-    PUBLIC_ORIGIN: webOrigin,
-    NEXT_TELEMETRY_DISABLED: "1",
-  };
-
+  let isolatedWebRoot;
+  let fixtureOrigin;
+  let webOrigin;
   try {
+    isolatedWebRoot = await createIsolatedWebRoot(options.forceSetupFailure);
+    process.stdout.write(`[phase7-browser] AUTHORITY WEB_ROOT ${isolatedWebRoot}\n`);
+    if (options.forceSetupWait) await waitForShutdownSignal();
+    shutdownSignal?.throwIfAborted();
+    const [fixturePort, webPort] = await Promise.all([freePort(), freePort()]);
+    fixtureOrigin = `http://127.0.0.1:${fixturePort}`;
+    webOrigin = `http://127.0.0.1:${webPort}`;
+    const fixtureEnv = { ...process.env, DISCOVERY_FIXTURE_PORT: String(fixturePort) };
+    const webEnv = {
+      ...process.env,
+      INTERNAL_API_ORIGIN: fixtureOrigin,
+      PUBLIC_ORIGIN: webOrigin,
+      NEXT_TELEMETRY_DISABLED: "1",
+    };
     start("start strict discovery fixture", process.execPath,
       ["--import", "tsx", "apps/web/e2e/public-discovery-fixture.ts"], fixtureEnv);
     await waitForHttp(`${fixtureOrigin}/health`);
@@ -280,11 +302,24 @@ async function main() {
   } finally {
     await signalCleanupPromise;
     await stopExactChildren();
-    await Promise.all([expectHttpClosed(`${fixtureOrigin}/health`), expectHttpClosed(webOrigin)]);
-    if (!isolatedWebRoot.startsWith(resolve(root, "apps/.phase7-web-"))) {
-      throw new Error("refusing to clean an unexpected Phase 7 Web root");
+    if (fixtureOrigin && webOrigin) await Promise.all([expectHttpClosed(`${fixtureOrigin}/health`), expectHttpClosed(webOrigin)]);
+    if (isolatedWebRoot) {
+      if (!isolatedWebRoot.startsWith(resolve(root, "apps/.phase7-web-"))) {
+        throw new Error("refusing to clean an unexpected Phase 7 Web root");
+      }
+      await rm(isolatedWebRoot, { recursive: true, force: true });
+      await expectPathAbsent(isolatedWebRoot);
+      const record = {
+        format: "blog-x-phase7-cleanup-ack",
+        version: 1,
+        webRoot: isolatedWebRoot,
+        origins: fixtureOrigin && webOrigin ? [fixtureOrigin, webOrigin] : [],
+        childrenAbsent: true,
+        rootAbsent: true,
+        releaseState: "BLOCKED",
+      };
+      process.stdout.write(`BLOG X PHASE7 CLEANUP ACK ${JSON.stringify(record)}\n`);
     }
-    await rm(isolatedWebRoot, { recursive: true, force: true });
     process.stdout.write("[phase7-browser] CLEANUP PASS\n");
   }
 }

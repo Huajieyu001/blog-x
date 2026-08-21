@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runBoundedChildTree } from "./local-delivery-child-tree.mjs";
 
@@ -11,6 +11,8 @@ const childTerminationGraceMs = 5_000;
 const childKillGraceMs = 3_000;
 const phase6Prefix = "BLOG X PHASE6 DATA RESULT ";
 const phase7Prefix = "BLOG X PHASE7 BROWSER RESULT ";
+const phase6CleanupPrefix = "BLOG X PHASE6 CLEANUP ACK ";
+const phase7CleanupPrefix = "BLOG X PHASE7 CLEANUP ACK ";
 const acceptancePrefix = "BLOG X V1.1 ACCEPTANCE RESULT ";
 
 export const LOCAL_DELIVERY_ACCEPTANCE_FORMAT = "blog-x-v1.1-local-delivery-acceptance";
@@ -81,6 +83,48 @@ function parseOneLine(output, prefix, label) {
   try { return JSON.parse(lines[0].slice(prefix.length)); } catch { throw new Error(`${label} result record is invalid JSON`); }
 }
 
+export function assertPhase6CleanupAcknowledgement(output, { requireThree = false } = {}) {
+  const value = parseOneLine(output, phase6CleanupPrefix, "Phase 6 cleanup acknowledgement");
+  if (!exactKeys(value, ["format", "version", "namespaces", "releaseState"])
+    || value.format !== "blog-x-phase6-cleanup-ack" || value.version !== 1 || value.releaseState !== "BLOCKED"
+    || !Array.isArray(value.namespaces) || value.namespaces.length < 1 || requireThree && value.namespaces.length !== 3) {
+    throw new Error("Phase 6 cleanup acknowledgement is incomplete");
+  }
+  const seen = new Set();
+  for (const authority of value.namespaces) {
+    if (!exactKeys(authority, ["namespace", "containersAbsent", "volumes", "volumesAbsent"])
+      || !/^blogxverify_[a-z0-9]{8,32}$/.test(authority.namespace) || seen.has(authority.namespace)
+      || authority.containersAbsent !== true || authority.volumesAbsent !== true
+      || JSON.stringify(authority.volumes) !== JSON.stringify([`${authority.namespace}_postgres-data`, `${authority.namespace}_media-data`])) {
+      throw new Error("Phase 6 cleanup acknowledgement authority is invalid");
+    }
+    seen.add(authority.namespace);
+  }
+  return value;
+}
+
+export function assertPhase7CleanupAcknowledgement(output, { requireOrigins = false } = {}) {
+  const value = parseOneLine(output, phase7CleanupPrefix, "Phase 7 cleanup acknowledgement");
+  const webRoot = typeof value?.webRoot === "string" ? resolve(value.webRoot) : "";
+  const generatedRootParent = resolve(root, "apps");
+  if (!exactKeys(value, ["childrenAbsent", "format", "origins", "releaseState", "rootAbsent", "version", "webRoot"])
+    || value.format !== "blog-x-phase7-cleanup-ack" || value.version !== 1 || value.releaseState !== "BLOCKED"
+    || value.childrenAbsent !== true || value.rootAbsent !== true || typeof value.webRoot !== "string"
+    || webRoot !== value.webRoot || dirname(webRoot) !== generatedRootParent
+    || !/^\.phase7-web-[A-Za-z0-9_-]{6,64}$/.test(basename(webRoot)) || !Array.isArray(value.origins)
+    || requireOrigins && value.origins.length !== 2 || ![0, 2].includes(value.origins.length)) {
+    throw new Error("Phase 7 cleanup acknowledgement is incomplete");
+  }
+  const origins = value.origins.map((origin) => {
+    let parsed;
+    try { parsed = new URL(origin); } catch { throw new Error("Phase 7 cleanup origin is invalid"); }
+    if (parsed.protocol !== "http:" || parsed.hostname !== "127.0.0.1" || !parsed.port || parsed.pathname !== "/") throw new Error("Phase 7 cleanup origin is invalid");
+    return parsed.origin;
+  });
+  if (new Set(origins).size !== origins.length) throw new Error("Phase 7 cleanup origins are duplicated");
+  return value;
+}
+
 function parsePhase6Record(value) {
   if (!exactKeys(value, ["format", "version", "suites", "counts", "releaseState"])
     || value.format !== "blog-x-phase6-data-result" || value.version !== 1 || value.releaseState !== "BLOCKED"
@@ -149,10 +193,12 @@ export function parseLocalDeliveryAcceptanceOutputs({ phase6Output, phase7Output
     || countMarker(phase6Output, "GENERATED PARALLEL CLEANUP PASS") !== 2) {
     throw new Error("Phase 6 acceptance cleanup or BLOCKED markers are incomplete");
   }
+  assertPhase6CleanupAcknowledgement(phase6Output, { requireThree: true });
   const phase7Record = parsePhase7Record(parseOneLine(phase7Output, phase7Prefix, "Phase 7"));
   if (countMarker(phase7Output, "[phase7-browser] PASS") !== 1 || countMarker(phase7Output, "[phase7-browser] CLEANUP PASS") !== 1) {
     throw new Error("Phase 7 acceptance cleanup or pass markers are incomplete");
   }
+  assertPhase7CleanupAcknowledgement(phase7Output, { requireOrigins: true });
   const result = {
     format: LOCAL_DELIVERY_ACCEPTANCE_FORMAT,
     version: 1,
@@ -168,7 +214,7 @@ function minimalEnvironment() {
   return Object.freeze({ PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", TMPDIR: process.env.TMPDIR ?? "/tmp", LANG: "C" });
 }
 
-function runBounded(command, args) {
+function runBounded(command, args, confirmCleanup) {
   return runBoundedChildTree(command, args, {
     cwd: root,
     env: minimalEnvironment(),
@@ -176,13 +222,14 @@ function runBounded(command, args) {
     timeoutMs: childTimeoutMs,
     terminationGraceMs: childTerminationGraceMs,
     killGraceMs: childKillGraceMs,
+    confirmCleanup,
   });
 }
 
 export async function runLocalDeliveryAcceptance(...args) {
   if (args.length) throw new Error("local delivery acceptance accepts zero arguments only");
-  const phase6Output = await runBounded(process.execPath, ["scripts/local-verify.mjs", "--phase6-data", "--interruption-check", "--parallel-check"]);
-  const phase7Output = await runBounded(process.execPath, ["scripts/phase7-browser-verify.mjs"]);
+  const phase6Output = await runBounded(process.execPath, ["scripts/local-verify.mjs", "--phase6-data", "--interruption-check", "--parallel-check"], (output) => Boolean(assertPhase6CleanupAcknowledgement(output)));
+  const phase7Output = await runBounded(process.execPath, ["scripts/phase7-browser-verify.mjs"], (output) => Boolean(assertPhase7CleanupAcknowledgement(output)));
   const result = parseLocalDeliveryAcceptanceOutputs({ phase6Output, phase7Output });
   process.stdout.write(`${acceptancePrefix}${JSON.stringify(result)}\n`);
   process.stdout.write("[local-delivery-acceptance] PASS; RELEASE BLOCKED\n");

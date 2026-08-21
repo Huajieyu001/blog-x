@@ -27,6 +27,8 @@ const composeFile = resolve(root, "compose.yaml");
 const apiImage = "blog-x-api-verify:phase2";
 const webImage = "blog-x-web-verify:phase2";
 let shutdownSignal;
+const allocatedGeneratedNamespaces = new Set();
+const confirmedGeneratedNamespaces = new Set();
 
 export const PHASE6_DATA_RESULT_FORMAT = "blog-x-phase6-data-result";
 const PHASE6_DATA_RESULT_PREFIX = "BLOG X PHASE6 DATA RESULT ";
@@ -409,7 +411,9 @@ function recordPhase5Command(context, file, parser, result) {
 }
 
 function generatedNamespace() {
-  return validateNamespace(`blogxverify_${randomBytes(6).toString("hex")}`);
+  const namespace = validateNamespace(`blogxverify_${randomBytes(6).toString("hex")}`);
+  allocatedGeneratedNamespaces.add(namespace);
+  return namespace;
 }
 
 function generatedRestoreNamespace() {
@@ -1201,6 +1205,7 @@ async function restoreVerifierOwnedNextEnvironment(before) {
 
 async function runSingle(options) {
   const namespace = validateNamespace(options.namespace ?? generatedNamespace());
+  allocatedGeneratedNamespaces.add(namespace);
   const database = validateDatabaseName(`blog_x_${namespace.slice("blogxverify_".length)}`, namespace);
   const webPort = options.webPort ?? await freePort();
   const phaseLabel = options.phase6Data ? "phase6-" : options.phase5Media || options.phase5Full ? "phase5-" : options.phase4Mode ? "phase4-" : options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
@@ -1351,6 +1356,26 @@ async function confirmGeneratedProjectAbsent(namespace, options = {}) {
     const inspected = await command("docker", ["volume", "inspect", volume], { allowFailure: true, ...options });
     if (inspected.exitCode === 0) throw new Error(`generated project ${namespace} retained volume ${volume}`);
   }
+  confirmedGeneratedNamespaces.add(namespace);
+}
+
+function emitPhase6CleanupAcknowledgement() {
+  const namespaces = [...allocatedGeneratedNamespaces].sort();
+  if (!namespaces.length || namespaces.some((namespace) => !confirmedGeneratedNamespaces.has(namespace))) {
+    throw new Error("not every allocated Phase 6 namespace has confirmed cleanup");
+  }
+  const record = {
+    format: "blog-x-phase6-cleanup-ack",
+    version: 1,
+    namespaces: namespaces.map((namespace) => ({
+      namespace,
+      containersAbsent: true,
+      volumes: [`${namespace}_postgres-data`, `${namespace}_media-data`],
+      volumesAbsent: true,
+    })),
+    releaseState: "BLOCKED",
+  };
+  process.stdout.write(`BLOG X PHASE6 CLEANUP ACK ${JSON.stringify(record)}\n`);
 }
 
 function optionValue(name) {
@@ -1389,6 +1414,7 @@ async function main() {
   const boundaryIssues = await auditRepository(root);
   if (boundaryIssues.length) throw new Error(boundaryIssues.map((finding) => `${finding.code}: ${finding.path}`).join("\n"));
   let authority;
+  let mainError;
   try {
     if (options.phase5Full) {
       options.implementationRevision = await committedImplementationHead();
@@ -1404,9 +1430,22 @@ async function main() {
         cleanWorktree: true, expectedRevision: revision, authority, expectedPredecessor: authority.expectedPredecessor,
       });
     }
+  } catch (error) {
+    mainError = error;
   } finally {
-    if (authority) await releasePhase5ReceiptWriterLock(authority);
+    try {
+      if (authority) await releasePhase5ReceiptWriterLock(authority);
+      if (options.phase6Data) {
+        for (const namespace of allocatedGeneratedNamespaces) {
+          if (!confirmedGeneratedNamespaces.has(namespace)) await confirmGeneratedProjectAbsent(namespace, { allowDuringShutdown: true });
+        }
+        emitPhase6CleanupAcknowledgement();
+      }
+    } catch (cleanupError) {
+      mainError = mainError ? new AggregateError([mainError, cleanupError], "Phase 6 execution and generated cleanup acknowledgement failed") : cleanupError;
+    }
   }
+  if (mainError) throw mainError;
   process.stdout.write("[local-verify] all requested checks passed\n");
 }
 
