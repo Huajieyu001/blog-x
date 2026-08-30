@@ -8,6 +8,9 @@ import { verifyPhase5Receipt } from "./phase5-receipt.mjs";
 import {
   assertSemanticTap,
   assertPlaywrightJourney,
+  canonicalIntegrationSelection,
+  createGeneratedIntegrationResult,
+  createLifecycleProbeResult,
   createPhase6DataResult,
   createPhase5ResultRecorder,
   parseBoundaryResult,
@@ -32,6 +35,7 @@ import {
   validateNamespace,
   validateTopologyPolicy,
 } from "./local-verify.mjs";
+import { INTEGRATION_TEST_FILES, PACKAGE_TEST_INVENTORY } from "./test-inventory.mjs";
 import { assertPlaywrightResult, PHASE7_BROWSER_RESULT_FORMAT } from "./phase7-browser-verify.mjs";
 
 const migratedMainBrowserSpecs = [
@@ -42,6 +46,70 @@ const migratedMainBrowserSpecs = [
   "apps/web/e2e/public-reading.spec.ts",
   "apps/web/e2e/walking-skeleton.spec.ts",
 ];
+
+const canonicalGeneratedPaths = PACKAGE_TEST_INVENTORY
+  .filter((entry) => entry.scope === "integration" && entry.fixtureOwner !== "phase7-browser")
+  .map((entry) => entry.path)
+  .sort();
+
+test("canonical integration selection owns exact non-Phase-7 inventory once by fixture owner", () => {
+  const selection = canonicalIntegrationSelection();
+  assert.deepEqual(selection.paths, canonicalGeneratedPaths);
+  assert.equal(selection.paths.length, 29);
+  assert.equal(new Set(selection.paths).size, selection.paths.length);
+  assert.deepEqual(Object.fromEntries(Object.entries(selection.groups).map(([owner, paths]) => [owner, paths.length])), {
+    database: 11,
+    "backup-restore": 1,
+    media: 1,
+    "main-browser": 14,
+    "error-browser": 1,
+    "restore-browser": 1,
+  });
+  assert.equal(selection.paths.filter((path) => path.startsWith("apps/api/")).length, 13);
+  assert.equal(selection.paths.filter((path) => path.startsWith("apps/web/e2e/")).length, 16);
+  assert.equal(selection.paths.includes("apps/web/e2e/public-discovery.spec.ts"), false);
+  assert.match(selection.manifestSha256, /^[a-f0-9]{64}$/);
+});
+
+test("generated integration result binds exact paths actual counts cleanup and digest", () => {
+  const selection = canonicalIntegrationSelection();
+  const suites = selection.paths.map((path) => ({
+    path,
+    fixtureOwner: PACKAGE_TEST_INVENTORY.find((entry) => entry.path === path).fixtureOwner,
+    counts: { tests: 1, passed: 1, failed: 0, cancelled: 0, skipped: 0, todo: 0 },
+  }));
+  const cleanup = { namespace: "blogxverify_a1b2c3d4", containersAbsent: true, volumesAbsent: true, pathsAbsent: true };
+  const result = createGeneratedIntegrationResult({ suites, cleanup });
+  assert.equal(result.format, "blog-x-generated-integration-result");
+  assert.equal(result.version, 1);
+  assert.equal(result.releaseState, "BLOCKED");
+  assert.deepEqual(result.inventory, selection.paths);
+  assert.deepEqual(result.counts, { tests: 29, passed: 29, failed: 0, cancelled: 0, skipped: 0, todo: 0 });
+  assert.deepEqual(result.cleanup, cleanup);
+  assert.equal(result.manifestSha256, selection.manifestSha256);
+  assert.match(result.resultSha256, /^[a-f0-9]{64}$/);
+  assert.throws(() => createGeneratedIntegrationResult({ suites: suites.slice(1), cleanup }), /missing|inventory|exact/i);
+  assert.throws(() => createGeneratedIntegrationResult({ suites: [...suites, suites[0]], cleanup }), /duplicate|inventory|exact/i);
+  assert.throws(() => createGeneratedIntegrationResult({ suites: suites.map((suite, index) => index ? suite : { ...suite, counts: { ...suite.counts, skipped: 1, passed: 0 } }), cleanup }), /pass-only|counts/i);
+});
+
+test("lifecycle probes attest zero manifest paths and cannot inflate package counts", async () => {
+  const record = createLifecycleProbeResult({
+    kind: "parallel",
+    namespaces: ["blogxverify_a1b2c3d4", "blogxverify_b1c2d3e4"],
+    interrupted: false,
+  });
+  assert.deepEqual(record.inventory, []);
+  assert.deepEqual(record.counts, { tests: 0, passed: 0, failed: 0, cancelled: 0, skipped: 0, todo: 0 });
+  assert.equal(record.cleanupAcknowledged, true);
+  assert.equal(record.releaseState, "BLOCKED");
+  assert.throws(() => createLifecycleProbeResult({ kind: "parallel", namespaces: ["blogxlocal"], interrupted: false }), /namespace/i);
+
+  const source = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
+  const lifecycle = source.slice(source.indexOf("async function runLifecycleInterruptionProbe"), source.indexOf("function emitCanonicalIntegrationCleanupAcknowledgement"));
+  for (const path of INTEGRATION_TEST_FILES) assert.equal(lifecycle.includes(path), false, path);
+  assert.doesNotMatch(lifecycle, /semanticTestCommand|playwright|runDatabaseSuite|runGeneratedMainBrowserFixture|--canonical-integration/i);
+});
 
 test("legacy Web E2E specs require runner facts and own no infrastructure", async () => {
   for (const path of migratedMainBrowserSpecs) {
