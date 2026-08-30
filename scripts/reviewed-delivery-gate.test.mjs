@@ -113,7 +113,7 @@ test("committed review assertion requires strict clean GSD report with zero find
   assert.deepEqual(REVIEWED_DELIVERY_V2_FILES.filter((path) => !REVIEWED_DELIVERY_FILES.includes(path)), ["scripts/local-delivery-child-tree.mjs"]);
   for (const files of [REVIEWED_DELIVERY_V2_FILES.slice(1), [...REVIEWED_DELIVERY_V2_FILES, "scripts/alias.mjs"], [...REVIEWED_DELIVERY_V2_FILES].reverse(), [...REVIEWED_DELIVERY_V2_FILES.slice(0, -1), REVIEWED_DELIVERY_V2_FILES[0]]]) {
     const bad = fixture(); bad.entries.get(COMMITTED_REVIEW_V2_PATH).bytes = review(REVISION, { files });
-    await assert.rejects(bad.runtime.execute(["--assert-committed-review-clean"], {}), /scope|files|standard/i);
+    await assert.rejects(bad.runtime.execute(["--assert-committed-review-clean"], {}), /scope|file|standard/i);
   }
   const quick = fixture(); quick.entries.get(COMMITTED_REVIEW_V2_PATH).bytes = review(REVISION, { depth: "quick" });
   await assert.rejects(quick.runtime.execute(["--assert-committed-review-clean"], {}), /standard|depth/i);

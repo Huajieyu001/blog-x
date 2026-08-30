@@ -8,16 +8,19 @@ import { deliveryAuthorityForRevision } from "./refresh-local-runtime-core.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = fileURLToPath(import.meta.url);
-const reviewRelativePath = ".planning/phases/08-reliable-local-delivery/08-REVIEW.md";
+const reviewRelativePath = ".planning/phases/08-reliable-local-delivery/08-REVIEW-V2.md";
 const reviewPhase = "08-reliable-local-delivery";
 const expectedBranch = "refs/heads/dev";
 const verifierPath = resolve(root, "scripts/refresh-local.mjs");
 const evidenceSuccess = "LOCAL REFRESH EVIDENCE VERIFIED; RELEASE BLOCKED\n";
 
-export const COMMITTED_REVIEW_PATH = resolve(root, reviewRelativePath);
+export const COMMITTED_REVIEW_PATH = resolve(root, ".planning/phases/08-reliable-local-delivery/08-REVIEW.md");
+export const COMMITTED_REVIEW_V2_PATH = resolve(root, reviewRelativePath);
 export const REVIEW_CONFIG_PATH = resolve(root, ".planning/config.json");
 export const FINAL_REVIEW_PATH = "/private/tmp/blog-x-phase08-final-review.md";
+export const FINAL_REVIEW_V2_PATH = "/private/tmp/blog-x-phase08-final-review-v2.md";
 export const REVIEWED_HEAD_MARKER_PATH = "/private/tmp/blog-x-phase08-reviewed-head-v1.json";
+export const REVIEWED_HEAD_MARKER_V2_PATH = "/private/tmp/blog-x-phase08-reviewed-head-v2.json";
 export const REVIEWED_DELIVERY_FILES = Object.freeze([
   "apps/api/package.json",
   "apps/web/e2e/article-lifecycle.spec.ts",
@@ -32,6 +35,34 @@ export const REVIEWED_DELIVERY_FILES = Object.freeze([
   "scripts/default-test.test.mjs",
   "scripts/local-delivery-acceptance-test-core.mjs",
   "scripts/local-delivery-acceptance.mjs",
+  "scripts/local-verify.mjs",
+  "scripts/local-verify.test.mjs",
+  "scripts/phase7-browser-verify.mjs",
+  "scripts/refresh-local-live.mjs",
+  "scripts/refresh-local-runtime-core.mjs",
+  "scripts/refresh-local-test-core.mjs",
+  "scripts/refresh-local.mjs",
+  "scripts/refresh-local.test.mjs",
+  "scripts/reviewed-delivery-gate.mjs",
+  "scripts/reviewed-delivery-gate.test.mjs",
+  "scripts/test-inventory.mjs",
+  "scripts/test-inventory.test.mjs",
+]);
+export const REVIEWED_DELIVERY_V2_FILES = Object.freeze([
+  "apps/api/package.json",
+  "apps/web/e2e/article-lifecycle.spec.ts",
+  "apps/web/e2e/auth-session.spec.ts",
+  "apps/web/e2e/draft-preview.spec.ts",
+  "apps/web/e2e/public-list.spec.ts",
+  "apps/web/e2e/public-reading.spec.ts",
+  "apps/web/e2e/walking-skeleton.spec.ts",
+  "ops/local-deliveries/.gitkeep",
+  "package.json",
+  "scripts/default-test.mjs",
+  "scripts/default-test.test.mjs",
+  "scripts/local-delivery-acceptance-test-core.mjs",
+  "scripts/local-delivery-acceptance.mjs",
+  "scripts/local-delivery-child-tree.mjs",
   "scripts/local-verify.mjs",
   "scripts/local-verify.test.mjs",
   "scripts/phase7-browser-verify.mjs",
@@ -106,7 +137,7 @@ function parseCleanReview(bytes, label) {
     fail(`${label} review file count or list is malformed`);
   }
   if (depth !== "standard") fail(`${label} review depth must be standard`);
-  if (!same(files, REVIEWED_DELIVERY_FILES)) fail(`${label} review scope is not the exact configured delivery file list`);
+  if (!same(files, REVIEWED_DELIVERY_V2_FILES)) fail(`${label} review scope is not the exact configured delivery file list`);
   if (status !== "clean" || critical !== 0 || warning !== 0 || info !== 0 || total !== 0 || total !== critical + warning + info) {
     fail(`${label} review is not clean with zero findings`);
   }
@@ -183,8 +214,8 @@ export function createReviewedDeliveryGateRuntime({
   async function scanHandoff({ allowFinal = false, allowMarker = false } = {}) {
     await assertPrivateParents();
     const names = await fs.readdir("/private/tmp");
-    const finalName = basename(FINAL_REVIEW_PATH);
-    const markerName = basename(REVIEWED_HEAD_MARKER_PATH);
+    const finalName = basename(FINAL_REVIEW_V2_PATH);
+    const markerName = basename(REVIEWED_HEAD_MARKER_V2_PATH);
     const finalStem = finalName.replace(/\.md$/, "");
     const markerStem = markerName.replace(/\.json$/, "");
     const conflicting = names.filter((name) =>
@@ -200,7 +231,7 @@ export function createReviewedDeliveryGateRuntime({
     if (config?.workflow?.code_review !== true || config.workflow.code_review_depth !== "standard") {
       fail("configured code review must remain enabled at standard depth");
     }
-    const bytes = await assertSecureFile(COMMITTED_REVIEW_PATH, 0o644, "committed review");
+    const bytes = await assertSecureFile(COMMITTED_REVIEW_V2_PATH, 0o644, "committed review");
     return parseCleanReview(bytes, "committed");
   }
 
@@ -234,7 +265,7 @@ export function createReviewedDeliveryGateRuntime({
   async function publishMarker(bytes) {
     const suffix = randomHex();
     if (!/^[a-f0-9]{24}$/.test(suffix)) fail("marker temporary token is invalid");
-    const tempPath = `/private/tmp/.${basename(REVIEWED_HEAD_MARKER_PATH)}.${suffix}.tmp`;
+    const tempPath = `/private/tmp/.${basename(REVIEWED_HEAD_MARKER_V2_PATH)}.${suffix}.tmp`;
     let handle;
     let tempExists = false;
     let linked = false;
@@ -246,21 +277,21 @@ export function createReviewedDeliveryGateRuntime({
       await handle.close();
       handle = undefined;
       await assertSecureFile(tempPath, 0o600, "marker temporary file");
-      if (await entry(REVIEWED_HEAD_MARKER_PATH)) fail("reviewed marker is already published");
-      try { await fs.link(tempPath, REVIEWED_HEAD_MARKER_PATH); }
+      if (await entry(REVIEWED_HEAD_MARKER_V2_PATH)) fail("reviewed marker is already published");
+      try { await fs.link(tempPath, REVIEWED_HEAD_MARKER_V2_PATH); }
       catch (error) { if (error?.code === "EEXIST") fail("reviewed marker is already published"); throw error; }
       linked = true;
-      await assertSecureFile(REVIEWED_HEAD_MARKER_PATH, 0o600, "reviewed marker", { requireSingleLink: false });
+      await assertSecureFile(REVIEWED_HEAD_MARKER_V2_PATH, 0o600, "reviewed marker", { requireSingleLink: false });
       await syncPrivateTmp();
       await fs.unlink(tempPath);
       tempExists = false;
       await syncPrivateTmp();
-      await assertSecureFile(REVIEWED_HEAD_MARKER_PATH, 0o600, "reviewed marker");
+      await assertSecureFile(REVIEWED_HEAD_MARKER_V2_PATH, 0o600, "reviewed marker");
     } catch (error) {
       try { if (handle) await handle.close(); }
       catch (closeError) { throw new AggregateError([error, closeError], "reviewed marker close invariant failed"); }
       if (linked) {
-        try { await fs.unlink(REVIEWED_HEAD_MARKER_PATH); linked = false; await syncPrivateTmp(); }
+        try { await fs.unlink(REVIEWED_HEAD_MARKER_V2_PATH); linked = false; await syncPrivateTmp(); }
         catch (cleanupError) { throw new AggregateError([error, cleanupError], "reviewed marker cleanup invariant failed"); }
       }
       if (tempExists) {
@@ -273,15 +304,15 @@ export function createReviewedDeliveryGateRuntime({
 
   async function readMarker() {
     await scanHandoff({ allowFinal: true, allowMarker: true });
-    const bytes = await assertSecureFile(REVIEWED_HEAD_MARKER_PATH, 0o600, "reviewed marker");
+    const bytes = await assertSecureFile(REVIEWED_HEAD_MARKER_V2_PATH, 0o600, "reviewed marker");
     let marker;
     try { marker = JSON.parse(bytes); } catch { fail("reviewed marker JSON is malformed"); }
     exactKeys(marker, markerKeys, "reviewed marker");
     const { sha256, ...body } = marker;
     if (markerBytes(body) !== bytes || !validDigest(sha256)) fail("reviewed marker digest or canonical bytes are invalid");
-    if (body.format !== "blog-x-phase08-reviewed-head" || body.version !== 1 || body.branchRef !== expectedBranch
+    if (body.format !== "blog-x-phase08-reviewed-head" || body.version !== 2 || body.branchRef !== expectedBranch
       || !validRevision(body.reviewedHead) || body.reviewPath !== reviewRelativePath || !validDigest(body.reviewSha256)
-      || body.finalReviewPath !== FINAL_REVIEW_PATH || !validDigest(body.finalReviewSha256)) {
+      || body.finalReviewPath !== FINAL_REVIEW_V2_PATH || !validDigest(body.finalReviewSha256)) {
       fail("reviewed marker schema or fixed authority is invalid");
     }
     const authority = deliveryAuthorityForRevision(body.reviewedHead);
@@ -289,7 +320,7 @@ export function createReviewedDeliveryGateRuntime({
       || body.claimPath !== authority.claimPath || body.failurePath !== authority.failurePath) {
       fail("reviewed marker delivery authority is invalid");
     }
-    const finalBytes = await assertSecureFile(FINAL_REVIEW_PATH, 0o600, "final review");
+    const finalBytes = await assertSecureFile(FINAL_REVIEW_V2_PATH, 0o600, "final review");
     const finalReview = parseCleanReview(finalBytes, "final");
     if (digest(finalBytes) !== body.finalReviewSha256 || finalReview.reviewedHead !== body.reviewedHead) {
       fail("final review changed after marker recording");
@@ -316,15 +347,15 @@ export function createReviewedDeliveryGateRuntime({
       if (selected === "--assert-committed-review-clean") return readCommittedReview();
       if (selected === "--assert-handoff-absent") {
         await scanHandoff();
-        if (await entry(FINAL_REVIEW_PATH) || await entry(REVIEWED_HEAD_MARKER_PATH)) fail("handoff artifacts must be absent");
+        if (await entry(FINAL_REVIEW_V2_PATH) || await entry(REVIEWED_HEAD_MARKER_V2_PATH)) fail("handoff artifacts must be absent");
         return { absent: true };
       }
       if (selected === "--assert-clean") { await assertGitClean(); return { clean: true }; }
       if (selected === "--record-reviewed-head") {
         await scanHandoff({ allowFinal: true, allowMarker: true });
-        if (await entry(REVIEWED_HEAD_MARKER_PATH)) fail("reviewed marker is already published");
+        if (await entry(REVIEWED_HEAD_MARKER_V2_PATH)) fail("reviewed marker is already published");
         const revision = await readGitIdentity();
-        const finalBytes = await assertSecureFile(FINAL_REVIEW_PATH, 0o600, "final review");
+        const finalBytes = await assertSecureFile(FINAL_REVIEW_V2_PATH, 0o600, "final review");
         const finalReview = parseCleanReview(finalBytes, "final");
         const committedReview = await readCommittedReview();
         if (finalReview.reviewedHead !== revision) fail("final review HEAD differs from current HEAD");
@@ -333,12 +364,12 @@ export function createReviewedDeliveryGateRuntime({
         const authority = deliveryAuthorityForRevision(revision);
         const body = {
           format: "blog-x-phase08-reviewed-head",
-          version: 1,
+          version: 2,
           branchRef: expectedBranch,
           reviewedHead: revision,
           reviewPath: reviewRelativePath,
           reviewSha256: digest(committedReview.bytes),
-          finalReviewPath: FINAL_REVIEW_PATH,
+          finalReviewPath: FINAL_REVIEW_V2_PATH,
           finalReviewSha256: digest(finalBytes),
           authority: authority.authority,
           evidencePath: authority.evidencePath,
