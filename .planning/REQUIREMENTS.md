@@ -49,9 +49,9 @@
 | SRCH-03 | Phase 6 | Complete |
 | READ-08 | Phase 6 | Complete |
 | READ-09 | Phase 7 | Complete |
-| DEVX-01 | Phase 8 | Complete |
-| DEVX-02 | Phase 8 | Complete |
-| DEVX-03 | Phase 8 | Complete |
+| DEVX-01 | Phase 8 | Complete — verified 2026-08-30 |
+| DEVX-02 | Phase 8 | Complete — verified 2026-08-30 |
+| DEVX-03 | Phase 8 | Complete — verified 2026-08-30 |
 
 **Coverage:**
 

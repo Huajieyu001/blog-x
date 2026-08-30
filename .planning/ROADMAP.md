@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 Local MVP** — Phases 1–5（shipped 2026-08-15）
-- 🚧 **v1.1 Content Discovery** — Phases 6–8（in progress）
+- ✅ **v1.1 Content Discovery** — Phases 6–8（completed 2026-08-30）
 
 ## Archived Milestone
 
@@ -18,7 +18,7 @@
 
 - [x] **Phase 6: Public Discovery Data** — 建立仅公开内容的低资源搜索与确定性相关文章数据边界。 (completed 2026-08-17)
 - [x] **Phase 7: Responsive Discovery Experience** — 交付搜索入口、结果页和文章相关文章的响应式访客体验。 (completed 2026-08-19)
-- [ ] **Phase 8: Reliable Local Delivery** — 固化离线优先的本地更新、健康验证和 v1.1 全量验收。
+- [x] **Phase 8: Reliable Local Delivery** — 固化离线优先的本地更新、健康验证和 v1.1 全量验收。 (completed 2026-08-30)
 
 ### Phase 6: Public Discovery Data
 
@@ -72,7 +72,7 @@ Plans:
 **Depends on:** Phase 7
 **Requirements:** DEVX-01, DEVX-02, DEVX-03
 **UI hint:** no
-**Plans:** 6/9 plans executed
+**Plans:** 9/9 plans complete
 
 Plans:
 
@@ -84,7 +84,7 @@ Plans:
 - [x] 08-06-PLAN.md — Move legacy browser scenarios under one generated fixture owner.
 - [x] 08-07-PLAN.md — Execute and attest the complete runner-owned integration inventory exactly once. (completed 2026-08-30)
 - [x] 08-08-PLAN.md — Complete the bounded GSD review gate and bind the final reviewed HEAD.
-- [ ] 08-09-PLAN.md — Deliver the reviewed revision once and close Phase 08 from independent evidence.
+- [x] 08-09-PLAN.md — Deliver the reviewed revision once and close Phase 08 from independent evidence. (completed 2026-08-30)
 
 **Wave 1:** 08-01
 
@@ -118,4 +118,4 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 6. Public Discovery Data | v1.1 | 8/8 active | Complete | 2026-08-17 |
 | 7. Responsive Discovery Experience | v1.1 | 4/4 | Complete    | 2026-08-19 |
-| 8. Reliable Local Delivery | v1.1 | 8/9 | In Progress | — |
+| 8. Reliable Local Delivery | v1.1 | 9/9 | Complete | 2026-08-30 |

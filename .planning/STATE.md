@@ -4,17 +4,17 @@ milestone: v1.1
 milestone_name: Content Discovery
 current_phase: 08
 current_phase_name: Reliable Local Delivery
-status: executing
-stopped_at: Completed 08-08-PLAN.md
-last_updated: "2026-08-30T12:05:06.000Z"
+status: complete
+stopped_at: Completed 08-09-PLAN.md
+last_updated: "2026-08-30T14:37:41.000Z"
 last_activity: 2026-08-30
-last_activity_desc: Clean exact-25 delivery review completed with reviewed-head gate; release remains BLOCKED
+last_activity_desc: Phase 08 verified complete from reviewed local-delivery evidence; release remains BLOCKED
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 21
-  completed_plans: 20
-  percent: 95
+  completed_plans: 21
+  percent: 100
 ---
 
 # Project State
@@ -24,20 +24,20 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-15)
 
 **Core value:** 博主能够可靠地发布和保存 Markdown 内容，访客能够持续、快速地通过博客域名阅读已发布文章。  
-**Current focus:** Phase 08 — Reliable Local Delivery
+**Current focus:** v1.1 Content Discovery complete; production release remains BLOCKED
 
 ## Current Position
 
-Phase: 08 (Reliable Local Delivery) — EXECUTING GAP CLOSURE
+Phase: 08 (Reliable Local Delivery) — COMPLETE
 Plan: 9 of 9
-Status: 08-08 complete with clean exact-25 review and reviewed-HEAD gate; terminal 08-09 handoff is next
-Last activity: 2026-08-30 — Clean exact-25 delivery review completed with reviewed-head gate; release remains BLOCKED
+Status: Reviewed SHA `538840a825d192710550fcae8fa53f9fa68346ff` delivered and independently verified; DEVX-01..03 complete
+Last activity: 2026-08-30 — Phase 08 closed with canonical local runtime healthy and release BLOCKED
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 41
+- Total plans completed: 42
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -200,11 +200,10 @@ Decisions are logged in PROJECT.md Key Decisions table.
 
 ## Session Continuity
 
-Last session: 2026-08-30T12:05:06.000Z
-Stopped at: Completed 08-08-PLAN.md
+Last session: 2026-08-30T14:37:41.000Z
+Stopped at: Completed 08-09-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
 
-- Perform the terminal read-only exact-HEAD review handoff, then execute 08-09 directly.
-- Keep both cloud servers out of scope; local completion retains `releaseState: BLOCKED`.
+- Keep both cloud servers out of scope until separately authorized; local completion retains `releaseState: BLOCKED`.
