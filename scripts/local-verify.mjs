@@ -1570,7 +1570,8 @@ async function runSingle(options) {
     }
     else if (options.canonicalIntegration && !options.skipBuild) {
       await preflightOfflinePrerequisites(context);
-      process.stdout.write("[local-verify] use prevalidated verifier dependency images with read-only committed integration sources\n");
+      process.stdout.write("[local-verify] build current canonical integration verifier images from offline authority\n");
+      await compose(context, "build current canonical API and Web images", "build", "api", "web");
     }
     else if (options.phase5Full && !options.skipBuild) {
       await preflightOfflinePrerequisites(context);
