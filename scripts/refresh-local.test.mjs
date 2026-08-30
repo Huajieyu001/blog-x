@@ -507,6 +507,34 @@ test("attempt claims are canonical, exclusive, revision-bound, and leave second 
   assert.throws(() => live.createProductionRefreshAttemptStore({ root: "/tmp/blog-x-refresh-attempts" }), /argument|sealed|override/i);
 });
 
+test("runtime claim attachment recomputes canonical bytes digest and every revision authority field", () => {
+  const revision = "3".repeat(40);
+  const authority = deliveryAuthorityForRevision(revision);
+  const bytes = `${JSON.stringify({
+    format: "blog-x-local-refresh-attempt",
+    version: 3,
+    authority: authority.authority,
+    evidencePath: authority.evidencePath,
+    implementationRevision: revision,
+  })}\n`;
+  const canonical = {
+    implementationRevision: revision,
+    authority: authority.authority,
+    evidencePath: authority.evidencePath,
+    bytes,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  };
+  const adapter = () => testRuntime(memoryArtifactFs()).createAdapter();
+  assert.doesNotThrow(() => adapter().attachAttemptClaim(canonical));
+  for (const forged of [
+    { ...canonical, implementationRevision: "4".repeat(40) },
+    { ...canonical, authority: `${authority.authority}-foreign` },
+    { ...canonical, evidencePath: `${authority.evidencePath}.bak` },
+    { ...canonical, bytes: `${bytes} ` },
+    { ...canonical, sha256: "0".repeat(64) },
+  ]) assert.throws(() => adapter().attachAttemptClaim(forged), /claim attachment|canonical|digest|authority/i);
+});
+
 test("concurrent fixed-root claims have exactly one winner and retain the canonical final claim", async () => {
   const fs = memoryClaimFs(); let token = 0;
   const store = testRuntime(fs, () => `${++token}`.padStart(24, "0")).createAttemptStore();
