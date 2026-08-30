@@ -1009,6 +1009,44 @@ test("later evidence verification admits only the receipt and finite Phase 08 cl
   }
 });
 
+test("two successive clean revisions publish distinct verified receipts and preserve the first bytes", async () => {
+  const revisionA = "a".repeat(40);
+  const revisionB = "b".repeat(40);
+  const sharedFs = memoryArtifactFs();
+  const first = liveFixture({ revision: revisionA, artifactFs: sharedFs, targetIds: { api: SHA("e"), web: SHA("f") } });
+  await first.runtime.runCli();
+  const pathA = `/virtual-workspace/${deliveryAuthorityForRevision(revisionA).evidencePath}`;
+  const bytesA = await sharedFs.readFile(pathA);
+  const digestA = createHash("sha256").update(bytesA).digest("hex");
+  const firstDockerCalls = first.calls.filter(({ command }) => command === "docker").length;
+  await assert.rejects(first.runtime.runCli(), /attempt_claim_preflight/i);
+  assert.equal(first.calls.filter(({ command }) => command === "docker").length, firstDockerCalls);
+
+  const second = liveFixture({
+    revision: revisionB,
+    artifactFs: sharedFs,
+    oldImages: first.targetIds,
+    targetIds: { api: SHA("1"), web: SHA("2") },
+  });
+  await second.runtime.runCli();
+  const pathB = `/virtual-workspace/${deliveryAuthorityForRevision(revisionB).evidencePath}`;
+  const bytesB = await sharedFs.readFile(pathB);
+  assert.notEqual(pathA, pathB);
+  assert.notEqual(bytesA, bytesB);
+  assert.equal(await sharedFs.readFile(pathA), bytesA);
+  assert.equal(createHash("sha256").update(await sharedFs.readFile(pathA)).digest("hex"), digestA);
+  const secondDockerCalls = second.calls.filter(({ command }) => command === "docker").length;
+  await assert.rejects(second.runtime.runCli(), /attempt_claim_preflight/i);
+  assert.equal(second.calls.filter(({ command }) => command === "docker").length, secondDockerCalls);
+
+  const foreignRevision = "c".repeat(40);
+  const foreignPath = `/virtual-workspace/${deliveryAuthorityForRevision(foreignRevision).evidencePath}`;
+  sharedFs.entries.set(foreignPath, { kind: "file", bytes: bytesB, uid: 501, mode: 0o600 });
+  await assert.rejects(second.runtime.verifyEvidence(foreignPath), /filename SHA|immutable identity|claim|revision|authority/i);
+  assert.equal(await sharedFs.readFile(pathA), bytesA);
+  assert.equal(await sharedFs.readFile(pathB), bytesB);
+});
+
 test("terminal stage progress and recovery are exhaustive, exact and sanitized", () => {
   const expected = ["cli_validation", "source_authority", "attempt_claim_preflight", "attempt_claim_publication", "adapter_construction", "claim_attachment", "lockfile_plan_materialization", "local_docker_authority", "preflight_collection", "seed-prerequisites", "build-api", "build-web", "inspect-target-images", "accept-v1.1", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence", "evidence_verification", "final_output", "rollback-api-web", "verify-rollback", "failure_recollection", "failure_report_publication"];
   assert.deepEqual(REFRESH_TERMINAL_STAGES, expected);
