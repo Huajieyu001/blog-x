@@ -175,9 +175,11 @@ test("generated main-browser fixture schedules exact specs and cleans its paths 
   };
   const roots = [];
   const executed = [];
+  const usernames = [];
   const succeeded = await runGeneratedMainBrowserFixture(context, {
-    seedScenario: async (_context, path, paths) => {
+    seedScenario: async (scenarioContext, path, paths) => {
       roots.push(paths.root);
+      usernames.push(scenarioContext.username);
       return path.endsWith("auth-session.spec.ts")
         ? { E2E_EXPIRED_SESSION_TOKEN: "expired-token", E2E_REVOKED_SESSION_TOKEN: "revoked-token" }
         : {};
@@ -190,6 +192,8 @@ test("generated main-browser fixture schedules exact specs and cleans its paths 
   });
   assert.deepEqual(executed, migratedMainBrowserSpecs);
   assert.equal(new Set(executed).size, migratedMainBrowserSpecs.length);
+  assert.equal(new Set(usernames).size, migratedMainBrowserSpecs.length);
+  assert.equal(usernames.every((username) => username.startsWith(`${context.username}-`)), true);
   assert.equal(new Set(roots).size, 1);
   await assert.rejects(stat(roots[0]), /ENOENT/);
   assert.deepEqual(succeeded.counts, { tests: 6, passed: 6, failed: 0, cancelled: 0, skipped: 0, todo: 0 });

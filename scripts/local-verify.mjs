@@ -813,10 +813,11 @@ async function runGeneratedMainBrowserFixtureSelection(context, runtime, selecte
   const suites = [];
   let result;
   try {
-    for (const file of selectedPaths) {
-      const scenarioFacts = await seedScenario(context, file, paths);
-      const environment = createMainBrowserEnvironment(context, scenarioFacts);
-      const counts = assertPassOnlyCounts(await runSpec(context, file, environment, paths), `main-browser suite ${file}`);
+    for (const [index, file] of selectedPaths.entries()) {
+      const scenarioContext = { ...context, username: `${context.username}-${index + 1}` };
+      const scenarioFacts = await seedScenario(scenarioContext, file, paths);
+      const environment = createMainBrowserEnvironment(scenarioContext, scenarioFacts);
+      const counts = assertPassOnlyCounts(await runSpec(scenarioContext, file, environment, paths), `main-browser suite ${file}`);
       suites.push({ path: file, counts: { ...counts } });
     }
     const counts = assertPassOnlyCounts(sumCounts(suites.map((suite) => suite.counts)), "generated main-browser fixture");
