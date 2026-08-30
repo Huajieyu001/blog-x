@@ -28,6 +28,8 @@ import {
   HISTORICAL_LOCAL_DELIVERY_EVIDENCE_PATH,
   LOCAL_DELIVERY_ATTEMPT_AUTHORITY,
   LOCAL_DELIVERY_EVIDENCE_PATH,
+  LOCAL_DELIVERY_CLAIM_ROOT,
+  LOCAL_DELIVERY_EVIDENCE_DIRECTORY,
   REFRESH_TERMINAL_STAGES,
   SAFE_RECOVERY_BY_STAGE,
   assertSeedPrerequisiteFacts,
@@ -35,6 +37,8 @@ import {
   formatRefreshFailure,
   formatRefreshStageProgress,
   formatSeedPrewarmInstruction,
+  deliveryAuthorityForRevision,
+  parseRevisionAddressedEvidencePath,
   safeRecoveryForRefreshFailure,
 } from "./refresh-local-runtime-core.mjs";
 import {
@@ -111,6 +115,7 @@ function memoryArtifactFs(root = "/virtual-workspace") {
   const entries = new Map([
     [root, { kind: "dir", bytes: "", uid: 501, mode: 0o755 }],
     [`${root}/ops`, { kind: "dir", bytes: "", uid: 501, mode: 0o755 }],
+    [`${root}/ops/local-deliveries`, { kind: "dir", bytes: "", uid: 501, mode: 0o755 }],
     [`${root}/pnpm-lock.yaml`, { kind: "file", bytes: "raw-lock\n", uid: 501, mode: 0o600 }],
     [`${root}/ops/phase5-full-gate-receipt.json`, { kind: "file", bytes: "receipt\n", uid: 501, mode: 0o600 }],
     [`${root}/.planning/phases/06-public-discovery-data/06-VERIFICATION.md`, { kind: "file", bytes: "verified\n", uid: 501, mode: 0o600 }],
@@ -135,6 +140,50 @@ function memoryArtifactFs(root = "/virtual-workspace") {
     async readFile(path) { const item = entries.get(path); if (!item) throw error("ENOENT"); return item.bytes; },
   };
 }
+
+test("revision-addressed delivery authority is pure exact frozen and rejects every non-canonical path", async () => {
+  const revision = "1a".repeat(20);
+  const authority = deliveryAuthorityForRevision(revision);
+  assert.equal(Object.isFrozen(authority), true);
+  assert.deepEqual(authority, {
+    implementationRevision: revision,
+    authority: `blog-x-v1.1-local-delivery-${revision}`,
+    evidenceDirectory: "ops/local-deliveries",
+    evidencePath: `ops/local-deliveries/${revision}.json`,
+    claimRoot: "/private/tmp/blog-x-refresh-attempts-v1.1",
+    claimPath: `/private/tmp/blog-x-refresh-attempts-v1.1/${revision}.json`,
+    failurePath: `/private/tmp/blog-x-refresh-attempts-v1.1/${revision}.failure.json`,
+  });
+  assert.equal(LOCAL_DELIVERY_EVIDENCE_DIRECTORY, "ops/local-deliveries");
+  assert.equal(LOCAL_DELIVERY_CLAIM_ROOT, "/private/tmp/blog-x-refresh-attempts-v1.1");
+  assert.equal(parseRevisionAddressedEvidencePath(authority.evidencePath), revision);
+  for (const invalid of [
+    "ops/v1.1-local-delivery-evidence.json",
+    "ops/v1.1-local-delivery-evidence.successor-2.json",
+    `/virtual-workspace/${authority.evidencePath}`,
+    `./${authority.evidencePath}`,
+    `ops/local-deliveries/../${revision}.json`,
+    `ops\\local-deliveries\\${revision}.json`,
+    `ops/local-deliveries/${revision.toUpperCase()}.json`,
+    `ops/local-deliveries/${revision.slice(0, 12)}.json`,
+    `ops/local-deliveries/${revision}.json.bak`,
+    `ops/local-deliveries/${revision}/receipt.json`,
+  ]) assert.throws(() => parseRevisionAddressedEvidencePath(invalid), /revision-addressed|evidence path|full SHA/i, invalid);
+  for (const invalid of [revision.toUpperCase(), revision.slice(0, 12), `${revision}/x`, "", null]) {
+    assert.throws(() => deliveryAuthorityForRevision(invalid), /revision|full SHA/i, String(invalid));
+  }
+});
+
+test("both numbered local-delivery receipts remain immutable history", async () => {
+  const receipts = [
+    ["ops/v1.1-local-delivery-evidence.json", "9a9af65bafabbf94c097525fccba62d3c615d0544ebb127a42f9297efb9303cb"],
+    ["ops/v1.1-local-delivery-evidence.successor-2.json", "f10b124b5fba45b7f7dee863db4277259c4b8529cd6c612c31801d8fb5776049"],
+  ];
+  for (const [path, expected] of receipts) {
+    assert.equal(createHash("sha256").update(await readFile(path)).digest("hex"), expected, path);
+    assert.throws(() => parseRevisionAddressedEvidencePath(path), /revision-addressed|evidence path/i, path);
+  }
+});
 
 function atomicFaultFs(base, artifact, site) {
   let active = false; let fired = false; let directorySequence = 0; let cleanup = false;
