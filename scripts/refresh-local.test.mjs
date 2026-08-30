@@ -54,6 +54,8 @@ import { PACKAGE_TEST_INVENTORY } from "./test-inventory.mjs";
 
 const TEST_REVISION = "a".repeat(40);
 const TEST_EVIDENCE_PATH = deliveryAuthorityForRevision(TEST_REVISION).evidencePath;
+const TEST_UID = process.getuid?.();
+if (!Number.isSafeInteger(TEST_UID) || TEST_UID < 0) throw new Error("refresh tests require a valid Unix uid");
 
 async function fixtureStore(t) {
   const root = await mkdtemp(join(tmpdir(), "blog-x-refresh-seed-"));
@@ -79,7 +81,7 @@ function fakeRunner(values) {
   };
 }
 
-function memoryClaimFs(uid = 501) {
+function memoryClaimFs(uid = TEST_UID) {
   const entries = new Map([
     ["/private", { kind: "dir", uid: 0, mode: 0o755 }],
     ["/private/tmp", { kind: "dir", uid: 0, mode: 0o1777 }],
@@ -114,17 +116,17 @@ function testRuntime(fs, randomHex = () => "1".repeat(24), processBoundary = asy
   return createRefreshTestRuntime({ fs, randomHex, processBoundary, fetch, clock });
 }
 
-function memoryArtifactFs(root = "/virtual-workspace") {
+function memoryArtifactFs(root = "/virtual-workspace", uid = TEST_UID) {
   const entries = new Map([
-    [root, { kind: "dir", bytes: "", uid: 501, mode: 0o755 }],
-    [`${root}/ops`, { kind: "dir", bytes: "", uid: 501, mode: 0o755 }],
-    [`${root}/ops/local-deliveries`, { kind: "dir", bytes: "", uid: 501, mode: 0o755 }],
-    [`${root}/pnpm-lock.yaml`, { kind: "file", bytes: "raw-lock\n", uid: 501, mode: 0o600 }],
-    [`${root}/ops/phase5-full-gate-receipt.json`, { kind: "file", bytes: "receipt\n", uid: 501, mode: 0o600 }],
-    [`${root}/.planning/phases/06-public-discovery-data/06-VERIFICATION.md`, { kind: "file", bytes: "verified\n", uid: 501, mode: 0o600 }],
+    [root, { kind: "dir", bytes: "", uid, mode: 0o755 }],
+    [`${root}/ops`, { kind: "dir", bytes: "", uid, mode: 0o755 }],
+    [`${root}/ops/local-deliveries`, { kind: "dir", bytes: "", uid, mode: 0o755 }],
+    [`${root}/pnpm-lock.yaml`, { kind: "file", bytes: "raw-lock\n", uid, mode: 0o600 }],
+    [`${root}/ops/phase5-full-gate-receipt.json`, { kind: "file", bytes: "receipt\n", uid, mode: 0o600 }],
+    [`${root}/.planning/phases/06-public-discovery-data/06-VERIFICATION.md`, { kind: "file", bytes: "verified\n", uid, mode: 0o600 }],
     ["/private", { kind: "dir", uid: 0, mode: 0o755 }],
     ["/private/tmp", { kind: "dir", uid: 0, mode: 0o1777 }],
-    ["/Users/test/.colima/default/docker.sock", { kind: "socket", uid: 501, mode: 0o600 }],
+    ["/Users/test/.colima/default/docker.sock", { kind: "socket", uid, mode: 0o600 }],
   ]);
   const error = (code) => Object.assign(new Error(code), { code });
   return {
@@ -132,9 +134,9 @@ function memoryArtifactFs(root = "/virtual-workspace") {
     async lstat(path) { const item = entries.get(path); if (!item) throw error("ENOENT"); return { uid: item.uid, mode: item.mode, nlink: item.nlink ?? 1, isFile: () => item.kind === "file", isDirectory: () => item.kind === "dir", isSocket: () => item.kind === "socket", isSymbolicLink: () => item.kind === "symlink" }; },
     async realpath(path) { const item = entries.get(path); if (!item) throw error("ENOENT"); return item.realpath ?? path; },
     async readdir(path) { if (entries.get(path)?.kind !== "dir") throw error("ENOENT"); return [...entries.keys()].filter((item) => item.startsWith(`${path}/`) && !item.slice(path.length + 1).includes("/")).map((item) => item.slice(path.length + 1)); },
-    async mkdir(path, options) { if (entries.has(path)) throw error("EEXIST"); entries.set(path, { kind: "dir", uid: 501, mode: options.mode }); },
+    async mkdir(path, options) { if (entries.has(path)) throw error("EEXIST"); entries.set(path, { kind: "dir", uid, mode: options.mode }); },
     async open(path, flags, mode) {
-      if (flags === "wx") { if (entries.has(path)) throw error("EEXIST"); entries.set(path, { kind: "file", bytes: "", uid: 501, mode }); }
+      if (flags === "wx") { if (entries.has(path)) throw error("EEXIST"); entries.set(path, { kind: "file", bytes: "", uid, mode }); }
       else if (flags !== "r" || entries.get(path)?.kind !== "dir") throw error("ENOENT");
       return { async writeFile(bytes) { entries.get(path).bytes = bytes; }, async sync() {}, async close() {} };
     },
@@ -863,7 +865,7 @@ function targetImage(app, id, revision, lock, seedId) {
   return { Id: id, Config: { Image: `blog-x-${app}-local:${revision.slice(0, 12)}`, WorkingDir: "/refresh-workspace", Cmd: ["corepack", "pnpm", "--filter", `@blog-x/${app}`, "start"], Labels: { "org.opencontainers.image.revision": revision, "io.blog-x.lockfile-sha256": lock, "io.blog-x.seed-image-id": seedId, "io.blog-x.application": app, "io.blog-x.public-origin": "http://127.0.0.1:3100", "io.blog-x.refresh-kind": "v1.1-offline-local-delivery" } } };
 }
 
-function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, rollbackCutoverFault = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, withdrawalFault, seedPrerequisite, acceptanceStdout = acceptanceOutput, verificationChangedPaths, verificationTouchedPaths = verificationChangedPaths, verificationIdentity = { uid: 501 }, revision = TEST_REVISION, artifactFs, oldImages = { api: SHA("a"), web: SHA("b") }, targetIds = { api: SHA("e"), web: SHA("f") } } = {}) {
+function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, rollbackCutoverFault = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, withdrawalFault, seedPrerequisite, acceptanceStdout = acceptanceOutput, verificationChangedPaths, verificationTouchedPaths = verificationChangedPaths, identity = { uid: TEST_UID }, revision = TEST_REVISION, artifactFs, oldImages = { api: SHA("a"), web: SHA("b") }, targetIds = { api: SHA("e"), web: SHA("f") } } = {}) {
   const lock = createHash("sha256").update("raw-lock\n").digest("hex");
   const old = structuredClone(oldImages);
   const evidencePath = deliveryAuthorityForRevision(revision).evidencePath;
@@ -927,7 +929,7 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
     if (command === "node") return { stdout: "" };
     throw new Error(`unexpected raw fake argv: ${command} ${args.join(" ")}`);
   };
-  evidenceBaseFs = artifactFs ?? memoryArtifactFs();
+  evidenceBaseFs = artifactFs ?? memoryArtifactFs("/virtual-workspace", identity.uid);
   const evidenceFs = atomicFault ? atomicFaultFs(evidenceBaseFs, "evidence", atomicFault)
     : withdrawalFault ? withdrawalFaultFs(evidenceBaseFs, withdrawalFault) : evidenceBaseFs;
   const fetch = async (url, options) => {
@@ -947,7 +949,7 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
     routeFetches.push({ path, snapshot, rolledBack, stale, options: structuredClone(options) });
     return fakeRouteResponse(url, responses[path]);
   };
-  const runtime = createRefreshTestRuntime({ processBoundary: runner, fs: evidenceFs, fetch, verificationIdentity, clock(stage) {
+  const runtime = createRefreshTestRuntime({ processBoundary: runner, fs: evidenceFs, fetch, identity, clock(stage) {
     if (withdrawalFault ? stage === "final_output" : stage === "evidence_verification") evidenceFs.arm?.();
     if (recollectionFault && stage === "failure_recollection" || stageFaults.includes(stage)) throw new Error(`${stage} fault`);
   }, randomHex: () => "3".repeat(24) });
@@ -1041,7 +1043,7 @@ test("independent verification rejects substituted receipt filesystem authority"
   for (const mutate of [
     (item) => { item.kind = "symlink"; },
     (item) => { item.nlink = 2; },
-    (item) => { item.uid = 502; },
+    (item) => { item.uid = TEST_UID + 1; },
     (item) => { item.mode = 0o644; },
     (item) => { item.realpath = "/private/tmp/substitute.json"; },
   ]) {
@@ -1055,14 +1057,12 @@ test("independent verification rejects substituted receipt filesystem authority"
 
 test("test-only verifier identity is portable while mismatched receipt ownership still fails", async () => {
   const absolute = `/virtual-workspace/${TEST_EVIDENCE_PATH}`;
-  const verificationIdentity = { uid: 501 };
-  const fixture = liveFixture({ verificationIdentity });
+  const identity = { uid: 1000 };
+  const fixture = liveFixture({ identity });
   await fixture.runtime.runCli();
   fixture.beginVerification();
-  verificationIdentity.uid = 1000;
-  fixture.evidenceFs.entries.get(absolute).uid = 1000;
   await assert.doesNotReject(fixture.runtime.verifyEvidence(absolute));
-  fixture.evidenceFs.entries.get(absolute).uid = 1001;
+  fixture.evidenceFs.entries.get(absolute).uid = identity.uid + 1;
   await assert.rejects(fixture.runtime.verifyEvidence(absolute), /evidence file authority|unsafe/i);
 });
 

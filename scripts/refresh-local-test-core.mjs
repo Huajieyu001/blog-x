@@ -22,11 +22,11 @@ export { assertLocalDockerAuthority, assertLocalDockerSocket, buildMinimalChildE
 
 export function createRefreshTestRuntime(boundaries) {
   const required = ["clock", "fetch", "fs", "processBoundary", "randomHex"];
-  const keys = [...required, "verificationIdentity"];
+  const keys = [...required, "identity"];
   if (!boundaries || Object.keys(boundaries).some((key) => !keys.includes(key)) || required.some((key) => typeof boundaries[key] === "undefined")) fail("only raw process/filesystem/fetch/clock/random boundaries are accepted");
   if (typeof boundaries.processBoundary !== "function" || typeof boundaries.fetch !== "function" || typeof boundaries.clock !== "function" || typeof boundaries.randomHex !== "function" || typeof boundaries.fs !== "object") fail("test boundaries are invalid");
-  const verificationIdentity = boundaries.verificationIdentity ?? { uid: 501 };
-  if (!Number.isSafeInteger(verificationIdentity?.uid) || verificationIdentity.uid < 0) fail("test verification identity is invalid");
+  const identity = boundaries.identity ?? { uid: process.getuid?.() };
+  if (!Number.isSafeInteger(identity?.uid) || identity.uid < 0) fail("test runtime identity is invalid");
   const calls = []; const reads = []; const fetches = [];
   const processBoundary = async (command, args, options = {}) => {
     calls.push({ command, args: [...args], options: structuredClone(options) });
@@ -39,17 +39,17 @@ export function createRefreshTestRuntime(boundaries) {
     },
   });
   const fetch = async (url, options) => { fetches.push({ url: String(url), options: structuredClone(options) }); return boundaries.fetch(url, options); };
-  const claimStore = () => createRefreshAttemptStore({ fs, identity: { uid: 501 }, randomHex: boundaries.randomHex });
+  const claimStore = () => createRefreshAttemptStore({ fs, identity, randomHex: boundaries.randomHex });
   let adapterConstructions = 0;
   const rawState = () => ({ seeds: { api: { reference: "unresolved", inspectedId: `sha256:${"0".repeat(64)}` }, web: { reference: "unresolved", inspectedId: `sha256:${"0".repeat(64)}` } }, targetFacts: { api: null, web: null } });
   const runtime = {
     calls, reads, fetches,
     createAttemptStore: claimStore,
     createFactSources() { return createRawRefreshFactSources({ run: processBoundary, fetch, root: "/virtual-workspace", fs, state: rawState() }); },
-    createAdapter() { adapterConstructions += 1; return createRawRefreshRuntime({ runArgv: processBoundary, claimStore: claimStore(), fetch, root: "/virtual-workspace", evidenceFs: fs, randomEvidenceHex: () => boundaries.randomHex().slice(0, 16), ambientEnv: { PATH: "/usr/bin:/bin", HOME: "/Users/test", TMPDIR: "/tmp", LANG: "C" }, clock: boundaries.clock }); },
+    createAdapter() { adapterConstructions += 1; return createRawRefreshRuntime({ runArgv: processBoundary, claimStore: claimStore(), fetch, root: "/virtual-workspace", evidenceFs: fs, randomEvidenceHex: () => boundaries.randomHex().slice(0, 16), ambientEnv: { PATH: "/usr/bin:/bin", HOME: "/Users/test", TMPDIR: "/tmp", LANG: "C" }, clock: boundaries.clock, identity }); },
     adapterConstructionCount() { return adapterConstructions; },
     inspectClaim(revision) { return inspectRefreshAttemptClaimWithStore(revision, claimStore()); },
-    verifyEvidence(path) { return verifyRawRefreshEvidence(path, { claimStore: claimStore(), fs, runArgv: processBoundary, fetch, root: "/virtual-workspace", identity: verificationIdentity }); },
+    verifyEvidence(path) { return verifyRawRefreshEvidence(path, { claimStore: claimStore(), fs, runArgv: processBoundary, fetch, root: "/virtual-workspace", identity }); },
     runCli({ argv = [], output = { write() {} } } = {}) {
       const resolveRevision = async () => {
         const status = String((await processBoundary("git", ["status", "--porcelain"])).stdout ?? "").trim();
