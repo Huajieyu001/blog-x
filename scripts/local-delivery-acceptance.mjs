@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runBoundedChildTree } from "./local-delivery-child-tree.mjs";
+import { createGeneratedIntegrationResult } from "./local-verify.mjs";
+import { validatePhase7BrowserResult } from "./phase7-browser-verify.mjs";
+import { DEFAULT_TEST_FILES, INTEGRATION_TEST_FILES, PACKAGE_TEST_INVENTORY } from "./test-inventory.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = fileURLToPath(import.meta.url);
@@ -9,9 +12,9 @@ const maximumOutputBytes = 8 * 1024 * 1024;
 const childTimeoutMs = 10 * 60_000;
 const childTerminationGraceMs = 5_000;
 const childKillGraceMs = 3_000;
-const phase6Prefix = "BLOG X PHASE6 DATA RESULT ";
+const generatedIntegrationPrefix = "BLOG X GENERATED INTEGRATION RESULT ";
 const phase7Prefix = "BLOG X PHASE7 BROWSER RESULT ";
-const phase6CleanupPrefix = "BLOG X PHASE6 CLEANUP ACK ";
+const generatedIntegrationCleanupPrefix = "BLOG X GENERATED INTEGRATION CLEANUP ACK ";
 const phase7CleanupPrefix = "BLOG X PHASE7 CLEANUP ACK ";
 const acceptancePrefix = "BLOG X V1.1 ACCEPTANCE RESULT ";
 
@@ -90,20 +93,19 @@ function parseOneLine(output, prefix, label) {
   try { return JSON.parse(lines[0].slice(prefix.length)); } catch { throw new Error(`${label} result record is invalid JSON`); }
 }
 
-export function assertPhase6CleanupAcknowledgement(output, { requireThree = false } = {}) {
-  const value = parseOneLine(output, phase6CleanupPrefix, "Phase 6 cleanup acknowledgement");
+export function assertGeneratedIntegrationCleanupAcknowledgement(output, { requireFour = false } = {}) {
+  const value = parseOneLine(output, generatedIntegrationCleanupPrefix, "generated integration cleanup acknowledgement");
   if (!exactKeys(value, ["format", "version", "namespaces", "releaseState"])
-    || value.format !== "blog-x-phase6-cleanup-ack" || value.version !== 1 || value.releaseState !== "BLOCKED"
-    || !Array.isArray(value.namespaces) || value.namespaces.length < 1 || requireThree && value.namespaces.length !== 3) {
-    throw new Error("Phase 6 cleanup acknowledgement is incomplete");
+    || value.format !== "blog-x-generated-integration-cleanup" || value.version !== 1 || value.releaseState !== "BLOCKED"
+    || !Array.isArray(value.namespaces) || value.namespaces.length < 1 || requireFour && value.namespaces.length !== 4) {
+    throw new Error("generated integration cleanup acknowledgement is incomplete");
   }
   const seen = new Set();
   for (const authority of value.namespaces) {
-    if (!exactKeys(authority, ["namespace", "containersAbsent", "volumes", "volumesAbsent"])
+    if (!exactKeys(authority, ["namespace", "containersAbsent", "volumesAbsent", "pathsAbsent"])
       || !/^blogxverify_[a-z0-9]{8,32}$/.test(authority.namespace) || seen.has(authority.namespace)
-      || authority.containersAbsent !== true || authority.volumesAbsent !== true
-      || JSON.stringify(authority.volumes) !== JSON.stringify([`${authority.namespace}_postgres-data`, `${authority.namespace}_media-data`])) {
-      throw new Error("Phase 6 cleanup acknowledgement authority is invalid");
+      || authority.containersAbsent !== true || authority.volumesAbsent !== true || authority.pathsAbsent !== true) {
+      throw new Error("generated integration cleanup acknowledgement authority is invalid");
     }
     seen.add(authority.namespace);
   }
@@ -132,88 +134,98 @@ export function assertPhase7CleanupAcknowledgement(output, { requireOrigins = fa
   return value;
 }
 
-function parsePhase6Record(value) {
-  if (!exactKeys(value, ["format", "version", "suites", "counts", "releaseState"])
-    || value.format !== "blog-x-phase6-data-result" || value.version !== 1 || value.releaseState !== "BLOCKED"
-    || !Array.isArray(value.suites) || value.suites.length !== 7) throw new Error("Phase 6 result record has an unsupported format or incomplete suite selection");
-  const seen = new Set();
-  for (const suite of value.suites) {
-    if (!exactKeys(suite, ["id", "kind", "counts"]) || typeof suite.id !== "string"
-      || !["database", "node", "boundary"].includes(suite.kind) || seen.has(suite.id)) throw new Error("Phase 6 result record suite schema is invalid");
-    seen.add(suite.id);
-    assertCounts(suite.counts, `Phase 6 suite ${suite.id}`);
+function parseGeneratedIntegrationRecord(value) {
+  if (!value || typeof value !== "object" || !Array.isArray(value.suites)) throw new Error("generated integration result schema is invalid");
+  const canonical = createGeneratedIntegrationResult({ suites: value.suites, cleanup: value.cleanup, probes: value.probes });
+  if (JSON.stringify(value) !== JSON.stringify(canonical)) throw new Error("generated integration result digest manifest or schema drifted");
+  if (canonical.probes.length !== 2
+    || canonical.probes[0]?.kind !== "interruption" || canonical.probes[0]?.interrupted !== true
+    || canonical.probes[1]?.kind !== "parallel" || canonical.probes[1]?.interrupted !== false) {
+    throw new Error("generated integration lifecycle probes are incomplete");
   }
-  const totals = sumCounts(value.suites.map((suite) => suite.counts));
-  assertCounts(value.counts, "Phase 6 result");
-  if (JSON.stringify(totals) !== JSON.stringify(value.counts)) throw new Error("Phase 6 result counts do not bind its suites");
-  return value;
+  return canonical;
 }
 
 function parsePhase7Record(value) {
-  if (!exactKeys(value, ["format", "version", "counts", "releaseState"])
-    || value.format !== "blog-x-phase7-browser-result" || value.version !== 1 || value.releaseState !== "BLOCKED") {
-    throw new Error("Phase 7 result record has an unsupported format");
-  }
-  assertCounts(value.counts, "Phase 7 result");
-  return value;
+  return validatePhase7BrowserResult(value);
 }
 
 function countMarker(output, marker) {
   return String(output).replace(/\r\n?/g, "\n").split("\n").filter((line) => line.includes(marker)).length;
 }
 
-function layerRecord(runs, records, output) {
+function layerRecord(record, output) {
   const normalized = normalizedRedactedOutput(output);
   return {
-    runs,
-    resultSha256: sha256(records.map((record) => JSON.stringify(record)).join("\n")),
+    runs: 1,
+    manifestSha256: record.manifestSha256,
+    inventory: [...record.inventory],
+    resultSha256: record.resultSha256,
     outputSha256: sha256(normalized),
-    counts: sumCounts(records.map((record) => record.counts)),
+    counts: { ...record.counts },
+    cleanupAcknowledged: true,
   };
 }
 
 export function parseLocalDeliveryAcceptanceRecord(value) {
-  if (!exactKeys(value, ["format", "version", "phase6Data", "phase7Browser", "counts", "releaseState"])
-    || value.format !== LOCAL_DELIVERY_ACCEPTANCE_FORMAT || value.version !== 1 || value.releaseState !== "BLOCKED") {
+  if (!exactKeys(value, ["format", "version", "manifestSha256", "inventory", "generatedIntegration", "phase7Browser", "counts", "resultSha256", "releaseState"])
+    || value.format !== LOCAL_DELIVERY_ACCEPTANCE_FORMAT || value.version !== 2 || value.releaseState !== "BLOCKED") {
     throw new Error("local delivery acceptance result has an unsupported format");
   }
-  for (const [label, layer, runs] of [["Phase 6", value.phase6Data, 3], ["Phase 7", value.phase7Browser, 1]]) {
-    if (!exactKeys(layer, ["runs", "resultSha256", "outputSha256", "counts"]) || layer.runs !== runs
+  const manifestSha256 = sha256(JSON.stringify(PACKAGE_TEST_INVENTORY));
+  const integrationInventory = [...INTEGRATION_TEST_FILES].sort();
+  if (value.manifestSha256 !== manifestSha256 || JSON.stringify(value.inventory) !== JSON.stringify(integrationInventory)
+    || new Set(value.inventory).size !== integrationInventory.length
+    || new Set([...DEFAULT_TEST_FILES, ...value.inventory]).size !== PACKAGE_TEST_INVENTORY.length) {
+    throw new Error("local delivery acceptance inventory or manifest is incomplete duplicated or drifted");
+  }
+  for (const [label, layer] of [["generated integration", value.generatedIntegration], ["Phase 7", value.phase7Browser]]) {
+    if (!exactKeys(layer, ["runs", "manifestSha256", "inventory", "resultSha256", "outputSha256", "counts", "cleanupAcknowledged"])
+      || layer.runs !== 1 || layer.manifestSha256 !== manifestSha256 || layer.cleanupAcknowledged !== true
+      || !Array.isArray(layer.inventory) || new Set(layer.inventory).size !== layer.inventory.length
       || !/^[a-f0-9]{64}$/.test(layer.resultSha256) || !/^[a-f0-9]{64}$/.test(layer.outputSha256)) {
       throw new Error(`${label} acceptance layer is incomplete`);
     }
     assertCounts(layer.counts, `${label} acceptance`);
   }
-  const totals = sumCounts([value.phase6Data.counts, value.phase7Browser.counts]);
+  const union = [...value.generatedIntegration.inventory, ...value.phase7Browser.inventory].sort();
+  if (JSON.stringify(union) !== JSON.stringify(integrationInventory) || new Set(union).size !== union.length) {
+    throw new Error("local delivery acceptance layer inventory is missing duplicated or contains extras");
+  }
+  const totals = sumCounts([value.generatedIntegration.counts, value.phase7Browser.counts]);
   assertCounts(value.counts, "local delivery acceptance");
   if (JSON.stringify(totals) !== JSON.stringify(value.counts)) throw new Error("local delivery acceptance totals do not bind layers");
-  return value;
+  const { resultSha256, ...body } = value;
+  if (resultSha256 !== sha256(JSON.stringify(body))) throw new Error("local delivery acceptance result digest is invalid");
+  return structuredClone(value);
 }
 
-export function parseLocalDeliveryAcceptanceOutputs({ phase6Output, phase7Output }) {
-  const phase6Lines = String(phase6Output).replace(/\r\n?/g, "\n").split("\n").filter((line) => line.startsWith(phase6Prefix));
-  if (phase6Lines.length !== 3) throw new Error("local delivery acceptance requires exactly three Phase 6 result records");
-  const phase6Records = phase6Lines.map((line) => parsePhase6Record(JSON.parse(line.slice(phase6Prefix.length))));
-  if (new Set(phase6Lines).size !== 1) throw new Error("parallel Phase 6 records have schema or count drift");
-  if (countMarker(phase6Output, "LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED") !== 3
-    || countMarker(phase6Output, "GENERATED CLEANUP PASS") !== 1
-    || countMarker(phase6Output, "GENERATED PARALLEL CLEANUP PASS") !== 2) {
-    throw new Error("Phase 6 acceptance cleanup or BLOCKED markers are incomplete");
+export function parseLocalDeliveryAcceptanceOutputs({ generatedIntegrationOutput, phase7Output }) {
+  const generatedRecord = parseGeneratedIntegrationRecord(parseOneLine(generatedIntegrationOutput, generatedIntegrationPrefix, "generated integration"));
+  if (countMarker(generatedIntegrationOutput, "LOCAL CANONICAL INTEGRATION PASS; RELEASE BLOCKED") !== 1) {
+    throw new Error("generated integration acceptance pass marker is incomplete");
   }
-  assertPhase6CleanupAcknowledgement(phase6Output, { requireThree: true });
+  const generatedCleanup = assertGeneratedIntegrationCleanupAcknowledgement(generatedIntegrationOutput, { requireFour: true });
+  const producerNamespaces = [generatedRecord.cleanup.namespace, ...generatedRecord.probes.flatMap((probe) => probe.namespaces)].sort();
+  if (JSON.stringify(generatedCleanup.namespaces.map((entry) => entry.namespace).sort()) !== JSON.stringify(producerNamespaces)) {
+    throw new Error("generated integration cleanup does not bind all lifecycle authorities");
+  }
   const phase7Record = parsePhase7Record(parseOneLine(phase7Output, phase7Prefix, "Phase 7"));
   if (countMarker(phase7Output, "[phase7-browser] PASS") !== 1 || countMarker(phase7Output, "[phase7-browser] CLEANUP PASS") !== 1) {
     throw new Error("Phase 7 acceptance cleanup or pass markers are incomplete");
   }
   assertPhase7CleanupAcknowledgement(phase7Output, { requireOrigins: true });
-  const result = {
+  const body = {
     format: LOCAL_DELIVERY_ACCEPTANCE_FORMAT,
-    version: 1,
-    phase6Data: layerRecord(3, phase6Records, phase6Output),
-    phase7Browser: layerRecord(1, [phase7Record], phase7Output),
-    counts: sumCounts([sumCounts(phase6Records.map((record) => record.counts)), phase7Record.counts]),
+    version: 2,
+    manifestSha256: sha256(JSON.stringify(PACKAGE_TEST_INVENTORY)),
+    inventory: [...INTEGRATION_TEST_FILES].sort(),
+    generatedIntegration: layerRecord(generatedRecord, generatedIntegrationOutput),
+    phase7Browser: layerRecord(phase7Record, phase7Output),
+    counts: sumCounts([generatedRecord.counts, phase7Record.counts]),
     releaseState: "BLOCKED",
   };
+  const result = { ...body, resultSha256: sha256(JSON.stringify(body)) };
   return parseLocalDeliveryAcceptanceRecord(result);
 }
 
@@ -235,9 +247,9 @@ function runBounded(command, args, confirmCleanup) {
 
 export async function runLocalDeliveryAcceptance(...args) {
   if (args.length) throw new Error("local delivery acceptance accepts zero arguments only");
-  const phase6Output = await runBounded(process.execPath, ["scripts/local-verify.mjs", "--phase6-data", "--interruption-check", "--parallel-check"], (output) => Boolean(assertPhase6CleanupAcknowledgement(output)));
+  const generatedIntegrationOutput = await runBounded(process.execPath, ["scripts/local-verify.mjs", "--canonical-integration", "--interruption-check", "--parallel-check"], (output) => Boolean(assertGeneratedIntegrationCleanupAcknowledgement(output)));
   const phase7Output = await runBounded(process.execPath, ["scripts/phase7-browser-verify.mjs"], (output) => Boolean(assertPhase7CleanupAcknowledgement(output)));
-  const result = parseLocalDeliveryAcceptanceOutputs({ phase6Output, phase7Output });
+  const result = parseLocalDeliveryAcceptanceOutputs({ generatedIntegrationOutput, phase7Output });
   process.stdout.write(`${acceptancePrefix}${JSON.stringify(result)}\n`);
   process.stdout.write("[local-delivery-acceptance] PASS; RELEASE BLOCKED\n");
   return result;

@@ -918,7 +918,7 @@ function assertEvidenceSchema(evidence, expectedAuthority = deliveryAuthorityFor
   exactKeys(evidence, EVIDENCE_KEYS, "evidence");
   if (evidence.format !== LOCAL_DELIVERY_FORMAT || evidence.version !== LOCAL_DELIVERY_VERSION || evidence.releaseState !== "BLOCKED" || !validRevision(evidence.implementationRevision) || !validDigest(evidence.lockfileSha256)) fail("evidence is not a strict blocked v1.1 local delivery record");
   exactKeys(evidence.attemptClaim, ["authority", "evidencePath", "implementationRevision", "sha256"], "evidence claim");
-  exactKeys(evidence.acceptance, ["counts", "format", "phase6Data", "phase7Browser", "releaseState", "sha256", "version"], "evidence acceptance");
+  exactKeys(evidence.acceptance, ["counts", "format", "generatedIntegration", "inventory", "manifestSha256", "phase7Browser", "releaseState", "resultSha256", "sha256", "version"], "evidence acceptance");
   const { sha256: acceptanceSha256, ...acceptanceRecord } = evidence.acceptance;
   parseLocalDeliveryAcceptanceRecord(acceptanceRecord);
   if (!validDigest(acceptanceSha256) || acceptanceSha256 !== digest(JSON.stringify(acceptanceRecord))) fail("evidence acceptance digest is invalid");
@@ -1112,7 +1112,7 @@ export async function runRefreshCliBoundary({ argv, resolveRevision, attemptStor
       `ROUTES /search=${evidence.stages.postCutover.routes["/search"].status} /api/health=${evidence.stages.postCutover.routes["/api/health"].status}`,
       `READING ${evidence.stages.postCutover.reading.state}`,
       `VISIBLE search=${evidence.stages.postCutover.routes["/search"].status} reading=${evidence.stages.postCutover.reading.state}`,
-      `ACCEPTANCE phase6=${evidence.acceptance.phase6Data.counts.passed} phase7=${evidence.acceptance.phase7Browser.counts.passed} total=${evidence.acceptance.counts.passed}`,
+      `ACCEPTANCE generated=${evidence.acceptance.generatedIntegration.counts.passed} phase7=${evidence.acceptance.phase7Browser.counts.passed} total=${evidence.acceptance.counts.passed}`,
       `EVIDENCE ${evidence.attemptClaim.evidencePath}`,
       "RELEASE BLOCKED",
       formatRefreshStageProgress(failureStage, "complete").trimEnd(),

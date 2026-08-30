@@ -50,6 +50,7 @@ import {
   factsSha256,
   projectSanitizedFacts,
 } from "./refresh-local-facts.mjs";
+import { PACKAGE_TEST_INVENTORY } from "./test-inventory.mjs";
 
 const TEST_REVISION = "a".repeat(40);
 const TEST_EVIDENCE_PATH = deliveryAuthorityForRevision(TEST_REVISION).evidencePath;
@@ -558,14 +559,20 @@ test("live command policy permits only fixed local argv", async () => {
 
 const SHA = (letter) => `sha256:${letter.repeat(64)}`;
 const acceptanceCounts = { tests: 24, passed: 24, failed: 0, cancelled: 0, skipped: 0, todo: 0 };
-const acceptanceRecord = {
+const acceptanceManifestSha256 = createHash("sha256").update(JSON.stringify(PACKAGE_TEST_INVENTORY)).digest("hex");
+const generatedIntegrationInventory = PACKAGE_TEST_INVENTORY.filter((entry) => entry.scope === "integration" && entry.fixtureOwner !== "phase7-browser").map((entry) => entry.path).sort();
+const phase7BrowserInventory = PACKAGE_TEST_INVENTORY.filter((entry) => entry.fixtureOwner === "phase7-browser").map((entry) => entry.path).sort();
+const acceptanceBody = {
   format: "blog-x-v1.1-local-delivery-acceptance",
-  version: 1,
-  phase6Data: { runs: 3, resultSha256: "1".repeat(64), outputSha256: "2".repeat(64), counts: { ...acceptanceCounts, tests: 18, passed: 18 } },
-  phase7Browser: { runs: 1, resultSha256: "3".repeat(64), outputSha256: "4".repeat(64), counts: { ...acceptanceCounts, tests: 6, passed: 6 } },
+  version: 2,
+  manifestSha256: acceptanceManifestSha256,
+  inventory: [...generatedIntegrationInventory, ...phase7BrowserInventory].sort(),
+  generatedIntegration: { runs: 1, manifestSha256: acceptanceManifestSha256, inventory: generatedIntegrationInventory, resultSha256: "1".repeat(64), outputSha256: "2".repeat(64), counts: { ...acceptanceCounts, tests: 18, passed: 18 }, cleanupAcknowledged: true },
+  phase7Browser: { runs: 1, manifestSha256: acceptanceManifestSha256, inventory: phase7BrowserInventory, resultSha256: "3".repeat(64), outputSha256: "4".repeat(64), counts: { ...acceptanceCounts, tests: 6, passed: 6 }, cleanupAcknowledged: true },
   counts: acceptanceCounts,
   releaseState: "BLOCKED",
 };
+const acceptanceRecord = { ...acceptanceBody, resultSha256: createHash("sha256").update(JSON.stringify(acceptanceBody)).digest("hex") };
 const acceptanceOutput = `BLOG X V1.1 ACCEPTANCE RESULT ${JSON.stringify(acceptanceRecord)}\n`;
 const composeLabels = (service, oneoff = "False") => ({
   "com.docker.compose.project": "blogxlocal",
@@ -971,7 +978,7 @@ test("normal delivery emits exact progress and a verified evidence-derived BLOCK
   assert.match(output, /ROUTES \/search=200 \/api\/health=200/);
   assert.match(output, /READING verified/);
   assert.match(output, /VISIBLE search=200 reading=verified/);
-  assert.match(output, /ACCEPTANCE phase6=18 phase7=6 total=24/);
+  assert.match(output, /ACCEPTANCE generated=18 phase7=6 total=24/);
   assert.equal(output.includes(`EVIDENCE ${TEST_EVIDENCE_PATH}\nRELEASE BLOCKED`), true);
   assert.doesNotMatch(output, /hello-world|postgres:\/\/|blog_x_session=|token=|\/Users\/|sha256:/i);
 });

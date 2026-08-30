@@ -18,13 +18,13 @@ export function createLocalDeliveryAcceptanceTestRuntime({ processBoundary }) {
   return Object.freeze({
     calls,
     async run() {
-      const phase6Args = ["scripts/local-verify.mjs", "--phase6-data", "--interruption-check", "--parallel-check"];
-      calls.push({ command: process.execPath, args: phase6Args });
-      const phase6Output = assertCompleted(await runBoundary(process.execPath, phase6Args));
+      const generatedIntegrationArgs = ["scripts/local-verify.mjs", "--canonical-integration", "--interruption-check", "--parallel-check"];
+      calls.push({ command: process.execPath, args: generatedIntegrationArgs });
+      const generatedIntegrationOutput = assertCompleted(await runBoundary(process.execPath, generatedIntegrationArgs));
       const phase7Args = ["scripts/phase7-browser-verify.mjs"];
       calls.push({ command: process.execPath, args: phase7Args });
       const phase7Output = assertCompleted(await runBoundary(process.execPath, phase7Args));
-      return parseLocalDeliveryAcceptanceOutputs({ phase6Output, phase7Output });
+      return parseLocalDeliveryAcceptanceOutputs({ generatedIntegrationOutput, phase7Output });
     },
   });
 }
