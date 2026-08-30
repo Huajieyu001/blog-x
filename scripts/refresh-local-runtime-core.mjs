@@ -960,11 +960,10 @@ function assertEvidenceSchema(evidence, expectedAuthority = deliveryAuthorityFor
   return true;
 }
 
-async function readSecureRawEvidence(path, fs) {
+async function readSecureRawEvidence(path, fs, identity) {
   const assertAuthority = async () => {
     const item = await fs.lstat(path);
-    const uid = process.getuid?.();
-    if (!Number.isSafeInteger(uid) || !item?.isFile?.() || item.isSymbolicLink?.() || item.uid !== uid
+    if (!item?.isFile?.() || item.isSymbolicLink?.() || item.uid !== identity.uid
       || mode(item) !== 0o600 || item.nlink !== 1 || await fs.realpath(path) !== path) {
       fail("raw evidence file authority is unsafe");
     }
@@ -975,13 +974,14 @@ async function readSecureRawEvidence(path, fs) {
   return bytes;
 }
 
-export async function verifyRawRefreshEvidence(path, { claimStore, fs, runArgv, fetch, root } = {}) {
+export async function verifyRawRefreshEvidence(path, { claimStore, fs, runArgv, fetch, root, identity = { uid: process.getuid?.() } } = {}) {
   if (!claimStore || !fs || typeof runArgv !== "function" || typeof fetch !== "function" || typeof root !== "string") fail("raw evidence verification boundaries are incomplete");
+  if (!Number.isSafeInteger(identity?.uid) || identity.uid < 0) fail("raw evidence verification identity is invalid");
   const repositoryPath = relative(resolve(root), resolve(path));
   const revision = parseRevisionAddressedEvidencePath(repositoryPath);
   const authority = deliveryAuthorityForRevision(revision);
   if (resolve(path) !== resolve(root, authority.evidencePath)) fail("raw evidence verification accepts only exact revision-addressed receipt authority");
-  const before = await readSecureRawEvidence(path, fs);
+  const before = await readSecureRawEvidence(path, fs, identity);
   const evidence = parseJson(before, "evidence"); assertEvidenceSchema(evidence, authority);
   if (evidence.implementationRevision !== revision) fail("evidence filename SHA and implementation revision mismatch");
   const claim = await claimStore.assertPresent(evidence.implementationRevision);
@@ -1042,7 +1042,7 @@ export async function verifyRawRefreshEvidence(path, { claimStore, fs, runArgv, 
   current.git = verifiedGit;
   assertFixedRuntimeAuthority(current);
   if (!factsEqual(projectSanitizedFacts(current, { routeContract: "final" }), evidence.stages.postCutover)) fail("current runtime facts drifted from evidence");
-  const after = await readSecureRawEvidence(path, fs);
+  const after = await readSecureRawEvidence(path, fs, identity);
   if (after !== before) fail("read-only evidence verification changed evidence");
   return evidence;
 }

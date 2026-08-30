@@ -1055,9 +1055,11 @@ test("independent verification rejects substituted receipt filesystem authority"
 
 test("test-only verifier identity is portable while mismatched receipt ownership still fails", async () => {
   const absolute = `/virtual-workspace/${TEST_EVIDENCE_PATH}`;
-  const fixture = liveFixture({ verificationIdentity: { uid: 1000 } });
+  const verificationIdentity = { uid: 501 };
+  const fixture = liveFixture({ verificationIdentity });
   await fixture.runtime.runCli();
   fixture.beginVerification();
+  verificationIdentity.uid = 1000;
   fixture.evidenceFs.entries.get(absolute).uid = 1000;
   await assert.doesNotReject(fixture.runtime.verifyEvidence(absolute));
   fixture.evidenceFs.entries.get(absolute).uid = 1001;
