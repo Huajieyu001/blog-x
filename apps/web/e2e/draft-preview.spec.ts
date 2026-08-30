@@ -27,9 +27,17 @@ test("administrator saves, reopens, and responsively previews a complete Markdow
   await page.reload();
   const recovery = page.getByTestId("editor-recovery-notice");
   await expect(recovery.getByRole("heading", { name: "发现未保存的内容" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "保存草稿" })).toBeDisabled();
+  await expect(page.locator("main button").filter({ hasText: "保存草稿" })).toBeDisabled();
+  await expect(recovery.getByRole("button", { name: "恢复内容" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(recovery.getByRole("button", { name: "放弃副本" })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(recovery.getByRole("button", { name: "恢复内容" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(recovery).toContainText("为避免误删，请明确选择恢复内容或放弃副本");
   await expect(page.getByLabel("标题")).toHaveValue("");
   await recovery.getByRole("button", { name: "恢复内容" }).click();
+  await expect(page.getByLabel("标题")).toBeFocused();
   await expect(page.getByLabel("标题")).toHaveValue("刷新前的未完成标题");
   await expect(page.getByLabel("Markdown")).toHaveValue("# 刷新前的未完成正文");
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("已恢复未保存的内容，请确认后手动保存");

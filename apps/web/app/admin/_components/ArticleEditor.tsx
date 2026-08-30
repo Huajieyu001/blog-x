@@ -9,7 +9,7 @@ import {
   type TaxonomyTerm,
   suggestSlug,
 } from "@blog-x/contracts";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import styles from "../admin.module.css";
 import ArticleActions from "./ArticleActions";
 import MediaPanel from "./MediaPanel";
@@ -98,6 +98,7 @@ export default function ArticleEditor({
   const [editorReady, setEditorReady] = useState(false);
   const [pendingRecovery, setPendingRecovery] = useState<EditorRecoverySnapshot | null>(null);
   const [recoveryMessage, setRecoveryMessage] = useState("");
+  const [recoveryDialogMessage, setRecoveryDialogMessage] = useState("");
   const [recoveryBaseVersion, setRecoveryBaseVersion] = useState<string | null>(post?.version ?? null);
   const [allowStaleOverwrite, setAllowStaleOverwrite] = useState(false);
   const slugManuallyEdited = useRef(Boolean(post));
@@ -105,13 +106,16 @@ export default function ArticleEditor({
   const editSequence = useRef(0);
   const saveInFlight = useRef(false);
   const fieldsRef = useRef(fields);
+  const publishedAtCorrectionRef = useRef(publishedAtCorrection);
   const baselineFields = useRef(JSON.stringify(initialFields(post)));
   const initialRecoveryTarget = useRef<EditorRecoveryTarget>(post ? { kind: "post", id: post.id } : { kind: "new" });
   const markdownRef = useRef<HTMLTextAreaElement>(null);
   const recoveryButtonRef = useRef<HTMLButtonElement>(null);
+  const discardRecoveryButtonRef = useRef<HTMLButtonElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 
   fieldsRef.current = fields;
+  publishedAtCorrectionRef.current = publishedAtCorrection;
 
   useEffect(() => {
     const storage = getEditorRecoveryStorage();
@@ -342,7 +346,7 @@ export default function ArticleEditor({
   }
 
   function lifecycleChanged(nextPost: AdminPost) {
-    if (JSON.stringify(fieldsRef.current) !== baselineFields.current) {
+    if (JSON.stringify(fieldsRef.current) !== baselineFields.current || publishedAtCorrectionRef.current) {
       setCurrentPost(nextPost);
       setMessage("文章状态已更新；未保存的编辑内容仍保留，请手动保存");
       return;
@@ -363,13 +367,16 @@ export default function ArticleEditor({
     setAllowStaleOverwrite(false);
     setFields(pendingRecovery.fields);
     setPendingRecovery(null);
+    setRecoveryDialogMessage("");
     setMessage("已恢复未保存的内容，请确认后手动保存");
+    window.requestAnimationFrame(() => titleRef.current?.focus());
   }
 
   function discardRecovery() {
     const storage = getEditorRecoveryStorage();
     if (storage && pendingRecovery) removeEditorRecoverySnapshot(storage, pendingRecovery.target);
     setPendingRecovery(null);
+    setRecoveryDialogMessage("");
     setRecoveryMessage("");
     setMessage("已放弃本机恢复副本");
     window.requestAnimationFrame(() => titleRef.current?.focus());
@@ -382,11 +389,33 @@ export default function ArticleEditor({
     baselineFields.current = JSON.stringify(nextFields);
     setRecoveryBaseVersion(currentPost.version);
     setAllowStaleOverwrite(false);
+    setPublishedAtCorrection(false);
     const storage = getEditorRecoveryStorage();
     if (storage) removeEditorRecoverySnapshot(storage, { kind: "post", id: currentPost.id });
     setRecoveryMessage("");
     setMessage("已恢复为服务器版本");
     window.requestAnimationFrame(() => titleRef.current?.focus());
+  }
+
+  function handleRecoveryDialogKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      setRecoveryDialogMessage("为避免误删，请明确选择恢复内容或放弃副本");
+      recoveryButtonRef.current?.focus();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const first = discardRecoveryButtonRef.current;
+    const last = recoveryButtonRef.current;
+    if (!first || !last) return;
+    if (event.shiftKey && (document.activeElement === first || !event.currentTarget.contains(document.activeElement))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 
   function errorFor(name: keyof EditorFields) {
@@ -426,7 +455,8 @@ export default function ArticleEditor({
   const staleRecovery = Boolean(postId && recoveryBaseVersion && currentPost && recoveryBaseVersion !== currentPost.version);
 
   return (
-    <main className={styles.page}>
+    <>
+    <main className={styles.page} inert={pendingRecovery ? true : undefined} aria-hidden={pendingRecovery ? true : undefined}>
       <div className={styles.titleRow}>
         <div><p className={styles.eyebrow}>Blog X / 内容管理</p><h1>{heading}</h1></div>
         <button className={styles.primaryButton} type="button" disabled={saving || Boolean(pendingRecovery)} onClick={() => { void save(); }}>{saving ? "保存中…" : (postId ? "保存更改" : "保存草稿")}</button>
@@ -521,19 +551,6 @@ export default function ArticleEditor({
           </div>
         </section>
       )}
-      {pendingRecovery && (
-        <div className={styles.dialogBackdrop}>
-          <section className={`${styles.dialog} ${styles.recoveryDialog}`} role="dialog" aria-modal="true" aria-labelledby="recovery-title" aria-describedby="recovery-description" data-testid="editor-recovery-notice">
-            <h2 id="recovery-title">发现未保存的内容</h2>
-            <p id="recovery-description">本机在 {new Date(pendingRecovery.writtenAt).toLocaleString("zh-CN")} 保存了恢复副本。是否恢复由你决定，不会自动覆盖服务器内容。</p>
-            {pendingRecovery.baseVersion !== (currentPost?.version ?? null) && <p className={styles.error}>服务器版本已变化，请恢复后先比较内容再手动保存。</p>}
-            <div className={styles.dialogActions}>
-              <button type="button" onClick={discardRecovery}>放弃副本</button>
-              <button ref={recoveryButtonRef} className={styles.primaryButton} type="button" onClick={restoreRecovery}>恢复内容</button>
-            </div>
-          </section>
-        </div>
-      )}
       {pendingSlugConfirmation && currentPost && (
         <div className={styles.dialogBackdrop}>
           <section className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby="slug-confirm-title">
@@ -549,5 +566,20 @@ export default function ArticleEditor({
         </div>
       )}
     </main>
+    {pendingRecovery && (
+      <div className={styles.dialogBackdrop}>
+        <section className={`${styles.dialog} ${styles.recoveryDialog}`} role="dialog" aria-modal="true" aria-labelledby="recovery-title" aria-describedby="recovery-description" data-testid="editor-recovery-notice" onKeyDown={handleRecoveryDialogKeyDown}>
+          <h2 id="recovery-title">发现未保存的内容</h2>
+          <p id="recovery-description">本机在 {new Date(pendingRecovery.writtenAt).toLocaleString("zh-CN")} 保存了恢复副本。是否恢复由你决定，不会自动覆盖服务器内容。</p>
+          {pendingRecovery.baseVersion !== (currentPost?.version ?? null) && <p className={styles.error}>服务器版本已变化，请恢复后先比较内容再手动保存。</p>}
+          <p role="status" className={styles.status}>{recoveryDialogMessage}</p>
+          <div className={styles.dialogActions}>
+            <button ref={discardRecoveryButtonRef} type="button" onClick={discardRecovery}>放弃副本</button>
+            <button ref={recoveryButtonRef} className={styles.primaryButton} type="button" onClick={restoreRecovery}>恢复内容</button>
+          </div>
+        </section>
+      </div>
+    )}
+    </>
   );
 }
