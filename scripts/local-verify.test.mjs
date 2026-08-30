@@ -135,6 +135,7 @@ test("generated main-browser fixture schedules exact specs and cleans its paths 
     cleanupRoot: async (path) => { cleanupCalls += 1; await cleanupGeneratedMainBrowserRoot(path); },
   }), /injected browser failure/);
   assert.equal(cleanupCalls, 1);
+  assert.notEqual(failureRoot, roots[0]);
   await assert.rejects(stat(failureRoot), /ENOENT/);
 
   const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");

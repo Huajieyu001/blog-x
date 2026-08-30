@@ -20,6 +20,7 @@ import {
 } from "./phase5-receipt.mjs";
 import { productionBackupResultSchema } from "./backup/production/results.mjs";
 import { installCooperativeShutdown } from "./local-delivery-child-tree.mjs";
+import { PACKAGE_TEST_INVENTORY } from "./test-inventory.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = fileURLToPath(import.meta.url);
@@ -29,6 +30,14 @@ const webImage = "blog-x-web-verify:phase2";
 let shutdownSignal;
 const allocatedGeneratedNamespaces = new Set();
 const confirmedGeneratedNamespaces = new Set();
+const migratedMainBrowserSpecs = Object.freeze([
+  "apps/web/e2e/article-lifecycle.spec.ts",
+  "apps/web/e2e/auth-session.spec.ts",
+  "apps/web/e2e/draft-preview.spec.ts",
+  "apps/web/e2e/public-list.spec.ts",
+  "apps/web/e2e/public-reading.spec.ts",
+  "apps/web/e2e/walking-skeleton.spec.ts",
+]);
 
 export const PHASE6_DATA_RESULT_FORMAT = "blog-x-phase6-data-result";
 const PHASE6_DATA_RESULT_PREFIX = "BLOG X PHASE6 DATA RESULT ";
@@ -61,6 +70,59 @@ export function validateLoopbackHttpOrigin(value) {
     throw new Error("verification public origin must be an absolute loopback HTTP origin");
   }
   return url.origin;
+}
+
+export function migratedMainBrowserSelection() {
+  const inventoryByPath = new Map(PACKAGE_TEST_INVENTORY.map((entry) => [entry.path, entry]));
+  for (const path of migratedMainBrowserSpecs) {
+    const entry = inventoryByPath.get(path);
+    if (!entry || entry.kind !== "web-e2e" || entry.scope !== "integration" || entry.fixtureOwner !== "main-browser") {
+      throw new Error(`migrated main-browser ownership is invalid: ${path}`);
+    }
+  }
+  if (new Set(migratedMainBrowserSpecs).size !== migratedMainBrowserSpecs.length) {
+    throw new Error("migrated main-browser selection contains duplicate paths");
+  }
+  return [...migratedMainBrowserSpecs];
+}
+
+function validateMainBrowserContext(context) {
+  validateNamespace(context?.namespace);
+  validateDatabaseName(context?.database, context.namespace);
+  validateMediaVolume(context?.mediaVolume, context.namespace);
+  const webOrigin = validateLoopbackHttpOrigin(context?.webOrigin);
+  if (new URL(webOrigin).port === "3100") throw new Error("generated main-browser fixture cannot claim canonical port 3100");
+  if (!/^[a-z0-9][a-z0-9_-]{7,64}$/.test(context?.runId ?? "")) throw new Error("generated main-browser run ID is invalid");
+  if (!/^[A-Za-z0-9_-]{8,96}$/.test(context?.username ?? "") || typeof context?.password !== "string" || context.password.length < 8) {
+    throw new Error("generated main-browser administrator identity is invalid");
+  }
+  return context;
+}
+
+const mainBrowserOptionalFactNames = new Set(["E2E_EXPIRED_SESSION_TOKEN", "E2E_REVOKED_SESSION_TOKEN"]);
+
+export function createMainBrowserEnvironment(context, scenarioFacts = {}, inheritedEnvironment = process.env) {
+  validateMainBrowserContext(context);
+  if (!scenarioFacts || typeof scenarioFacts !== "object" || Array.isArray(scenarioFacts)) throw new Error("main-browser scenario facts must be an object");
+  for (const [name, value] of Object.entries(scenarioFacts)) {
+    if (!mainBrowserOptionalFactNames.has(name) || typeof value !== "string" || !value) {
+      throw new Error(`main-browser scenario fact is invalid: ${name}`);
+    }
+  }
+  const environment = Object.fromEntries(Object.entries(inheritedEnvironment ?? {}).filter(([name, value]) =>
+    typeof value === "string"
+    && !/^E2E_/.test(name)
+    && !/(?:^|_)DATABASE_URL$/.test(name)
+    && !/^BLOG_X_/.test(name)
+    && !/^ADMIN_/.test(name)));
+  return Object.freeze({
+    ...environment,
+    E2E_WEB_ORIGIN: context.webOrigin,
+    E2E_RUN_ID: context.runId,
+    E2E_ADMIN_USERNAME: context.username,
+    E2E_ADMIN_PASSWORD: context.password,
+    ...scenarioFacts,
+  });
 }
 
 export function phase3Selection(mode) {
@@ -265,6 +327,14 @@ export async function cleanupGeneratedMediaRoot(value) {
   const resolved = resolve(value ?? "");
   if (dirname(resolved) !== resolve(tmpdir()) || !/^blog-x-media-verify-[A-Za-z0-9_-]{6,64}$/.test(basename(resolved))) {
     throw new Error("cleanup target is not an exact generated media root");
+  }
+  await rm(resolved, { recursive: true, force: true });
+}
+
+export async function cleanupGeneratedMainBrowserRoot(value) {
+  const resolved = resolve(value ?? "");
+  if (dirname(resolved) !== resolve(tmpdir()) || !/^blog-x-main-browser-[A-Za-z0-9_-]{6,64}$/.test(basename(resolved))) {
+    throw new Error("cleanup target is not an exact generated main-browser root");
   }
   await rm(resolved, { recursive: true, force: true });
 }
@@ -588,6 +658,92 @@ async function resetAcceptanceData(context, label) {
   await compose(context, label, "exec", "-T", "postgres", "psql", "-U", "blog_x", "-d", context.database,
     "-c", "truncate table sessions, article_tags, articles, categories, tags, site_pages, media, administrators cascade");
   await seed(context);
+}
+
+async function seedMainBrowserScenario(context, file) {
+  await resetAcceptanceData(context, `reset generated main-browser data for ${file}`);
+  if (file === "apps/web/e2e/public-list.spec.ts") {
+    const runId = context.runId;
+    const query = [
+      "insert into articles (title,summary,slug,markdown,status,published_at,deleted_at)",
+      `select 'Editorial ${runId} ' || item, 'A concise summary for ${runId} article ' || item || '.', 'editorial-${runId}-' || item, '# Editorial ' || item, 'published', timestamptz '2026-08-01T12:00:00.000Z' - ((11-item) * interval '1 day'), null from generate_series(0,11) item;`,
+      `insert into articles (title,summary,slug,markdown,status,published_at,deleted_at) values ('Private draft','hidden','private-draft-${runId}','# hidden','draft',null,null),('Downline post','hidden','downline-${runId}','# hidden','unpublished','2026-07-01T12:00:00.000Z',null),('Deleted post','hidden','deleted-${runId}','# hidden','published','2026-07-01T12:00:00.000Z','2026-07-02T12:00:00.000Z');`,
+    ].join(" ");
+    await compose(context, "seed generated public-list browser facts", ...psqlArgs(context, query));
+  }
+  if (file !== "apps/web/e2e/auth-session.spec.ts") return {};
+  const expiredSessionToken = randomBytes(32).toString("base64url");
+  const revokedSessionToken = randomBytes(32).toString("base64url");
+  context.secrets.push(expiredSessionToken, revokedSessionToken);
+  const query = [
+    "insert into sessions (administrator_id,token_digest,expires_at,revoked_at)",
+    `select id,'${hashText(expiredSessionToken)}',now()-interval '1 minute',null from administrators where username='${context.username}';`,
+    "insert into sessions (administrator_id,token_digest,expires_at,revoked_at)",
+    `select id,'${hashText(revokedSessionToken)}',now()+interval '1 day',now() from administrators where username='${context.username}';`,
+  ].join(" ");
+  await compose(context, "seed generated session browser facts", ...psqlArgs(context, query));
+  return {
+    E2E_EXPIRED_SESSION_TOKEN: expiredSessionToken,
+    E2E_REVOKED_SESSION_TOKEN: revokedSessionToken,
+  };
+}
+
+async function runMainBrowserSpec(context, file, environment) {
+  const result = await runStep(context, `run ${file}`, "corepack",
+    ["pnpm", "exec", "playwright", "test", file, "--workers=1"], { env: environment });
+  return parsePlaywrightResult(result.combined);
+}
+
+export async function runGeneratedMainBrowserFixture(context, runtime = {}) {
+  validateMainBrowserContext(context);
+  if (!runtime || typeof runtime !== "object" || Array.isArray(runtime)) throw new Error("main-browser fixture runtime must be an object");
+  const allowedRuntimeKeys = new Set(["seedScenario", "runSpec", "cleanupRoot"]);
+  for (const name of Object.keys(runtime)) if (!allowedRuntimeKeys.has(name)) throw new Error(`main-browser fixture runtime field is invalid: ${name}`);
+  const seedScenario = runtime.seedScenario ?? seedMainBrowserScenario;
+  const runSpec = runtime.runSpec ?? runMainBrowserSpec;
+  const cleanupRoot = runtime.cleanupRoot ?? cleanupGeneratedMainBrowserRoot;
+  if (![seedScenario, runSpec, cleanupRoot].every((value) => typeof value === "function")) throw new Error("main-browser fixture runtime callbacks are invalid");
+
+  const fixtureRoot = await mkdtemp(resolve(tmpdir(), "blog-x-main-browser-"));
+  const paths = Object.freeze({
+    root: fixtureRoot,
+    backup: resolve(fixtureRoot, "backup"),
+    media: resolve(fixtureRoot, "media"),
+  });
+  await Promise.all([mkdir(paths.backup, { mode: 0o700 }), mkdir(paths.media, { mode: 0o700 })]);
+  const suites = [];
+  let result;
+  try {
+    for (const file of migratedMainBrowserSelection()) {
+      const scenarioFacts = await seedScenario(context, file, paths);
+      const environment = createMainBrowserEnvironment(context, scenarioFacts);
+      const counts = assertPassOnlyCounts(await runSpec(context, file, environment, paths), `main-browser suite ${file}`);
+      suites.push({ path: file, counts: { ...counts } });
+    }
+    const counts = assertPassOnlyCounts(sumCounts(suites.map((suite) => suite.counts)), "generated main-browser fixture");
+    result = {
+      suites,
+      counts,
+      authority: {
+        namespace: context.namespace,
+        database: context.database,
+        webOrigin: context.webOrigin,
+        mediaVolume: context.mediaVolume,
+        backupRoot: paths.backup,
+        mediaRoot: paths.media,
+      },
+      releaseState: "BLOCKED",
+    };
+  } finally {
+    await cleanupRoot(fixtureRoot);
+    try {
+      await lstat(fixtureRoot);
+      throw new Error("generated main-browser root remained after cleanup");
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+  return { ...result, cleanup: { pathsAbsent: true } };
 }
 
 async function runDatabaseSuite(context, variable, file) {
