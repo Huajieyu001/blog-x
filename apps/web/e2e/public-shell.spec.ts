@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const webOrigin = process.env.E2E_WEB_ORIGIN ?? "http://127.0.0.1:3100";
-const primaryLabels = ["文章", "分类", "标签", "归档", "关于"];
+const primaryLabels = ["文章", "分类", "标签", "归档", "关于", "订阅"];
 
 test("shared public shell preserves ordered navigation, theme preference, and responsive keyboard access", async ({ page, browser }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -11,6 +11,9 @@ test("shared public shell preserves ordered navigation, theme preference, and re
   const nav = page.getByTestId("public-nav");
   await expect(header).toBeVisible();
   await expect(nav.getByRole("link")).toHaveText([...primaryLabels, "管理"]);
+  const subscription = nav.getByRole("link", { name: "订阅", exact: true });
+  await expect(subscription).toBeVisible();
+  await expect(subscription).toHaveAttribute("href", "/rss.xml");
   await expect(nav.getByRole("link", { name: "文章", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(page.getByTestId("mobile-menu-toggle")).toBeHidden();
 
@@ -39,6 +42,7 @@ test("shared public shell preserves ordered navigation, theme preference, and re
   await expect(toggle).toHaveAccessibleName("关闭站点导航");
   await expect(nav).toBeVisible();
   await expect(nav.getByRole("link", { name: "分类", exact: true })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "订阅", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(nav).toBeHidden();
   await expect(toggle).toBeFocused();
@@ -73,6 +77,9 @@ test("shared public shell preserves ordered navigation, theme preference, and re
   });
   expect(colors.background).not.toBe(colors.color);
   await expect(noScriptPage.getByRole("link", { name: "文章", exact: true })).toBeVisible();
+  const noScriptSubscription = noScriptPage.getByRole("link", { name: "订阅", exact: true });
+  await expect(noScriptSubscription).toBeVisible();
+  await expect(noScriptSubscription).toHaveAttribute("href", "/rss.xml");
   await noScript.close();
 
   const storageBlocked = await browser.newContext({ viewport: { width: 375, height: 812 } });

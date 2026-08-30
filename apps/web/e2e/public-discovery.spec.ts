@@ -81,13 +81,14 @@ test("desktop search tracer", async ({ page, browser }) => {
   await page.goto(`${expectedOrigin}/`);
 
   const nav = page.getByRole("navigation", { name: "站点导航" });
-  await expect(nav.getByRole("link")).toHaveText(["文章", "分类", "标签", "归档", "关于", "管理"]);
+  await expect(nav.getByRole("link")).toHaveText(["文章", "分类", "标签", "归档", "关于", "订阅", "管理"]);
+  await expect(nav.getByRole("link", { name: "订阅", exact: true })).toHaveAttribute("href", "/rss.xml");
   const orderedChildren = await nav.locator(":scope > *").evaluateAll((elements) => elements.map((element) => ({
     tag: element.tagName.toLowerCase(),
     text: element.textContent?.replace(/\s+/g, "").trim(),
   })));
-  expect(orderedChildren.map(({ tag }) => tag)).toEqual(["a", "a", "a", "a", "a", "form", "a"]);
-  expect(orderedChildren[5]?.text).toContain("搜索文章");
+  expect(orderedChildren.map(({ tag }) => tag)).toEqual(["a", "a", "a", "a", "a", "a", "form", "a"]);
+  expect(orderedChildren[6]?.text).toContain("搜索文章");
 
   const headerForm = nav.getByRole("search", { name: "搜索文章" });
   const headerInput = headerForm.getByRole("searchbox", { name: "搜索文章" });
@@ -318,6 +319,8 @@ test.describe("responsive discovery implementation", () => {
       for (let step = 0; step < 4; step += 1) await page.keyboard.press("Tab");
       await expect(nav.getByRole("link", { name: "关于", exact: true })).toBeFocused();
       await page.keyboard.press("Tab");
+      await expect(nav.getByRole("link", { name: "订阅", exact: true })).toBeFocused();
+      await page.keyboard.press("Tab");
       const input = nav.getByRole("searchbox", { name: "搜索文章" });
       await expect(input).toBeFocused();
       await input.fill("响应式");
@@ -374,6 +377,9 @@ test.describe("responsive discovery implementation", () => {
       if (/^https?:/.test(request.url())) noScriptRequests.push(request.url());
     });
     await noScriptPage.goto(`${expectedOrigin}/`);
+    const noScriptSubscription = noScriptPage.getByRole("navigation", { name: "站点导航" }).getByRole("link", { name: "订阅", exact: true });
+    await expect(noScriptSubscription).toBeVisible();
+    await expect(noScriptSubscription).toHaveAttribute("href", "/rss.xml");
     const noScriptForm = noScriptPage.getByRole("navigation", { name: "站点导航" }).getByRole("search", { name: "搜索文章" });
     await expect(noScriptForm).toBeVisible();
     await noScriptForm.getByRole("searchbox", { name: "搜索文章" }).fill("响应式");
@@ -598,6 +604,7 @@ test.describe("phase 7 edge and privacy matrix", () => {
     expect(sitemapText).not.toContain(`${expectedOrigin}/search`);
     const rss = await page.request.get(`${expectedOrigin}/rss.xml`);
     expect(rss.status()).toBe(200);
+    expect(rss.headers()["content-type"]).toMatch(/^application\/rss\+xml(?:;|$)/);
     const rssText = await rss.text();
     expect(rssText).toContain(`${expectedOrigin}/posts/trusted-search-result`);
     expect(rssText).not.toContain(`${expectedOrigin}/search`);
