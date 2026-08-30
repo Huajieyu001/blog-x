@@ -129,8 +129,8 @@ function memoryArtifactFs(root = "/virtual-workspace") {
   const error = (code) => Object.assign(new Error(code), { code });
   return {
     entries,
-    async lstat(path) { const item = entries.get(path); if (!item) throw error("ENOENT"); return { uid: item.uid, mode: item.mode, isFile: () => item.kind === "file", isDirectory: () => item.kind === "dir", isSocket: () => item.kind === "socket", isSymbolicLink: () => item.kind === "symlink" }; },
-    async realpath(path) { if (!entries.has(path)) throw error("ENOENT"); return path; },
+    async lstat(path) { const item = entries.get(path); if (!item) throw error("ENOENT"); return { uid: item.uid, mode: item.mode, nlink: item.nlink ?? 1, isFile: () => item.kind === "file", isDirectory: () => item.kind === "dir", isSocket: () => item.kind === "socket", isSymbolicLink: () => item.kind === "symlink" }; },
+    async realpath(path) { const item = entries.get(path); if (!item) throw error("ENOENT"); return item.realpath ?? path; },
     async readdir(path) { if (entries.get(path)?.kind !== "dir") throw error("ENOENT"); return [...entries.keys()].filter((item) => item.startsWith(`${path}/`) && !item.slice(path.length + 1).includes("/")).map((item) => item.slice(path.length + 1)); },
     async mkdir(path, options) { if (entries.has(path)) throw error("EEXIST"); entries.set(path, { kind: "dir", uid: 501, mode: options.mode }); },
     async open(path, flags, mode) {
@@ -764,6 +764,12 @@ test("command policy is exact-token and rejects extra, reordered, alternate auth
   for (const args of [[...valid[1], "extra"], ["build", "--pull=false", "--network=none", ...valid[1].slice(3)], valid[1].map((value) => value === "PUBLIC_ORIGIN=http://127.0.0.1:3100" ? "PUBLIC_ORIGIN=http://0.0.0.0:3100" : value)]) {
     assert.throws(() => assertAllowedRefreshCommand("docker", args), /allowlisted|exact|argv/i);
   }
+  const range = `${"a".repeat(40)}..${"c".repeat(40)}`;
+  const history = ["log", "--format=", "--name-only", "-z", "-m", "--no-renames", range, "--"];
+  assert.doesNotThrow(() => assertAllowedRefreshCommand("git", history));
+  for (const args of [history.filter((value) => value !== "-m"), history.filter((value) => value !== "--no-renames"), history.filter((value) => value !== "-z"), [...history, "extra"], history.map((value) => value === range ? "abc..def" : value)]) {
+    assert.throws(() => assertAllowedRefreshCommand("git", args), /allowlisted|exact|argv/i);
+  }
 });
 
 test("collector uses fake argv/database/media/history adapters and rejects malformed route observations", async () => {
@@ -857,11 +863,12 @@ function targetImage(app, id, revision, lock, seedId) {
   return { Id: id, Config: { Image: `blog-x-${app}-local:${revision.slice(0, 12)}`, WorkingDir: "/refresh-workspace", Cmd: ["corepack", "pnpm", "--filter", `@blog-x/${app}`, "start"], Labels: { "org.opencontainers.image.revision": revision, "io.blog-x.lockfile-sha256": lock, "io.blog-x.seed-image-id": seedId, "io.blog-x.application": app, "io.blog-x.public-origin": "http://127.0.0.1:3100", "io.blog-x.refresh-kind": "v1.1-offline-local-delivery" } } };
 }
 
-function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, rollbackCutoverFault = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, withdrawalFault, seedPrerequisite, acceptanceStdout = acceptanceOutput, verificationChangedPaths, revision = TEST_REVISION, artifactFs, oldImages = { api: SHA("a"), web: SHA("b") }, targetIds = { api: SHA("e"), web: SHA("f") } } = {}) {
+function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, rollbackCutoverFault = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, withdrawalFault, seedPrerequisite, acceptanceStdout = acceptanceOutput, verificationChangedPaths, verificationTouchedPaths = verificationChangedPaths, revision = TEST_REVISION, artifactFs, oldImages = { api: SHA("a"), web: SHA("b") }, targetIds = { api: SHA("e"), web: SHA("f") } } = {}) {
   const lock = createHash("sha256").update("raw-lock\n").digest("hex");
   const old = structuredClone(oldImages);
   const evidencePath = deliveryAuthorityForRevision(revision).evidencePath;
   const changedPaths = verificationChangedPaths ?? [evidencePath];
+  const touchedPaths = verificationTouchedPaths ?? changedPaths;
   const plan = createRefreshPlan({ revision, lockSha256: lock, apiSeedId: old.api, webSeedId: old.web });
   const targets = { api: targetImage("api", targetIds.api, revision, lock, old.api), web: targetImage("web", targetIds.web, revision, lock, old.web) };
   const calls = []; const routeFetches = []; let snapshot = 0; let rolledBack = false; let verificationMode = false; let staleVerification = false;
@@ -915,6 +922,7 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
     if (command === "git" && args[0] === "show") return { stdout: "raw-lock\n" };
     if (command === "git" && args[0] === "merge-base") return { stdout: "" };
     if (command === "git" && args[0] === "diff") return { stdout: `${changedPaths.join("\n")}\n` };
+    if (command === "git" && args[0] === "log") return { stdout: `${touchedPaths.join("\0")}\0` };
     if (command === "node" && args.join(" ") === "scripts/local-delivery-acceptance.mjs") return { stdout: acceptanceStdout };
     if (command === "node") return { stdout: "" };
     throw new Error(`unexpected raw fake argv: ${command} ${args.join(" ")}`);
@@ -1015,6 +1023,33 @@ test("later evidence verification admits only the receipt and finite Phase 08 cl
     await rejected.runtime.runCli();
     rejected.beginVerification();
     await assert.rejects(rejected.runtime.verifyEvidence(`/virtual-workspace/${TEST_EVIDENCE_PATH}`), /docs-only allowlist|intervening Git paths/i, path);
+  }
+
+  const reverted = liveFixture({
+    verificationChangedPaths: [TEST_EVIDENCE_PATH, ".planning/phases/08-reliable-local-delivery/08-09-SUMMARY.md"],
+    verificationTouchedPaths: [TEST_EVIDENCE_PATH, ".planning/phases/08-reliable-local-delivery/08-09-SUMMARY.md", "scripts/refresh-local.mjs"],
+  });
+  await reverted.runtime.runCli();
+  reverted.beginVerification();
+  await assert.rejects(reverted.runtime.verifyEvidence(`/virtual-workspace/${TEST_EVIDENCE_PATH}`), /docs-only allowlist|intervening Git paths/i);
+  assert.ok(reverted.calls.some(({ command, args }) => command === "git" && args[0] === "log" && args.includes("-m") && args.includes("--no-renames") && args.includes("-z")));
+  assert.equal(reverted.calls.some(({ command, args }) => command === "git" && args[0] === "diff"), false);
+});
+
+test("independent verification rejects substituted receipt filesystem authority", async () => {
+  const absolute = `/virtual-workspace/${TEST_EVIDENCE_PATH}`;
+  for (const mutate of [
+    (item) => { item.kind = "symlink"; },
+    (item) => { item.nlink = 2; },
+    (item) => { item.uid = 502; },
+    (item) => { item.mode = 0o644; },
+    (item) => { item.realpath = "/private/tmp/substitute.json"; },
+  ]) {
+    const fixture = liveFixture();
+    await fixture.runtime.runCli();
+    fixture.beginVerification();
+    mutate(fixture.evidenceFs.entries.get(absolute));
+    await assert.rejects(fixture.runtime.verifyEvidence(absolute), /evidence file authority|unsafe/i);
   }
 });
 
