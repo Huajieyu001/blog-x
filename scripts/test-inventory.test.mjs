@@ -15,22 +15,23 @@ const cloneManifest = () => PACKAGE_TEST_INVENTORY.map((entry) => ({ ...entry })
 test("package test inventory is frozen, exact, complete and disjoint", async () => {
   assert.equal(Object.isFrozen(PACKAGE_TEST_INVENTORY), true);
   assert.equal(PACKAGE_TEST_INVENTORY.every(Object.isFrozen), true);
-  assert.equal(PACKAGE_TEST_INVENTORY.length, 37);
-  assert.equal(DEFAULT_TEST_FILES.length, 7);
+  assert.equal(PACKAGE_TEST_INVENTORY.length, 38);
+  assert.equal(DEFAULT_TEST_FILES.length, 8);
   assert.equal(INTEGRATION_TEST_FILES.length, 30);
-  assert.equal(new Set([...DEFAULT_TEST_FILES, ...INTEGRATION_TEST_FILES]).size, 37);
+  assert.equal(new Set([...DEFAULT_TEST_FILES, ...INTEGRATION_TEST_FILES]).size, 38);
   assert.deepEqual(DEFAULT_TEST_FILES, [
     "packages/contracts/src/public-discovery.test.ts",
     "packages/contracts/src/tracer.test.ts",
     "apps/api/test/markdown-renderer.test.ts",
     "apps/api/test/security-hardening.test.ts",
+    "apps/web/app/admin/_components/article-editor-recovery.test.ts",
     "apps/web/app/lib/search-discovery.test.ts",
     "apps/web/app/lib/site-metadata.test.ts",
     "apps/web/lib/search-encoding.test.ts",
   ]);
 
   const result = await assertCompleteTestInventory();
-  assert.deepEqual(result, { total: 37, default: 7, integration: 30 });
+  assert.deepEqual(result, { total: 38, default: 8, integration: 30 });
 });
 
 test("integration inventory has exact runner-owner counts", () => {

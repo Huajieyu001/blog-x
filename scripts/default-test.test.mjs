@@ -39,7 +39,7 @@ test("default coordinator freezes exact literal Contracts, API and Web child arg
     },
     {
       id: "web",
-      argv: ["--import", "tsx", "--test", "--test-reporter=tap", "apps/web/app/lib/search-discovery.test.ts", "apps/web/app/lib/site-metadata.test.ts", "apps/web/lib/search-encoding.test.ts"],
+      argv: ["--import", "tsx", "--test", "--test-reporter=tap", "apps/web/app/admin/_components/article-editor-recovery.test.ts", "apps/web/app/lib/search-discovery.test.ts", "apps/web/app/lib/site-metadata.test.ts", "apps/web/lib/search-encoding.test.ts"],
     },
   ]);
   assert.deepEqual(DEFAULT_TEST_CHILDREN.flatMap((child) => child.argv.filter((value) => value.endsWith(".test.ts"))), DEFAULT_TEST_FILES);

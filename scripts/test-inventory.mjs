@@ -12,6 +12,7 @@ const entries = [
   { path: "apps/api/test/security-hardening.test.ts", kind: "api-unit", scope: "default", fixtureOwner: null },
   { path: "apps/web/app/lib/search-discovery.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
   { path: "apps/web/app/lib/site-metadata.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
+  { path: "apps/web/app/admin/_components/article-editor-recovery.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
   { path: "apps/web/lib/search-encoding.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
 
   { path: "apps/api/test/article-draft-preview.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
