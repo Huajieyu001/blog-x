@@ -15,6 +15,9 @@ import {
   parseSemanticTapResult,
   PHASE6_DATA_RESULT_FORMAT,
   cleanupGeneratedMediaRoot,
+  cleanupGeneratedMainBrowserRoot,
+  createMainBrowserEnvironment,
+  migratedMainBrowserSelection,
   phase3Selection,
   phase4Selection,
   phase5Selection,
@@ -22,6 +25,7 @@ import {
   phase6Selection,
   redactText,
   semanticTestCommand,
+  runGeneratedMainBrowserFixture,
   validateDatabaseName,
   validateLoopbackHttpOrigin,
   validateMediaVolume,
@@ -49,6 +53,94 @@ test("legacy Web E2E specs require runner facts and own no infrastructure", asyn
     assert.doesNotMatch(source, /test\.beforeAll|test\.afterAll|test\.skip|\.kill\s*\(/, `${path} cannot own lifecycle or skip missing facts`);
     assert.doesNotMatch(source, /E2E_(?:WEB_ORIGIN|RUN_ID)\s*\?\?/, `${path} cannot fall back from runner facts`);
   }
+});
+
+test("generated main-browser selection owns each migrated spec exactly once", () => {
+  const selection = migratedMainBrowserSelection();
+  assert.deepEqual(selection, migratedMainBrowserSpecs);
+  assert.equal(new Set(selection).size, migratedMainBrowserSpecs.length);
+});
+
+test("main-browser environment exposes only generated facts and rejects canonical authority", () => {
+  const context = {
+    namespace: "blogxverify_a1b2c3d4",
+    database: "blog_x_a1b2c3d4",
+    mediaVolume: "blogxverify_a1b2c3d4_media-data",
+    webOrigin: "http://127.0.0.1:43123",
+    runId: "main-browser-a1b2c3d4",
+    username: "admin-main-browser-a1b2c3d4",
+    password: "generated-password",
+  };
+  const environment = createMainBrowserEnvironment(context, {
+    E2E_EXPIRED_SESSION_TOKEN: "expired-token",
+    E2E_REVOKED_SESSION_TOKEN: "revoked-token",
+  }, {
+    PATH: process.env.PATH ?? "",
+    DATABASE_URL: "must-not-leak",
+    E2E_WEB_ORIGIN: "must-not-override",
+    BLOG_X_PUBLIC_ORIGIN: "must-not-leak",
+    ADMIN_PASSWORD: "must-not-leak",
+  });
+  assert.equal(environment.E2E_WEB_ORIGIN, context.webOrigin);
+  assert.equal(environment.E2E_RUN_ID, context.runId);
+  assert.equal(environment.E2E_ADMIN_USERNAME, context.username);
+  assert.equal(environment.E2E_ADMIN_PASSWORD, context.password);
+  assert.equal(environment.E2E_EXPIRED_SESSION_TOKEN, "expired-token");
+  assert.equal(environment.E2E_REVOKED_SESSION_TOKEN, "revoked-token");
+  assert.equal(environment.PATH, process.env.PATH ?? "");
+  for (const name of ["DATABASE_URL", "BLOG_X_PUBLIC_ORIGIN", "ADMIN_PASSWORD"]) assert.equal(name in environment, false, name);
+  assert.throws(() => createMainBrowserEnvironment({ ...context, webOrigin: "http://127.0.0.1:3100" }, {}, {}), /canonical|3100/i);
+  assert.throws(() => createMainBrowserEnvironment({ ...context, namespace: "blogxlocal" }, {}, {}), /namespace/i);
+  assert.throws(() => createMainBrowserEnvironment(context, { E2E_UNKNOWN_FACT: "no" }, {}), /fact/i);
+});
+
+test("generated main-browser fixture schedules exact specs and cleans its paths once on success and failure", async () => {
+  const context = {
+    namespace: "blogxverify_b1c2d3e4",
+    database: "blog_x_b1c2d3e4",
+    mediaVolume: "blogxverify_b1c2d3e4_media-data",
+    webOrigin: "http://127.0.0.1:43124",
+    runId: "main-browser-b1c2d3e4",
+    username: "admin-main-browser-b1c2d3e4",
+    password: "generated-password",
+    secrets: ["generated-password"],
+  };
+  const roots = [];
+  const executed = [];
+  const succeeded = await runGeneratedMainBrowserFixture(context, {
+    seedScenario: async (_context, path, paths) => {
+      roots.push(paths.root);
+      return path.endsWith("auth-session.spec.ts")
+        ? { E2E_EXPIRED_SESSION_TOKEN: "expired-token", E2E_REVOKED_SESSION_TOKEN: "revoked-token" }
+        : {};
+    },
+    runSpec: async (_context, path, environment) => {
+      executed.push(path);
+      assert.equal(environment.E2E_WEB_ORIGIN, context.webOrigin);
+      return { tests: 1, passed: 1, failed: 0, cancelled: 0, skipped: 0, todo: 0 };
+    },
+  });
+  assert.deepEqual(executed, migratedMainBrowserSpecs);
+  assert.equal(new Set(executed).size, migratedMainBrowserSpecs.length);
+  assert.equal(new Set(roots).size, 1);
+  await assert.rejects(stat(roots[0]), /ENOENT/);
+  assert.deepEqual(succeeded.counts, { tests: 6, passed: 6, failed: 0, cancelled: 0, skipped: 0, todo: 0 });
+  assert.equal(succeeded.cleanup.pathsAbsent, true);
+
+  let failureRoot;
+  let cleanupCalls = 0;
+  await assert.rejects(runGeneratedMainBrowserFixture(context, {
+    seedScenario: async (_context, _path, paths) => { failureRoot = paths.root; return {}; },
+    runSpec: async () => { throw new Error("injected browser failure"); },
+    cleanupRoot: async (path) => { cleanupCalls += 1; await cleanupGeneratedMainBrowserRoot(path); },
+  }), /injected browser failure/);
+  assert.equal(cleanupCalls, 1);
+  await assert.rejects(stat(failureRoot), /ENOENT/);
+
+  const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
+  const lifecycle = runner.slice(runner.indexOf("async function runSingle"), runner.indexOf("async function parallelCheck"));
+  assert.match(lifecycle, /finally[\s\S]*docker-compose[\s\S]*down[\s\S]*confirmGeneratedProjectAbsent/);
+  assert.doesNotMatch(lifecycle, /blogxlocal|127\.0\.0\.1:3100/);
 });
 
 test("verification namespaces are narrow and safe cleanup targets", () => {
