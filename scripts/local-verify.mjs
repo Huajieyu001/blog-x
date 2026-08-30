@@ -832,6 +832,8 @@ async function runMainBrowserSpec(context, file, environment) {
 }
 
 async function resetGeneratedWebScenario(context, file) {
+  await compose(context, `restart generated API rate authority for ${file}`, "restart", "api");
+  await compose(context, `wait for generated API rate authority for ${file}`, "up", "-d", "--wait", "api");
   await compose(context, `recreate generated Web cache authority for ${file}`, "up", "-d", "--force-recreate", "--wait", "web");
   await waitForHttp(context.webOrigin);
 }
