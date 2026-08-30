@@ -30,6 +30,27 @@ import {
 } from "./local-verify.mjs";
 import { assertPlaywrightResult, PHASE7_BROWSER_RESULT_FORMAT } from "./phase7-browser-verify.mjs";
 
+const migratedMainBrowserSpecs = [
+  "apps/web/e2e/article-lifecycle.spec.ts",
+  "apps/web/e2e/auth-session.spec.ts",
+  "apps/web/e2e/draft-preview.spec.ts",
+  "apps/web/e2e/public-list.spec.ts",
+  "apps/web/e2e/public-reading.spec.ts",
+  "apps/web/e2e/walking-skeleton.spec.ts",
+];
+
+test("legacy Web E2E specs require runner facts and own no infrastructure", async () => {
+  for (const path of migratedMainBrowserSpecs) {
+    const source = await readFile(join(process.cwd(), path), "utf8");
+    assert.match(source, /E2E_WEB_ORIGIN/, `${path} requires the runner origin`);
+    assert.match(source, /E2E_RUN_ID/, `${path} requires a run-scoped identity`);
+    assert.doesNotMatch(source, /node:child_process|\bspawn\s*\(|\bChildProcess\b/, `${path} cannot spawn children`);
+    assert.doesNotMatch(source, /DATABASE_URL|session-fixture|127\.0\.0\.1:3100|127\.0\.0\.1:3001/, `${path} cannot claim fixed or database authority`);
+    assert.doesNotMatch(source, /test\.beforeAll|test\.afterAll|test\.skip|\.kill\s*\(/, `${path} cannot own lifecycle or skip missing facts`);
+    assert.doesNotMatch(source, /E2E_(?:WEB_ORIGIN|RUN_ID)\s*\?\?/, `${path} cannot fall back from runner facts`);
+  }
+});
+
 test("verification namespaces are narrow and safe cleanup targets", () => {
   assert.equal(validateNamespace("blogxverify_a1b2c3d4"), "blogxverify_a1b2c3d4");
   for (const candidate of ["", "/", ".", "blogxverify", "blogxverify_A1B2C3D4", "blogxverify_a;rm", "other_a1b2c3d4"]) {
