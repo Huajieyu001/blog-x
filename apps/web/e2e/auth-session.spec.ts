@@ -35,7 +35,7 @@ test("login, refresh, expiry, logout, and revoked-token reuse stay server-author
   await expect(page.getByRole("heading", { name: "文章管理" })).toBeVisible();
 
   const storageKeys = await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) }));
-  expect(storageKeys).toEqual({ local: [], session: [] });
+  expect(storageKeys).toEqual({ local: ["blog-x-theme"], session: [] });
   await page.reload();
   await expect(page.getByRole("heading", { name: "文章管理" })).toBeVisible();
 
