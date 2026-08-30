@@ -793,15 +793,21 @@ async function runMainBrowserSpec(context, file, environment) {
   return parsePlaywrightResult(result.combined);
 }
 
+async function resetGeneratedWebScenario(context, file) {
+  await compose(context, `recreate generated Web cache authority for ${file}`, "up", "-d", "--force-recreate", "--wait", "web");
+  await waitForHttp(context.webOrigin);
+}
+
 async function runGeneratedMainBrowserFixtureSelection(context, runtime, selectedPaths) {
   validateMainBrowserContext(context);
   if (!runtime || typeof runtime !== "object" || Array.isArray(runtime)) throw new Error("main-browser fixture runtime must be an object");
-  const allowedRuntimeKeys = new Set(["seedScenario", "runSpec", "cleanupRoot"]);
+  const allowedRuntimeKeys = new Set(["seedScenario", "resetWeb", "runSpec", "cleanupRoot"]);
   for (const name of Object.keys(runtime)) if (!allowedRuntimeKeys.has(name)) throw new Error(`main-browser fixture runtime field is invalid: ${name}`);
   const seedScenario = runtime.seedScenario ?? seedMainBrowserScenario;
+  const resetWeb = runtime.resetWeb ?? resetGeneratedWebScenario;
   const runSpec = runtime.runSpec ?? runMainBrowserSpec;
   const cleanupRoot = runtime.cleanupRoot ?? cleanupGeneratedMainBrowserRoot;
-  if (![seedScenario, runSpec, cleanupRoot].every((value) => typeof value === "function")) throw new Error("main-browser fixture runtime callbacks are invalid");
+  if (![seedScenario, resetWeb, runSpec, cleanupRoot].every((value) => typeof value === "function")) throw new Error("main-browser fixture runtime callbacks are invalid");
 
   const fixtureRoot = await mkdtemp(resolve(tmpdir(), "blog-x-main-browser-"));
   const paths = Object.freeze({
@@ -816,6 +822,7 @@ async function runGeneratedMainBrowserFixtureSelection(context, runtime, selecte
     for (const [index, file] of selectedPaths.entries()) {
       const scenarioContext = { ...context, username: `${context.username}-${index + 1}` };
       const scenarioFacts = await seedScenario(scenarioContext, file, paths);
+      await resetWeb(scenarioContext, file);
       const environment = createMainBrowserEnvironment(scenarioContext, scenarioFacts);
       const counts = assertPassOnlyCounts(await runSpec(scenarioContext, file, environment, paths), `main-browser suite ${file}`);
       suites.push({ path: file, counts: { ...counts } });
