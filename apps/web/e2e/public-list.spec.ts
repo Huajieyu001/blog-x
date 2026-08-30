@@ -53,6 +53,7 @@ test("public SSR home exposes editorial cards, stable pagination, and fresh life
   await expect(page.getByRole("link", { name: "返回最新文章" })).toHaveAttribute("href", "/");
 
   await page.goto(`${webOrigin}/login`);
+  await page.setExtraHTTPHeaders({ "cache-control": "no-cache", pragma: "no-cache" });
   await page.getByLabel("用户名").fill(username);
   await page.getByLabel("密码").fill(password);
   await page.getByRole("button", { name: "登录" }).click();
@@ -68,16 +69,28 @@ test("public SSR home exposes editorial cards, stable pagination, and fresh life
   await expect(page).toHaveURL(/\/admin\/posts\/[0-9a-f-]+$/);
   const editorUrl = page.url();
   await page.getByRole("button", { name: "发布" }).click();
+  await expect.poll(async () => {
+    const response = await request.get(`${webOrigin}/api/public/articles?page=1`);
+    return ((await response.json()) as { items: Array<{ slug: string }> }).items.some((item) => item.slug === slug);
+  }).toBe(true);
   await page.goto(webOrigin);
   await expect(page.getByRole("link", { name: title, exact: true })).toBeVisible();
 
   await page.goto(editorUrl);
   await page.getByRole("button", { name: "下线" }).click();
+  await expect.poll(async () => {
+    const response = await request.get(`${webOrigin}/api/public/articles?page=1`);
+    return ((await response.json()) as { items: Array<{ slug: string }> }).items.some((item) => item.slug === slug);
+  }).toBe(false);
   await page.goto(webOrigin);
   await expect(page.getByRole("link", { name: title, exact: true })).toHaveCount(0);
 
   await page.goto(editorUrl);
   await page.getByRole("button", { name: "重新发布" }).click();
+  await expect.poll(async () => {
+    const response = await request.get(`${webOrigin}/api/public/articles?page=1`);
+    return ((await response.json()) as { items: Array<{ slug: string }> }).items.some((item) => item.slug === slug);
+  }).toBe(true);
   await page.goto(webOrigin);
   await expect(page.getByRole("link", { name: title, exact: true })).toBeVisible();
 
@@ -85,6 +98,10 @@ test("public SSR home exposes editorial cards, stable pagination, and fresh life
   await page.getByRole("button", { name: "删除" }).click();
   await page.getByRole("dialog", { name: "确认软删除文章" }).getByRole("button", { name: "确认软删除" }).click();
   await expect(page).toHaveURL(`${webOrigin}/admin`);
+  await expect.poll(async () => {
+    const response = await request.get(`${webOrigin}/api/public/articles?page=1`);
+    return ((await response.json()) as { items: Array<{ slug: string }> }).items.some((item) => item.slug === slug);
+  }).toBe(false);
   await page.goto(webOrigin);
   await expect(page.getByRole("link", { name: title, exact: true })).toHaveCount(0);
 });
