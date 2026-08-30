@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { lstat, link, mkdir, open, readFile, readdir, realpath, unlink } from "node:fs/promises";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, relative, resolve } from "node:path";
 import { parseLocalDeliveryAcceptanceRecord } from "./local-delivery-acceptance.mjs";
 import {
   REFRESH_AUTHORITY,
@@ -17,10 +17,13 @@ import {
 } from "./refresh-local-facts.mjs";
 
 export const HISTORICAL_LOCAL_DELIVERY_EVIDENCE_PATH = "ops/v1.1-local-delivery-evidence.json";
-export const LOCAL_DELIVERY_EVIDENCE_PATH = "ops/v1.1-local-delivery-evidence.successor-2.json";
-export const LOCAL_DELIVERY_ATTEMPT_AUTHORITY = "blog-x-v1.1-local-delivery-successor-2";
+export const HISTORICAL_SUCCESSOR_2_LOCAL_DELIVERY_EVIDENCE_PATH = "ops/v1.1-local-delivery-evidence.successor-2.json";
+export const HISTORICAL_SUCCESSOR_2_LOCAL_DELIVERY_ATTEMPT_AUTHORITY = "blog-x-v1.1-local-delivery-successor-2";
 const HISTORICAL_CLAIM_ROOT = "/private/tmp/blog-x-refresh-attempts";
-const CLAIM_ROOT = "/private/tmp/blog-x-refresh-attempts-v1.1-successor-2";
+const HISTORICAL_SUCCESSOR_2_CLAIM_ROOT = "/private/tmp/blog-x-refresh-attempts-v1.1-successor-2";
+export const LOCAL_DELIVERY_EVIDENCE_DIRECTORY = "ops/local-deliveries";
+export const LOCAL_DELIVERY_CLAIM_ROOT = "/private/tmp/blog-x-refresh-attempts-v1.1";
+const CLAIM_ROOT = LOCAL_DELIVERY_CLAIM_ROOT;
 export const LOCAL_DELIVERY_FORMAT = "blog-x-v1.1-local-delivery-evidence";
 export const LOCAL_DELIVERY_VERSION = 1;
 export const LOCAL_DELIVERY_REFRESH_KIND = "v1.1-offline-local-delivery";
@@ -101,6 +104,25 @@ function typedSeedPrerequisiteError(kind, cause) {
   Object.defineProperty(error, "seedPrerequisite", { value: kind });
   return error;
 }
+export function deliveryAuthorityForRevision(revision) {
+  if (!validRevision(revision)) fail("delivery authority revision must be a lowercase full Git SHA");
+  const evidencePath = `${LOCAL_DELIVERY_EVIDENCE_DIRECTORY}/${revision}.json`;
+  return Object.freeze({
+    implementationRevision: revision,
+    authority: `blog-x-v1.1-local-delivery-${revision}`,
+    evidenceDirectory: LOCAL_DELIVERY_EVIDENCE_DIRECTORY,
+    evidencePath,
+    claimRoot: LOCAL_DELIVERY_CLAIM_ROOT,
+    claimPath: `${LOCAL_DELIVERY_CLAIM_ROOT}/${revision}.json`,
+    failurePath: `${LOCAL_DELIVERY_CLAIM_ROOT}/${revision}.failure.json`,
+  });
+}
+export function parseRevisionAddressedEvidencePath(path) {
+  if (typeof path !== "string") fail("revision-addressed evidence path must contain one lowercase full SHA");
+  const match = /^ops\/local-deliveries\/([a-f0-9]{40})\.json$/.exec(path);
+  if (!match) fail("revision-addressed evidence path must be exact and contain one lowercase full SHA");
+  return match[1];
+}
 export function classifySeedPrerequisiteFailure(error) {
   return isSeedPrerequisiteError(error) ? error.seedPrerequisite : null;
 }
@@ -131,12 +153,12 @@ export function assertSeedPrerequisiteFacts({ application, expectedId, image, lo
   return true;
 }
 function canonicalClaim(revision) {
-  if (!validRevision(revision)) fail("attempt claim revision must be lowercase full SHA");
+  const derived = deliveryAuthorityForRevision(revision);
   return `${JSON.stringify({
     format: "blog-x-local-refresh-attempt",
-    version: 2,
-    authority: LOCAL_DELIVERY_ATTEMPT_AUTHORITY,
-    evidencePath: LOCAL_DELIVERY_EVIDENCE_PATH,
+    version: 3,
+    authority: derived.authority,
+    evidencePath: derived.evidencePath,
     implementationRevision: revision,
   })}\n`;
 }
@@ -232,10 +254,9 @@ export function createRefreshAttemptStore({ fs = nativeFs, identity = { uid: pro
   if (Object.keys(unexpected).length) fail("attempt claim store accepts no root override or extra option");
   if (!Number.isSafeInteger(identity.uid) || identity.uid < 0) fail("attempt claim identity is invalid");
   const pathFor = (revision) => {
-    if (!validRevision(revision)) fail("attempt claim revision must be lowercase full SHA");
-    return `${CLAIM_ROOT}/${revision}.json`;
+    return deliveryAuthorityForRevision(revision).claimPath;
   };
-  const failurePathFor = (revision) => `${CLAIM_ROOT}/${validRevision(revision) ? revision : fail("failure report revision must be lowercase full SHA")}.failure.json`;
+  const failurePathFor = (revision) => deliveryAuthorityForRevision(revision).failurePath;
   async function entry(path) { try { return await fs.lstat(path); } catch (error) { if (isMissing(error)) return undefined; throw error; } }
   async function assertRealDirectory(path, { uid, expectedMode }) {
     const item = await entry(path);
@@ -300,13 +321,14 @@ export function createRefreshAttemptStore({ fs = nativeFs, identity = { uid: pro
     }
   }
   async function readCanonicalClaim(revision) {
+    const derived = deliveryAuthorityForRevision(revision);
     const path = pathFor(revision);
     if (!(await assertRoot())) fail("refresh attempt claim is absent");
     if (!(await entry(path))) fail("refresh attempt claim is absent");
     await assertClaimFile(path);
     const bytes = await fs.readFile(path, "utf8");
     if (bytes !== canonicalClaim(revision)) fail("attempt claim bytes are not canonical");
-    return { present: true, authority: LOCAL_DELIVERY_ATTEMPT_AUTHORITY, evidencePath: LOCAL_DELIVERY_EVIDENCE_PATH, bytes, sha256: digest(bytes) };
+    return { present: true, implementationRevision: revision, authority: derived.authority, evidencePath: derived.evidencePath, bytes, sha256: digest(bytes) };
   }
   return Object.freeze({
     root: CLAIM_ROOT,
@@ -322,6 +344,7 @@ export function createRefreshAttemptStore({ fs = nativeFs, identity = { uid: pro
       return readCanonicalClaim(revision);
     },
     async claimRefreshAttempt(revision) {
+      const derived = deliveryAuthorityForRevision(revision);
       const finalPath = pathFor(revision);
       await assertRoot({ create: true });
       if (await entry(finalPath)) fail("refresh attempt is already claimed");
@@ -329,7 +352,7 @@ export function createRefreshAttemptStore({ fs = nativeFs, identity = { uid: pro
       const suffix = randomHex();
       if (!/^[a-f0-9]{24}$/.test(suffix)) fail("attempt claim temporary token is invalid");
       await publishFile(finalPath, bytes, suffix, "claim");
-      return { implementationRevision: revision, authority: LOCAL_DELIVERY_ATTEMPT_AUTHORITY, evidencePath: LOCAL_DELIVERY_EVIDENCE_PATH, bytes, sha256: digest(bytes) };
+      return { implementationRevision: revision, authority: derived.authority, evidencePath: derived.evidencePath, bytes, sha256: digest(bytes) };
     },
     async assertFailureReportAbsent(revision) {
       const path = failurePathFor(revision);
@@ -513,7 +536,7 @@ export function createRawRefreshFactSources({ run, fetch, root = process.cwd(), 
       const status = cleanOutput(await run("git", ["status", "--porcelain"]));
       const ref = cleanOutput(await run("git", ["symbolic-ref", "--quiet", "HEAD"]));
       const implementationRevision = cleanOutput(await run("git", ["rev-parse", "HEAD"]));
-      const receiptOnlyDuringRollback = state.allowSuccessorReceiptStatus === true && status === `?? ${LOCAL_DELIVERY_EVIDENCE_PATH}`;
+      const receiptOnlyDuringRollback = state.allowReceiptStatus === true && state.authority && status === `?? ${state.authority.evidencePath}`;
       if (status && !receiptOnlyDuringRollback || !validBranchRef(ref) || !validRevision(implementationRevision)) fail("Git authority is not one clean branch-qualified full revision");
       return { implementationRevision, clean: true, lockfileSha256: digest(await fs.readFile(resolve(root, "pnpm-lock.yaml"))), ref };
     },
@@ -605,7 +628,7 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
   if (!claimStore || !evidenceFs || typeof root !== "string" || typeof randomEvidenceHex !== "function") fail("live adapter raw boundaries are incomplete");
   const run = async (command, args, options = {}) => { assertAllowedRefreshCommand(command, args, options); return runArgv(command, args, options); };
   const tick = (stage) => { try { clock(stage); } catch (error) { error.refreshStage = stage; if (stage === "cutover-api-web") error.refreshBeforeMutation = true; throw error; } };
-  const state = { facts: {}, claim: undefined, acceptance: undefined, targets: {}, targetFacts: { api: null, web: null }, seeds: { api: null, web: null }, oldImages: {}, cutover: false, migrationOneoff: undefined, rollbackCleanupErrors: [], allowSuccessorReceiptStatus: false, phase: "constructed" };
+  const state = { facts: {}, claim: undefined, authority: undefined, acceptance: undefined, targets: {}, targetFacts: { api: null, web: null }, seeds: { api: null, web: null }, oldImages: {}, cutover: false, migrationOneoff: undefined, rollbackCleanupErrors: [], allowReceiptStatus: false, phase: "constructed" };
   let sources; let collect;
   const initializeCollectors = () => {
     if (sources) return;
@@ -641,14 +664,19 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
     validateTarget(image, target);
     return { storeSha256: digest(store), filesystemSha256: digest(`${target.application}:${image.Config.WorkingDir}:${JSON.stringify(image.Config.Cmd)}`), filesystemExact: true };
   };
-  const evidencePath = resolve(root, LOCAL_DELIVERY_EVIDENCE_PATH);
+  const currentEvidencePath = () => {
+    if (!state.authority) fail("revision-addressed evidence authority is not attached");
+    return resolve(root, state.authority.evidencePath);
+  };
   async function assertEvidenceAbsent() {
+    const evidencePath = currentEvidencePath();
     try { await evidenceFs.lstat(evidencePath); fail("refresh evidence final already exists"); } catch (error) { if (error?.code !== "ENOENT") throw error; }
     const prefix = `.${basename(evidencePath)}.`;
     const names = await evidenceFs.readdir(dirname(evidencePath));
     if (names.some((name) => name.startsWith(prefix) && name.endsWith(".tmp"))) fail("refresh evidence temporary already exists");
   }
   async function withdrawPublishedEvidence() {
+    const evidencePath = currentEvidencePath();
     let item;
     try { item = await evidenceFs.lstat(evidencePath); }
     catch (error) { if (error?.code === "ENOENT") return; throw error; }
@@ -669,9 +697,11 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
   return Object.freeze({
     assertAllowedArgv: assertAllowedRefreshCommand,
     attachAttemptClaim(claim) {
-      if (state.claim || claim?.implementationRevision === undefined || claim.authority !== LOCAL_DELIVERY_ATTEMPT_AUTHORITY
-        || claim.evidencePath !== LOCAL_DELIVERY_EVIDENCE_PATH || !validDigest(claim.sha256)) fail("attempt claim attachment is invalid");
+      const expected = deliveryAuthorityForRevision(claim?.implementationRevision);
+      if (state.claim || claim.authority !== expected.authority
+        || claim.evidencePath !== expected.evidencePath || !validDigest(claim.sha256)) fail("attempt claim attachment is invalid");
       state.claim = claim;
+      state.authority = expected;
     },
     async recollectFailure() {
       if (!state.facts.preflight) return { baseline: "not_applicable", recollection: "not_attempted", preservation: "not_applicable_pre_runtime", facts: { preflight: null, current: null, rollback: null } };
@@ -686,6 +716,11 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
     async execute(phase, plan) {
       state.phase = phase;
       if (phase === "preflight") {
+        if (!state.claim) {
+          state.claim = await claimStore.claimRefreshAttempt(plan.revision);
+          state.authority = deliveryAuthorityForRevision(plan.revision);
+        }
+        if (state.claim?.implementationRevision !== plan.revision || state.authority?.implementationRevision !== plan.revision) fail("attempt claim revision does not match the materialized plan");
         state.phase = "local_docker_authority";
         tick(state.phase);
         if (enforceLocalAuthority) {
@@ -709,7 +744,6 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
           state.oldImages[target.application] = running.Image;
         }
         state.facts.preflight.seeds = structuredClone(state.seeds);
-        if (!state.claim) state.claim = await claimStore.claimRefreshAttempt(plan.revision);
         return;
       }
       tick(PHASE_REPORT_STAGE[phase] ?? phase);
@@ -776,12 +810,12 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
         const postMigration = projectSanitizedFacts(state.facts.postMigration, { routeContract: "observed" });
         if (!factsEqual(preflight.routes, postMigration.routes)) fail("evidence pre-cutover route observations changed");
         if (!state.acceptance) fail("accepted v1.1 result is absent");
-        const evidence = { format: LOCAL_DELIVERY_FORMAT, version: LOCAL_DELIVERY_VERSION, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, attemptClaim: { authority: LOCAL_DELIVERY_ATTEMPT_AUTHORITY, evidencePath: LOCAL_DELIVERY_EVIDENCE_PATH, implementationRevision: plan.revision, sha256: state.claim.sha256 }, acceptance: { ...state.acceptance.record, sha256: state.acceptance.sha256 }, oldImages: state.oldImages, seeds: state.seeds, targets: targetEvidence, stages: { preflight, postMigration, postCutover: projectSanitizedFacts(state.facts.postCutover, { routeContract: "final" }) }, releaseState: "BLOCKED" };
-        await publishEvidence(evidenceFs, evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, randomEvidenceHex); return;
+        const evidence = { format: LOCAL_DELIVERY_FORMAT, version: LOCAL_DELIVERY_VERSION, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, attemptClaim: { authority: state.authority.authority, evidencePath: state.authority.evidencePath, implementationRevision: plan.revision, sha256: state.claim.sha256 }, acceptance: { ...state.acceptance.record, sha256: state.acceptance.sha256 }, oldImages: state.oldImages, seeds: state.seeds, targets: targetEvidence, stages: { preflight, postMigration, postCutover: projectSanitizedFacts(state.facts.postCutover, { routeContract: "final" }) }, releaseState: "BLOCKED" };
+        await publishEvidence(evidenceFs, currentEvidencePath(), `${JSON.stringify(evidence, null, 2)}\n`, randomEvidenceHex); return;
       }
       if (phase === "rollback-api-web") {
         if (!state.cutover) return;
-        state.allowSuccessorReceiptStatus = true;
+        state.allowReceiptStatus = true;
         const cleanupErrors = [];
         let runtimeRollbackError;
         try {
@@ -877,7 +911,7 @@ function assertProjectionSchema(value, label, { routeContract = "final" } = {}) 
   exactKeys(value.topology, ["containersHealthy", "fixedPortsExact", "portOwnerExact", "project", "servicesExact"], `${label} topology`);
   if (value.releaseState !== "BLOCKED" || value.topology.project !== PROJECT || [value.topology.containersHealthy, value.topology.fixedPortsExact, value.topology.portOwnerExact, value.topology.servicesExact].some((item) => item !== true)) fail(`${label} authority is not exact`);
 }
-function assertEvidenceSchema(evidence) {
+function assertEvidenceSchema(evidence, expectedAuthority = deliveryAuthorityForRevision(evidence?.implementationRevision)) {
   exactKeys(evidence, EVIDENCE_KEYS, "evidence");
   if (evidence.format !== LOCAL_DELIVERY_FORMAT || evidence.version !== LOCAL_DELIVERY_VERSION || evidence.releaseState !== "BLOCKED" || !validRevision(evidence.implementationRevision) || !validDigest(evidence.lockfileSha256)) fail("evidence is not a strict blocked v1.1 local delivery record");
   exactKeys(evidence.attemptClaim, ["authority", "evidencePath", "implementationRevision", "sha256"], "evidence claim");
@@ -889,7 +923,7 @@ function assertEvidenceSchema(evidence) {
   exactKeys(evidence.seeds, ["api", "web"], "evidence seeds");
   exactKeys(evidence.targets, ["api", "web"], "evidence targets");
   exactKeys(evidence.stages, ["postCutover", "postMigration", "preflight"], "evidence stages");
-  if (evidence.attemptClaim.authority !== LOCAL_DELIVERY_ATTEMPT_AUTHORITY || evidence.attemptClaim.evidencePath !== LOCAL_DELIVERY_EVIDENCE_PATH
+  if (evidence.attemptClaim.authority !== expectedAuthority.authority || evidence.attemptClaim.evidencePath !== expectedAuthority.evidencePath
     || evidence.attemptClaim.implementationRevision !== evidence.implementationRevision || !validDigest(evidence.attemptClaim.sha256)
     || !Object.values(evidence.oldImages).every(validImageId)) fail("evidence immutable identity is invalid");
   for (const app of ["api", "web"]) { exactKeys(evidence.seeds[app], ["inspectedId", "reference"], `evidence ${app} seed`); if (!validImageId(evidence.seeds[app].inspectedId) || typeof evidence.seeds[app].reference !== "string") fail(`evidence ${app} seed is invalid`); }
@@ -925,23 +959,39 @@ function assertEvidenceSchema(evidence) {
 
 export async function verifyRawRefreshEvidence(path, { claimStore, fs, runArgv, fetch, root } = {}) {
   if (!claimStore || !fs || typeof runArgv !== "function" || typeof fetch !== "function" || typeof root !== "string") fail("raw evidence verification boundaries are incomplete");
-  if (resolve(path) !== resolve(root, LOCAL_DELIVERY_EVIDENCE_PATH)) fail("raw evidence verification accepts only the successor receipt authority");
+  const repositoryPath = relative(resolve(root), resolve(path));
+  const revision = parseRevisionAddressedEvidencePath(repositoryPath);
+  const authority = deliveryAuthorityForRevision(revision);
+  if (resolve(path) !== resolve(root, authority.evidencePath)) fail("raw evidence verification accepts only exact revision-addressed receipt authority");
   const before = await fs.readFile(path, "utf8");
-  const evidence = parseJson(before, "evidence"); assertEvidenceSchema(evidence);
+  const evidence = parseJson(before, "evidence"); assertEvidenceSchema(evidence, authority);
+  if (evidence.implementationRevision !== revision) fail("evidence filename SHA and implementation revision mismatch");
   const claim = await claimStore.assertPresent(evidence.implementationRevision);
-  if (claim.authority !== LOCAL_DELIVERY_ATTEMPT_AUTHORITY || claim.evidencePath !== LOCAL_DELIVERY_EVIDENCE_PATH
+  if (claim.authority !== authority.authority || claim.evidencePath !== authority.evidencePath
     || claim.sha256 !== evidence.attemptClaim.sha256) fail("evidence attempt claim authority or digest mismatch");
   const run = async (command, args, options = {}) => { assertAllowedRefreshCommand(command, args, options); return runArgv(command, args, options); };
   let verifiedGit;
   {
     const status = cleanOutput(await run("git", ["status", "--porcelain"])); const ref = cleanOutput(await run("git", ["symbolic-ref", "--quiet", "HEAD"])); const head = cleanOutput(await run("git", ["rev-parse", "HEAD"]));
-    const receiptOnlyStatus = status === `?? ${LOCAL_DELIVERY_EVIDENCE_PATH}`;
+    const receiptOnlyStatus = status === `?? ${authority.evidencePath}`;
     if (status && !receiptOnlyStatus || !validBranchRef(ref) || !validRevision(head)) fail("verification Git worktree is not a receipt-only branch-qualified revision");
     if (head !== evidence.implementationRevision) {
       if (status) fail("later evidence verification requires a clean worktree");
       await run("git", ["merge-base", "--is-ancestor", evidence.implementationRevision, head]);
       const changed = cleanOutput(await run("git", ["diff", "--name-only", `${evidence.implementationRevision}..${head}`, "--"])).split("\n").filter(Boolean);
-      const allowed = new Set([LOCAL_DELIVERY_EVIDENCE_PATH, ".planning/phases/08-reliable-local-delivery/08-01-SUMMARY.md", ".planning/phases/08-reliable-local-delivery/08-02-SUMMARY.md", ".planning/phases/08-reliable-local-delivery/08-03-SUMMARY.md"]);
+      const allowed = new Set([
+        authority.evidencePath,
+        ".planning/phases/08-reliable-local-delivery/08-04-SUMMARY.md",
+        ".planning/phases/08-reliable-local-delivery/08-05-SUMMARY.md",
+        ".planning/phases/08-reliable-local-delivery/08-06-SUMMARY.md",
+        ".planning/phases/08-reliable-local-delivery/08-07-SUMMARY.md",
+        ".planning/phases/08-reliable-local-delivery/08-08-SUMMARY.md",
+        ".planning/phases/08-reliable-local-delivery/08-09-SUMMARY.md",
+        ".planning/phases/08-reliable-local-delivery/08-VERIFICATION.md",
+        ".planning/ROADMAP.md",
+        ".planning/STATE.md",
+        ".planning/REQUIREMENTS.md",
+      ]);
       if (changed.some((item) => !allowed.has(item))) fail("intervening Git paths exceed the evidence/docs-only allowlist");
     }
     const committedLock = (await run("git", ["show", `${evidence.implementationRevision}:pnpm-lock.yaml`])).stdout;
@@ -985,8 +1035,10 @@ const PHASE_REPORT_STAGE = Object.freeze({
 export async function runRefreshCliBoundary({ argv, resolveRevision, attemptStore, adapterFactory, output, readLockfile, materializePlan, executeRefresh, verifyEvidence, probeOffline, stageBoundary = () => undefined }) {
   const evidenceOption = argv.find((item) => item.startsWith("--verify-evidence="));
   if (evidenceOption) {
-    if (argv.length !== 1 || evidenceOption !== `--verify-evidence=${LOCAL_DELIVERY_EVIDENCE_PATH}`) fail("evidence verification accepts only the fixed evidence path");
-    await verifyEvidence(); output.write("LOCAL REFRESH EVIDENCE VERIFIED; RELEASE BLOCKED\n"); return { releaseState: "BLOCKED" };
+    const evidencePath = evidenceOption.slice("--verify-evidence=".length);
+    if (argv.length !== 1 || argv[0] !== evidenceOption) fail("evidence verification accepts one exact revision-addressed evidence path");
+    parseRevisionAddressedEvidencePath(evidencePath);
+    await verifyEvidence(evidencePath); output.write("LOCAL REFRESH EVIDENCE VERIFIED; RELEASE BLOCKED\n"); return { releaseState: "BLOCKED" };
   }
   if (argv.includes("--probe-offline-builds")) {
     if (argv.length !== 1 || argv[0] !== "--probe-offline-builds") fail("offline probe option is not exact");
@@ -1047,7 +1099,7 @@ export async function runRefreshCliBoundary({ argv, resolveRevision, attemptStor
     refreshCompleted = true;
     failureStage = "evidence_verification"; report(failureStage, "start");
     stageBoundary(failureStage);
-    const evidence = await verifyEvidence();
+    const evidence = await verifyEvidence(revision);
     report(failureStage, "complete");
     failureStage = "final_output"; report(failureStage, "start");
     stageBoundary(failureStage);
@@ -1058,7 +1110,7 @@ export async function runRefreshCliBoundary({ argv, resolveRevision, attemptStor
       `READING ${evidence.stages.postCutover.reading.state}`,
       `VISIBLE search=${evidence.stages.postCutover.routes["/search"].status} reading=${evidence.stages.postCutover.reading.state}`,
       `ACCEPTANCE phase6=${evidence.acceptance.phase6Data.counts.passed} phase7=${evidence.acceptance.phase7Browser.counts.passed} total=${evidence.acceptance.counts.passed}`,
-      `EVIDENCE ${LOCAL_DELIVERY_EVIDENCE_PATH}`,
+      `EVIDENCE ${evidence.attemptClaim.evidencePath}`,
       "RELEASE BLOCKED",
       formatRefreshStageProgress(failureStage, "complete").trimEnd(),
       "",
@@ -1107,4 +1159,4 @@ export async function runRefreshCliBoundary({ argv, resolveRevision, attemptStor
   }
 }
 
-export { CLAIM_ROOT, HISTORICAL_CLAIM_ROOT, nativeFs };
+export { HISTORICAL_CLAIM_ROOT, HISTORICAL_SUCCESSOR_2_CLAIM_ROOT, nativeFs };

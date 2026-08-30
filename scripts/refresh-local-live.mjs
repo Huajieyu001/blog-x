@@ -3,8 +3,7 @@ import { randomBytes } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  CLAIM_ROOT,
-  LOCAL_DELIVERY_EVIDENCE_PATH,
+  LOCAL_DELIVERY_CLAIM_ROOT,
   assertAllowedRefreshArgv,
   assertAllowedRefreshCommand,
   assertLocalDockerAuthority,
@@ -12,8 +11,10 @@ import {
   buildMinimalChildEnvironment,
   createRawRefreshRuntime,
   createRefreshAttemptStore,
+  deliveryAuthorityForRevision,
   inspectRefreshAttemptClaimWithStore,
   nativeFs,
+  parseRevisionAddressedEvidencePath,
   verifyRawRefreshEvidence,
 } from "./refresh-local-runtime-core.mjs";
 
@@ -45,8 +46,10 @@ export function createProductionLiveRefreshAdapter(...args) {
 }
 
 export function verifyProductionLiveRefreshEvidence(...args) {
-  if (args.length) fail("sealed production evidence verifier accepts no arguments or overrides");
-  return verifyRawRefreshEvidence(resolve(productionRoot, LOCAL_DELIVERY_EVIDENCE_PATH), { claimStore: createProductionRefreshAttemptStore(), fs: nativeFs, runArgv: nativeProductionRun, fetch: globalThis.fetch, root: productionRoot });
+  if (args.length !== 1 || typeof args[0] !== "string") fail("sealed production evidence verifier accepts one revision or strict revision-addressed path");
+  const revision = /^[a-f0-9]{40}$/.test(args[0]) ? args[0] : parseRevisionAddressedEvidencePath(args[0]);
+  const authority = deliveryAuthorityForRevision(revision);
+  return verifyRawRefreshEvidence(resolve(productionRoot, authority.evidencePath), { claimStore: createProductionRefreshAttemptStore(), fs: nativeFs, runArgv: nativeProductionRun, fetch: globalThis.fetch, root: productionRoot });
 }
 
 export function inspectRefreshAttemptClaim(revision, ...args) {
@@ -55,8 +58,7 @@ export function inspectRefreshAttemptClaim(revision, ...args) {
 }
 
 export {
-  CLAIM_ROOT,
-  LOCAL_DELIVERY_EVIDENCE_PATH,
+  LOCAL_DELIVERY_CLAIM_ROOT,
   assertAllowedRefreshArgv,
   assertAllowedRefreshCommand,
   assertLocalDockerAuthority,
