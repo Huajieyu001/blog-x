@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { copyFile, cp, lstat, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { createServer } from "node:net";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { installCooperativeShutdown } from "./local-delivery-child-tree.mjs";
+import { PACKAGE_TEST_INVENTORY } from "./test-inventory.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const children = [];
@@ -16,6 +18,79 @@ let signalCleanupPromise;
 
 export const PHASE7_BROWSER_RESULT_FORMAT = "blog-x-phase7-browser-result";
 const PHASE7_BROWSER_RESULT_PREFIX = "BLOG X PHASE7 BROWSER RESULT ";
+
+function hashText(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+export function phase7BrowserSelection() {
+  const inventory = PACKAGE_TEST_INVENTORY
+    .filter((entry) => entry.scope === "integration" && entry.fixtureOwner === "phase7-browser")
+    .map((entry) => entry.path)
+    .sort();
+  if (inventory.length !== 1 || new Set(inventory).size !== 1 || inventory[0] !== "apps/web/e2e/public-discovery.spec.ts") {
+    throw new Error("Phase 7 manifest ownership is not exactly one path");
+  }
+  return Object.freeze({
+    inventory: Object.freeze(inventory),
+    manifestSha256: hashText(JSON.stringify(PACKAGE_TEST_INVENTORY)),
+  });
+}
+
+function exactPassOnlyCounts(counts) {
+  if (!counts || typeof counts !== "object" || Array.isArray(counts)
+    || Object.keys(counts).sort().join(",") !== "cancelled,failed,passed,skipped,tests,todo") {
+    throw new Error("Phase 7 counts are incomplete");
+  }
+  for (const key of ["tests", "passed", "failed", "cancelled", "skipped", "todo"]) {
+    if (!Number.isSafeInteger(counts[key]) || counts[key] < 0) throw new Error("Phase 7 counts are invalid");
+  }
+  if (!counts.tests || counts.tests !== counts.passed + counts.failed + counts.cancelled + counts.skipped + counts.todo
+    || counts.failed || counts.cancelled || counts.skipped || counts.todo || counts.passed !== counts.tests) {
+    throw new Error("Phase 7 counts must be nonzero and pass-only");
+  }
+  return { ...counts };
+}
+
+function exactCleanup(cleanup) {
+  if (!cleanup || typeof cleanup !== "object" || Array.isArray(cleanup)
+    || Object.keys(cleanup).sort().join(",") !== "childrenAbsent,originsAbsent,webRootAbsent"
+    || cleanup.childrenAbsent !== true || cleanup.originsAbsent !== true || cleanup.webRootAbsent !== true) {
+    throw new Error("Phase 7 cleanup acknowledgement is incomplete");
+  }
+  return { ...cleanup };
+}
+
+export function createPhase7BrowserResult({ inventory, counts, cleanup }) {
+  const selection = phase7BrowserSelection();
+  if (!Array.isArray(inventory) || inventory.length !== selection.inventory.length
+    || inventory.some((path, index) => path !== selection.inventory[index])) {
+    throw new Error("Phase 7 result inventory is not exact");
+  }
+  const body = {
+    format: PHASE7_BROWSER_RESULT_FORMAT,
+    version: 2,
+    manifestSha256: selection.manifestSha256,
+    inventory: [...selection.inventory],
+    counts: exactPassOnlyCounts(counts),
+    cleanup: exactCleanup(cleanup),
+    releaseState: "BLOCKED",
+  };
+  return { ...body, resultSha256: hashText(JSON.stringify(body)) };
+}
+
+export function validatePhase7BrowserResult(record) {
+  if (!record || typeof record !== "object" || Array.isArray(record)
+    || Object.keys(record).sort().join(",") !== "cleanup,counts,format,inventory,manifestSha256,releaseState,resultSha256,version") {
+    throw new Error("Phase 7 result schema is invalid");
+  }
+  const canonical = createPhase7BrowserResult({ inventory: record.inventory, counts: record.counts, cleanup: record.cleanup });
+  if (record.format !== canonical.format || record.version !== canonical.version || record.manifestSha256 !== canonical.manifestSha256
+    || record.releaseState !== canonical.releaseState || record.resultSha256 !== canonical.resultSha256) {
+    throw new Error("Phase 7 result digest or manifest drifted");
+  }
+  return canonical;
+}
 
 async function createIsolatedWebRoot(forceSetupFailure = false) {
   const source = resolve(root, "apps/web");
@@ -213,26 +288,20 @@ async function runPlaywright(args, env, timeoutMs = playwrightTimeoutMs) {
 }
 
 function parseOptions(argv) {
-  const options = { forceFailure: false, forceSetupFailure: false, forceSetupWait: false, forceTimeout: false, grep: undefined };
+  const options = { forceFailure: false, forceSetupFailure: false, forceSetupWait: false, forceTimeout: false };
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
     if (value === "--force-failure") options.forceFailure = true;
     else if (value === "--force-setup-failure") options.forceSetupFailure = true;
     else if (value === "--force-setup-wait") options.forceSetupWait = true;
     else if (value === "--force-timeout") options.forceTimeout = true;
-    else if (value === "--grep" && options.grep === undefined) {
-      options.grep = argv[index + 1];
-      if (!options.grep) throw new Error("--grep requires a value");
-      index += 1;
-    } else throw new Error(`unsupported Phase 7 runner argument: ${value}`);
+    else throw new Error(`unsupported Phase 7 runner argument: ${value}`);
   }
   return options;
 }
 
-function playwrightArgs(grep) {
-  const args = ["pnpm", "exec", "playwright", "test", "apps/web/e2e/public-discovery.spec.ts", "--workers=1"];
-  if (grep) args.push("--grep", grep);
-  return args;
+function playwrightArgs() {
+  return ["pnpm", "exec", "playwright", "test", phase7BrowserSelection().inventory[0], "--workers=1"];
 }
 
 async function expectHttpClosed(url) {
@@ -269,6 +338,8 @@ async function main() {
   let isolatedWebRoot;
   let fixtureOrigin;
   let webOrigin;
+  let counts;
+  let cleanup;
   try {
     isolatedWebRoot = await createIsolatedWebRoot(options.forceSetupFailure);
     process.stdout.write(`[phase7-browser] AUTHORITY WEB_ROOT ${isolatedWebRoot}\n`);
@@ -291,14 +362,11 @@ async function main() {
       ["apps/web/node_modules/next/dist/bin/next", "dev", isolatedWebRoot, "-p", String(webPort)], webEnv);
     await waitForHttp(webOrigin);
     if (options.forceFailure) throw new Error("forced failure after local children became healthy");
-    const counts = await runPlaywright(playwrightArgs(options.grep), {
+    counts = await runPlaywright(playwrightArgs(), {
       ...process.env,
       E2E_WEB_ORIGIN: webOrigin,
       E2E_DISCOVERY_FIXTURE_ORIGIN: fixtureOrigin,
     }, options.forceTimeout ? forcedPlaywrightTimeoutMs : playwrightTimeoutMs);
-    const record = { format: PHASE7_BROWSER_RESULT_FORMAT, version: 1, counts, releaseState: "BLOCKED" };
-    process.stdout.write(`${PHASE7_BROWSER_RESULT_PREFIX}${JSON.stringify(record)}\n`);
-    process.stdout.write("[phase7-browser] PASS\n");
   } finally {
     await signalCleanupPromise;
     await stopExactChildren();
@@ -319,9 +387,13 @@ async function main() {
         releaseState: "BLOCKED",
       };
       process.stdout.write(`BLOG X PHASE7 CLEANUP ACK ${JSON.stringify(record)}\n`);
+      cleanup = { childrenAbsent: true, originsAbsent: true, webRootAbsent: true };
     }
     process.stdout.write("[phase7-browser] CLEANUP PASS\n");
   }
+  const result = createPhase7BrowserResult({ inventory: phase7BrowserSelection().inventory, counts, cleanup });
+  process.stdout.write(`${PHASE7_BROWSER_RESULT_PREFIX}${JSON.stringify(result)}\n`);
+  process.stdout.write("[phase7-browser] PASS; RELEASE BLOCKED\n");
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
