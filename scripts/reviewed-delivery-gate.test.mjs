@@ -108,9 +108,12 @@ test("committed review assertion requires strict clean GSD report with zero find
     const bad = fixture(); bad.entries.get(COMMITTED_REVIEW_V2_PATH).bytes = bytes;
     await assert.rejects(bad.runtime.execute(["--assert-committed-review-clean"], {}), /review|clean|finding|format/i);
   }
-  assert.equal(REVIEWED_DELIVERY_V2_FILES.length, 26);
-  assert.equal(new Set(REVIEWED_DELIVERY_V2_FILES).size, 26);
-  assert.deepEqual(REVIEWED_DELIVERY_V2_FILES.filter((path) => !REVIEWED_DELIVERY_FILES.includes(path)), ["scripts/local-delivery-child-tree.mjs"]);
+  assert.equal(REVIEWED_DELIVERY_V2_FILES.length, 27);
+  assert.equal(new Set(REVIEWED_DELIVERY_V2_FILES).size, 27);
+  assert.deepEqual(REVIEWED_DELIVERY_V2_FILES.filter((path) => !REVIEWED_DELIVERY_FILES.includes(path)), [
+    "apps/web/app/admin/_components/ArticleEditor.tsx",
+    "scripts/local-delivery-child-tree.mjs",
+  ]);
   for (const files of [REVIEWED_DELIVERY_V2_FILES.slice(1), [...REVIEWED_DELIVERY_V2_FILES, "scripts/alias.mjs"], [...REVIEWED_DELIVERY_V2_FILES].reverse(), [...REVIEWED_DELIVERY_V2_FILES.slice(0, -1), REVIEWED_DELIVERY_V2_FILES[0]]]) {
     const bad = fixture(); bad.entries.get(COMMITTED_REVIEW_V2_PATH).bytes = review(REVISION, { files });
     await assert.rejects(bad.runtime.execute(["--assert-committed-review-clean"], {}), /scope|file|standard/i);

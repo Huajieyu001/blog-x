@@ -50,6 +50,7 @@ export const REVIEWED_DELIVERY_FILES = Object.freeze([
 ]);
 export const REVIEWED_DELIVERY_V2_FILES = Object.freeze([
   "apps/api/package.json",
+  "apps/web/app/admin/_components/ArticleEditor.tsx",
   "apps/web/e2e/article-lifecycle.spec.ts",
   "apps/web/e2e/auth-session.spec.ts",
   "apps/web/e2e/draft-preview.spec.ts",
