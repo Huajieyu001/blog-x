@@ -77,6 +77,7 @@ export default function PublicHeader() {
             {link.label}
           </Link>
         ))}
+        <a href="/rss.xml" type="application/rss+xml" tabIndex={compact && !open ? -1 : undefined}>订阅</a>
         <SearchForm tabIndex={compact && !open ? -1 : undefined} />
         <Link className={styles.managementLink} href="/admin" tabIndex={compact && !open ? -1 : undefined}>管理</Link>
       </nav>
