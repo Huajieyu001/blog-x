@@ -36,7 +36,7 @@ import {
   validateTopologyPolicy,
 } from "./local-verify.mjs";
 import { INTEGRATION_TEST_FILES, PACKAGE_TEST_INVENTORY } from "./test-inventory.mjs";
-import { assertPlaywrightResult, PHASE7_BROWSER_RESULT_FORMAT } from "./phase7-browser-verify.mjs";
+import { assertPlaywrightResult, createPhase7BrowserResult, phase7BrowserSelection, PHASE7_BROWSER_RESULT_FORMAT } from "./phase7-browser-verify.mjs";
 
 const migratedMainBrowserSpecs = [
   "apps/web/e2e/article-lifecycle.spec.ts",
@@ -419,6 +419,15 @@ test("Phase 8 Phase 7 parser is import-safe and returns exact pass-only counts",
     "Running 3 tests using 1 worker\n  2 passed\n  1 failed",
     "Running 3 tests using 1 worker\n  2 passed",
   ]) assert.throws(() => assertPlaywrightResult(output), /zero|non-pass|mismatch|incomplete/i);
+  const counts = assertPlaywrightResult("Running 3 tests using 1 worker\n  3 passed");
+  const result = createPhase7BrowserResult({
+    inventory: phase7BrowserSelection().inventory,
+    counts,
+    cleanup: { childrenAbsent: true, originsAbsent: true, webRootAbsent: true },
+  });
+  assert.deepEqual(result.inventory, ["apps/web/e2e/public-discovery.spec.ts"]);
+  assert.equal(result.version, 2);
+  assert.match(result.resultSha256, /^[a-f0-9]{64}$/);
 });
 
 test("a replacement passed audit rejects body/frontmatter receipt revision disagreement", async () => {
