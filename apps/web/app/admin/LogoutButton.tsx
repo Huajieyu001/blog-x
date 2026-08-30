@@ -3,6 +3,7 @@
 import { logoutResponseSchema } from "@blog-x/contracts";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { clearEditorRecoverySnapshots, getEditorRecoveryStorage } from "./_components/article-editor-recovery";
 
 export default function LogoutButton() {
   const router = useRouter();
@@ -14,6 +15,8 @@ export default function LogoutButton() {
       const response = await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
       if (response.ok) logoutResponseSchema.safeParse(await response.json());
     } finally {
+      const storage = getEditorRecoveryStorage();
+      if (storage) clearEditorRecoverySnapshots(storage);
       router.replace("/login");
       router.refresh();
       setPending(false);

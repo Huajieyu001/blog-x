@@ -53,8 +53,17 @@ test("login, refresh, expiry, logout, and revoked-token reuse stay server-author
   await expect(page).toHaveURL(`${webOrigin}/admin`);
   const revocableCookie = (await context.cookies(webOrigin)).find((cookie) => cookie.name === "blog_x_session");
   expect(revocableCookie).toBeTruthy();
+  await page.evaluate(() => {
+    sessionStorage.setItem("blog-x:editor-recovery:v1:new", "recovery-content");
+    sessionStorage.setItem("unrelated-session-key", "preserved");
+  });
   await page.getByRole("button", { name: "退出登录" }).click();
   await expect(page).toHaveURL(`${webOrigin}/login`);
+  const logoutStorage = await page.evaluate(() => ({
+    recovery: sessionStorage.getItem("blog-x:editor-recovery:v1:new"),
+    unrelated: sessionStorage.getItem("unrelated-session-key"),
+  }));
+  expect(logoutStorage).toEqual({ recovery: null, unrelated: "preserved" });
 
   const denied = await context.request.post(`${webOrigin}/api/articles/publish`, {
     headers: { origin: webOrigin },

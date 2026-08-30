@@ -21,6 +21,18 @@ test("administrator saves, reopens, and responsively previews a complete Markdow
 
   await page.goto(`${webOrigin}/admin/new`);
   await expect(page.getByRole("heading", { name: "新建草稿" })).toBeVisible();
+  await page.getByLabel("标题").fill("刷新前的未完成标题");
+  await page.getByLabel("Markdown").fill("# 刷新前的未完成正文");
+  await expect(page.getByRole("status", { name: "恢复副本状态" })).toHaveText("未保存的更改已保存到本机恢复副本");
+  await page.reload();
+  const recovery = page.getByTestId("editor-recovery-notice");
+  await expect(recovery.getByRole("heading", { name: "发现未保存的内容" })).toBeVisible();
+  await expect(page.getByLabel("标题")).toHaveValue("");
+  await recovery.getByRole("button", { name: "恢复内容" }).click();
+  await expect(page.getByLabel("标题")).toHaveValue("刷新前的未完成标题");
+  await expect(page.getByLabel("Markdown")).toHaveValue("# 刷新前的未完成正文");
+  await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("已恢复未保存的内容，请确认后手动保存");
+
   await page.getByLabel("标题").fill("你好 TypeScript Café");
   await expect(page.getByLabel("Slug")).toHaveValue("你好-typescript-café");
   await page.getByLabel("Slug").fill(`manual-draft-${runId}`);
@@ -49,6 +61,28 @@ test("administrator saves, reopens, and responsively previews a complete Markdow
   await expect(page.getByLabel("发布时间")).toHaveValue("2026-08-07T16:30");
   await expect(page.getByLabel("SEO 描述")).toHaveValue("完整元数据 SEO 描述");
 
+  let releaseSave!: () => void;
+  let markSaveIntercepted!: () => void;
+  const saveGate = new Promise<void>((resolve) => { releaseSave = resolve; });
+  const saveIntercepted = new Promise<void>((resolve) => { markSaveIntercepted = resolve; });
+  await page.route("**/api/admin/posts/*", async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.continue();
+      return;
+    }
+    markSaveIntercepted();
+    await saveGate;
+    await route.continue();
+  });
+  await page.getByLabel("标题").fill("提交请求中的标题");
+  await page.getByRole("button", { name: "保存更改" }).click();
+  await saveIntercepted;
+  await page.getByLabel("标题").fill("请求期间继续输入的标题");
+  releaseSave();
+  await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("提交时的内容已保存；之后的编辑仍保留");
+  await expect(page.getByLabel("标题")).toHaveValue("请求期间继续输入的标题");
+  await page.unroute("**/api/admin/posts/*");
+
   await page.route("**/api/admin/posts/preview", async (route) => {
     const submitted = route.request().postDataJSON() as { markdown: string };
     if (submitted.markdown.includes("较慢的旧预览")) await new Promise((resolve) => setTimeout(resolve, 700));
@@ -70,13 +104,40 @@ test("administrator saves, reopens, and responsively previews a complete Markdow
   await expect(page.getByRole("button", { name: "预览" })).toBeVisible();
   const unsavedMarkdown = "# 尚未保存但不能丢失";
   await page.getByLabel("Markdown").fill(unsavedMarkdown);
+  await expect(page.getByRole("status", { name: "恢复副本状态" })).toHaveText("未保存的更改已保存到本机恢复副本");
   await page.getByRole("button", { name: "预览" }).click();
   await expect(page.getByTestId("markdown-preview").getByRole("heading", { name: "尚未保存但不能丢失" })).toBeVisible();
   await expect(page.getByTestId("editor-source")).toBeHidden();
   await page.getByRole("button", { name: "编辑" }).click();
   await expect(page.getByLabel("Markdown")).toHaveValue(unsavedMarkdown);
+  await page.reload();
+  await expect(page.getByTestId("editor-recovery-notice")).toBeVisible();
+  await page.getByTestId("editor-recovery-notice").getByRole("button", { name: "恢复内容" }).click();
+  await expect(page.getByLabel("Markdown")).toHaveValue(unsavedMarkdown);
   await page.getByLabel("标题").fill("");
   await page.getByRole("button", { name: "保存更改" }).click();
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("请修正标记的字段");
   await expect(page.getByLabel("Markdown")).toHaveValue(unsavedMarkdown);
+});
+
+test("manual draft saving remains available when browser recovery storage is blocked", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "sessionStorage", {
+      configurable: true,
+      get() { throw new DOMException("blocked", "SecurityError"); },
+    });
+  });
+  await page.goto(`${webOrigin}/login`);
+  await page.getByLabel("用户名").fill(username);
+  await page.getByLabel("密码").fill(password);
+  await page.getByRole("button", { name: "登录" }).click();
+  await expect(page).toHaveURL(`${webOrigin}/admin`);
+  await page.goto(`${webOrigin}/admin/new`);
+  await expect(page.getByRole("status", { name: "恢复副本状态" })).toHaveText("浏览器存储不可用；请及时手动保存");
+  await page.getByLabel("标题").fill("无恢复存储仍可保存");
+  await page.getByLabel("Slug").fill(`storage-blocked-${runId}`);
+  await page.getByLabel("Markdown").fill("# 手动保存仍然有效");
+  await page.getByRole("button", { name: "保存草稿" }).click();
+  await expect(page).toHaveURL(/\/admin\/posts\/[0-9a-f-]+$/);
+  await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("草稿已保存");
 });
