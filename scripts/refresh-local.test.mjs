@@ -419,7 +419,7 @@ test("successful refresh writes sanitized evidence only after route and BLOCKED 
 test("evidence verification is read-only and refuses malformed or non-BLOCKED records", async () => {
   const fs = memoryArtifactFs();
   const path = `/virtual-workspace/${TEST_EVIDENCE_PATH}`;
-  fs.entries.set(path, { kind: "file", bytes: JSON.stringify({ format: "blog-x-v1.1-local-delivery-evidence", version: 1, implementationRevision: "short", lockfileSha256: "b".repeat(64), releaseState: "READY" }), uid: 501, mode: 0o600 });
+  fs.entries.set(path, { kind: "file", bytes: JSON.stringify({ format: "blog-x-v1.1-local-delivery-evidence", version: 1, implementationRevision: "short", lockfileSha256: "b".repeat(64), releaseState: "READY" }), uid: TEST_UID, mode: 0o600 });
   const before = await fs.readFile(path);
   await assert.rejects(testRuntime(fs).verifyEvidence(path), /evidence/i);
   assert.equal(await fs.readFile(path), before);
@@ -481,7 +481,7 @@ test("successor delivery authority preserves the committed v1.1 receipt as immut
   assert.equal(historical.releaseState, "BLOCKED");
   assert.equal(Object.hasOwn(historical.attemptClaim, "authority"), false);
   const fs = memoryArtifactFs();
-  fs.entries.set(`/virtual-workspace/${HISTORICAL_LOCAL_DELIVERY_EVIDENCE_PATH}`, { kind: "file", bytes: historicalBytes, uid: 501, mode: 0o600 });
+  fs.entries.set(`/virtual-workspace/${HISTORICAL_LOCAL_DELIVERY_EVIDENCE_PATH}`, { kind: "file", bytes: historicalBytes, uid: TEST_UID, mode: 0o600 });
   await assert.rejects(testRuntime(fs).verifyEvidence(`/virtual-workspace/${HISTORICAL_LOCAL_DELIVERY_EVIDENCE_PATH}`), /revision-addressed|evidence path/i);
 });
 
@@ -1103,7 +1103,7 @@ test("two successive clean revisions publish distinct verified receipts and pres
 
   const foreignRevision = "c".repeat(40);
   const foreignPath = `/virtual-workspace/${deliveryAuthorityForRevision(foreignRevision).evidencePath}`;
-  sharedFs.entries.set(foreignPath, { kind: "file", bytes: bytesB, uid: 501, mode: 0o600 });
+  sharedFs.entries.set(foreignPath, { kind: "file", bytes: bytesB, uid: TEST_UID, mode: 0o600 });
   await assert.rejects(second.runtime.verifyEvidence(foreignPath), /filename SHA|immutable identity|claim|revision|authority/i);
   assert.equal(await sharedFs.readFile(pathA), bytesA);
   assert.equal(await sharedFs.readFile(pathB), bytesB);
@@ -1388,7 +1388,7 @@ test("production factories are sealed while test core exposes raw boundaries but
 test("test core traces production Git and PostgreSQL sources from raw boundary output", async () => {
   const revision = "a".repeat(40); const calls = [];
   const fs = memoryArtifactFs();
-  fs.entries.set("/virtual-workspace/pnpm-lock.yaml", { kind: "file", bytes: "raw-lock\n", uid: 501, mode: 0o600 });
+  fs.entries.set("/virtual-workspace/pnpm-lock.yaml", { kind: "file", bytes: "raw-lock\n", uid: TEST_UID, mode: 0o600 });
   const runtime = (await import("./refresh-local-test-core.mjs")).createRefreshTestRuntime({
     fs, fetch: async () => { throw new Error("unused"); }, clock: () => "2026-08-16T00:00:00.000Z", randomHex: () => "1".repeat(24),
     async processBoundary(command, args) {

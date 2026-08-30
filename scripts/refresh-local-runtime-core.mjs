@@ -564,12 +564,12 @@ function validateTarget(image, target) {
   exactKeys(selectedLabels(image.Config?.Labels), REQUIRED_IMAGE_LABELS, `${target.application} target labels`);
   for (const [key, value] of Object.entries(expected)) if (image.Config.Labels[key] !== value) fail(`${target.application} target label ${key} is not exact`);
 }
-async function publishEvidence(fs, finalPath, bytes, randomHex) {
+async function publishEvidence(fs, finalPath, bytes, randomHex, identity) {
   const token = randomHex();
   if (!/^[a-f0-9]{16}$/.test(token)) fail("evidence temporary token is invalid");
   const parent = dirname(finalPath);
   const temp = resolve(parent, `.${basename(finalPath)}.${token}.tmp`);
-  const uid = process.getuid?.();
+  const uid = identity.uid;
   const entry = async (path) => { try { return await fs.lstat(path); } catch (error) { if (isMissing(error)) return undefined; throw error; } };
   const assertDirectory = async () => {
     const item = await entry(parent);
@@ -623,9 +623,10 @@ async function publishEvidence(fs, finalPath, bytes, randomHex) {
   }
 }
 
-export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evidenceFs, randomEvidenceHex, ambientEnv, clock = () => undefined, enforceLocalAuthority = true } = {}) {
+export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evidenceFs, randomEvidenceHex, ambientEnv, clock = () => undefined, enforceLocalAuthority = true, identity = { uid: process.getuid?.() } } = {}) {
   if (typeof runArgv !== "function" || typeof fetch !== "function") fail("live adapter requires argv runner and loopback fetch");
   if (!claimStore || !evidenceFs || typeof root !== "string" || typeof randomEvidenceHex !== "function") fail("live adapter raw boundaries are incomplete");
+  if (!Number.isSafeInteger(identity?.uid) || identity.uid < 0) fail("live adapter filesystem identity is invalid");
   const run = async (command, args, options = {}) => { assertAllowedRefreshCommand(command, args, options); return runArgv(command, args, options); };
   const tick = (stage) => { try { clock(stage); } catch (error) { error.refreshStage = stage; if (stage === "cutover-api-web") error.refreshBeforeMutation = true; throw error; } };
   const state = { facts: {}, claim: undefined, authority: undefined, acceptance: undefined, targets: {}, targetFacts: { api: null, web: null }, seeds: { api: null, web: null }, oldImages: {}, cutover: false, migrationOneoff: undefined, rollbackCleanupErrors: [], allowReceiptStatus: false, phase: "constructed" };
@@ -680,7 +681,7 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
     let item;
     try { item = await evidenceFs.lstat(evidencePath); }
     catch (error) { if (error?.code === "ENOENT") return; throw error; }
-    const uid = process.getuid?.();
+    const uid = identity.uid;
     if (!item?.isFile?.() || item.isSymbolicLink?.() || item.uid !== uid || mode(item) !== 0o600 || await evidenceFs.realpath(evidencePath) !== evidencePath) {
       fail("published evidence authority is unsafe to withdraw");
     }
@@ -814,7 +815,7 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
         if (!factsEqual(preflight.routes, postMigration.routes)) fail("evidence pre-cutover route observations changed");
         if (!state.acceptance) fail("accepted v1.1 result is absent");
         const evidence = { format: LOCAL_DELIVERY_FORMAT, version: LOCAL_DELIVERY_VERSION, implementationRevision: plan.revision, lockfileSha256: plan.lockSha256, attemptClaim: { authority: state.authority.authority, evidencePath: state.authority.evidencePath, implementationRevision: plan.revision, sha256: state.claim.sha256 }, acceptance: { ...state.acceptance.record, sha256: state.acceptance.sha256 }, oldImages: state.oldImages, seeds: state.seeds, targets: targetEvidence, stages: { preflight, postMigration, postCutover: projectSanitizedFacts(state.facts.postCutover, { routeContract: "final" }) }, releaseState: "BLOCKED" };
-        await publishEvidence(evidenceFs, currentEvidencePath(), `${JSON.stringify(evidence, null, 2)}\n`, randomEvidenceHex); return;
+        await publishEvidence(evidenceFs, currentEvidencePath(), `${JSON.stringify(evidence, null, 2)}\n`, randomEvidenceHex, identity); return;
       }
       if (phase === "rollback-api-web") {
         if (!state.cutover) return;
