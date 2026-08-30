@@ -701,6 +701,8 @@ async function cleanupCanonicalRuntimeAuthority(context) {
   await rm(target, { recursive: true, force: true });
   try { await lstat(target); throw new Error("canonical runtime authority remained after cleanup"); }
   catch (error) { if (error?.code !== "ENOENT") throw error; }
+  context.composeOverride = undefined;
+  context.canonicalRuntimeRoot = undefined;
 }
 
 async function runStep(context, label, commandName, args, options = {}) {

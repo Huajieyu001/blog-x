@@ -123,6 +123,7 @@ test("lifecycle probes attest zero manifest paths and cannot inflate package cou
   assert.match(lifecycle, /Promise\.allSettled\([\s\S]*runLifecycleChildWithRecovery[\s\S]*failures\.length/);
   assert.match(source, /async function convergeGeneratedProjectCleanup[\s\S]*attempt < 2[\s\S]*down[\s\S]*confirmGeneratedProjectAbsent/);
   assert.match(source, /canonicalIntegration && mainError[\s\S]*convergeAllocatedGeneratedAuthorities/);
+  assert.match(source, /cleanupCanonicalRuntimeAuthority[\s\S]*context\.composeOverride = undefined[\s\S]*context\.canonicalRuntimeRoot = undefined/);
 });
 
 test("legacy Web E2E specs require runner facts and own no infrastructure", async () => {
