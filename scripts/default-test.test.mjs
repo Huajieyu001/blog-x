@@ -5,7 +5,9 @@ import test from "node:test";
 
 import {
   DEFAULT_TEST_CHILDREN,
+  buildDefaultTestEnvironment,
   parseDefaultTapResult,
+  redactDefaultTestDiagnostic,
   runDefaultTests,
   validateDefaultTestChildResult,
 } from "./default-test.mjs";
@@ -71,6 +73,62 @@ test("child failure reports its layer and bounded redacted cause", () => {
       return true;
     },
   );
+});
+
+test("default children receive only the exact non-secret process environment", () => {
+  const databaseScheme = ["postgres", "ql"].join("");
+  const environment = buildDefaultTestEnvironment({
+    PATH: "/usr/bin:/bin",
+    HOME: "/Users/test",
+    TMPDIR: "/private/tmp",
+    LANG: "en_US.UTF-8",
+    LC_ALL: "C",
+    NODE_OPTIONS: "--inspect",
+    DATABASE_URL: `${databaseScheme}://user:database-secret@host/db`,
+    ADMIN_PASSWORD: "administrator-secret",
+    GH_TOKEN: "github-secret",
+    E2E_REVOKED_SESSION_TOKEN: "session-secret",
+    BLOG_X_API_IMAGE: "alternate-image",
+    DOCKER_HOST: "tcp://remote.example:2375",
+  });
+  assert.deepEqual(environment, {
+    PATH: "/usr/bin:/bin",
+    HOME: "/Users/test",
+    TMPDIR: "/private/tmp",
+    LANG: "en_US.UTF-8",
+    LC_ALL: "C",
+  });
+  assert.equal(Object.isFrozen(environment), true);
+});
+
+test("default diagnostics redact prefixed structured secrets before bounded reporting", () => {
+  const databaseScheme = ["postgres", "ql"].join("");
+  const pairs = [
+    ["ADMIN_PASSWORD=administrator-secret", "administrator-secret"],
+    ["E2E_REVOKED_SESSION_TOKEN: session-secret", "session-secret"],
+    ["GH_TOKEN='github-secret'", "github-secret"],
+    ['{"api_key":"json-secret"}', "json-secret"],
+    [`{"DATABASE_URL":"${databaseScheme}://user:database-secret@host/db"}`, "database-secret"],
+    ["Authorization: Bearer bearer-secret", "bearer-secret"],
+    ["Cookie: account=cookie-secret; preference=preference-secret", "cookie-secret"],
+    ["Set-Cookie: blog_x_session=session-cookie; HttpOnly", "session-cookie"],
+    ["redis://user:redis-secret@127.0.0.1:6379/0", "redis-secret"],
+  ];
+  for (const [diagnostic, secret] of pairs) {
+    const redacted = redactDefaultTestDiagnostic(diagnostic);
+    assert.doesNotMatch(redacted, new RegExp(secret));
+    assert.match(redacted, /\[REDACTED(?:_DATABASE_URL)?\]/);
+  }
+});
+
+test("default coordinator source uses one bounded detached child tree per layer", async () => {
+  const source = await readFile(new URL("./default-test.mjs", import.meta.url), "utf8");
+  assert.match(source, /runBoundedChildTree/);
+  assert.match(source, /childTimeoutMs\s*=\s*120_000/);
+  assert.match(source, /terminationGraceMs:\s*5_000/);
+  assert.match(source, /killGraceMs:\s*3_000/);
+  assert.match(source, /maximumOutputBytes:\s*maximumChildOutputBytes/);
+  assert.doesNotMatch(source, /env:\s*\{\s*\.\.\.process\.env/);
 });
 
 test("default coordinator rejects path arguments and authority-changing environment", () => {

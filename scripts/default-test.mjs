@@ -1,13 +1,15 @@
-import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { runBoundedChildTree } from "./local-delivery-child-tree.mjs";
 import { DEFAULT_TEST_FILES, assertCompleteTestInventory } from "./test-inventory.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = fileURLToPath(import.meta.url);
 const maximumChildOutputBytes = 4 * 1024 * 1024;
 const maximumDiagnosticBytes = 64 * 1024;
+const childTimeoutMs = 120_000;
+const secretKey = String.raw`(?:[A-Za-z0-9]+[_-])*(?:password|passwd|pwd|token|secret|api[_-]?key|auth(?:orization)?|cookie|set[_-]?cookie|database[_-]?url)(?:[_-][A-Za-z0-9]+)*`;
 
 const child = (id, files) => Object.freeze({
   id,
@@ -57,14 +59,37 @@ export function parseDefaultTapResult(output, label = "default child") {
   return { tests, passed, failed, cancelled, skipped, todo };
 }
 
-function redactDiagnostic(value) {
-  return String(value)
-    .replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "[REDACTED_DATABASE_URL]")
-    .replace(/(blog_x_session=)[^;\s]+/gi, "$1[REDACTED]");
+export function buildDefaultTestEnvironment(ambient = process.env) {
+  if (!ambient || typeof ambient !== "object" || Array.isArray(ambient)) throw new Error("default test environment authority is invalid");
+  const required = (name) => typeof ambient[name] === "string" && ambient[name] ? ambient[name] : "";
+  return Object.freeze({
+    PATH: required("PATH"),
+    HOME: required("HOME"),
+    TMPDIR: required("TMPDIR") || "/tmp",
+    LANG: required("LANG") || "C",
+    LC_ALL: required("LC_ALL") || "C",
+  });
+}
+
+export function redactDefaultTestDiagnostic(value) {
+  let output = String(value)
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss):\/\/[^\s"'<>]+/gi, "[REDACTED_DATABASE_URL]")
+    .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^@\s]+@[^\s"'<>]+/gi, "[REDACTED_URI]")
+    .replace(/(\bauthorization\s*:\s*(?:bearer|basic)\s+)[^\s,;]+/gi, "$1[REDACTED]")
+    .replace(new RegExp(`("${secretKey}"\\s*:\\s*)"(?:\\\\.|[^"\\\\])*"`, "gi"), '$1"[REDACTED]"');
+  output = output
+    .replace(new RegExp(`((?:^|[^A-Za-z0-9_-])${secretKey}\\s*[:=]\\s*)(?:"(?:\\\\.|[^"\\\\])*"|'[^'\\r\\n]*'|[^\\s,;}]+)`, "gi"), "$1[REDACTED]")
+    .split("\n").map((line) => {
+      const match = /^(.*?\b(?:set-)?cookie\s*:\s*)(.*)$/i.exec(line);
+      return match ? `${match[1]}[REDACTED]` : line;
+    }).join("\n");
+  return output;
 }
 
 function boundedDiagnostic(value) {
-  const redacted = Buffer.from(redactDiagnostic(value));
+  const redacted = Buffer.from(redactDefaultTestDiagnostic(value));
   if (redacted.length <= maximumDiagnosticBytes) return redacted.toString("utf8");
   return redacted.subarray(redacted.length - maximumDiagnosticBytes).toString("utf8");
 }
@@ -77,36 +102,28 @@ export function validateDefaultTestChildResult(id, result) {
   return parseDefaultTapResult(result.output, id);
 }
 
-function runChildProcess(definition) {
-  return new Promise((accept, reject) => {
-    const environment = { ...process.env };
-    delete environment.NODE_TEST_CONTEXT;
-    const processChild = spawn(process.execPath, definition.argv, {
+async function runChildProcess(definition) {
+  let captured = "";
+  try {
+    const output = await runBoundedChildTree(process.execPath, definition.argv, {
       cwd: root,
-      env: environment,
-      stdio: ["ignore", "pipe", "pipe"],
+      env: buildDefaultTestEnvironment(),
+      maximumOutputBytes: maximumChildOutputBytes,
+      timeoutMs: childTimeoutMs,
+      terminationGraceMs: 5_000,
+      killGraceMs: 3_000,
+      onOutput(value) { captured += value; },
     });
-    let output = Buffer.alloc(0);
-    let truncated = false;
-    const capture = (chunk) => {
-      if (truncated) return;
-      output = Buffer.concat([output, Buffer.from(chunk)]);
-      if (output.length > maximumChildOutputBytes) {
-        truncated = true;
-        output = output.subarray(output.length - maximumDiagnosticBytes);
-        processChild.kill("SIGTERM");
-      }
+    return { exitCode: 0, signal: null, output, truncated: false };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return {
+      exitCode: 1,
+      signal: null,
+      output: `${captured}${captured && !captured.endsWith("\n") ? "\n" : ""}${reason}`,
+      truncated: /exceeded bounded output/i.test(reason),
     };
-    processChild.stdout.on("data", capture);
-    processChild.stderr.on("data", capture);
-    processChild.once("error", reject);
-    processChild.once("close", (code, signal) => accept({
-      exitCode: code ?? 1,
-      signal: signal ?? null,
-      output: output.toString("utf8"),
-      truncated,
-    }));
-  });
+  }
 }
 
 function sumCounts(layers) {
@@ -157,7 +174,7 @@ async function main() {
 
 if (process.argv[1] && resolve(process.argv[1]) === scriptPath) {
   main().catch((error) => {
-    console.error(redactDiagnostic(error instanceof Error ? error.message : String(error)));
+    console.error(redactDefaultTestDiagnostic(error instanceof Error ? error.message : String(error)));
     process.exitCode = 1;
   });
 }
