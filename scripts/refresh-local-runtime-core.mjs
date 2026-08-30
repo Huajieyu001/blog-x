@@ -400,7 +400,7 @@ function assertEnv(options, expected) {
 export function assertAllowedRefreshCommand(command, args, options = {}) {
   if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string" || arg.includes("\0"))) fail("command argv is invalid");
   let allowed = false;
-  if (command === "git") allowed = exact(command, args, ["git", ["status", "--porcelain"]]) || exact(command, args, ["git", ["symbolic-ref", "--quiet", "HEAD"]]) || exact(command, args, ["git", ["rev-parse", "HEAD"]]) || exact(command, args, ["git", ["hash-object", "pnpm-lock.yaml"]]) || exact(command, args, ["git", ["ls-files", ".planning/milestones"]]) || (args.length === 2 && args[0] === "show" && /^[a-f0-9]{40}:pnpm-lock\.yaml$/.test(args[1])) || (args.length === 4 && same(args.slice(0, 2), ["merge-base", "--is-ancestor"]) && validRevision(args[2]) && validRevision(args[3])) || (args.length === 4 && same(args.slice(0, 2), ["diff", "--name-only"]) && /^[a-f0-9]{40}\.\.[a-f0-9]{40}$/.test(args[2]) && args[3] === "--");
+  if (command === "git") allowed = exact(command, args, ["git", ["status", "--porcelain"]]) || exact(command, args, ["git", ["symbolic-ref", "--quiet", "HEAD"]]) || exact(command, args, ["git", ["rev-parse", "HEAD"]]) || exact(command, args, ["git", ["hash-object", "pnpm-lock.yaml"]]) || exact(command, args, ["git", ["ls-files", ".planning/milestones"]]) || (args.length === 2 && args[0] === "show" && /^[a-f0-9]{40}:pnpm-lock\.yaml$/.test(args[1])) || (args.length === 4 && same(args.slice(0, 2), ["merge-base", "--is-ancestor"]) && validRevision(args[2]) && validRevision(args[3])) || (args.length === 8 && same(args.slice(0, 6), ["log", "--format=", "--name-only", "-z", "-m", "--no-renames"]) && /^[a-f0-9]{40}\.\.[a-f0-9]{40}$/.test(args[6]) && args[7] === "--");
   if (command === "docker") {
     allowed = same(args, ["context", "show"])
       || (args.length === 3 && same(args.slice(0, 2), ["context", "inspect"]) && ["colima", "default"].includes(args[2]))
@@ -960,13 +960,28 @@ function assertEvidenceSchema(evidence, expectedAuthority = deliveryAuthorityFor
   return true;
 }
 
+async function readSecureRawEvidence(path, fs) {
+  const assertAuthority = async () => {
+    const item = await fs.lstat(path);
+    const uid = process.getuid?.();
+    if (!Number.isSafeInteger(uid) || !item?.isFile?.() || item.isSymbolicLink?.() || item.uid !== uid
+      || mode(item) !== 0o600 || item.nlink !== 1 || await fs.realpath(path) !== path) {
+      fail("raw evidence file authority is unsafe");
+    }
+  };
+  await assertAuthority();
+  const bytes = await fs.readFile(path, "utf8");
+  await assertAuthority();
+  return bytes;
+}
+
 export async function verifyRawRefreshEvidence(path, { claimStore, fs, runArgv, fetch, root } = {}) {
   if (!claimStore || !fs || typeof runArgv !== "function" || typeof fetch !== "function" || typeof root !== "string") fail("raw evidence verification boundaries are incomplete");
   const repositoryPath = relative(resolve(root), resolve(path));
   const revision = parseRevisionAddressedEvidencePath(repositoryPath);
   const authority = deliveryAuthorityForRevision(revision);
   if (resolve(path) !== resolve(root, authority.evidencePath)) fail("raw evidence verification accepts only exact revision-addressed receipt authority");
-  const before = await fs.readFile(path, "utf8");
+  const before = await readSecureRawEvidence(path, fs);
   const evidence = parseJson(before, "evidence"); assertEvidenceSchema(evidence, authority);
   if (evidence.implementationRevision !== revision) fail("evidence filename SHA and implementation revision mismatch");
   const claim = await claimStore.assertPresent(evidence.implementationRevision);
@@ -981,7 +996,10 @@ export async function verifyRawRefreshEvidence(path, { claimStore, fs, runArgv, 
     if (head !== evidence.implementationRevision) {
       if (status) fail("later evidence verification requires a clean worktree");
       await run("git", ["merge-base", "--is-ancestor", evidence.implementationRevision, head]);
-      const changed = cleanOutput(await run("git", ["diff", "--name-only", `${evidence.implementationRevision}..${head}`, "--"])).split("\n").filter(Boolean);
+      const history = (await run("git", ["log", "--format=", "--name-only", "-z", "-m", "--no-renames", `${evidence.implementationRevision}..${head}`, "--"])).stdout;
+      if (typeof history !== "string" || !history.endsWith("\0")) fail("intervening Git path history is malformed");
+      const changed = history.slice(0, -1).split("\0");
+      if (!changed.length || changed.some((item) => !item || item.includes("\0"))) fail("intervening Git path history is malformed");
       const allowed = new Set([
         authority.evidencePath,
         ".planning/phases/08-reliable-local-delivery/08-04-SUMMARY.md",
@@ -1024,7 +1042,7 @@ export async function verifyRawRefreshEvidence(path, { claimStore, fs, runArgv, 
   current.git = verifiedGit;
   assertFixedRuntimeAuthority(current);
   if (!factsEqual(projectSanitizedFacts(current, { routeContract: "final" }), evidence.stages.postCutover)) fail("current runtime facts drifted from evidence");
-  const after = await fs.readFile(path, "utf8");
+  const after = await readSecureRawEvidence(path, fs);
   if (after !== before) fail("read-only evidence verification changed evidence");
   return evidence;
 }

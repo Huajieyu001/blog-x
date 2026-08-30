@@ -948,7 +948,7 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
     return fakeRouteResponse(url, responses[path]);
   };
   const runtime = createRefreshTestRuntime({ processBoundary: runner, fs: evidenceFs, fetch, clock(stage) {
-    if (stage === "evidence_verification") evidenceFs.arm?.();
+    if (withdrawalFault ? stage === "final_output" : stage === "evidence_verification") evidenceFs.arm?.();
     if (recollectionFault && stage === "failure_recollection" || stageFaults.includes(stage)) throw new Error(`${stage} fault`);
   }, randomHex: () => "3".repeat(24) });
   const adapter = runtime.createAdapter();
@@ -1175,7 +1175,8 @@ test("complete fake live refresh uses target API one-off, immutable cutover and 
   assert.equal(await fixture.evidenceFs.readFile(`/virtual-workspace/${TEST_EVIDENCE_PATH}`), bytes);
   assert.ok(fixture.calls.some((call) => call.command === "git" && call.args[0] === "show"));
   assert.ok(fixture.calls.some((call) => call.command === "git" && call.args[0] === "merge-base"));
-  assert.ok(fixture.calls.some((call) => call.command === "git" && call.args[0] === "diff"));
+  assert.ok(fixture.calls.some((call) => call.command === "git" && call.args[0] === "log"));
+  assert.equal(fixture.calls.some((call) => call.command === "git" && call.args[0] === "diff"), false);
   assert.ok(fixture.runtime.reads.includes("/virtual-workspace/pnpm-lock.yaml"));
   assert.ok(fixture.runtime.reads.includes("/virtual-workspace/ops/phase5-full-gate-receipt.json"));
   assert.ok(fixture.calls.some((call) => call.command === "docker" && call.args.join(" ") === "image inspect blog-x-api-local"));
