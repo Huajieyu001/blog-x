@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { basename, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -646,7 +646,39 @@ function composeEnvironment(context) {
 }
 
 function composeArgs(context, ...args) {
-  return ["-p", context.namespace, "-f", composeFile, ...args];
+  return ["-p", context.namespace, "-f", composeFile, ...(context.composeOverride ? ["-f", context.composeOverride] : []), ...args];
+}
+
+async function createCanonicalRuntimeAuthority(context) {
+  const runtimeRoot = await mkdtemp(resolve(tmpdir(), "blog-x-canonical-runtime-"));
+  const nextRoot = resolve(runtimeRoot, ".next");
+  const override = resolve(runtimeRoot, "compose.override.yaml");
+  await cp(resolve(root, "apps/web/.next"), nextRoot, { recursive: true });
+  const yaml = [
+    "services:",
+    "  api:",
+    "    volumes:",
+    `      - ${JSON.stringify(`${resolve(root, "apps/api")}:/workspace/apps/api:ro`)}`,
+    `      - ${JSON.stringify(`${resolve(root, "packages/contracts")}:/workspace/packages/contracts:ro`)}`,
+    "  web:",
+    "    volumes:",
+    `      - ${JSON.stringify(`${nextRoot}:/workspace/apps/web/.next`)}`,
+    "",
+  ].join("\n");
+  await writeFile(override, yaml, { mode: 0o600 });
+  context.canonicalRuntimeRoot = runtimeRoot;
+  context.composeOverride = override;
+}
+
+async function cleanupCanonicalRuntimeAuthority(context) {
+  if (!context.canonicalRuntimeRoot) return;
+  const target = resolve(context.canonicalRuntimeRoot);
+  if (dirname(target) !== resolve(tmpdir()) || !/^blog-x-canonical-runtime-[A-Za-z0-9_-]{6,64}$/.test(basename(target))) {
+    throw new Error("canonical runtime cleanup target is invalid");
+  }
+  await rm(target, { recursive: true, force: true });
+  try { await lstat(target); throw new Error("canonical runtime authority remained after cleanup"); }
+  catch (error) { if (error?.code !== "ENOENT") throw error; }
 }
 
 async function runStep(context, label, commandName, args, options = {}) {
@@ -1292,7 +1324,7 @@ const canonicalDatabaseEnvironment = Object.freeze({
 
 async function runCanonicalIntegrationChecks(context) {
   const selection = canonicalIntegrationSelection();
-  if (!context.internalRun) {
+  if (!context.internalRun && !context.canonicalPrebuilt) {
     await runStep(context, "typecheck workspace for canonical integration", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
     await runStep(context, "build workspace for canonical integration", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin } });
   }
@@ -1570,8 +1602,11 @@ async function runSingle(options) {
     }
     else if (options.canonicalIntegration && !options.skipBuild) {
       await preflightOfflinePrerequisites(context);
-      process.stdout.write("[local-verify] build current canonical integration verifier images from offline authority\n");
-      await compose(context, "build current canonical API and Web images", "build", "api", "web");
+      process.stdout.write("[local-verify] build current canonical Web runtime from offline workspace authority\n");
+      await runStep(context, "typecheck workspace for canonical integration", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
+      await runStep(context, "build workspace for canonical integration", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin } });
+      await createCanonicalRuntimeAuthority(context);
+      context.canonicalPrebuilt = true;
     }
     else if (options.phase5Full && !options.skipBuild) {
       await preflightOfflinePrerequisites(context);
@@ -1641,6 +1676,7 @@ async function runSingle(options) {
       env: composeEnvironment(context), allowFailure: true, allowDuringShutdown: true,
     });
     await confirmGeneratedProjectAbsent(context.namespace, { allowDuringShutdown: true });
+    await cleanupCanonicalRuntimeAuthority(context);
     process.stdout.write("[local-verify] GENERATED CLEANUP PASS\n");
     await restoreVerifierOwnedNextEnvironment(nextEnvironmentBefore);
   }
