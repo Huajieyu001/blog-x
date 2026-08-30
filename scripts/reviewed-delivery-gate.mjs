@@ -15,8 +15,36 @@ const verifierPath = resolve(root, "scripts/refresh-local.mjs");
 const evidenceSuccess = "LOCAL REFRESH EVIDENCE VERIFIED; RELEASE BLOCKED\n";
 
 export const COMMITTED_REVIEW_PATH = resolve(root, reviewRelativePath);
+export const REVIEW_CONFIG_PATH = resolve(root, ".planning/config.json");
 export const FINAL_REVIEW_PATH = "/private/tmp/blog-x-phase08-final-review.md";
 export const REVIEWED_HEAD_MARKER_PATH = "/private/tmp/blog-x-phase08-reviewed-head-v1.json";
+export const REVIEWED_DELIVERY_FILES = Object.freeze([
+  "apps/api/package.json",
+  "apps/web/e2e/article-lifecycle.spec.ts",
+  "apps/web/e2e/auth-session.spec.ts",
+  "apps/web/e2e/draft-preview.spec.ts",
+  "apps/web/e2e/public-list.spec.ts",
+  "apps/web/e2e/public-reading.spec.ts",
+  "apps/web/e2e/walking-skeleton.spec.ts",
+  "ops/local-deliveries/.gitkeep",
+  "package.json",
+  "scripts/default-test.mjs",
+  "scripts/default-test.test.mjs",
+  "scripts/local-delivery-acceptance-test-core.mjs",
+  "scripts/local-delivery-acceptance.mjs",
+  "scripts/local-verify.mjs",
+  "scripts/local-verify.test.mjs",
+  "scripts/phase7-browser-verify.mjs",
+  "scripts/refresh-local-live.mjs",
+  "scripts/refresh-local-runtime-core.mjs",
+  "scripts/refresh-local-test-core.mjs",
+  "scripts/refresh-local.mjs",
+  "scripts/refresh-local.test.mjs",
+  "scripts/reviewed-delivery-gate.mjs",
+  "scripts/reviewed-delivery-gate.test.mjs",
+  "scripts/test-inventory.mjs",
+  "scripts/test-inventory.test.mjs",
+]);
 
 const MODES = Object.freeze([
   "--assert-committed-review-clean",
@@ -77,6 +105,8 @@ function parseCleanReview(bytes, label) {
   if (!Number.isSafeInteger(filesReviewed) || filesReviewed < 1 || files.length !== filesReviewed || new Set(files).size !== files.length) {
     fail(`${label} review file count or list is malformed`);
   }
+  if (depth !== "standard") fail(`${label} review depth must be standard`);
+  if (!same(files, REVIEWED_DELIVERY_FILES)) fail(`${label} review scope is not the exact configured delivery file list`);
   if (status !== "clean" || critical !== 0 || warning !== 0 || info !== 0 || total !== 0 || total !== critical + warning + info) {
     fail(`${label} review is not clean with zero findings`);
   }
@@ -164,6 +194,12 @@ export function createReviewedDeliveryGateRuntime({
   }
 
   async function readCommittedReview() {
+    const configBytes = await assertSecureFile(REVIEW_CONFIG_PATH, 0o644, "review configuration");
+    let config;
+    try { config = JSON.parse(configBytes); } catch { fail("configured code review JSON is malformed"); }
+    if (config?.workflow?.code_review !== true || config.workflow.code_review_depth !== "standard") {
+      fail("configured code review must remain enabled at standard depth");
+    }
     const bytes = await assertSecureFile(COMMITTED_REVIEW_PATH, 0o644, "committed review");
     return parseCleanReview(bytes, "committed");
   }
