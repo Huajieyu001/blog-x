@@ -850,7 +850,7 @@ function targetImage(app, id, revision, lock, seedId) {
   return { Id: id, Config: { Image: `blog-x-${app}-local:${revision.slice(0, 12)}`, WorkingDir: "/refresh-workspace", Cmd: ["corepack", "pnpm", "--filter", `@blog-x/${app}`, "start"], Labels: { "org.opencontainers.image.revision": revision, "io.blog-x.lockfile-sha256": lock, "io.blog-x.seed-image-id": seedId, "io.blog-x.application": app, "io.blog-x.public-origin": "http://127.0.0.1:3100", "io.blog-x.refresh-kind": "v1.1-offline-local-delivery" } } };
 }
 
-function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, rollbackCutoverFault = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, withdrawalFault, seedPrerequisite, acceptanceStdout = acceptanceOutput } = {}) {
+function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, rollbackCutoverFault = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, withdrawalFault, seedPrerequisite, acceptanceStdout = acceptanceOutput, verificationChangedPaths = [TEST_EVIDENCE_PATH] } = {}) {
   const revision = "a".repeat(40); const lock = createHash("sha256").update("raw-lock\n").digest("hex");
   const old = { api: SHA("a"), web: SHA("b") }; const targetIds = { api: SHA("e"), web: SHA("f") };
   const plan = createRefreshPlan({ revision, lockSha256: lock, apiSeedId: old.api, webSeedId: old.web });
@@ -905,7 +905,7 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
     if (command === "git" && args[0] === "ls-files") return { stdout: "" };
     if (command === "git" && args[0] === "show") return { stdout: "raw-lock\n" };
     if (command === "git" && args[0] === "merge-base") return { stdout: "" };
-    if (command === "git" && args[0] === "diff") return { stdout: `${TEST_EVIDENCE_PATH}\n` };
+    if (command === "git" && args[0] === "diff") return { stdout: `${verificationChangedPaths.join("\n")}\n` };
     if (command === "node" && args.join(" ") === "scripts/local-delivery-acceptance.mjs") return { stdout: acceptanceStdout };
     if (command === "node") return { stdout: "" };
     throw new Error(`unexpected raw fake argv: ${command} ${args.join(" ")}`);
@@ -972,6 +972,41 @@ test("normal delivery emits exact progress and a verified evidence-derived BLOCK
   assert.match(output, /ACCEPTANCE phase6=18 phase7=6 total=24/);
   assert.equal(output.includes(`EVIDENCE ${TEST_EVIDENCE_PATH}\nRELEASE BLOCKED`), true);
   assert.doesNotMatch(output, /hello-world|postgres:\/\/|blog_x_session=|token=|\/Users\/|sha256:/i);
+});
+
+test("later evidence verification admits only the receipt and finite Phase 08 closeout documents", async () => {
+  const allowed = [
+    TEST_EVIDENCE_PATH,
+    ".planning/phases/08-reliable-local-delivery/08-04-SUMMARY.md",
+    ".planning/phases/08-reliable-local-delivery/08-05-SUMMARY.md",
+    ".planning/phases/08-reliable-local-delivery/08-06-SUMMARY.md",
+    ".planning/phases/08-reliable-local-delivery/08-07-SUMMARY.md",
+    ".planning/phases/08-reliable-local-delivery/08-08-SUMMARY.md",
+    ".planning/phases/08-reliable-local-delivery/08-09-SUMMARY.md",
+    ".planning/phases/08-reliable-local-delivery/08-VERIFICATION.md",
+    ".planning/ROADMAP.md",
+    ".planning/STATE.md",
+    ".planning/REQUIREMENTS.md",
+  ];
+  const accepted = liveFixture({ verificationChangedPaths: allowed });
+  await accepted.runtime.runCli();
+  accepted.beginVerification();
+  await assert.doesNotReject(accepted.runtime.verifyEvidence(`/virtual-workspace/${TEST_EVIDENCE_PATH}`));
+
+  for (const path of [
+    ".planning/phases/08-reliable-local-delivery/08-REVIEW.md",
+    ".planning/phases/08-reliable-local-delivery/08-REVIEW-FIX.md",
+    ".planning/phases/08-reliable-local-delivery/08-04-PLAN.md",
+    ".planning/phases/08-reliable-local-delivery/08-CONTEXT.md",
+    ".planning/config.json",
+    ".planning/phases/08-reliable-local-delivery/08-10-SUMMARY.md",
+    "scripts/refresh-local.mjs",
+  ]) {
+    const rejected = liveFixture({ verificationChangedPaths: [TEST_EVIDENCE_PATH, path] });
+    await rejected.runtime.runCli();
+    rejected.beginVerification();
+    await assert.rejects(rejected.runtime.verifyEvidence(`/virtual-workspace/${TEST_EVIDENCE_PATH}`), /docs-only allowlist|intervening Git paths/i, path);
+  }
 });
 
 test("terminal stage progress and recovery are exhaustive, exact and sanitized", () => {

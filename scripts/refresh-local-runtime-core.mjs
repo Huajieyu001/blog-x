@@ -698,8 +698,11 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
     assertAllowedArgv: assertAllowedRefreshCommand,
     attachAttemptClaim(claim) {
       const expected = deliveryAuthorityForRevision(claim?.implementationRevision);
-      if (state.claim || claim.authority !== expected.authority
-        || claim.evidencePath !== expected.evidencePath || !validDigest(claim.sha256)) fail("attempt claim attachment is invalid");
+      const expectedBytes = canonicalClaim(expected.implementationRevision);
+      if (state.claim || !claim || typeof claim !== "object" || Array.isArray(claim)
+        || !same(Object.keys(claim).sort(), ["authority", "bytes", "evidencePath", "implementationRevision", "sha256"])
+        || claim.authority !== expected.authority || claim.evidencePath !== expected.evidencePath
+        || claim.bytes !== expectedBytes || claim.sha256 !== digest(expectedBytes)) fail("attempt claim attachment is invalid or non-canonical");
       state.claim = claim;
       state.authority = expected;
     },
