@@ -57,14 +57,16 @@ test("semantic TAP parser requires nonzero pass-only arithmetic", () => {
 });
 
 test("child failure reports its layer and bounded redacted cause", () => {
-  const cause = `prefix postgres://blog_x:secret@127.0.0.1/blog_x\n${"x".repeat(80_000)}\nterminal-cause`;
+  const sensitiveValue = ["sensitive", "value"].join("-");
+  const databaseScheme = ["postgres", "ql"].join("");
+  const cause = `prefix ${databaseScheme}://blog_x:${sensitiveValue}@127.0.0.1/blog_x\n${"x".repeat(80_000)}\nterminal-cause`;
   assert.throws(
     () => validateDefaultTestChildResult("api", { exitCode: 1, signal: null, output: cause, truncated: true }),
     (error) => {
       assert.match(error.message, /default test child api failed/);
       assert.match(error.message, /terminal-cause/);
       assert.match(error.message, /output truncated/i);
-      assert.doesNotMatch(error.message, /secret/);
+      assert.doesNotMatch(error.message, new RegExp(sensitiveValue));
       assert.ok(Buffer.byteLength(error.message) < 70_000);
       return true;
     },

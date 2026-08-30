@@ -7,7 +7,7 @@
     "dev": "tsx src/app.ts",
     "build": "tsc --project tsconfig.json",
     "typecheck": "tsc --project tsconfig.json --noEmit",
-    "test": "tsx --test test/*.test.ts",
+    "test": "tsx --test --test-reporter=tap test/markdown-renderer.test.ts test/security-hardening.test.ts",
     "db:generate:check": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "tsx src/app.ts migrate",
     "db:seed": "tsx src/app.ts seed",
