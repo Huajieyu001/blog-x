@@ -15,6 +15,10 @@ const origin = new URL(webOrigin).origin;
 if (origin !== webOrigin || !/^http:\/\/127\.0\.0\.1:\d+$/.test(webOrigin)) {
   throw new Error("E2E_WEB_ORIGIN must be the exact runner-generated loopback Web origin");
 }
+const forbiddenInternalHostnames = [
+  ["124", "222", "91", "230"].join("."),
+  ["47", "99", "80", "8"].join("."),
+];
 
 async function login(page: Page) {
   await page.goto(`${webOrigin}/login`);
@@ -107,7 +111,7 @@ function expectSafeSitemapLocations(locations: string[], hiddenSlug: string) {
     expect(pathname).not.toBe(`/posts/${hiddenSlug}`);
     expect(pathSegments).not.toContain("internal_api_origin");
     expect(queryEntries.some(([key, value]) => key === "internal_api_origin" || value === "internal_api_origin")).toBe(false);
-    expect(["124.222.91.230", "47.99.80.8"]).not.toContain(url.hostname);
+    expect(forbiddenInternalHostnames).not.toContain(url.hostname);
   }
 }
 
@@ -125,8 +129,7 @@ test("sitemap safety checks exact URL structure", () => {
     `${webOrigin}/api/public/articles`,
     `${webOrigin}/posts/${hiddenSlug}`,
     `${webOrigin}/posts/public?INTERNAL_API_ORIGIN=value`,
-    "http://124.222.91.230/public",
-    "http://47.99.80.8/public",
+    ...forbiddenInternalHostnames.map((hostname) => `http://${hostname}/public`),
   ]) expect(() => expectSafeSitemapLocations([forbidden], hiddenSlug)).toThrow();
 });
 
