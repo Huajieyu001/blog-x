@@ -5,16 +5,16 @@ milestone_name: Content Discovery
 current_phase: 08
 current_phase_name: Reliable Local Delivery
 status: executing
-stopped_at: Completed 08-07-PLAN.md
-last_updated: "2026-08-30T11:22:02.894Z"
+stopped_at: Completed 08-08-PLAN.md
+last_updated: "2026-08-30T12:05:06.000Z"
 last_activity: 2026-08-30
-last_activity_desc: Complete 30-path acceptance passed 64/64 and remained BLOCKED
+last_activity_desc: Clean exact-25 delivery review completed with reviewed-head gate; release remains BLOCKED
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 21
-  completed_plans: 19
-  percent: 90
+  completed_plans: 20
+  percent: 95
 ---
 
 # Project State
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-08-15)
 ## Current Position
 
 Phase: 08 (Reliable Local Delivery) — EXECUTING GAP CLOSURE
-Plan: 8 of 9
-Status: 08-07 complete with exact-once integration acceptance and cleanup proof; execute 08-08 review next
-Last activity: 2026-08-30 — Complete 30-path acceptance passed 64/64 and remained BLOCKED
+Plan: 9 of 9
+Status: 08-08 complete with clean exact-25 review and reviewed-HEAD gate; terminal 08-09 handoff is next
+Last activity: 2026-08-30 — Clean exact-25 delivery review completed with reviewed-head gate; release remains BLOCKED
 
 ## Performance Metrics
 
@@ -98,6 +98,7 @@ Last activity: 2026-08-30 — Complete 30-path acceptance passed 64/64 and remai
 | Phase 08 P05 | 6min | 2 tasks | 6 files |
 | Phase 08 P06 | 25min | 2 tasks | 8 files |
 | Phase 08 P07 | 3h05m | 3 tasks | 14 files |
+| Phase 08 P08 | 54min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -186,6 +187,9 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 08]: Migrated specs require generated origin, run ID and administrator facts without fallback or skips. — Missing fixture authority must fail rather than silently reduce browser coverage.
 - [Phase 08]: Auth expiry and revocation consume runner-seeded opaque tokens. — Browser specs retain session behavior without direct database authority.
 - [Phase 08]: The generated main-browser owner resets scenario data and verifies exact path cleanup. — One infrastructure owner prevents cross-spec collisions and residue.
+- [Phase 08]: Review delivery eligibility requires one frozen ordered 25-file scope, enabled standard depth and fixed handoff paths. — A matching but under-scoped report cannot authorize formal delivery.
+- [Phase 08]: Descendant evidence verification audits every merge-aware NUL-delimited touched path. — Reverted source or review changes cannot hide behind an allowed endpoint tree delta.
+- [Phase 08]: One validated filesystem identity governs raw claim, receipt publication, withdrawal and verification. — Test portability no longer weakens sealed production owner checks.
 
 ### Blockers/Concerns
 
@@ -196,11 +200,11 @@ Decisions are logged in PROJECT.md Key Decisions table.
 
 ## Session Continuity
 
-Last session: 2026-08-30T08:19:13.724Z
-Stopped at: Completed 08-06-PLAN.md
+Last session: 2026-08-30T12:05:06.000Z
+Stopped at: Completed 08-08-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
 
-- Execute 08-07 to attest every integration-owned package path exactly once.
+- Perform the terminal read-only exact-HEAD review handoff, then execute 08-09 directly.
 - Keep both cloud servers out of scope; local completion retains `releaseState: BLOCKED`.
