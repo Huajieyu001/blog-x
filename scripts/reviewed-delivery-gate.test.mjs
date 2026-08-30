@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 import {
   COMMITTED_REVIEW_PATH,
   FINAL_REVIEW_PATH,
+  REVIEW_CONFIG_PATH,
+  REVIEWED_DELIVERY_FILES,
   REVIEWED_HEAD_MARKER_PATH,
   createReviewedDeliveryGateRuntime,
 } from "./reviewed-delivery-gate.mjs";
@@ -14,7 +16,13 @@ const REVISION = "a".repeat(40);
 const NEXT_REVISION = "b".repeat(40);
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 const repoRoot = resolve(new URL("..", import.meta.url).pathname);
-const review = (head = REVISION, { status = "clean", findings = { critical: 0, warning: 0, info: 0, total: 0 } } = {}) => `---\nphase: 08-reliable-local-delivery\nreviewed: 2026-08-30T00:00:00Z\ndepth: standard\nfiles_reviewed: 2\nfiles_reviewed_list:\n  - scripts/a.mjs\n  - scripts/b.mjs\nfindings:\n  critical: ${findings.critical}\n  warning: ${findings.warning}\n  info: ${findings.info}\n  total: ${findings.total}\nstatus: ${status}\n---\n\n# Phase 08: Code Review Report\n\n**Reviewed HEAD:** \`${head}\`\n`;
+const reviewConfig = ({ enabled = true, depth = "standard" } = {}) => `${JSON.stringify({ workflow: { code_review: enabled, code_review_depth: depth } }, null, 2)}\n`;
+const review = (head = REVISION, {
+  status = "clean",
+  depth = "standard",
+  files = REVIEWED_DELIVERY_FILES,
+  findings = { critical: 0, warning: 0, info: 0, total: 0 },
+} = {}) => `---\nphase: 08-reliable-local-delivery\nreviewed: 2026-08-30T00:00:00Z\ndepth: ${depth}\nfiles_reviewed: ${files.length}\nfiles_reviewed_list:\n${files.map((path) => `  - ${path}`).join("\n")}\nfindings:\n  critical: ${findings.critical}\n  warning: ${findings.warning}\n  info: ${findings.info}\n  total: ${findings.total}\nstatus: ${status}\n---\n\n# Phase 08: Code Review Report\n\n**Reviewed HEAD:** \`${head}\`\n`;
 
 function missing(code = "ENOENT") { return Object.assign(new Error(code), { code }); }
 function memoryFs() {
@@ -23,6 +31,7 @@ function memoryFs() {
     ["/private", { kind: "dir", uid: 0, mode: 0o755 }],
     ["/private/tmp", { kind: "dir", uid: 0, mode: 0o1777 }],
     [COMMITTED_REVIEW_PATH, { kind: "file", uid, mode: 0o644, nlink: 1, bytes: review() }],
+    [REVIEW_CONFIG_PATH, { kind: "file", uid, mode: 0o644, nlink: 1, bytes: reviewConfig() }],
     [FINAL_REVIEW_PATH, { kind: "file", uid, mode: 0o600, nlink: 1, bytes: review() }],
   ]);
   const stat = (item) => ({ uid: item.uid, mode: item.mode, nlink: item.nlink ?? 1, isFile: () => item.kind === "file", isDirectory: () => item.kind === "dir", isSymbolicLink: () => item.kind === "symlink" });
@@ -69,6 +78,16 @@ test("committed review assertion requires strict clean GSD report with zero find
   for (const bytes of [review(REVISION, { status: "issues_found" }), review(REVISION, { findings: { critical: 0, warning: 1, info: 0, total: 1 } }), "not yaml"]) {
     const bad = fixture(); bad.entries.get(COMMITTED_REVIEW_PATH).bytes = bytes;
     await assert.rejects(bad.runtime.execute(["--assert-committed-review-clean"], {}), /review|clean|finding|format/i);
+  }
+  for (const files of [REVIEWED_DELIVERY_FILES.slice(1), [...REVIEWED_DELIVERY_FILES, "scripts/alias.mjs"], [...REVIEWED_DELIVERY_FILES].reverse()]) {
+    const bad = fixture(); bad.entries.get(COMMITTED_REVIEW_PATH).bytes = review(REVISION, { files });
+    await assert.rejects(bad.runtime.execute(["--assert-committed-review-clean"], {}), /scope|files|standard/i);
+  }
+  const quick = fixture(); quick.entries.get(COMMITTED_REVIEW_PATH).bytes = review(REVISION, { depth: "quick" });
+  await assert.rejects(quick.runtime.execute(["--assert-committed-review-clean"], {}), /standard|depth/i);
+  for (const config of [reviewConfig({ enabled: false }), reviewConfig({ depth: "quick" })]) {
+    const bad = fixture(); bad.entries.get(REVIEW_CONFIG_PATH).bytes = config;
+    await assert.rejects(bad.runtime.execute(["--assert-committed-review-clean"], {}), /configured|standard|enabled/i);
   }
 });
 
