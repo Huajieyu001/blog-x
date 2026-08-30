@@ -46,7 +46,9 @@ test("login, refresh, expiry, logout, and revoked-token reuse stay server-author
   await page.goto(`${webOrigin}/admin`);
   await expect(page).toHaveURL(`${webOrigin}/login`);
 
-  await login(page, password);
+  await context.clearCookies();
+  const renewedResponse = await login(page, password);
+  expect(renewedResponse.status()).toBe(200);
   await expect(page).toHaveURL(`${webOrigin}/admin`);
   const revocableCookie = (await context.cookies(webOrigin)).find((cookie) => cookie.name === "blog_x_session");
   expect(revocableCookie).toBeTruthy();
