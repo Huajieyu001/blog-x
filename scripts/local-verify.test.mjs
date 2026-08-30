@@ -117,6 +117,8 @@ test("lifecycle probes attest zero manifest paths and cannot inflate package cou
   const lifecycle = source.slice(source.indexOf("async function runLifecycleInterruptionProbe"), source.indexOf("function emitCanonicalIntegrationCleanupAcknowledgement"));
   for (const path of INTEGRATION_TEST_FILES) assert.equal(lifecycle.includes(path), false, path);
   assert.doesNotMatch(lifecycle, /semanticTestCommand|playwright|runDatabaseSuite|runGeneratedMainBrowserFixture|--canonical-integration/i);
+  assert.match(source, /const interruption = options\.interruptAfterReady[\s\S]*addEventListener\("abort"[\s\S]*LIFECYCLE READY[\s\S]*await interruption/);
+  assert.match(lifecycle, /Promise\.allSettled\([\s\S]*runLifecycleChild[\s\S]*failures\.length/);
 });
 
 test("legacy Web E2E specs require runner facts and own no infrastructure", async () => {

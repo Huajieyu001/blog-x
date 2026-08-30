@@ -1637,10 +1637,13 @@ async function runSingle(options) {
       "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:schema:verify");
     await seed(context);
     if (options.lifecycleOnly) {
+      const interruption = options.interruptAfterReady ? new Promise((_accept, reject) => {
+        const rejectForShutdown = () => reject(shutdownSignal.reason);
+        if (shutdownSignal?.aborted) rejectForShutdown();
+        else shutdownSignal?.addEventListener("abort", rejectForShutdown, { once: true });
+      }) : undefined;
       process.stdout.write(`[local-verify] LIFECYCLE READY ${namespace}\n`);
-      if (options.interruptAfterReady) await new Promise((_accept, reject) => {
-        shutdownSignal?.addEventListener("abort", () => reject(shutdownSignal.reason), { once: true });
-      });
+      if (interruption) await interruption;
     }
     else if (options.canonicalIntegration) {
       canonicalSuites = await runCanonicalIntegrationChecks(context);
@@ -1805,7 +1808,11 @@ async function runLifecycleParallelProbe() {
   const namespaces = [generatedNamespace(), generatedNamespace()];
   const ports = await Promise.all([freePort(), freePort()]);
   if (new Set(namespaces).size !== 2 || new Set(ports).size !== 2) throw new Error("parallel lifecycle authorities collided");
-  await Promise.all(namespaces.map((namespace, index) => runLifecycleChild(namespace, ports[index], false)));
+  const settled = await Promise.allSettled(namespaces.map((namespace, index) => runLifecycleChild(namespace, ports[index], false)));
+  const failures = settled.filter((result) => result.status === "rejected");
+  if (failures.length) {
+    throw new Error(failures.map((result) => result.reason instanceof Error ? result.reason.message : String(result.reason)).join("\n"));
+  }
   await Promise.all(namespaces.map((namespace) => confirmGeneratedProjectAbsent(namespace)));
   return createLifecycleProbeResult({ kind: "parallel", namespaces, interrupted: false });
 }
