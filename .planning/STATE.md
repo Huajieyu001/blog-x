@@ -5,16 +5,16 @@ milestone_name: Content Discovery
 current_phase: 08
 current_phase_name: Reliable Local Delivery
 status: executing
-stopped_at: Completed 08-05-PLAN.md
-last_updated: "2026-08-30T07:50:01.056Z"
+stopped_at: Completed 08-06-PLAN.md
+last_updated: "2026-08-30T08:19:13.731Z"
 last_activity: 2026-08-30
-last_activity_desc: Phase 08 Plan 05 established an exact skip-free default test gate
+last_activity_desc: Phase 08 Plan 06 moved six legacy Web journeys under one generated fixture owner
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 21
-  completed_plans: 17
-  percent: 81
+  completed_plans: 18
+  percent: 86
 ---
 
 # Project State
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-08-15)
 ## Current Position
 
 Phase: 08 (Reliable Local Delivery) — EXECUTING GAP CLOSURE
-Plan: 5 of 9
-Status: 08-05 complete with 38/38 default tests and 37/37 files owned; execute 08-06 next
-Last activity: 2026-08-30 — Exact self-contained default verification completed
+Plan: 6 of 9
+Status: 08-06 complete with six migrated Web journeys isolated under generated fixture authority; execute 08-07 next
+Last activity: 2026-08-30 — Generated main-browser ownership and cleanup verification completed
 
 ## Performance Metrics
 
@@ -96,6 +96,7 @@ Last activity: 2026-08-30 — Exact self-contained default verification complete
 | Phase 08 P02 | 42min | 2 tasks | 6 files |
 | Phase 08 P04 | 11min | 3 tasks | 6 files |
 | Phase 08 P05 | 6min | 2 tasks | 6 files |
+| Phase 08 P06 | 25min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -181,6 +182,9 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 08]: Derive one immutable receipt, claim and failure authority solely from each lowercase full Git SHA. — This removes numbered successor exhaustion without migrating or mutating historical receipts.
 - [Phase 08]: Allow later receipt verification only across ten exact Phase 08 closeout documents. — A finite allowlist permits auditable closeout while source, config, plan and review drift remain fail-closed.
 - [Phase 08]: Default verification owns exactly seven infrastructure-free files; all other package tests retain one explicit generated integration owner. — A complete executable inventory prevents silent omission while keeping the everyday test command self-contained and skip-free.
+- [Phase 08]: Migrated specs require generated origin, run ID and administrator facts without fallback or skips. — Missing fixture authority must fail rather than silently reduce browser coverage.
+- [Phase 08]: Auth expiry and revocation consume runner-seeded opaque tokens. — Browser specs retain session behavior without direct database authority.
+- [Phase 08]: The generated main-browser owner resets scenario data and verifies exact path cleanup. — One infrastructure owner prevents cross-spec collisions and residue.
 
 ### Blockers/Concerns
 
@@ -191,11 +195,11 @@ Decisions are logged in PROJECT.md Key Decisions table.
 
 ## Session Continuity
 
-Last session: 2026-08-30T07:50:01.049Z
-Stopped at: Completed 08-05-PLAN.md
+Last session: 2026-08-30T08:19:13.724Z
+Stopped at: Completed 08-06-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
 
-- Execute 08-06 to bind legacy browser scenarios to one generated fixture owner.
+- Execute 08-07 to attest every integration-owned package path exactly once.
 - Keep both cloud servers out of scope; local completion retains `releaseState: BLOCKED`.
