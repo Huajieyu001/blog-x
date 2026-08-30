@@ -5,16 +5,16 @@ milestone_name: Content Discovery
 current_phase: 08
 current_phase_name: Reliable Local Delivery
 status: executing
-stopped_at: Phase 08 verification gaps planned; ready to execute 08-04
-last_updated: "2026-08-30T00:00:00+08:00"
+stopped_at: Completed 08-04-PLAN.md
+last_updated: "2026-08-30T07:37:24.496Z"
 last_activity: 2026-08-30
-last_activity_desc: Phase 08 gap plans 08-04 through 08-09 passed the bounded plan-review gate
+last_activity_desc: Phase 08 Plan 04 replaced numbered delivery slots with immutable per-revision authority
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 21
-  completed_plans: 14
-  percent: 67
+  completed_plans: 16
+  percent: 76
 ---
 
 # Project State
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-08-15)
 ## Current Position
 
 Phase: 08 (Reliable Local Delivery) — EXECUTING GAP CLOSURE
-Plan: 3 of 9
-Status: 08-04 through 08-09 planned and independently checked; execute 08-04 next
-Last activity: 2026-08-30 — Phase 08 gap plan set passed the third bounded plan-review round
+Plan: 4 of 9
+Status: 08-04 complete with 65/65 focused tests; execute 08-05 next
+Last activity: 2026-08-30 — Revision-addressed receipt, claim and verifier authority completed
 
 ## Performance Metrics
 
@@ -94,6 +94,7 @@ Last activity: 2026-08-30 — Phase 08 gap plan set passed the third bounded pla
 | Phase 07 P04 | 18min | 2 tasks | 3 files |
 | Phase 08 P01 | recovery <1h | 2 tasks | 9 files |
 | Phase 08 P02 | 42min | 2 tasks | 6 files |
+| Phase 08 P04 | 11min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -176,6 +177,8 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 08]: A relocated seed store is reusable only when the exact versioned neutral directory is nonempty. — Repeated offline delivery remains idempotent without retrieval fallback or unsafe store deletion.
 - [Phase 08]: Every claimed revision is terminal, including pre-migration build failures. — Remediation requires a new clean commit before another formal attempt.
 - [Phase 08]: The fixed local receipt binds implementation revision 4414710b605ecd8a770a1c3a60afef479c9b4eb7 to 1,353 pass-only acceptance tests and exact canonical runtime facts. — Local completion never changes production beyond BLOCKED.
+- [Phase 08]: Derive one immutable receipt, claim and failure authority solely from each lowercase full Git SHA. — This removes numbered successor exhaustion without migrating or mutating historical receipts.
+- [Phase 08]: Allow later receipt verification only across ten exact Phase 08 closeout documents. — A finite allowlist permits auditable closeout while source, config, plan and review drift remain fail-closed.
 
 ### Blockers/Concerns
 
@@ -186,11 +189,11 @@ Decisions are logged in PROJECT.md Key Decisions table.
 
 ## Session Continuity
 
-Last session: 2026-08-20T14:19:52Z
-Stopped at: 08-03 complete; ready for Phase 08 verification
-Resume file: .planning/phases/08-reliable-local-delivery/08-03-SUMMARY.md
+Last session: 2026-08-30T07:37:24.489Z
+Stopped at: Completed 08-04-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 
-- Run Phase 08 code review and goal verification against the committed v1.1 receipt and live fixed runtime.
+- Execute 08-05 to make the default repository test entry self-contained and skip-free.
 - Keep both cloud servers out of scope; local completion retains `releaseState: BLOCKED`.
