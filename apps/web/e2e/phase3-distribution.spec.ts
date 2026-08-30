@@ -91,6 +91,45 @@ async function expectCompleteHead(page: Page, expected: { title: string; descrip
   })) await expect(page.locator(`meta[property="${property}"]`)).toHaveAttribute("content", value);
 }
 
+function expectSafeSitemapLocations(locations: string[], hiddenSlug: string) {
+  for (const location of locations) {
+    const url = new URL(location);
+    const pathname = decodeURIComponent(url.pathname);
+    const pathSegments = pathname.split("/").filter(Boolean).map((segment) => segment.toLowerCase());
+    const queryEntries = [...url.searchParams.entries()].map(([key, value]) => [key.toLowerCase(), value.toLowerCase()] as const);
+
+    expect(url.origin).toBe(webOrigin);
+    expect(url.username).toBe("");
+    expect(url.password).toBe("");
+    expect(url.hash).toBe("");
+    expect(pathname).not.toMatch(/^\/(?:admin|login|api)(?:\/|$)/i);
+    expect(url.searchParams.getAll("page")).not.toContain("1");
+    expect(pathname).not.toBe(`/posts/${hiddenSlug}`);
+    expect(pathSegments).not.toContain("internal_api_origin");
+    expect(queryEntries.some(([key, value]) => key === "internal_api_origin" || value === "internal_api_origin")).toBe(false);
+    expect(["124.222.91.230", "47.99.80.8"]).not.toContain(url.hostname);
+  }
+}
+
+test("sitemap safety checks exact URL structure", () => {
+  const hiddenSlug = `phase-3-hidden-${runId}`;
+  expect(() => expectSafeSitemapLocations([
+    `${webOrigin}/?page=10`,
+    `${webOrigin}/?page=11`,
+    `${webOrigin}/posts/admin-login-api-page=1-story`,
+  ], hiddenSlug)).not.toThrow();
+  for (const forbidden of [
+    `${webOrigin}/?page=1`,
+    `${webOrigin}/admin`,
+    `${webOrigin}/login/session`,
+    `${webOrigin}/api/public/articles`,
+    `${webOrigin}/posts/${hiddenSlug}`,
+    `${webOrigin}/posts/public?INTERNAL_API_ORIGIN=value`,
+    "http://124.222.91.230/public",
+    "http://47.99.80.8/public",
+  ]) expect(() => expectSafeSitemapLocations([forbidden], hiddenSlug)).toThrow();
+});
+
 test("Phase 3 metadata is a managed same-origin public journey", async ({ page }, testInfo) => {
   test.setTimeout(300_000);
   const requests: string[] = [];
@@ -181,14 +220,16 @@ test("Phase 3 metadata is a managed same-origin public journey", async ({ page }
   const sitemap = await page.request.get(`${webOrigin}/sitemap.xml`);
   const sitemapText = await sitemap.text();
   expect(sitemap.status()).toBe(200);
-  const locations = [...sitemapText.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
+  const locations = [...sitemapText.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]!);
+  const hiddenSlug = `phase-3-hidden-${runId}`;
   const expectedLocations = new Set([
     `${webOrigin}/`, `${webOrigin}/?page=2`, `${webOrigin}/categories`, `${webOrigin}/categories/${taxonomy.category.slug}`, `${webOrigin}/categories/${taxonomy.category.slug}?page=2`,
     `${webOrigin}/tags`, `${webOrigin}/tags/${taxonomy.tag.slug}`, `${webOrigin}/tags/${taxonomy.tag.slug}?page=2`, `${webOrigin}/archives`, `${webOrigin}/about`,
     ...articles.map((item) => `${webOrigin}/posts/${item.slug}`),
   ]);
+  expect(locations).toHaveLength(expectedLocations.size);
   expect(new Set(locations)).toEqual(expectedLocations);
-  expect(sitemapText).not.toMatch(/(?:admin|login|api|page=1|phase-3-metadata-${runId}-hidden|INTERNAL_API_ORIGIN|124\.222|47\.99)/i);
+  expectSafeSitemapLocations(locations, hiddenSlug);
   const feed = await page.request.get(`${webOrigin}/rss.xml`);
   const feedText = await feed.text();
   expect(feed.status()).toBe(200);
