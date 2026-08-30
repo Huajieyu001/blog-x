@@ -14,6 +14,7 @@ import {
   LOCAL_DELIVERY_VERSION,
   formatRefreshFailure,
   formatRefreshStageProgress,
+  deliveryAuthorityForRevision,
   runRefreshCliBoundary,
 } from "./refresh-local-runtime-core.mjs";
 
@@ -191,11 +192,12 @@ export async function probeOfflineBuilds({ apiSeedImage = process.env.BLOG_X_API
 
 async function resolveCleanRevision() {
   const status = (await run("git", ["status", "--porcelain"])).stdout;
-  if (status.trim()) fail("worktree must be clean before live refresh");
   const ref = (await run("git", ["symbolic-ref", "--quiet", "HEAD"])).stdout.trim();
   if (!/^refs\/heads\/[^\s\x00-\x1f]+$/.test(ref)) fail("worktree must be on a non-detached branch before live refresh");
   const revision = (await run("git", ["rev-parse", "HEAD"])).stdout.trim();
   shortRevision(revision);
+  const receiptOnly = status.trim() === `?? ${deliveryAuthorityForRevision(revision).evidencePath}`;
+  if (status.trim() && !receiptOnly) fail("worktree must be clean before live refresh");
   return revision;
 }
 

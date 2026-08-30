@@ -37,20 +37,24 @@ export function createRefreshTestRuntime(boundaries) {
   });
   const fetch = async (url, options) => { fetches.push({ url: String(url), options: structuredClone(options) }); return boundaries.fetch(url, options); };
   const claimStore = () => createRefreshAttemptStore({ fs, identity: { uid: 501 }, randomHex: boundaries.randomHex });
+  let adapterConstructions = 0;
   const rawState = () => ({ seeds: { api: { reference: "unresolved", inspectedId: `sha256:${"0".repeat(64)}` }, web: { reference: "unresolved", inspectedId: `sha256:${"0".repeat(64)}` } }, targetFacts: { api: null, web: null } });
   const runtime = {
     calls, reads, fetches,
     createAttemptStore: claimStore,
     createFactSources() { return createRawRefreshFactSources({ run: processBoundary, fetch, root: "/virtual-workspace", fs, state: rawState() }); },
-    createAdapter() { return createRawRefreshRuntime({ runArgv: processBoundary, claimStore: claimStore(), fetch, root: "/virtual-workspace", evidenceFs: fs, randomEvidenceHex: () => boundaries.randomHex().slice(0, 16), ambientEnv: { PATH: "/usr/bin:/bin", HOME: "/Users/test", TMPDIR: "/tmp", LANG: "C" }, clock: boundaries.clock }); },
+    createAdapter() { adapterConstructions += 1; return createRawRefreshRuntime({ runArgv: processBoundary, claimStore: claimStore(), fetch, root: "/virtual-workspace", evidenceFs: fs, randomEvidenceHex: () => boundaries.randomHex().slice(0, 16), ambientEnv: { PATH: "/usr/bin:/bin", HOME: "/Users/test", TMPDIR: "/tmp", LANG: "C" }, clock: boundaries.clock }); },
+    adapterConstructionCount() { return adapterConstructions; },
     inspectClaim(revision) { return inspectRefreshAttemptClaimWithStore(revision, claimStore()); },
     verifyEvidence(path) { return verifyRawRefreshEvidence(path, { claimStore: claimStore(), fs, runArgv: processBoundary, fetch, root: "/virtual-workspace" }); },
     runCli({ argv = [], output = { write() {} } } = {}) {
       const resolveRevision = async () => {
-        if (String((await processBoundary("git", ["status", "--porcelain"])).stdout ?? "").trim()) fail("raw Git worktree is dirty");
+        const status = String((await processBoundary("git", ["status", "--porcelain"])).stdout ?? "").trim();
         const ref = String((await processBoundary("git", ["symbolic-ref", "--quiet", "HEAD"])).stdout ?? "").trim();
         if (!/^refs\/heads\/[^\s\x00-\x1f]+$/.test(ref)) fail("raw Git worktree is detached or has an invalid branch ref");
-        return String((await processBoundary("git", ["rev-parse", "HEAD"])).stdout ?? "").trim();
+        const revision = String((await processBoundary("git", ["rev-parse", "HEAD"])).stdout ?? "").trim();
+        if (status && status !== `?? ${deliveryAuthorityForRevision(revision).evidencePath}`) fail("raw Git worktree is dirty");
+        return revision;
       };
       const verifyEvidence = (revisionOrPath) => {
         const revision = /^[a-f0-9]{40}$/.test(revisionOrPath) ? revisionOrPath : parseRevisionAddressedEvidencePath(revisionOrPath);

@@ -850,9 +850,11 @@ function targetImage(app, id, revision, lock, seedId) {
   return { Id: id, Config: { Image: `blog-x-${app}-local:${revision.slice(0, 12)}`, WorkingDir: "/refresh-workspace", Cmd: ["corepack", "pnpm", "--filter", `@blog-x/${app}`, "start"], Labels: { "org.opencontainers.image.revision": revision, "io.blog-x.lockfile-sha256": lock, "io.blog-x.seed-image-id": seedId, "io.blog-x.application": app, "io.blog-x.public-origin": "http://127.0.0.1:3100", "io.blog-x.refresh-kind": "v1.1-offline-local-delivery" } } };
 }
 
-function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, rollbackCutoverFault = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, withdrawalFault, seedPrerequisite, acceptanceStdout = acceptanceOutput, verificationChangedPaths = [TEST_EVIDENCE_PATH] } = {}) {
-  const revision = "a".repeat(40); const lock = createHash("sha256").update("raw-lock\n").digest("hex");
-  const old = { api: SHA("a"), web: SHA("b") }; const targetIds = { api: SHA("e"), web: SHA("f") };
+function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, rollbackCutoverFault = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, withdrawalFault, seedPrerequisite, acceptanceStdout = acceptanceOutput, verificationChangedPaths, revision = TEST_REVISION, artifactFs, oldImages = { api: SHA("a"), web: SHA("b") }, targetIds = { api: SHA("e"), web: SHA("f") } } = {}) {
+  const lock = createHash("sha256").update("raw-lock\n").digest("hex");
+  const old = structuredClone(oldImages);
+  const evidencePath = deliveryAuthorityForRevision(revision).evidencePath;
+  const changedPaths = verificationChangedPaths ?? [evidencePath];
   const plan = createRefreshPlan({ revision, lockSha256: lock, apiSeedId: old.api, webSeedId: old.web });
   const targets = { api: targetImage("api", targetIds.api, revision, lock, old.api), web: targetImage("web", targetIds.web, revision, lock, old.web) };
   const calls = []; const routeFetches = []; let snapshot = 0; let rolledBack = false; let verificationMode = false; let staleVerification = false;
@@ -899,18 +901,18 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
       if (args.includes("api") && args.includes("node") && args.includes("-e")) return { stdout: JSON.stringify(failPostCutover && snapshot === 3 ? [{ relativePath: "asset", bytes: 8, sha256: "9".repeat(64) }] : [{ relativePath: "asset", bytes: 7, sha256: "8".repeat(64) }]) };
       return { stdout: "" };
     }
-    if (command === "git" && args[0] === "status") return { stdout: !verificationMode && evidenceBaseFs?.entries.has(`/virtual-workspace/${TEST_EVIDENCE_PATH}`) ? `?? ${TEST_EVIDENCE_PATH}\n` : "" };
+    if (command === "git" && args[0] === "status") return { stdout: !verificationMode && evidenceBaseFs?.entries.has(`/virtual-workspace/${evidencePath}`) ? `?? ${evidencePath}\n` : "" };
     if (command === "git" && args[0] === "symbolic-ref") return { stdout: "refs/heads/dev\n" };
     if (command === "git" && args[0] === "rev-parse") return { stdout: `${verificationMode ? "c".repeat(40) : revision}\n` };
     if (command === "git" && args[0] === "ls-files") return { stdout: "" };
     if (command === "git" && args[0] === "show") return { stdout: "raw-lock\n" };
     if (command === "git" && args[0] === "merge-base") return { stdout: "" };
-    if (command === "git" && args[0] === "diff") return { stdout: `${verificationChangedPaths.join("\n")}\n` };
+    if (command === "git" && args[0] === "diff") return { stdout: `${changedPaths.join("\n")}\n` };
     if (command === "node" && args.join(" ") === "scripts/local-delivery-acceptance.mjs") return { stdout: acceptanceStdout };
     if (command === "node") return { stdout: "" };
     throw new Error(`unexpected raw fake argv: ${command} ${args.join(" ")}`);
   };
-  evidenceBaseFs = memoryArtifactFs();
+  evidenceBaseFs = artifactFs ?? memoryArtifactFs();
   const evidenceFs = atomicFault ? atomicFaultFs(evidenceBaseFs, "evidence", atomicFault)
     : withdrawalFault ? withdrawalFaultFs(evidenceBaseFs, withdrawalFault) : evidenceBaseFs;
   const fetch = async (url, options) => {
@@ -1019,8 +1021,10 @@ test("two successive clean revisions publish distinct verified receipts and pres
   const bytesA = await sharedFs.readFile(pathA);
   const digestA = createHash("sha256").update(bytesA).digest("hex");
   const firstDockerCalls = first.calls.filter(({ command }) => command === "docker").length;
+  const firstAdapters = first.runtime.adapterConstructionCount();
   await assert.rejects(first.runtime.runCli(), /attempt_claim_preflight/i);
   assert.equal(first.calls.filter(({ command }) => command === "docker").length, firstDockerCalls);
+  assert.equal(first.runtime.adapterConstructionCount(), firstAdapters);
 
   const second = liveFixture({
     revision: revisionB,
@@ -1035,9 +1039,12 @@ test("two successive clean revisions publish distinct verified receipts and pres
   assert.notEqual(bytesA, bytesB);
   assert.equal(await sharedFs.readFile(pathA), bytesA);
   assert.equal(createHash("sha256").update(await sharedFs.readFile(pathA)).digest("hex"), digestA);
+  assert.equal(second.runtime.reads.includes(pathA), false);
   const secondDockerCalls = second.calls.filter(({ command }) => command === "docker").length;
+  const secondAdapters = second.runtime.adapterConstructionCount();
   await assert.rejects(second.runtime.runCli(), /attempt_claim_preflight/i);
   assert.equal(second.calls.filter(({ command }) => command === "docker").length, secondDockerCalls);
+  assert.equal(second.runtime.adapterConstructionCount(), secondAdapters);
 
   const foreignRevision = "c".repeat(40);
   const foreignPath = `/virtual-workspace/${deliveryAuthorityForRevision(foreignRevision).evidencePath}`;
