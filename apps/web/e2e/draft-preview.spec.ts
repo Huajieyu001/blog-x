@@ -1,34 +1,21 @@
 import { expect, test } from "@playwright/test";
-import { spawn, type ChildProcess } from "node:child_process";
 
-const username = process.env.E2E_ADMIN_USERNAME;
-const password = process.env.E2E_ADMIN_PASSWORD;
-const webOrigin = "http://127.0.0.1:3100";
-const processes: ChildProcess[] = [];
-
-async function waitFor(url: string) {
-  for (let attempt = 0; attempt < 75; attempt += 1) {
-    try { if ((await fetch(url)).ok) return; } catch { /* process is still starting */ }
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  throw new Error(`Timed out waiting for ${url}`);
+function requiredRunnerFact(name: string) {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is required from the generated main-browser fixture`);
+  return value;
 }
 
-test.beforeAll(async () => {
-  const api = spawn(process.execPath, ["--import", "tsx", "apps/api/src/app.ts"], { stdio: "ignore", env: process.env });
-  processes.push(api); await waitFor("http://127.0.0.1:3001/health");
-  const web = spawn(process.execPath, ["apps/web/node_modules/next/dist/bin/next", "dev", "apps/web", "-p", "3100"], { stdio: "ignore", env: process.env });
-  processes.push(web); await waitFor(webOrigin);
-});
-
-test.afterAll(() => { for (const process of processes) process.kill("SIGTERM"); });
+const username = requiredRunnerFact("E2E_ADMIN_USERNAME");
+const password = requiredRunnerFact("E2E_ADMIN_PASSWORD");
+const runId = requiredRunnerFact("E2E_RUN_ID");
+const webOrigin = requiredRunnerFact("E2E_WEB_ORIGIN");
 
 test("administrator saves, reopens, and responsively previews a complete Markdown draft", async ({ page }) => {
-  test.skip(!username || !password, "E2E administrator credentials are required");
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${webOrigin}/login`);
-  await page.getByLabel("用户名").fill(username!);
-  await page.getByLabel("密码").fill(password!);
+  await page.getByLabel("用户名").fill(username);
+  await page.getByLabel("密码").fill(password);
   await page.getByRole("button", { name: "登录" }).click();
   await expect(page).toHaveURL(`${webOrigin}/admin`);
 
@@ -36,7 +23,7 @@ test("administrator saves, reopens, and responsively previews a complete Markdow
   await expect(page.getByRole("heading", { name: "新建草稿" })).toBeVisible();
   await page.getByLabel("标题").fill("你好 TypeScript Café");
   await expect(page.getByLabel("Slug")).toHaveValue("你好-typescript-café");
-  await page.getByLabel("Slug").fill(`manual-draft-${Date.now()}`);
+  await page.getByLabel("Slug").fill(`manual-draft-${runId}`);
   const manualSlug = await page.getByLabel("Slug").inputValue();
   await page.getByLabel("标题").fill("标题改变后仍保留 Slug");
   await expect(page.getByLabel("Slug")).toHaveValue(manualSlug);

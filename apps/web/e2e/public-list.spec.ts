@@ -1,35 +1,18 @@
 import { expect, test } from "@playwright/test";
-import { spawn, type ChildProcess } from "node:child_process";
 
-const username = process.env.E2E_ADMIN_USERNAME;
-const password = process.env.E2E_ADMIN_PASSWORD;
-const databaseUrl = process.env.DATABASE_URL;
-const webOrigin = "http://127.0.0.1:3100";
-const processes: ChildProcess[] = [];
-
-async function waitFor(url: string) {
-  for (let attempt = 0; attempt < 75; attempt += 1) {
-    try { if ((await fetch(url)).ok) return; } catch { /* process is still starting */ }
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  throw new Error(`Timed out waiting for ${url}`);
+function requiredRunnerFact(name: string) {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is required from the generated main-browser fixture`);
+  return value;
 }
 
-test.beforeAll(async () => {
-  if (!databaseUrl) return;
-  const api = spawn(process.execPath, ["--import", "tsx", "apps/api/src/app.ts"], { stdio: "ignore", env: process.env });
-  processes.push(api); await waitFor("http://127.0.0.1:3001/health");
-  const web = spawn(process.execPath, ["apps/web/node_modules/next/dist/bin/next", "dev", "apps/web", "-p", "3100"], { stdio: "ignore", env: process.env });
-  processes.push(web); await waitFor(webOrigin);
-});
-
-test.afterAll(async () => {
-  for (const process of processes) process.kill("SIGTERM");
-});
+const username = requiredRunnerFact("E2E_ADMIN_USERNAME");
+const password = requiredRunnerFact("E2E_ADMIN_PASSWORD");
+const runId = requiredRunnerFact("E2E_RUN_ID");
+const webOrigin = requiredRunnerFact("E2E_WEB_ORIGIN");
 
 test("public SSR home exposes editorial cards, stable pagination, and fresh lifecycle visibility", async ({ page, request }) => {
   test.setTimeout(90_000);
-  test.skip(!username || !password || !databaseUrl, "E2E database and administrator credentials are required");
   const browserApiRequests: string[] = [];
   page.on("request", (requestEvent) => {
     if (requestEvent.url().includes("/api/public/articles")) browserApiRequests.push(requestEvent.url());
@@ -43,8 +26,8 @@ test("public SSR home exposes editorial cards, stable pagination, and fresh life
   await expect(page.getByRole("heading", { name: "Blog X" })).toBeVisible();
   await expect(page.getByTestId("post-card")).toHaveCount(10);
   const firstCard = page.getByTestId("post-card").first();
-  await expect(firstCard.getByRole("link", { name: "Editorial 11", exact: true })).toHaveAttribute("href", "/posts/editorial-11");
-  await expect(firstCard).toContainText("A concise summary for article 11.");
+  await expect(firstCard.getByRole("link", { name: `Editorial ${runId} 11`, exact: true })).toHaveAttribute("href", `/posts/editorial-${runId}-11`);
+  await expect(firstCard).toContainText(`A concise summary for ${runId} article 11.`);
   await expect(firstCard).toContainText("已发布");
   await expect(firstCard.locator("time")).toHaveAttribute("datetime", "2026-08-01T12:00:00.000Z");
   await expect(page.getByText("Private draft")).toHaveCount(0);
@@ -70,13 +53,13 @@ test("public SSR home exposes editorial cards, stable pagination, and fresh life
   await expect(page.getByRole("link", { name: "返回最新文章" })).toHaveAttribute("href", "/");
 
   await page.goto(`${webOrigin}/login`);
-  await page.getByLabel("用户名").fill(username!);
-  await page.getByLabel("密码").fill(password!);
+  await page.getByLabel("用户名").fill(username);
+  await page.getByLabel("密码").fill(password);
   await page.getByRole("button", { name: "登录" }).click();
   await expect(page).toHaveURL(`${webOrigin}/admin`);
   await page.goto(`${webOrigin}/admin/new`);
-  const slug = `fresh-public-${Date.now()}`;
-  const title = "Fresh lifecycle publication";
+  const slug = `fresh-public-${runId}`;
+  const title = `Fresh lifecycle publication ${runId}`;
   await page.getByLabel("标题").fill(title);
   await page.getByLabel("摘要").fill("Appears only while publication is current.");
   await page.getByLabel("Slug").fill(slug);
