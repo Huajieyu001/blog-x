@@ -5,29 +5,41 @@ import { createServer, connect } from "node:net";
 import test from "node:test";
 import {
   LOCAL_DELIVERY_ACCEPTANCE_FORMAT,
-  assertPhase6CleanupAcknowledgement,
+  assertGeneratedIntegrationCleanupAcknowledgement,
   assertPhase7CleanupAcknowledgement,
   parseLocalDeliveryAcceptanceOutputs,
   parseLocalDeliveryAcceptanceRecord,
   runLocalDeliveryAcceptance,
 } from "./local-delivery-acceptance.mjs";
 import { createLocalDeliveryAcceptanceTestRuntime } from "./local-delivery-acceptance-test-core.mjs";
-import { createPhase6DataResult, phase6Selection } from "./local-verify.mjs";
+import { canonicalIntegrationSelection, createGeneratedIntegrationResult, createLifecycleProbeResult } from "./local-verify.mjs";
+import { createPhase7BrowserResult, phase7BrowserSelection } from "./phase7-browser-verify.mjs";
+import { PACKAGE_TEST_INVENTORY } from "./test-inventory.mjs";
 import { runBoundedChildTree } from "./local-delivery-child-tree.mjs";
 
 const counts = { tests: 3, passed: 3, failed: 0, cancelled: 0, skipped: 0, todo: 0 };
-const phase6Result = createPhase6DataResult([
-  ...phase6Selection("data").databaseSuites.map(([, id]) => ({ id, kind: "database", counts })),
-  ...phase6Selection("data").nodeSuites.map((id) => ({ id, kind: "node", counts })),
-  { id: phase6Selection("data").boundarySuite, kind: "boundary", counts },
-]);
-const phase7Result = { format: "blog-x-phase7-browser-result", version: 1, counts, releaseState: "BLOCKED" };
-const phase6Output = [
-  ...Array.from({ length: 3 }, () => `BLOG X PHASE6 DATA RESULT ${JSON.stringify(phase6Result)}`),
-  ...Array.from({ length: 3 }, () => "[local-verify] LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED"),
-  "[local-verify] GENERATED CLEANUP PASS",
-  ...Array.from({ length: 2 }, () => "[local-verify] GENERATED PARALLEL CLEANUP PASS"),
-  `BLOG X PHASE6 CLEANUP ACK ${JSON.stringify({ format: "blog-x-phase6-cleanup-ack", version: 1, namespaces: ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc"].map((suffix) => ({ namespace: `blogxverify_${suffix}`, containersAbsent: true, volumes: [`blogxverify_${suffix}_postgres-data`, `blogxverify_${suffix}_media-data`], volumesAbsent: true })), releaseState: "BLOCKED" })}`,
+const generatedSelection = canonicalIntegrationSelection();
+const generatedResult = createGeneratedIntegrationResult({
+  suites: generatedSelection.paths.map((path) => ({
+    path,
+    fixtureOwner: PACKAGE_TEST_INVENTORY.find((entry) => entry.path === path).fixtureOwner,
+    counts,
+  })),
+  cleanup: { namespace: "blogxverify_aaaaaaaaaaaa", containersAbsent: true, volumesAbsent: true, pathsAbsent: true },
+  probes: [
+    createLifecycleProbeResult({ kind: "interruption", namespaces: ["blogxverify_bbbbbbbbbbbb"], interrupted: true }),
+    createLifecycleProbeResult({ kind: "parallel", namespaces: ["blogxverify_cccccccccccc", "blogxverify_dddddddddddd"], interrupted: false }),
+  ],
+});
+const phase7Result = createPhase7BrowserResult({
+  inventory: phase7BrowserSelection().inventory,
+  counts,
+  cleanup: { childrenAbsent: true, originsAbsent: true, webRootAbsent: true },
+});
+const generatedOutput = [
+  `BLOG X GENERATED INTEGRATION RESULT ${JSON.stringify(generatedResult)}`,
+  "[local-verify] LOCAL CANONICAL INTEGRATION PASS; RELEASE BLOCKED",
+  `BLOG X GENERATED INTEGRATION CLEANUP ACK ${JSON.stringify({ format: "blog-x-generated-integration-cleanup", version: 1, namespaces: ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc", "dddddddddddd"].map((suffix) => ({ namespace: `blogxverify_${suffix}`, containersAbsent: true, volumesAbsent: true, pathsAbsent: true })), releaseState: "BLOCKED" })}`,
 ].join("\n");
 const phase7Output = [
   `BLOG X PHASE7 BROWSER RESULT ${JSON.stringify(phase7Result)}`,
@@ -36,45 +48,45 @@ const phase7Output = [
   "[phase7-browser] CLEANUP PASS",
 ].join("\n");
 
-test("local delivery acceptance only accepts complete BLOCKED Phase 6/7 records and binds sanitized digests", () => {
-  const result = parseLocalDeliveryAcceptanceOutputs({ phase6Output, phase7Output });
+test("local delivery acceptance binds the exact complete integration inventory once", () => {
+  const result = parseLocalDeliveryAcceptanceOutputs({ generatedIntegrationOutput: generatedOutput, phase7Output });
   assert.equal(LOCAL_DELIVERY_ACCEPTANCE_FORMAT, "blog-x-v1.1-local-delivery-acceptance");
   assert.equal(result.format, LOCAL_DELIVERY_ACCEPTANCE_FORMAT);
   assert.equal(result.releaseState, "BLOCKED");
-  assert.equal(result.phase6Data.runs, 3);
+  assert.equal(result.version, 2);
+  assert.equal(result.generatedIntegration.runs, 1);
   assert.equal(result.phase7Browser.runs, 1);
-  assert.match(result.phase6Data.resultSha256, /^[a-f0-9]{64}$/);
+  assert.match(result.generatedIntegration.resultSha256, /^[a-f0-9]{64}$/);
   assert.match(result.phase7Browser.outputSha256, /^[a-f0-9]{64}$/);
-  assert.equal(Object.keys(result).sort().join(","), "counts,format,phase6Data,phase7Browser,releaseState,version");
+  assert.deepEqual(result.inventory, PACKAGE_TEST_INVENTORY.filter((entry) => entry.scope === "integration").map((entry) => entry.path).sort());
+  assert.equal(new Set(result.inventory).size, 30);
+  assert.equal(Object.keys(result).sort().join(","), "counts,format,generatedIntegration,inventory,manifestSha256,phase7Browser,releaseState,resultSha256,version");
   assert.deepEqual(parseLocalDeliveryAcceptanceRecord(result), result);
-  assert.equal(assertPhase6CleanupAcknowledgement(phase6Output, { requireThree: true }).namespaces.length, 3);
+  assert.equal(assertGeneratedIntegrationCleanupAcknowledgement(generatedOutput, { requireFour: true }).namespaces.length, 4);
   assert.equal(assertPhase7CleanupAcknowledgement(phase7Output, { requireOrigins: true }).origins.length, 2);
 });
 
-test("local delivery acceptance rejects incomplete, stale, non-pass, and unclean evidence", () => {
+test("local delivery acceptance rejects missing duplicate extra drifted and coverage-bearing evidence", () => {
   const replacements = [
-    [phase6Output.replace(/BLOG X PHASE6 DATA RESULT.*\n/, ""), phase7Output, /three|record/i],
-    [phase6Output.replace("GENERATED PARALLEL CLEANUP PASS", ""), phase7Output, /cleanup/i],
-    [phase6Output, phase7Output.replace('"version":1', '"version":2'), /format|version/i],
-    [phase6Output, phase7Output.replace("CLEANUP PASS", "CLEANUP FAIL"), /cleanup/i],
-    [phase6Output, `${phase7Output}\nBLOG X PHASE7 BROWSER RESULT ${JSON.stringify(phase7Result)}`, /exactly one/i],
-    [phase6Output.replace('"tests":3,"passed":3', '"tests":0,"passed":0'), phase7Output, /zero|pass-only/i],
-    [phase6Output.replace('"failed":0', '"failed":1'), phase7Output, /pass-only|counts/i],
-    [phase6Output.replace('"skipped":0', '"skipped":1'), phase7Output, /pass-only|counts/i],
-    [phase6Output.replace('"todo":0', '"todo":1'), phase7Output, /pass-only|counts/i],
+    [generatedOutput.replace(/BLOG X GENERATED INTEGRATION RESULT.*\n/, ""), phase7Output, /exactly one|record/i],
+    [generatedOutput.replace("LOCAL CANONICAL INTEGRATION PASS", "LOCAL CANONICAL INTEGRATION FAIL"), phase7Output, /marker|pass/i],
+    [generatedOutput, phase7Output.replace("CLEANUP PASS", "CLEANUP FAIL"), /cleanup/i],
+    [generatedOutput, `${phase7Output}\nBLOG X PHASE7 BROWSER RESULT ${JSON.stringify(phase7Result)}`, /exactly one/i],
+    [generatedOutput.replace('"tests":3,"passed":3', '"tests":0,"passed":0'), phase7Output, /zero|pass-only|digest/i],
+    [generatedOutput.replace('"skipped":0', '"skipped":1'), phase7Output, /pass-only|counts|digest/i],
+    [generatedOutput.replace('"inventory":[]', '"inventory":["apps/web/e2e/public-errors.spec.ts"]'), phase7Output, /probe|inventory|coverage/i],
   ];
-  for (const [badPhase6, badPhase7, matcher] of replacements) {
-    assert.throws(() => parseLocalDeliveryAcceptanceOutputs({ phase6Output: badPhase6, phase7Output: badPhase7 }), matcher);
+  for (const [badGenerated, badPhase7, matcher] of replacements) {
+    assert.throws(() => parseLocalDeliveryAcceptanceOutputs({ generatedIntegrationOutput: badGenerated, phase7Output: badPhase7 }), matcher);
   }
-  const phase6Acknowledgement = phase6Output.split("\n").find((line) => line.startsWith("BLOG X PHASE6 CLEANUP ACK "));
-  assert.ok(phase6Acknowledgement);
+  const generatedAcknowledgement = generatedOutput.split("\n").find((line) => line.startsWith("BLOG X GENERATED INTEGRATION CLEANUP ACK "));
+  assert.ok(generatedAcknowledgement);
   for (const invalid of [
-    phase6Acknowledgement.replace("blogxverify_aaaaaaaaaaaa", "blogxlocal"),
-    phase6Acknowledgement.replace("blogxverify_aaaaaaaaaaaa_postgres-data", "blogxlocal_postgres-data"),
-    phase6Acknowledgement.replace('"containersAbsent":true', '"containersAbsent":false'),
-    `${phase6Acknowledgement}\n${phase6Acknowledgement}`,
+    generatedAcknowledgement.replace("blogxverify_aaaaaaaaaaaa", "blogxlocal"),
+    generatedAcknowledgement.replace('"containersAbsent":true', '"containersAbsent":false'),
+    `${generatedAcknowledgement}\n${generatedAcknowledgement}`,
   ]) {
-    assert.throws(() => assertPhase6CleanupAcknowledgement(invalid), /incomplete|invalid|exactly one/i);
+    assert.throws(() => assertGeneratedIntegrationCleanupAcknowledgement(invalid), /incomplete|invalid|exactly one/i);
   }
 });
 
@@ -94,10 +106,10 @@ test("structured JSON colon Bearer and Cookie secrets are redacted before stable
     [firstDatabaseUrl, secondDatabaseUrl],
   ];
   for (const [firstSecret, secondSecret] of variants) {
-    const first = parseLocalDeliveryAcceptanceOutputs({ phase6Output: `${phase6Output}\n${firstSecret}`, phase7Output });
-    const second = parseLocalDeliveryAcceptanceOutputs({ phase6Output: `${phase6Output}\n${secondSecret}`, phase7Output });
-    assert.equal(first.phase6Data.outputSha256, second.phase6Data.outputSha256, firstSecret);
-    assert.deepEqual(first.phase6Data.counts, second.phase6Data.counts);
+    const first = parseLocalDeliveryAcceptanceOutputs({ generatedIntegrationOutput: `${generatedOutput}\n${firstSecret}`, phase7Output });
+    const second = parseLocalDeliveryAcceptanceOutputs({ generatedIntegrationOutput: `${generatedOutput}\n${secondSecret}`, phase7Output });
+    assert.equal(first.generatedIntegration.outputSha256, second.generatedIntegration.outputSha256, firstSecret);
+    assert.deepEqual(first.generatedIntegration.counts, second.generatedIntegration.counts);
   }
 });
 
@@ -106,13 +118,13 @@ test("test-only runtime records the only two sealed child argv families and reje
   const runtime = createLocalDeliveryAcceptanceTestRuntime({
     processBoundary: async (command, args) => {
       calls.push({ command, args });
-      return { exitCode: 0, signal: null, combined: args[0]?.endsWith("local-verify.mjs") ? phase6Output : phase7Output };
+      return { exitCode: 0, signal: null, combined: args[0]?.endsWith("local-verify.mjs") ? generatedOutput : phase7Output };
     },
   });
   const result = await runtime.run();
-  assert.equal(result.phase6Data.runs, 3);
+  assert.equal(result.generatedIntegration.runs, 1);
   assert.deepEqual(calls.map(({ command, args }) => [command, args]), [
-    [process.execPath, ["scripts/local-verify.mjs", "--phase6-data", "--interruption-check", "--parallel-check"]],
+    [process.execPath, ["scripts/local-verify.mjs", "--canonical-integration", "--interruption-check", "--parallel-check"]],
     [process.execPath, ["scripts/phase7-browser-verify.mjs"]],
   ]);
   for (const result of [
@@ -127,19 +139,19 @@ test("test-only runtime records the only two sealed child argv families and reje
 
 test("production coordinator is sealed, zero-argument, and has no test-core, canonical-data, or remote authority", async () => {
   const source = await readFile(join(process.cwd(), "scripts/local-delivery-acceptance.mjs"), "utf8");
-  const phase6Source = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
+  const generatedSource = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
   const phase7Source = await readFile(join(process.cwd(), "scripts/phase7-browser-verify.mjs"), "utf8");
   assert.match(source, /export async function runLocalDeliveryAcceptance\(\.\.\.args\)/);
   assert.match(source, /args\.length/);
   assert.doesNotMatch(source, /local-delivery-acceptance-test-core|createLocalDeliveryAcceptanceTestRuntime|blogxlocal|docker-compose|migration|cutover|\b(?:ssh|scp|rsync|fetch\()/i);
-  assert.match(source, /scripts\/local-verify\.mjs[\s\S]*--phase6-data[\s\S]*--interruption-check[\s\S]*--parallel-check/);
+  assert.match(source, /scripts\/local-verify\.mjs[\s\S]*--canonical-integration[\s\S]*--interruption-check[\s\S]*--parallel-check/);
   assert.match(source, /scripts\/phase7-browser-verify\.mjs/);
   assert.doesNotMatch(source, /grep/);
   assert.match(source, /maximumOutputBytes/);
   assert.match(source, /childTimeoutMs/);
   assert.match(source, /runBoundedChildTree/);
-  assert.match(phase6Source, /installCooperativeShutdown[\s\S]*allowDuringShutdown[\s\S]*confirmGeneratedProjectAbsent/);
-  assert.match(phase6Source, /BLOG X PHASE6 CLEANUP ACK/);
+  assert.match(generatedSource, /installCooperativeShutdown[\s\S]*allowDuringShutdown[\s\S]*confirmGeneratedProjectAbsent/);
+  assert.match(generatedSource, /BLOG X GENERATED INTEGRATION CLEANUP ACK/);
   assert.match(phase7Source, /installCooperativeShutdown[\s\S]*signalCleanupPromise[\s\S]*stopExactChildren/);
   assert.match(phase7Source, /BLOG X PHASE7 CLEANUP ACK/);
   await assert.rejects(runLocalDeliveryAcceptance("--partial"), /zero arguments/i);
