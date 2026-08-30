@@ -87,6 +87,10 @@ test("structured JSON colon Bearer and Cookie secrets are redacted before stable
     ["Authorization: Bearer alpha-bearer", "Authorization: Bearer beta-bearer"],
     ["Cookie: account=alpha-cookie; preference=alpha-pref", "Cookie: account=beta-cookie; preference=beta-pref"],
     ["Set-Cookie: account=alpha-cookie; HttpOnly=true", "Set-Cookie: account=beta-cookie; HttpOnly=false"],
+    ["  Cookie: account=alpha-indented", "  Cookie: account=beta-indented"],
+    ["[info] Cookie: account=alpha-prefixed; preference=alpha-pref", "[info] Cookie: account=beta-prefixed; preference=beta-pref"],
+    ["2026-08-21T00:00:00Z response Set-Cookie: account=alpha-log; HttpOnly", "2026-08-21T00:00:00Z response Set-Cookie: account=beta-log; HttpOnly"],
+    ['{"set-cookie":"account=alpha-json-cookie; HttpOnly"}', '{"set-cookie":"account=beta-json-cookie; HttpOnly"}'],
     [firstDatabaseUrl, secondDatabaseUrl],
   ];
   for (const [firstSecret, secondSecret] of variants) {

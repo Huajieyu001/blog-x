@@ -41,20 +41,26 @@ function sumCounts(values) {
 
 function normalizedRedactedOutput(value) {
   const secretKey = String.raw`(?:password|passwd|pwd|token|secret|api[_-]?key|access[_-]?token|refresh[_-]?token)`;
-  const structuredKey = String.raw`(?:${secretKey}|authorization|cookie)`;
+  const structuredKey = String.raw`(?:${secretKey}|authorization|(?:set-)?cookie)`;
   let output = String(value).replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\r\n?/g, "\n")
     .replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "[REDACTED_DATABASE_URL]")
     .replace(/(blog_x_session=)[^;\s]+/gi, "$1[REDACTED]")
     .replace(/(\bauthorization\s*[=:]\s*bearer\s+)[^\s,;]+/gi, "$1[REDACTED]")
     .replace(/(^|\n)(authorization\s*:\s*)[^\n]*/gi, "$1$2[REDACTED]");
-  output = output.replace(/(^|\n)((?:set-)?cookie\s*:\s*)([^\n]*)/gi, (line, start, header, body) => {
-    const redacted = body.split(";").map((part) => part.replace(/^(\s*[^=;\s]+\s*=\s*).*$/, "$1[REDACTED]")).join(";");
-    return `${start}${header}${redacted}`;
-  });
   output = output
     .replace(new RegExp(`("${structuredKey}"\\s*:\\s*)"(?:\\\\.|[^"\\\\])*"`, "gi"), '$1"[REDACTED]"')
     .replace(new RegExp(`(\\b${secretKey}\\b\\s*:\\s*)(?:"(?:\\\\.|[^"\\\\])*"|'[^'\\r\\n]*'|[^\\s,;}]+)`, "gi"), "$1[REDACTED]")
     .replace(new RegExp(`(\\b${secretKey}\\b\\s*=\\s*)(?:"(?:\\\\.|[^"\\\\])*"|'[^'\\r\\n]*'|[^\\s,;}]+)`, "gi"), "$1[REDACTED]");
+  output = output.split("\n").map((line) => {
+    const match = /^(.*?)(\b(?:set-)?cookie\s*:\s*)(.*)$/i.exec(line);
+    if (!match) return line;
+    let foundPair = false;
+    const redacted = match[3].split(";").map((part) => part.replace(/^(\s*[^=;\s]+\s*=\s*).*$/, (_, key) => {
+      foundPair = true;
+      return `${key}[REDACTED]`;
+    })).join(";");
+    return `${match[1]}${match[2]}${foundPair ? redacted : "[REDACTED]"}`;
+  }).join("\n");
   assertNoRawSecrets(output, "normalized acceptance");
   return output;
 }
@@ -62,13 +68,14 @@ function normalizedRedactedOutput(value) {
 function assertNoRawSecrets(value, label) {
   const output = String(value);
   const secretKey = String.raw`(?:password|passwd|pwd|token|secret|api[_-]?key|access[_-]?token|refresh[_-]?token)`;
-  const structuredKey = String.raw`(?:${secretKey}|authorization|cookie)`;
+  const structuredKey = String.raw`(?:${secretKey}|authorization|(?:set-)?cookie)`;
   if (/postgres(?:ql)?:\/\/[^\s]+/i.test(output)
     || /blog_x_session=(?!\[REDACTED\])[^;\s]+/i.test(output)
     || /\bauthorization\s*[=:]\s*bearer(?!\s+\[REDACTED\])\s+/i.test(output)
     || new RegExp(`"${structuredKey}"\\s*:\\s*"(?!\\[REDACTED\\])`, "i").test(output)
     || new RegExp(`\\b${secretKey}\\b\\s*[=:](?!\\s*\\[REDACTED\\])`, "i").test(output)
-    || output.split("\n").filter((line) => /^(?:set-)?cookie\s*:/i.test(line)).some((line) => line.split(":").slice(1).join(":").split(";").some((part) => /=/.test(part) && !/=\s*\[REDACTED\]\s*$/.test(part)))) {
+    || output.split("\n").map((line) => /\b(?:set-)?cookie\s*:\s*(.*)$/i.exec(line)?.[1]).filter((body) => body !== undefined)
+      .some((body) => body !== "[REDACTED]" && body.split(";").some((part) => /=/.test(part) && !/=\s*\[REDACTED\]\s*$/.test(part)))) {
     throw new Error(`${label} output contains raw secret-bearing material`);
   }
 }
