@@ -59,7 +59,7 @@ test("invalid, expired, wrong-target, oversized and unknown-version snapshots ne
     ["invalid JSON", "{"],
     ["unknown version", JSON.stringify({ format: "blog-x-editor-recovery", version: 2 })],
     ["wrong target", JSON.stringify(createEditorRecoverySnapshot({ target: { kind: "new" }, baseVersion: null, fields, slugManuallyEdited: false, now }))],
-    ["expired", JSON.stringify(createEditorRecoverySnapshot({ target: { kind: "post", id: postId }, baseVersion: null, fields, slugManuallyEdited: false, now: now - 8 * 24 * 60 * 60 * 1_000 }))],
+    ["expired", JSON.stringify(createEditorRecoverySnapshot({ target: { kind: "post", id: postId }, baseVersion: "2026-08-20T11:00:00.000Z", fields, slugManuallyEdited: false, now: now - 8 * 24 * 60 * 60 * 1_000 }))],
     ["oversized", "x".repeat(256 * 1024 + 1)],
   ];
 
@@ -95,6 +95,13 @@ test("storage denial degrades safely while targeted and bulk removal preserve un
 
 test("snapshot creation rejects unsafe target, field shape and body size", () => {
   assert.throws(() => editorRecoveryKey({ kind: "post", id: "../other" }), /target/i);
+  assert.throws(() => createEditorRecoverySnapshot({
+    target: { kind: "post", id: postId },
+    baseVersion: null,
+    fields,
+    slugManuallyEdited: false,
+    now,
+  }), /fields/i);
   assert.throws(() => createEditorRecoverySnapshot({
     target: { kind: "new" },
     baseVersion: null,

@@ -27,6 +27,7 @@ test("administrator saves, reopens, and responsively previews a complete Markdow
   await page.reload();
   const recovery = page.getByTestId("editor-recovery-notice");
   await expect(recovery.getByRole("heading", { name: "发现未保存的内容" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "保存草稿" })).toBeDisabled();
   await expect(page.getByLabel("标题")).toHaveValue("");
   await recovery.getByRole("button", { name: "恢复内容" }).click();
   await expect(page.getByLabel("标题")).toHaveValue("刷新前的未完成标题");
@@ -65,23 +66,26 @@ test("administrator saves, reopens, and responsively previews a complete Markdow
   let markSaveIntercepted!: () => void;
   const saveGate = new Promise<void>((resolve) => { releaseSave = resolve; });
   const saveIntercepted = new Promise<void>((resolve) => { markSaveIntercepted = resolve; });
-  await page.route("**/api/admin/posts/*", async (route) => {
-    if (route.request().method() !== "PUT") {
-      await route.continue();
-      return;
-    }
+  const articleId = page.url().split("/").at(-1);
+  await page.route(`${webOrigin}/api/admin/posts/${articleId}`, async (route) => {
     markSaveIntercepted();
     await saveGate;
     await route.continue();
-  });
-  await page.getByLabel("标题").fill("提交请求中的标题");
-  await page.getByRole("button", { name: "保存更改" }).click();
-  await saveIntercepted;
-  await page.getByLabel("标题").fill("请求期间继续输入的标题");
-  releaseSave();
-  await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("提交时的内容已保存；之后的编辑仍保留");
-  await expect(page.getByLabel("标题")).toHaveValue("请求期间继续输入的标题");
-  await page.unroute("**/api/admin/posts/*");
+  }, { times: 1 });
+  try {
+    await page.getByLabel("标题").fill("提交请求中的标题");
+    await page.getByRole("button", { name: "保存更改" }).click();
+    await saveIntercepted;
+    await expect(page.getByRole("button", { name: "保存中…" })).toBeDisabled();
+    await page.getByLabel("标题").fill("请求期间继续输入的标题");
+    releaseSave();
+    await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("提交时的内容已保存；之后的编辑仍保留");
+    await expect(page.getByLabel("标题")).toHaveValue("请求期间继续输入的标题");
+    await expect(page.getByRole("button", { name: "发布" })).toBeDisabled();
+  } finally {
+    releaseSave();
+    await page.unrouteAll({ behavior: "wait" });
+  }
 
   await page.route("**/api/admin/posts/preview", async (route) => {
     const submitted = route.request().postDataJSON() as { markdown: string };
@@ -140,4 +144,41 @@ test("manual draft saving remains available when browser recovery storage is blo
   await page.getByRole("button", { name: "保存草稿" }).click();
   await expect(page).toHaveURL(/\/admin\/posts\/[0-9a-f-]+$/);
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("草稿已保存");
+});
+
+test("stale recovery remains explicit and cannot silently overwrite a newer server version", async ({ page, context }) => {
+  await page.goto(`${webOrigin}/login`);
+  await page.getByLabel("用户名").fill(username);
+  await page.getByLabel("密码").fill(password);
+  await page.getByRole("button", { name: "登录" }).click();
+  await page.goto(`${webOrigin}/admin/new`);
+  await page.getByLabel("标题").fill("版本冲突恢复测试");
+  await page.getByLabel("Slug").fill(`stale-recovery-${runId}`);
+  await page.getByLabel("Markdown").fill("# 已保存的服务器正文");
+  await page.getByRole("button", { name: "保存草稿" }).click();
+  await expect(page).toHaveURL(/\/admin\/posts\/[0-9a-f-]+$/);
+  const editUrl = page.url();
+
+  await page.getByLabel("Markdown").fill("# 本机未保存的旧版本正文");
+  await expect(page.getByRole("status", { name: "恢复副本状态" })).toHaveText("未保存的更改已保存到本机恢复副本");
+
+  const newerPage = await context.newPage();
+  await newerPage.goto(editUrl);
+  await newerPage.getByLabel("摘要").fill("另一标签页写入的服务器新版");
+  await newerPage.getByRole("button", { name: "保存更改" }).click();
+  await expect(newerPage.getByRole("status", { name: "编辑器状态" })).toHaveText("更改已保存");
+  await newerPage.close();
+
+  await page.reload();
+  const recovery = page.getByTestId("editor-recovery-notice");
+  await expect(recovery).toContainText("服务器版本已变化");
+  await expect(page.getByLabel("Markdown")).toHaveValue("# 已保存的服务器正文");
+  await recovery.getByRole("button", { name: "恢复内容" }).click();
+  await expect(page.getByLabel("Markdown")).toHaveValue("# 本机未保存的旧版本正文");
+  await expect(page.getByRole("heading", { name: "恢复内容基于较旧的服务器版本" })).toBeVisible();
+  await page.getByRole("button", { name: "保存更改" }).click();
+  await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("恢复副本基于较旧版本；请先确认是否覆盖服务器版本");
+  await page.getByRole("button", { name: "使用服务器版本" }).click();
+  await expect(page.getByLabel("Markdown")).toHaveValue("# 已保存的服务器正文");
+  await expect(page.getByRole("heading", { name: "恢复内容基于较旧的服务器版本" })).toHaveCount(0);
 });

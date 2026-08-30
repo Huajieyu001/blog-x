@@ -24,11 +24,13 @@ export default function ArticleActions({
   variant = "detail",
   onChanged,
   onDeleted,
+  disabled = false,
 }: {
   post: AdminPost;
   variant?: "detail" | "list";
   onChanged?: (post: AdminPost) => void;
   onDeleted?: () => void;
+  disabled?: boolean;
 }) {
   const [post, setPost] = useState(initialPost);
   const [message, setMessage] = useState("");
@@ -38,6 +40,7 @@ export default function ArticleActions({
   useEffect(() => { setPost(initialPost); }, [initialPost]);
 
   async function perform(action: ArticleAction) {
+    if (disabled) return;
     setMessage(`${actionLabels[action]}中…`);
     try {
       const response = await fetch(`/api/admin/posts/${post.id}/${action}`, {
@@ -76,10 +79,10 @@ export default function ArticleActions({
       <p className={styles.lifecycleState}>状态：{statusLabels[post.status]}</p>
       <div className={styles.actionButtons}>
         {validActions(post).map((action) => action === "delete"
-          ? <button className={styles.dangerButton} type="button" key={action} onClick={() => setPendingDelete(true)}>{actionLabels[action]}</button>
-          : <button type="button" key={action} onClick={() => { void perform(action); }}>{actionLabels[action]}</button>)}
+          ? <button className={styles.dangerButton} type="button" key={action} disabled={disabled} onClick={() => setPendingDelete(true)}>{actionLabels[action]}</button>
+          : <button type="button" key={action} disabled={disabled} onClick={() => { void perform(action); }}>{actionLabels[action]}</button>)}
       </div>
-      <p role="status" aria-label="生命周期状态" className={styles.actionStatus}>{message}</p>
+      <p role="status" aria-label="生命周期状态" className={styles.actionStatus}>{message || (disabled ? "请先保存更改或处理恢复副本" : "")}</p>
       {pendingDelete && (
         <div className={styles.dialogBackdrop}>
           <section className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby={`delete-title-${post.id}`}>
@@ -87,7 +90,7 @@ export default function ArticleActions({
             <p>文章会立即从普通管理与公开访问中移除，但源文件和 Slug 将继续保留，可在后续恢复流程中使用。</p>
             <div className={styles.dialogActions}>
               <button type="button" onClick={() => setPendingDelete(false)}>取消</button>
-              <button className={styles.dangerButton} type="button" onClick={() => { void perform("delete"); }}>确认软删除</button>
+              <button className={styles.dangerButton} type="button" disabled={disabled} onClick={() => { void perform("delete"); }}>确认软删除</button>
             </div>
           </section>
         </div>

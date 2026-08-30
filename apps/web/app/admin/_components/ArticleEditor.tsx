@@ -94,16 +94,22 @@ export default function ArticleEditor({
   const [mobilePane, setMobilePane] = useState<"edit" | "preview">("edit");
   const [publishedAtCorrection, setPublishedAtCorrection] = useState(false);
   const [pendingSlugConfirmation, setPendingSlugConfirmation] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [editorReady, setEditorReady] = useState(false);
   const [pendingRecovery, setPendingRecovery] = useState<EditorRecoverySnapshot | null>(null);
   const [recoveryMessage, setRecoveryMessage] = useState("");
+  const [recoveryBaseVersion, setRecoveryBaseVersion] = useState<string | null>(post?.version ?? null);
+  const [allowStaleOverwrite, setAllowStaleOverwrite] = useState(false);
   const slugManuallyEdited = useRef(Boolean(post));
   const previewSequence = useRef(0);
   const editSequence = useRef(0);
+  const saveInFlight = useRef(false);
   const fieldsRef = useRef(fields);
   const baselineFields = useRef(JSON.stringify(initialFields(post)));
   const initialRecoveryTarget = useRef<EditorRecoveryTarget>(post ? { kind: "post", id: post.id } : { kind: "new" });
   const markdownRef = useRef<HTMLTextAreaElement>(null);
+  const recoveryButtonRef = useRef<HTMLButtonElement>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
 
   fieldsRef.current = fields;
 
@@ -128,6 +134,10 @@ export default function ArticleEditor({
   }, []);
 
   useEffect(() => {
+    if (pendingRecovery) recoveryButtonRef.current?.focus();
+  }, [pendingRecovery]);
+
+  useEffect(() => {
     if (!editorReady || pendingRecovery) return;
     const target: EditorRecoveryTarget = postId ? { kind: "post", id: postId } : { kind: "new" };
     const storage = getEditorRecoveryStorage();
@@ -143,7 +153,7 @@ export default function ArticleEditor({
       try {
         const snapshot = createEditorRecoverySnapshot({
           target,
-          baseVersion: currentPost?.version ?? null,
+          baseVersion: postId ? recoveryBaseVersion : null,
           fields,
           slugManuallyEdited: slugManuallyEdited.current,
         });
@@ -155,7 +165,26 @@ export default function ArticleEditor({
       }
     }, 1_500);
     return () => window.clearTimeout(timer);
-  }, [currentPost?.version, editorReady, fields, pendingRecovery, postId]);
+  }, [editorReady, fields, pendingRecovery, postId, recoveryBaseVersion]);
+
+  useEffect(() => {
+    if (!editorReady || pendingRecovery || JSON.stringify(fields) === baselineFields.current) return;
+    const flushRecovery = () => {
+      const storage = getEditorRecoveryStorage();
+      if (!storage) return;
+      const target: EditorRecoveryTarget = postId ? { kind: "post", id: postId } : { kind: "new" };
+      try {
+        writeEditorRecoverySnapshot(storage, createEditorRecoverySnapshot({
+          target,
+          baseVersion: postId ? recoveryBaseVersion : null,
+          fields: fieldsRef.current,
+          slugManuallyEdited: slugManuallyEdited.current,
+        }));
+      } catch { /* the visible status from the debounced path remains authoritative */ }
+    };
+    window.addEventListener("pagehide", flushRecovery);
+    return () => window.removeEventListener("pagehide", flushRecovery);
+  }, [editorReady, fields, pendingRecovery, postId, recoveryBaseVersion]);
 
   useEffect(() => {
     const sequence = ++previewSequence.current;
@@ -215,6 +244,12 @@ export default function ArticleEditor({
   }
 
   async function save(confirmSlugChange = false) {
+    if (saveInFlight.current || pendingRecovery) return;
+    const staleRecovery = Boolean(postId && recoveryBaseVersion && currentPost && recoveryBaseVersion !== currentPost.version);
+    if (staleRecovery && !allowStaleOverwrite) {
+      setMessage("恢复副本基于较旧版本；请先确认是否覆盖服务器版本");
+      return;
+    }
     if (currentPost?.status === "published" && fields.slug !== currentPost.slug && !confirmSlugChange) {
       setPendingSlugConfirmation(true);
       setMessage("修改公开 Slug 需要显式确认");
@@ -231,6 +266,8 @@ export default function ArticleEditor({
       setMessage("请修正标记的字段");
       return;
     }
+    saveInFlight.current = true;
+    setSaving(true);
     try {
       const submittedSequence = editSequence.current;
       const previousTarget: EditorRecoveryTarget = postId ? { kind: "post", id: postId } : { kind: "new" };
@@ -264,8 +301,10 @@ export default function ArticleEditor({
       setCurrentPost(saved.data);
       baselineFields.current = JSON.stringify(savedFields);
       if (!editsContinued) setFields(savedFields);
-      setPublishedAtCorrection(false);
+      if (!editsContinued) setPublishedAtCorrection(false);
       setPendingSlugConfirmation(false);
+      setRecoveryBaseVersion(saved.data.version);
+      setAllowStaleOverwrite(false);
       setMessage(editsContinued ? "提交时的内容已保存；之后的编辑仍保留" : (wasExisting ? "更改已保存" : "草稿已保存"));
       const storage = getEditorRecoveryStorage();
       if (storage) {
@@ -296,14 +335,23 @@ export default function ArticleEditor({
       }
     } catch {
       setMessage("网络异常，草稿内容仍保留在编辑器中");
+    } finally {
+      saveInFlight.current = false;
+      setSaving(false);
     }
   }
 
   function lifecycleChanged(nextPost: AdminPost) {
+    if (JSON.stringify(fieldsRef.current) !== baselineFields.current) {
+      setCurrentPost(nextPost);
+      setMessage("文章状态已更新；未保存的编辑内容仍保留，请手动保存");
+      return;
+    }
     const nextFields = initialFields(nextPost);
     setCurrentPost(nextPost);
     setFields(nextFields);
     baselineFields.current = JSON.stringify(nextFields);
+    setRecoveryBaseVersion(nextPost.version);
     setPublishedAtCorrection(false);
   }
 
@@ -311,6 +359,8 @@ export default function ArticleEditor({
     if (!pendingRecovery) return;
     editSequence.current += 1;
     slugManuallyEdited.current = pendingRecovery.slugManuallyEdited;
+    setRecoveryBaseVersion(pendingRecovery.baseVersion);
+    setAllowStaleOverwrite(false);
     setFields(pendingRecovery.fields);
     setPendingRecovery(null);
     setMessage("已恢复未保存的内容，请确认后手动保存");
@@ -322,6 +372,21 @@ export default function ArticleEditor({
     setPendingRecovery(null);
     setRecoveryMessage("");
     setMessage("已放弃本机恢复副本");
+    window.requestAnimationFrame(() => titleRef.current?.focus());
+  }
+
+  function useServerVersion() {
+    if (!currentPost) return;
+    const nextFields = initialFields(currentPost);
+    setFields(nextFields);
+    baselineFields.current = JSON.stringify(nextFields);
+    setRecoveryBaseVersion(currentPost.version);
+    setAllowStaleOverwrite(false);
+    const storage = getEditorRecoveryStorage();
+    if (storage) removeEditorRecoverySnapshot(storage, { kind: "post", id: currentPost.id });
+    setRecoveryMessage("");
+    setMessage("已恢复为服务器版本");
+    window.requestAnimationFrame(() => titleRef.current?.focus());
   }
 
   function errorFor(name: keyof EditorFields) {
@@ -357,15 +422,18 @@ export default function ArticleEditor({
     );
   }
 
+  const editorDirty = JSON.stringify(fields) !== baselineFields.current || publishedAtCorrection;
+  const staleRecovery = Boolean(postId && recoveryBaseVersion && currentPost && recoveryBaseVersion !== currentPost.version);
+
   return (
     <main className={styles.page}>
       <div className={styles.titleRow}>
         <div><p className={styles.eyebrow}>Blog X / 内容管理</p><h1>{heading}</h1></div>
-        <button className={styles.primaryButton} type="button" onClick={() => { void save(); }}>{postId ? "保存更改" : "保存草稿"}</button>
+        <button className={styles.primaryButton} type="button" disabled={saving || Boolean(pendingRecovery)} onClick={() => { void save(); }}>{saving ? "保存中…" : (postId ? "保存更改" : "保存草稿")}</button>
       </div>
 
       <section className={styles.metadata} aria-label="文章元数据">
-        <label>标题<input value={fields.title} onChange={(event) => updateTitle(event.target.value)} aria-invalid={Boolean(errorFor("title"))} /></label>
+        <label>标题<input ref={titleRef} value={fields.title} onChange={(event) => updateTitle(event.target.value)} aria-invalid={Boolean(errorFor("title"))} /></label>
         {errorFor("title") && <p className={styles.error}>{errorFor("title")}</p>}
         <label>摘要<textarea rows={3} value={fields.summary} onChange={(event) => update("summary", event.target.value)} /></label>
         {errorFor("summary") && <p className={styles.error}>{errorFor("summary")}</p>}
@@ -405,7 +473,7 @@ export default function ArticleEditor({
           <label>SEO 描述<input value={fields.seoDescription} onChange={(event) => update("seoDescription", event.target.value)} aria-invalid={Boolean(errorFor("seoDescription"))} /></label>
         </div>
         {currentPost && currentPost.status !== "draft" && (
-          <label className={styles.correctionToggle}><input type="checkbox" checked={publishedAtCorrection} onChange={(event) => setPublishedAtCorrection(event.target.checked)} />确认将输入值作为发布时间更正</label>
+          <label className={styles.correctionToggle}><input type="checkbox" checked={publishedAtCorrection} onChange={(event) => { editSequence.current += 1; setPublishedAtCorrection(event.target.checked); }} />确认将输入值作为发布时间更正</label>
         )}
         {errorFor("slug") && <p className={styles.error}>{errorFor("slug")}</p>}
         {errorFor("publishedAt") && <p className={styles.error}>{errorFor("publishedAt")}</p>}
@@ -434,25 +502,37 @@ export default function ArticleEditor({
           <article className={styles.preview} data-testid="markdown-preview" dangerouslySetInnerHTML={{ __html: previewHtml }} />
         </div>
       </section>
-      {currentPost && <ArticleActions post={currentPost} onChanged={lifecycleChanged} onDeleted={() => {
+      {currentPost && <ArticleActions post={currentPost} disabled={editorDirty || saving || Boolean(pendingRecovery)} onChanged={lifecycleChanged} onDeleted={() => {
         const storage = getEditorRecoveryStorage();
         if (storage) removeEditorRecoverySnapshot(storage, { kind: "post", id: currentPost.id });
         window.location.assign("/admin");
       }} />}
       <p role="status" aria-label="编辑器状态" className={styles.status}>{message}</p>
       <p role="status" aria-label="恢复副本状态" className={styles.status}>{recoveryMessage}</p>
-      {pendingRecovery && (
-        <section className={styles.recoveryNotice} aria-labelledby="recovery-title" data-testid="editor-recovery-notice">
+      {staleRecovery && !pendingRecovery && (
+        <section className={styles.recoveryNotice} aria-labelledby="stale-recovery-title">
           <div>
-            <h2 id="recovery-title">发现未保存的内容</h2>
-            <p>本机在 {new Date(pendingRecovery.writtenAt).toLocaleString("zh-CN")} 保存了恢复副本。是否恢复由你决定，不会自动覆盖服务器内容。</p>
-            {pendingRecovery.baseVersion !== (currentPost?.version ?? null) && <p className={styles.error}>服务器版本已变化，请恢复后先比较内容再手动保存。</p>}
+            <h2 id="stale-recovery-title">恢复内容基于较旧的服务器版本</h2>
+            <p>继续保存会覆盖服务器上的较新内容。你可以恢复服务器版本，或明确允许本次覆盖。</p>
           </div>
           <div className={styles.recoveryActions}>
-            <button type="button" onClick={discardRecovery}>放弃副本</button>
-            <button className={styles.primaryButton} type="button" onClick={restoreRecovery}>恢复内容</button>
+            <button type="button" onClick={useServerVersion}>使用服务器版本</button>
+            <button type="button" aria-pressed={allowStaleOverwrite} onClick={() => { setAllowStaleOverwrite(true); setMessage("已允许本次保存覆盖服务器版本"); }}>允许覆盖</button>
           </div>
         </section>
+      )}
+      {pendingRecovery && (
+        <div className={styles.dialogBackdrop}>
+          <section className={`${styles.dialog} ${styles.recoveryDialog}`} role="dialog" aria-modal="true" aria-labelledby="recovery-title" aria-describedby="recovery-description" data-testid="editor-recovery-notice">
+            <h2 id="recovery-title">发现未保存的内容</h2>
+            <p id="recovery-description">本机在 {new Date(pendingRecovery.writtenAt).toLocaleString("zh-CN")} 保存了恢复副本。是否恢复由你决定，不会自动覆盖服务器内容。</p>
+            {pendingRecovery.baseVersion !== (currentPost?.version ?? null) && <p className={styles.error}>服务器版本已变化，请恢复后先比较内容再手动保存。</p>}
+            <div className={styles.dialogActions}>
+              <button type="button" onClick={discardRecovery}>放弃副本</button>
+              <button ref={recoveryButtonRef} className={styles.primaryButton} type="button" onClick={restoreRecovery}>恢复内容</button>
+            </div>
+          </section>
+        </div>
       )}
       {pendingSlugConfirmation && currentPost && (
         <div className={styles.dialogBackdrop}>

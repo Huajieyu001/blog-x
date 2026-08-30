@@ -97,7 +97,7 @@ function validSnapshot(value: unknown, target?: EditorRecoveryTarget, now = Date
   if (!isRecord(value) || !hasExactKeys(value, ["format", "version", "target", "baseVersion", "writtenAt", "fields", "slugManuallyEdited"])) return false;
   if (value.format !== "blog-x-editor-recovery" || value.version !== 1 || !validTarget(value.target)) return false;
   if (target && !sameTarget(value.target, target)) return false;
-  if (value.baseVersion !== null && (typeof value.baseVersion !== "string" || !Number.isFinite(Date.parse(value.baseVersion)))) return false;
+  if (value.target.kind === "new" ? value.baseVersion !== null : (typeof value.baseVersion !== "string" || !Number.isFinite(Date.parse(value.baseVersion)))) return false;
   if (typeof value.writtenAt !== "string" || typeof value.slugManuallyEdited !== "boolean" || !validFields(value.fields)) return false;
   const writtenAt = Date.parse(value.writtenAt);
   return Number.isFinite(writtenAt) && writtenAt <= now + 5 * 60_000 && now - writtenAt <= EDITOR_RECOVERY_TTL_MS;
