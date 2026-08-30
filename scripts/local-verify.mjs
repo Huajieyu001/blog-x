@@ -41,6 +41,99 @@ const migratedMainBrowserSpecs = Object.freeze([
 
 export const PHASE6_DATA_RESULT_FORMAT = "blog-x-phase6-data-result";
 const PHASE6_DATA_RESULT_PREFIX = "BLOG X PHASE6 DATA RESULT ";
+export const GENERATED_INTEGRATION_RESULT_FORMAT = "blog-x-generated-integration-result";
+const GENERATED_INTEGRATION_RESULT_PREFIX = "BLOG X GENERATED INTEGRATION RESULT ";
+const GENERATED_INTEGRATION_CLEANUP_PREFIX = "BLOG X GENERATED INTEGRATION CLEANUP ACK ";
+const LIFECYCLE_CLEANUP_PREFIX = "BLOG X LIFECYCLE CLEANUP ACK ";
+
+function frozenGroups(entries) {
+  const groups = {};
+  for (const entry of entries) (groups[entry.fixtureOwner] ??= []).push(entry.path);
+  return Object.freeze(Object.fromEntries(Object.entries(groups).map(([owner, paths]) => [owner, Object.freeze(paths.sort())])));
+}
+
+export function canonicalIntegrationSelection() {
+  const entries = PACKAGE_TEST_INVENTORY
+    .filter((entry) => entry.scope === "integration" && entry.fixtureOwner !== "phase7-browser")
+    .map((entry) => ({ path: entry.path, kind: entry.kind, fixtureOwner: entry.fixtureOwner }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+  const paths = entries.map((entry) => entry.path);
+  const groups = frozenGroups(entries);
+  const expectedOwners = { database: 11, "backup-restore": 1, media: 1, "main-browser": 14, "error-browser": 1, "restore-browser": 1 };
+  if (entries.length !== 29 || new Set(paths).size !== entries.length
+    || paths.filter((path) => path.startsWith("apps/api/")).length !== 13
+    || paths.filter((path) => path.startsWith("apps/web/e2e/")).length !== 16
+    || Object.entries(expectedOwners).some(([owner, count]) => groups[owner]?.length !== count)
+    || Object.keys(groups).some((owner) => !Object.hasOwn(expectedOwners, owner))) {
+    throw new Error("canonical integration inventory ownership is incomplete or duplicated");
+  }
+  return Object.freeze({
+    paths: Object.freeze(paths),
+    groups,
+    manifestSha256: hashText(JSON.stringify(PACKAGE_TEST_INVENTORY)),
+  });
+}
+
+function exactCleanup(cleanup) {
+  if (!cleanup || typeof cleanup !== "object" || Array.isArray(cleanup)
+    || Object.keys(cleanup).sort().join(",") !== "containersAbsent,namespace,pathsAbsent,volumesAbsent"
+    || validateNamespace(cleanup.namespace) !== cleanup.namespace
+    || cleanup.containersAbsent !== true || cleanup.volumesAbsent !== true || cleanup.pathsAbsent !== true) {
+    throw new Error("generated integration cleanup acknowledgement is incomplete");
+  }
+  return { ...cleanup };
+}
+
+export function createLifecycleProbeResult({ kind, namespaces, interrupted }) {
+  if (!Array.isArray(namespaces)) throw new Error("lifecycle probe namespaces are invalid");
+  for (const namespace of namespaces) validateNamespace(namespace);
+  if (!["interruption", "parallel"].includes(kind)
+    || namespaces.length !== (kind === "parallel" ? 2 : 1)
+    || new Set(namespaces).size !== namespaces.length
+    || interrupted !== (kind === "interruption")) throw new Error("lifecycle probe authority is invalid");
+  return Object.freeze({
+    format: "blog-x-generated-lifecycle-probe",
+    version: 1,
+    kind,
+    namespaces: Object.freeze([...namespaces]),
+    interrupted,
+    inventory: Object.freeze([]),
+    counts: Object.freeze({ tests: 0, passed: 0, failed: 0, cancelled: 0, skipped: 0, todo: 0 }),
+    cleanupAcknowledged: true,
+    releaseState: "BLOCKED",
+  });
+}
+
+export function createGeneratedIntegrationResult({ suites, cleanup, probes = [] }) {
+  const selection = canonicalIntegrationSelection();
+  if (!Array.isArray(suites) || suites.length !== selection.paths.length) throw new Error("generated integration inventory is missing or contains extras");
+  const normalized = suites.map((suite, index) => {
+    const expectedPath = selection.paths[index];
+    const expectedOwner = PACKAGE_TEST_INVENTORY.find((entry) => entry.path === expectedPath)?.fixtureOwner;
+    if (!suite || typeof suite !== "object" || Array.isArray(suite)
+      || Object.keys(suite).sort().join(",") !== "counts,fixtureOwner,path"
+      || suite.path !== expectedPath || suite.fixtureOwner !== expectedOwner) {
+      throw new Error("generated integration inventory is not exact or contains a duplicate path");
+    }
+    return { path: suite.path, fixtureOwner: suite.fixtureOwner, counts: { ...assertPassOnlyCounts(suite.counts, `generated integration suite ${suite.path}`) } };
+  });
+  if (!Array.isArray(probes) || probes.some((probe) => !probe || probe.format !== "blog-x-generated-lifecycle-probe"
+    || probe.cleanupAcknowledged !== true || probe.inventory.length !== 0 || Object.values(probe.counts).some((count) => count !== 0))) {
+    throw new Error("generated integration lifecycle probes are invalid or coverage-bearing");
+  }
+  const body = {
+    format: GENERATED_INTEGRATION_RESULT_FORMAT,
+    version: 1,
+    manifestSha256: selection.manifestSha256,
+    inventory: [...selection.paths],
+    suites: normalized,
+    probes: probes.map((probe) => structuredClone(probe)),
+    counts: assertPassOnlyCounts(sumCounts(normalized.map((suite) => suite.counts)), "generated integration result"),
+    cleanup: exactCleanup(cleanup),
+    releaseState: "BLOCKED",
+  };
+  return { ...body, resultSha256: hashText(JSON.stringify(body)) };
+}
 
 export function validateNamespace(value) {
   if (!/^blogxverify_[a-z0-9]{8,32}$/.test(value ?? "")) {
@@ -84,6 +177,12 @@ export function migratedMainBrowserSelection() {
     throw new Error("migrated main-browser selection contains duplicate paths");
   }
   return [...migratedMainBrowserSpecs];
+}
+
+function canonicalMainBrowserSelection() {
+  const paths = canonicalIntegrationSelection().groups["main-browser"];
+  if (!paths || paths.length !== 14 || new Set(paths).size !== paths.length) throw new Error("canonical main-browser ownership is invalid");
+  return [...paths];
 }
 
 function validateMainBrowserContext(context) {
@@ -380,7 +479,7 @@ function assertPassOnlyCounts(counts, label) {
   for (const key of ["tests", "passed", "failed", "cancelled", "skipped", "todo"]) {
     if (!Number.isSafeInteger(counts[key]) || counts[key] < 0) throw new Error(`${label} counts are invalid`);
   }
-  if (!counts.tests || !counts.passed) throw new Error(`${label} reported zero tests`);
+  if (!counts.tests || !counts.passed) throw new Error(`${label} counts reported zero tests`);
   if (counts.tests !== counts.passed + counts.failed + counts.cancelled + counts.skipped + counts.todo
     || counts.failed || counts.cancelled || counts.skipped || counts.todo) throw new Error(`${label} is not pass-only`);
   return counts;
@@ -694,7 +793,7 @@ async function runMainBrowserSpec(context, file, environment) {
   return parsePlaywrightResult(result.combined);
 }
 
-export async function runGeneratedMainBrowserFixture(context, runtime = {}) {
+async function runGeneratedMainBrowserFixtureSelection(context, runtime, selectedPaths) {
   validateMainBrowserContext(context);
   if (!runtime || typeof runtime !== "object" || Array.isArray(runtime)) throw new Error("main-browser fixture runtime must be an object");
   const allowedRuntimeKeys = new Set(["seedScenario", "runSpec", "cleanupRoot"]);
@@ -714,7 +813,7 @@ export async function runGeneratedMainBrowserFixture(context, runtime = {}) {
   const suites = [];
   let result;
   try {
-    for (const file of migratedMainBrowserSelection()) {
+    for (const file of selectedPaths) {
       const scenarioFacts = await seedScenario(context, file, paths);
       const environment = createMainBrowserEnvironment(context, scenarioFacts);
       const counts = assertPassOnlyCounts(await runSpec(context, file, environment, paths), `main-browser suite ${file}`);
@@ -746,12 +845,20 @@ export async function runGeneratedMainBrowserFixture(context, runtime = {}) {
   return { ...result, cleanup: { pathsAbsent: true } };
 }
 
+export async function runGeneratedMainBrowserFixture(context, runtime = {}) {
+  return runGeneratedMainBrowserFixtureSelection(context, runtime, migratedMainBrowserSelection());
+}
+
+async function runCanonicalMainBrowserFixture(context) {
+  return runGeneratedMainBrowserFixtureSelection(context, {}, canonicalMainBrowserSelection());
+}
+
 async function runDatabaseSuite(context, variable, file) {
   const authority = [
     "-e", `DATABASE_URL=${context.databaseUrl}`,
     "-e", `${variable}=${context.databaseUrl}`,
   ];
-  const result = context.phase6Data
+  const result = context.phase6Data || context.canonicalIntegration
     ? await compose(context, `run ${file}`, "run", "--rm", "-T",
         "--volume", `${resolve(root, "apps/api")}:/workspace/apps/api:ro`,
         "--volume", `${resolve(root, "packages/contracts")}:/workspace/packages/contracts:ro`,
@@ -794,10 +901,11 @@ async function runFailureRecoveryJourney(context) {
     ["apps/web/node_modules/next/dist/bin/next", "start", "apps/web", "-p", String(errorWebPort)],
     { ...process.env, INTERNAL_API_ORIGIN: fixtureOrigin, PUBLIC_ORIGIN: errorWebOrigin });
   await waitForHttp(errorWebOrigin);
-  await runStep(context, "run Phase 2 unavailable/retry browser journey", "corepack",
+  const browser = await runStep(context, "run Phase 2 unavailable/retry browser journey", "corepack",
     ["pnpm", "exec", "playwright", "test", "apps/web/e2e/public-errors.spec.ts", "--workers=1"],
     { env: { ...process.env, E2E_ERROR_WEB_ORIGIN: errorWebOrigin, E2E_ERROR_FIXTURE_ORIGIN: fixtureOrigin } });
   await stopManaged(context);
+  return parsePlaywrightResult(browser.combined);
 }
 
 async function fullPhaseChecks(context, phase2Full) {
@@ -1031,9 +1139,9 @@ async function seedRestoreFixture(context, includePhase5Legacy = false) {
   return { mediaId, publishedSlug, publishedTitle, hiddenSlugs, ...(includePhase5Legacy ? { legacyArticleId, legacyArticleSlug } : {}) };
 }
 
-async function runPhase4RestoreChecks(context, includePhase5Legacy = false, browserSuite = phase4Selection("restore").browserSuite) {
+async function runPhase4RestoreChecks(context, includePhase5Legacy = false, browserSuite = phase4Selection("restore").browserSuite, options = {}) {
   const selection = phase4Selection("restore");
-  for (const file of selection.nodeSuites) {
+  if (!options.skipNodeSuites) for (const file of selection.nodeSuites) {
     const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
     assertSemanticTap(result.combined);
     recordPhase5Command(context, file, "node-tap-v13", result);
@@ -1075,7 +1183,7 @@ async function runPhase4RestoreChecks(context, includePhase5Legacy = false, brow
     ];
     const authority = await compose(restoreContext, `run ${selection.databaseSuite}`, "exec", "-T",
       ...authorityEnvironment, "api", ...semanticTestCommand(selection.databaseSuite));
-    assertSemanticTap(authority.combined);
+    const databaseCounts = parseSemanticTapResult(authority.combined);
     recordPhase5Command(restoreContext, selection.databaseSuite, "node-tap-v13", authority);
     const browser = await runStep(context, `run ${browserSuite}`, "corepack",
       ["pnpm", "exec", "playwright", "test", browserSuite, "--workers=1"], {
@@ -1084,9 +1192,10 @@ async function runPhase4RestoreChecks(context, includePhase5Legacy = false, brow
           E2E_RESTORE_MEDIA_ID: fixture.mediaId, E2E_RESTORE_HIDDEN_SLUGS: fixture.hiddenSlugs.join(","),
           ...(includePhase5Legacy ? { PHASE5_LEGACY_ARTICLE_ID: fixture.legacyArticleId, PHASE5_LEGACY_ARTICLE_SLUG: fixture.legacyArticleSlug } : {}) },
       });
-    assertPlaywrightJourney(browser.combined);
+    const browserCounts = parsePlaywrightResult(browser.combined);
     recordPhase5Command(context, browserSuite, "playwright-line-v1", browser);
     await verifyBackupSet(backup.finalRoot);
+    return { databaseCounts, browserCounts };
   } finally {
     await command("docker-compose", composeArgs(restoreContext, "down", "--remove-orphans", "--volumes"), { env: composeEnvironment(restoreContext), allowFailure: true });
     await cleanupGeneratedRestoreRoot(restoreRoot);
@@ -1157,6 +1266,59 @@ async function runPhase6DataChecks(context) {
   process.stdout.write(`${PHASE6_DATA_RESULT_PREFIX}${JSON.stringify(record)}\n`);
   process.stdout.write("[local-verify] LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED\n");
   return record;
+}
+
+const canonicalDatabaseEnvironment = Object.freeze({
+  "apps/api/test/article-draft-preview.test.ts": "ARTICLE_TEST_DATABASE_URL",
+  "apps/api/test/article-lifecycle.test.ts": "LIFECYCLE_TEST_DATABASE_URL",
+  "apps/api/test/auth-session.test.ts": "AUTH_TEST_DATABASE_URL",
+  "apps/api/test/distribution-export.test.ts": "PHASE3_TEST_DATABASE_URL",
+  "apps/api/test/pages-archive.test.ts": "AUTH_TEST_DATABASE_URL",
+  "apps/api/test/phase2-public-visibility.test.ts": "PHASE2_TEST_DATABASE_URL",
+  "apps/api/test/public-discovery.test.ts": "PUBLIC_DISCOVERY_TEST_DATABASE_URL",
+  "apps/api/test/public-distribution.test.ts": "PHASE3_TEST_DATABASE_URL",
+  "apps/api/test/public-list.test.ts": "PUBLIC_LIST_TEST_DATABASE_URL",
+  "apps/api/test/public-visibility.test.ts": "PUBLIC_VISIBILITY_TEST_DATABASE_URL",
+  "apps/api/test/taxonomy.test.ts": "AUTH_TEST_DATABASE_URL",
+});
+
+async function runCanonicalIntegrationChecks(context) {
+  const selection = canonicalIntegrationSelection();
+  if (!context.internalRun) {
+    await runStep(context, "typecheck workspace for canonical integration", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
+    await runStep(context, "build workspace for canonical integration", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin } });
+  }
+  const suites = [];
+  for (const file of selection.groups.database) {
+    const variable = canonicalDatabaseEnvironment[file];
+    if (!variable) throw new Error(`canonical database owner is unmapped: ${file}`);
+    suites.push({ path: file, fixtureOwner: "database", counts: await runDatabaseSuite(context, variable, file) });
+  }
+
+  const mediaPath = selection.groups.media[0];
+  await resetGeneratedAcceptanceMedia(context);
+  suites.push({ path: mediaPath, fixtureOwner: "media", counts: await runDatabaseSuite(context, "AUTH_TEST_DATABASE_URL", mediaPath) });
+
+  const mainBrowser = await runCanonicalMainBrowserFixture(context);
+  for (const suite of mainBrowser.suites) suites.push({ path: suite.path, fixtureOwner: "main-browser", counts: suite.counts });
+
+  suites.push({
+    path: selection.groups["error-browser"][0],
+    fixtureOwner: "error-browser",
+    counts: await runFailureRecoveryJourney(context),
+  });
+
+  const restore = await runPhase4RestoreChecks(context, false, selection.groups["restore-browser"][0], { skipNodeSuites: true });
+  suites.push({ path: selection.groups["backup-restore"][0], fixtureOwner: "backup-restore", counts: restore.databaseCounts });
+  suites.push({ path: selection.groups["restore-browser"][0], fixtureOwner: "restore-browser", counts: restore.browserCounts });
+
+  const ordered = selection.paths.map((path) => {
+    const matches = suites.filter((suite) => suite.path === path);
+    if (matches.length !== 1) throw new Error(`canonical integration path cardinality is not one: ${path}`);
+    return matches[0];
+  });
+  if (suites.length !== ordered.length) throw new Error("canonical integration executed an extra package path");
+  return ordered;
 }
 
 async function runPhase5MediaChecks(context, options = {}) {
@@ -1364,7 +1526,7 @@ async function runSingle(options) {
   allocatedGeneratedNamespaces.add(namespace);
   const database = validateDatabaseName(`blog_x_${namespace.slice("blogxverify_".length)}`, namespace);
   const webPort = options.webPort ?? await freePort();
-  const phaseLabel = options.phase6Data ? "phase6-" : options.phase5Media || options.phase5Full ? "phase5-" : options.phase4Mode ? "phase4-" : options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
+  const phaseLabel = options.canonicalIntegration ? "integration-" : options.lifecycleOnly ? "lifecycle-" : options.phase6Data ? "phase6-" : options.phase5Media || options.phase5Full ? "phase5-" : options.phase4Mode ? "phase4-" : options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
   const runId = namespace.replace("blogxverify_", phaseLabel);
   const publicOrigin = validateLoopbackHttpOrigin(`http://127.0.0.1:${webPort}`);
   const context = {
@@ -1384,17 +1546,23 @@ async function runSingle(options) {
     children: [],
     implementationRevision: options.implementationRevision,
     phase6Data: options.phase6Data,
+    canonicalIntegration: options.canonicalIntegration,
     internalRun: options.internalRun,
   };
   context.secrets.push(context.password, context.databaseUrl);
   if (context.publicOrigin === context.internalApiOrigin) throw new Error("public and internal API origins must remain separate");
   const nextEnvironmentBefore = await readFile(resolve(root, "apps/web/next-env.d.ts"), "utf8");
   let phase5Receipt;
+  let canonicalSuites;
 
   try {
     if (options.phase6Data && !options.skipBuild) {
       await preflightOfflinePrerequisites(context);
-      process.stdout.write("[local-verify] use prevalidated verifier dependency images with read-only committed Phase 6 sources\n");
+      process.stdout.write("[local-verify] use prevalidated verifier dependency images with read-only committed integration sources\n");
+    }
+    else if (options.canonicalIntegration && !options.skipBuild) {
+      await preflightOfflinePrerequisites(context);
+      process.stdout.write("[local-verify] use prevalidated verifier dependency images with read-only committed integration sources\n");
     }
     else if (options.phase5Full && !options.skipBuild) {
       await preflightOfflinePrerequisites(context);
@@ -1402,9 +1570,9 @@ async function runSingle(options) {
     }
     else if ((options.phase4Mode === "full" || options.phase5Media) && !options.skipBuild) await preflightOfflinePrerequisites(context);
     else if (["operations", "restore"].includes(options.phase4Mode) && !options.skipBuild) await preflightCachedImages(context);
-    if (!options.skipBuild && !options.phase5Full && !options.phase6Data) await compose(context, "build local API and Web images", "build", "api", "web");
+    if (!options.skipBuild && !options.phase5Full && !options.phase6Data && !options.canonicalIntegration) await compose(context, "build local API and Web images", "build", "api", "web");
     await compose(context, "start isolated PostgreSQL", "up", "-d", "--wait", "postgres");
-    if (options.interruptionCheck) await interruptionCheck(context);
+    if (options.interruptionCheck && !options.canonicalIntegration) await interruptionCheck(context);
     else {
       await Promise.all([runMigration(context, "concurrent migration A"), runMigration(context, "concurrent migration B")]);
       await inspectSchema(context);
@@ -1416,7 +1584,16 @@ async function runSingle(options) {
     await compose(context, "verify active schema", "exec", "-T", "-e", `DATABASE_URL=${context.databaseUrl}`,
       "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:schema:verify");
     await seed(context);
-    if (options.phase6Data) {
+    if (options.lifecycleOnly) {
+      process.stdout.write(`[local-verify] LIFECYCLE READY ${namespace}\n`);
+      if (options.interruptAfterReady) await new Promise((_accept, reject) => {
+        shutdownSignal?.addEventListener("abort", () => reject(shutdownSignal.reason), { once: true });
+      });
+    }
+    else if (options.canonicalIntegration) {
+      canonicalSuites = await runCanonicalIntegrationChecks(context);
+    }
+    else if (options.phase6Data) {
       await runPhase6DataChecks(context);
     }
     else if (options.phase4Mode === "security") {
@@ -1458,7 +1635,12 @@ async function runSingle(options) {
     process.stdout.write("[local-verify] GENERATED CLEANUP PASS\n");
     await restoreVerifierOwnedNextEnvironment(nextEnvironmentBefore);
   }
-  return phase5Receipt;
+  return options.canonicalIntegration
+    ? {
+        suites: canonicalSuites,
+        cleanup: { namespace, containersAbsent: true, volumesAbsent: true, pathsAbsent: true },
+      }
+    : phase5Receipt;
 }
 
 async function parallelCheck(options) {
@@ -1504,6 +1686,83 @@ async function parallelCheck(options) {
   await Promise.all([confirmGeneratedProjectAbsent(first), confirmGeneratedProjectAbsent(second)]);
 }
 
+function parseLifecycleCleanup(output, namespace) {
+  const lines = String(output).replace(/\r\n?/g, "\n").split("\n").filter((line) => line.startsWith(LIFECYCLE_CLEANUP_PREFIX));
+  if (lines.length !== 1) throw new Error("lifecycle child must emit exactly one cleanup acknowledgement");
+  let record;
+  try { record = JSON.parse(lines[0].slice(LIFECYCLE_CLEANUP_PREFIX.length)); } catch { throw new Error("lifecycle cleanup acknowledgement is invalid JSON"); }
+  if (!record || record.format !== "blog-x-generated-lifecycle-cleanup" || record.version !== 1
+    || record.namespace !== namespace || record.containersAbsent !== true || record.volumesAbsent !== true
+    || record.pathsAbsent !== true || record.releaseState !== "BLOCKED") {
+    throw new Error("lifecycle cleanup acknowledgement is incomplete");
+  }
+  return record;
+}
+
+function runLifecycleChild(namespace, webPort, interrupt) {
+  validateNamespace(namespace);
+  const args = [scriptPath, "--internal-run", "--lifecycle-only", "--skip-build", `--namespace=${namespace}`, `--web-port=${webPort}`];
+  if (interrupt) args.push("--interrupt-after-ready");
+  return new Promise((accept, reject) => {
+    const child = spawn(process.execPath, args, { cwd: root, env: process.env, stdio: ["ignore", "pipe", "pipe"] });
+    let output = "";
+    let ready = false;
+    let terminated = false;
+    const collect = (chunk) => {
+      output += String(chunk);
+      if (interrupt && !terminated && output.includes(`LIFECYCLE READY ${namespace}`)) {
+        ready = true;
+        terminated = child.kill("SIGTERM");
+      }
+    };
+    child.stdout.on("data", collect);
+    child.stderr.on("data", collect);
+    child.on("error", reject);
+    child.on("close", (code, signal) => {
+      try {
+        if (!output.includes(`LIFECYCLE READY ${namespace}`)) throw new Error("lifecycle child never became ready");
+        if (interrupt && (!ready || !terminated || (code === 0 && signal === null))) throw new Error("lifecycle interruption did not terminate the ready child");
+        if (!interrupt && (code !== 0 || signal !== null)) throw new Error("parallel lifecycle child failed");
+        parseLifecycleCleanup(output, namespace);
+        accept({ namespace, output });
+      } catch (error) {
+        reject(new Error(`${error.message}\n${redactText(output)}`));
+      }
+    });
+  });
+}
+
+async function runLifecycleInterruptionProbe() {
+  const namespace = generatedNamespace();
+  const webPort = await freePort();
+  await runLifecycleChild(namespace, webPort, true);
+  await confirmGeneratedProjectAbsent(namespace);
+  return createLifecycleProbeResult({ kind: "interruption", namespaces: [namespace], interrupted: true });
+}
+
+async function runLifecycleParallelProbe() {
+  const namespaces = [generatedNamespace(), generatedNamespace()];
+  const ports = await Promise.all([freePort(), freePort()]);
+  if (new Set(namespaces).size !== 2 || new Set(ports).size !== 2) throw new Error("parallel lifecycle authorities collided");
+  await Promise.all(namespaces.map((namespace, index) => runLifecycleChild(namespace, ports[index], false)));
+  await Promise.all(namespaces.map((namespace) => confirmGeneratedProjectAbsent(namespace)));
+  return createLifecycleProbeResult({ kind: "parallel", namespaces, interrupted: false });
+}
+
+function emitCanonicalIntegrationCleanupAcknowledgement() {
+  const namespaces = [...allocatedGeneratedNamespaces].sort();
+  if (!namespaces.length || namespaces.some((namespace) => !confirmedGeneratedNamespaces.has(namespace))) {
+    throw new Error("not every allocated canonical integration namespace has confirmed cleanup");
+  }
+  const record = {
+    format: "blog-x-generated-integration-cleanup",
+    version: 1,
+    namespaces: namespaces.map((namespace) => ({ namespace, containersAbsent: true, volumesAbsent: true, pathsAbsent: true })),
+    releaseState: "BLOCKED",
+  };
+  process.stdout.write(`${GENERATED_INTEGRATION_CLEANUP_PREFIX}${JSON.stringify(record)}\n`);
+}
+
 async function confirmGeneratedProjectAbsent(namespace, options = {}) {
   validateNamespace(namespace);
   const containers = await command("docker", ["ps", "-aq", "--filter", `label=com.docker.compose.project=${namespace}`], options);
@@ -1513,6 +1772,20 @@ async function confirmGeneratedProjectAbsent(namespace, options = {}) {
     if (inspected.exitCode === 0) throw new Error(`generated project ${namespace} retained volume ${volume}`);
   }
   confirmedGeneratedNamespaces.add(namespace);
+}
+
+function emitLifecycleCleanupAcknowledgement(namespace) {
+  if (!confirmedGeneratedNamespaces.has(namespace)) throw new Error("lifecycle namespace cleanup is not confirmed");
+  const record = {
+    format: "blog-x-generated-lifecycle-cleanup",
+    version: 1,
+    namespace,
+    containersAbsent: true,
+    volumesAbsent: true,
+    pathsAbsent: true,
+    releaseState: "BLOCKED",
+  };
+  process.stdout.write(`${LIFECYCLE_CLEANUP_PREFIX}${JSON.stringify(record)}\n`);
 }
 
 function emitPhase6CleanupAcknowledgement() {
@@ -1540,13 +1813,18 @@ function optionValue(name) {
 }
 
 async function main() {
-  const flags = new Set(process.argv.slice(2));
+  const argumentsList = process.argv.slice(2);
+  const flags = new Set(argumentsList);
   const phase3Modes = ["api", "metadata", "full", "export-api", "export-browser"].filter((mode) => flags.has(`--phase3-${mode}`));
   const phase4Modes = ["security", "operations", "restore", "full"].filter((mode) => flags.has(`--phase4-${mode}`));
   const phase5Media = flags.has("--phase5-media");
   const phase5Full = flags.has("--phase5-full");
   const phase6Data = flags.has("--phase6-data");
-  if (phase3Modes.length + phase4Modes.length + Number(phase5Media) + Number(phase5Full) + Number(phase6Data) > 1) throw new Error("choose at most one Phase 3, Phase 4, Phase 5, or Phase 6 verification selection");
+  const canonicalIntegration = flags.has("--canonical-integration");
+  const lifecycleOnly = flags.has("--lifecycle-only");
+  if (phase3Modes.length + phase4Modes.length + Number(phase5Media) + Number(phase5Full) + Number(phase6Data) + Number(canonicalIntegration) + Number(lifecycleOnly) > 1) {
+    throw new Error("choose at most one Phase 3, Phase 4, Phase 5, Phase 6, canonical integration, or lifecycle selection");
+  }
   const options = {
     namespace: optionValue("namespace"),
     webPort: optionValue("web-port") ? Number(optionValue("web-port")) : undefined,
@@ -1556,14 +1834,31 @@ async function main() {
     phase5Media,
     phase5Full,
     phase6Data,
+    canonicalIntegration,
+    lifecycleOnly,
+    interruptAfterReady: flags.has("--interrupt-after-ready"),
     internalRun: flags.has("--internal-run"),
-    fullPhase: !phase4Modes.length && !phase5Media && !phase5Full && !phase6Data && (flags.has("--full-phase") || flags.has("--phase2-full") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run"))),
+    fullPhase: !phase4Modes.length && !phase5Media && !phase5Full && !phase6Data && !canonicalIntegration && !lifecycleOnly && (flags.has("--full-phase") || flags.has("--phase2-full") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run"))),
     interruptionCheck: flags.has("--interruption-check"),
     parallelCheck: flags.has("--parallel-check"),
     skipBuild: flags.has("--skip-build"),
   };
 
   if (flags.has("--internal-run") && phase5Full) throw new Error("internal verification children cannot acquire Phase 5 receipt authority");
+  if (canonicalIntegration) {
+    const expected = ["--canonical-integration", "--interruption-check", "--parallel-check"];
+    if (argumentsList.length !== expected.length || expected.some((argument) => !flags.has(argument)) || options.internalRun
+      || options.namespace !== undefined || options.webPort !== undefined || options.skipBuild) {
+      throw new Error("canonical integration accepts only the sealed complete invocation");
+    }
+  }
+  if (lifecycleOnly) {
+    const allowed = new Set(["--internal-run", "--lifecycle-only", "--skip-build", "--interrupt-after-ready"]);
+    if (!options.internalRun || !options.skipBuild || !options.namespace || !options.webPort
+      || argumentsList.some((argument) => !allowed.has(argument) && !argument.startsWith("--namespace=") && !argument.startsWith("--web-port="))) {
+      throw new Error("lifecycle authority is internal and generated only");
+    }
+  } else if (options.interruptAfterReady) throw new Error("interrupt-after-ready is lifecycle-only");
 
   await command("docker", ["info"]);
   await command("docker-compose", ["version"]);
@@ -1577,7 +1872,14 @@ async function main() {
       authority = await acquirePhase5ReceiptWriterLock();
     }
     const receipt = await runSingle(options);
-    if (options.parallelCheck) await parallelCheck(options);
+    if (options.canonicalIntegration) {
+      const probes = [await runLifecycleInterruptionProbe(), await runLifecycleParallelProbe()];
+      emitCanonicalIntegrationCleanupAcknowledgement();
+      const result = createGeneratedIntegrationResult({ suites: receipt.suites, cleanup: receipt.cleanup, probes });
+      process.stdout.write(`${GENERATED_INTEGRATION_RESULT_PREFIX}${JSON.stringify(result)}\n`);
+      process.stdout.write("[local-verify] LOCAL CANONICAL INTEGRATION PASS; RELEASE BLOCKED\n");
+    }
+    else if (options.parallelCheck) await parallelCheck(options);
     if (options.phase5Full) {
       if (!receipt) throw new Error("Phase 5 full gate did not produce terminal receipt input");
       const revision = await committedImplementationHead({ writerAuthority: authority });
@@ -1597,8 +1899,19 @@ async function main() {
         }
         emitPhase6CleanupAcknowledgement();
       }
+      if (options.lifecycleOnly) {
+        for (const namespace of allocatedGeneratedNamespaces) {
+          if (!confirmedGeneratedNamespaces.has(namespace)) await confirmGeneratedProjectAbsent(namespace, { allowDuringShutdown: true });
+          emitLifecycleCleanupAcknowledgement(namespace);
+        }
+      }
+      if (options.canonicalIntegration && mainError) {
+        for (const namespace of allocatedGeneratedNamespaces) {
+          if (!confirmedGeneratedNamespaces.has(namespace)) await confirmGeneratedProjectAbsent(namespace, { allowDuringShutdown: true });
+        }
+      }
     } catch (cleanupError) {
-      mainError = mainError ? new AggregateError([mainError, cleanupError], "Phase 6 execution and generated cleanup acknowledgement failed") : cleanupError;
+      mainError = mainError ? new AggregateError([mainError, cleanupError], "verification execution and generated cleanup acknowledgement failed") : cleanupError;
     }
   }
   if (mainError) throw mainError;
