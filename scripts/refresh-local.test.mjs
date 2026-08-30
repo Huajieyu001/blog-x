@@ -863,7 +863,7 @@ function targetImage(app, id, revision, lock, seedId) {
   return { Id: id, Config: { Image: `blog-x-${app}-local:${revision.slice(0, 12)}`, WorkingDir: "/refresh-workspace", Cmd: ["corepack", "pnpm", "--filter", `@blog-x/${app}`, "start"], Labels: { "org.opencontainers.image.revision": revision, "io.blog-x.lockfile-sha256": lock, "io.blog-x.seed-image-id": seedId, "io.blog-x.application": app, "io.blog-x.public-origin": "http://127.0.0.1:3100", "io.blog-x.refresh-kind": "v1.1-offline-local-delivery" } } };
 }
 
-function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, rollbackCutoverFault = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, withdrawalFault, seedPrerequisite, acceptanceStdout = acceptanceOutput, verificationChangedPaths, verificationTouchedPaths = verificationChangedPaths, revision = TEST_REVISION, artifactFs, oldImages = { api: SHA("a"), web: SHA("b") }, targetIds = { api: SHA("e"), web: SHA("f") } } = {}) {
+function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, rollbackCutoverFault = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, withdrawalFault, seedPrerequisite, acceptanceStdout = acceptanceOutput, verificationChangedPaths, verificationTouchedPaths = verificationChangedPaths, verificationIdentity = { uid: 501 }, revision = TEST_REVISION, artifactFs, oldImages = { api: SHA("a"), web: SHA("b") }, targetIds = { api: SHA("e"), web: SHA("f") } } = {}) {
   const lock = createHash("sha256").update("raw-lock\n").digest("hex");
   const old = structuredClone(oldImages);
   const evidencePath = deliveryAuthorityForRevision(revision).evidencePath;
@@ -947,7 +947,7 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
     routeFetches.push({ path, snapshot, rolledBack, stale, options: structuredClone(options) });
     return fakeRouteResponse(url, responses[path]);
   };
-  const runtime = createRefreshTestRuntime({ processBoundary: runner, fs: evidenceFs, fetch, clock(stage) {
+  const runtime = createRefreshTestRuntime({ processBoundary: runner, fs: evidenceFs, fetch, verificationIdentity, clock(stage) {
     if (withdrawalFault ? stage === "final_output" : stage === "evidence_verification") evidenceFs.arm?.();
     if (recollectionFault && stage === "failure_recollection" || stageFaults.includes(stage)) throw new Error(`${stage} fault`);
   }, randomHex: () => "3".repeat(24) });
@@ -1051,6 +1051,17 @@ test("independent verification rejects substituted receipt filesystem authority"
     mutate(fixture.evidenceFs.entries.get(absolute));
     await assert.rejects(fixture.runtime.verifyEvidence(absolute), /evidence file authority|unsafe/i);
   }
+});
+
+test("test-only verifier identity is portable while mismatched receipt ownership still fails", async () => {
+  const absolute = `/virtual-workspace/${TEST_EVIDENCE_PATH}`;
+  const fixture = liveFixture({ verificationIdentity: { uid: 1000 } });
+  await fixture.runtime.runCli();
+  fixture.beginVerification();
+  fixture.evidenceFs.entries.get(absolute).uid = 1000;
+  await assert.doesNotReject(fixture.runtime.verifyEvidence(absolute));
+  fixture.evidenceFs.entries.get(absolute).uid = 1001;
+  await assert.rejects(fixture.runtime.verifyEvidence(absolute), /evidence file authority|unsafe/i);
 });
 
 test("two successive clean revisions publish distinct verified receipts and preserve the first bytes", async () => {
