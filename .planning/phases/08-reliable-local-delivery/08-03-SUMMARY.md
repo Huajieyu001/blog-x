@@ -23,6 +23,7 @@ tech-stack:
 key-files:
   created:
     - ops/v1.1-local-delivery-evidence.json
+    - ops/v1.1-local-delivery-evidence.successor-2.json
   modified:
     - scripts/refresh-local.mjs
     - scripts/refresh-local-runtime-core.mjs
@@ -33,7 +34,7 @@ key-files:
 key-decisions:
   - "A relocated seed store is reusable only when the exact versioned neutral directory is nonempty; missing or empty neutral authority still fails closed."
   - "Every failed claimed revision remains terminal; offline fixes were committed as new SHAs before another delivery attempt."
-  - "The successful local receipt binds revision 4414710b605ecd8a770a1c3a60afef479c9b4eb7 and 1,353 pass-only acceptance tests while production remains BLOCKED."
+  - "The historical receipt remains immutable for revision 4414710b605ecd8a770a1c3a60afef479c9b4eb7; the independently verified successor receipt binds reviewed revision a204ee4faeef0ba25562e58660afd04499b6eb97 and 1,374 pass-only acceptance tests while production remains BLOCKED."
 patterns-established:
   - "Probe the exact currently running seed references before claiming a repaired delivery revision."
   - "Publish the receipt only after fixed runtime facts pass and independently verify its unchanged bytes before commit."
@@ -63,14 +64,14 @@ coverage:
         ref: corepack pnpm local:deliver
         status: pass
       - kind: integration
-        ref: node scripts/refresh-local.mjs --verify-evidence=ops/v1.1-local-delivery-evidence.json
+        ref: node scripts/refresh-local.mjs --verify-evidence=ops/v1.1-local-delivery-evidence.successor-2.json
         status: pass
     human_judgment: false
 ---
 
 # Phase 08 Plan 03: Reliable Local Delivery Summary
 
-**The clean committed discovery implementation is now the healthy canonical `blogxlocal` runtime at fixed port 3100, backed by a verified v1.1 receipt and an explicit `BLOCKED` production decision.**
+**The final reviewed implementation is now the healthy canonical `blogxlocal` runtime at fixed port 3100, backed by a verified non-overwriting successor v1.1 receipt and an explicit `BLOCKED` production decision.**
 
 ## Performance
 
@@ -87,6 +88,8 @@ coverage:
 - Made offline seed preparation idempotent for both an already-neutral path and a safely relocated missing-source path, without network retrieval or store deletion.
 - Delivered revision `4414710b605ecd8a770a1c3a60afef479c9b4eb7` to the exact three-service `blogxlocal` topology while retaining PostgreSQL and media volumes.
 - Verified 1,338 Phase 6 tests and 15 Phase 7 browser tests with zero failure/cancel/skip/TODO; fixed routes returned 200 and the empty public article set was recorded honestly.
+- Closed three rounds of independent code review, then delivered reviewed revision `a204ee4faeef0ba25562e58660afd04499b6eb97` through a distinct successor claim/receipt authority without modifying the historical receipt.
+- Verified the successor delivery independently: 1,359 Phase 6 tests plus 15 Phase 7 browser tests passed, home/search/health returned 200, all three canonical services were healthy, and only the retained PostgreSQL/media volumes existed.
 
 ## Task Commits
 
@@ -104,7 +107,8 @@ coverage:
 - `scripts/refresh-local-test-core.mjs` — keeps injected refresh boundaries test-only.
 - `scripts/refresh-local.test.mjs` — covers phase order, evidence, stage faults, rollback, reading facts and neutral-store reuse.
 - `scripts/refresh-seed-store.mjs` — safely reuses exact nonempty relocated pnpm stores.
-- `ops/v1.1-local-delivery-evidence.json` — immutable current-revision local delivery receipt.
+- `ops/v1.1-local-delivery-evidence.json` — immutable historical receipt for the original successful delivery revision.
+- `ops/v1.1-local-delivery-evidence.successor-2.json` — immutable current successor receipt for the final reviewed implementation.
 
 ## Decisions Made
 
@@ -139,15 +143,24 @@ coverage:
 
 None. The canonical local site is available at `http://127.0.0.1:3100`.
 
+## Post-review Successor Delivery
+
+- **Reviewed source SHA:** `a204ee4faeef0ba25562e58660afd04499b6eb97`
+- **Receipt commit:** `9704c45`
+- **Receipt:** `ops/v1.1-local-delivery-evidence.successor-2.json`
+- **Acceptance:** 1,374/1,374 pass-only checks (Phase 6: 1,359; Phase 7: 15)
+- **Runtime:** `blogxlocal` API/Web labels bind the reviewed SHA; PostgreSQL remained healthy and both retained data volumes were preserved.
+- **Read-only verification:** passed both before and after committing the receipt; `RELEASE BLOCKED` remained terminal.
+
 ## Next Phase Readiness
 
-- All three Phase 8 plans are implemented; phase-level code review and verification can now run against the committed receipt and live fixed runtime.
+- All three Phase 8 plans are implemented and the final code review is clean; phase-level verification can now run against the committed successor receipt and live fixed runtime.
 - Production remains `BLOCKED`; neither cloud server was contacted or modified.
 
 ## Self-Check: PASSED
 
-All five listed commits and the receipt exist. The exact-current-seed offline API/Web probe passed, 56 focused refresh tests passed with zero fail/cancel/skip/TODO, full delivery acceptance passed 1,353/1,353 tests, the read-only evidence verifier passed, all three canonical services are healthy, fixed home/search/health routes return 200, the boundary scan reported 403 files with zero findings, and `git diff --check` passed.
+The historical and successor receipts both exist without overwrite. The final review covered 20 files with zero findings; 60 refresh, 7 acceptance, 29 verifier and 2 active-Docker cleanup regressions passed; formal successor delivery passed 1,374/1,374 checks; the read-only successor verifier passed before and after receipt commit; all three canonical services are healthy; fixed home/search/health routes return 200; only the two retained data volumes exist; the boundary scan reported 410 files with zero findings; and `git diff --check` passed.
 
 ---
 *Phase: 08-reliable-local-delivery*
-*Completed: 2026-08-20*
+*Completed: 2026-08-30*
