@@ -72,7 +72,7 @@ Plans:
 **Depends on:** Phase 7
 **Requirements:** DEVX-01, DEVX-02, DEVX-03
 **UI hint:** no
-**Plans:** 4/9 plans executed
+**Plans:** 5/9 plans executed
 
 Plans:
 
@@ -80,7 +80,7 @@ Plans:
 - [x] 08-02-PLAN.md — Turn complete Phase 6/7 gates into one sealed generated-authority acceptance result. (completed 2026-08-20)
 - [x] 08-03-PLAN.md — Bind acceptance before cutover, verify fixed routes and publish the final BLOCKED v1.1 receipt. (completed 2026-08-20)
 - [x] 08-04-PLAN.md — Replace the exhausted numbered receipt with strict immutable per-revision delivery authority.
-- [ ] 08-05-PLAN.md — Establish a self-contained default test gate and complete executable test inventory.
+- [x] 08-05-PLAN.md — Establish a self-contained default test gate and complete executable test inventory.
 - [ ] 08-06-PLAN.md — Move legacy browser scenarios under one generated fixture owner.
 - [ ] 08-07-PLAN.md — Execute and attest the complete runner-owned integration inventory exactly once.
 - [ ] 08-08-PLAN.md — Complete the bounded GSD review gate and bind the final reviewed HEAD.
@@ -118,4 +118,4 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 6. Public Discovery Data | v1.1 | 8/8 active | Complete | 2026-08-17 |
 | 7. Responsive Discovery Experience | v1.1 | 4/4 | Complete    | 2026-08-19 |
-| 8. Reliable Local Delivery | v1.1 | 4/9 | In Progress | — |
+| 8. Reliable Local Delivery | v1.1 | 5/9 | In Progress | — |
