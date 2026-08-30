@@ -27,7 +27,12 @@ test("administrator publishes Markdown that is immediately SSR-readable", async 
   await page.getByLabel("标题").fill(title);
   await page.getByLabel("Slug").fill(slug);
   await page.getByLabel("Markdown").fill("# Hello\n\n| A | B |\n| - | - |\n| 1 | 2 |");
+  await expect(page.getByLabel("标题")).toHaveValue(title);
+  const saveResponse = page.waitForResponse((response) => response.request().method() === "POST" && response.url() === `${webOrigin}/api/admin/posts`);
   await page.getByRole("button", { name: "保存草稿" }).click();
+  await expect((await saveResponse).status()).toBe(201);
+  await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("草稿已保存");
+  await expect(page.getByRole("button", { name: "发布" })).toBeVisible();
   await page.getByRole("button", { name: "发布" }).click();
   await expect.poll(async () => {
     const response = await request.get(`${webOrigin}/api/public/articles?page=1`);

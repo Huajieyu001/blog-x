@@ -84,9 +84,12 @@ export default function ArticleEditor({
   const [mobilePane, setMobilePane] = useState<"edit" | "preview">("edit");
   const [publishedAtCorrection, setPublishedAtCorrection] = useState(false);
   const [pendingSlugConfirmation, setPendingSlugConfirmation] = useState(false);
+  const [editorReady, setEditorReady] = useState(false);
   const slugManuallyEdited = useRef(Boolean(post));
   const previewSequence = useRef(0);
   const markdownRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => { setEditorReady(true); }, []);
 
   useEffect(() => {
     const sequence = ++previewSequence.current;
@@ -224,6 +227,17 @@ export default function ArticleEditor({
 
   function selectCover(media: NonNullable<EditorFields["coverMedia"]>) {
     setFields((current) => ({ ...current, coverMedia: media, coverUrl: "" }));
+  }
+
+  if (!editorReady) {
+    return (
+      <main className={styles.page} aria-busy="true">
+        <div className={styles.titleRow}>
+          <div><p className={styles.eyebrow}>Blog X / 内容管理</p><h1>{heading}</h1></div>
+        </div>
+        <p role="status" aria-label="编辑器状态" className={styles.status}>编辑器加载中…</p>
+      </main>
+    );
   }
 
   return (
