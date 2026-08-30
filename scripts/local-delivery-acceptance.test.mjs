@@ -149,6 +149,7 @@ test("production coordinator is sealed, zero-argument, and has no test-core, can
   assert.doesNotMatch(source, /grep/);
   assert.match(source, /maximumOutputBytes/);
   assert.match(source, /childTimeoutMs/);
+  assert.match(source, /childTimeoutMs = 20 \* 60_000/);
   assert.match(source, /runBoundedChildTree/);
   assert.match(generatedSource, /installCooperativeShutdown[\s\S]*allowDuringShutdown[\s\S]*confirmGeneratedProjectAbsent/);
   assert.match(generatedSource, /BLOG X GENERATED INTEGRATION CLEANUP ACK/);

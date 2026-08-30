@@ -91,6 +91,8 @@ test("generated integration result binds exact paths actual counts cleanup and d
   assert.throws(() => createGeneratedIntegrationResult({ suites: suites.slice(1), cleanup }), /missing|inventory|exact/i);
   assert.throws(() => createGeneratedIntegrationResult({ suites: [...suites, suites[0]], cleanup }), /duplicate|inventory|exact/i);
   assert.throws(() => createGeneratedIntegrationResult({ suites: suites.map((suite, index) => index ? suite : { ...suite, counts: { ...suite.counts, skipped: 1, passed: 0 } }), cleanup }), /pass-only|counts/i);
+  const probe = createLifecycleProbeResult({ kind: "interruption", namespaces: ["blogxverify_b1c2d3e4"], interrupted: true });
+  assert.throws(() => createGeneratedIntegrationResult({ suites, cleanup, probes: [{ ...probe, version: 2 }] }), /probe|invalid/i);
 });
 
 test("lifecycle probes attest zero manifest paths and cannot inflate package counts", async () => {

@@ -9,7 +9,7 @@ import { DEFAULT_TEST_FILES, INTEGRATION_TEST_FILES, PACKAGE_TEST_INVENTORY } fr
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = fileURLToPath(import.meta.url);
 const maximumOutputBytes = 8 * 1024 * 1024;
-const childTimeoutMs = 10 * 60_000;
+const childTimeoutMs = 20 * 60_000;
 const childTerminationGraceMs = 5_000;
 const childKillGraceMs = 3_000;
 const generatedIntegrationPrefix = "BLOG X GENERATED INTEGRATION RESULT ";

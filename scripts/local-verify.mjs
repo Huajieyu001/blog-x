@@ -117,17 +117,20 @@ export function createGeneratedIntegrationResult({ suites, cleanup, probes = [] 
     }
     return { path: suite.path, fixtureOwner: suite.fixtureOwner, counts: { ...assertPassOnlyCounts(suite.counts, `generated integration suite ${suite.path}`) } };
   });
-  if (!Array.isArray(probes) || probes.some((probe) => !probe || probe.format !== "blog-x-generated-lifecycle-probe"
-    || probe.cleanupAcknowledged !== true || probe.inventory.length !== 0 || Object.values(probe.counts).some((count) => count !== 0))) {
-    throw new Error("generated integration lifecycle probes are invalid or coverage-bearing");
-  }
+  if (!Array.isArray(probes)) throw new Error("generated integration lifecycle probes are invalid or coverage-bearing");
+  const canonicalProbes = probes.map((probe) => {
+    if (!probe || typeof probe !== "object" || Array.isArray(probe)) throw new Error("generated integration lifecycle probes are invalid or coverage-bearing");
+    const canonical = createLifecycleProbeResult({ kind: probe.kind, namespaces: probe.namespaces, interrupted: probe.interrupted });
+    if (JSON.stringify(probe) !== JSON.stringify(canonical)) throw new Error("generated integration lifecycle probes are invalid or coverage-bearing");
+    return canonical;
+  });
   const body = {
     format: GENERATED_INTEGRATION_RESULT_FORMAT,
     version: 1,
     manifestSha256: selection.manifestSha256,
     inventory: [...selection.paths],
     suites: normalized,
-    probes: probes.map((probe) => structuredClone(probe)),
+    probes: canonicalProbes.map((probe) => structuredClone(probe)),
     counts: assertPassOnlyCounts(sumCounts(normalized.map((suite) => suite.counts)), "generated integration result"),
     cleanup: exactCleanup(cleanup),
     releaseState: "BLOCKED",
@@ -650,7 +653,8 @@ function composeArgs(context, ...args) {
 }
 
 async function createCanonicalRuntimeAuthority(context) {
-  const runtimeRoot = await mkdtemp(resolve(tmpdir(), "blog-x-canonical-runtime-"));
+  const runtimeRoot = await mkdtemp(resolve(root, "apps/.canonical-runtime-"));
+  context.canonicalRuntimeRoot = runtimeRoot;
   const nextRoot = resolve(runtimeRoot, ".next");
   const override = resolve(runtimeRoot, "compose.override.yaml");
   await cp(resolve(root, "apps/web/.next"), nextRoot, { recursive: true });
@@ -666,14 +670,13 @@ async function createCanonicalRuntimeAuthority(context) {
     "",
   ].join("\n");
   await writeFile(override, yaml, { mode: 0o600 });
-  context.canonicalRuntimeRoot = runtimeRoot;
   context.composeOverride = override;
 }
 
 async function cleanupCanonicalRuntimeAuthority(context) {
   if (!context.canonicalRuntimeRoot) return;
   const target = resolve(context.canonicalRuntimeRoot);
-  if (dirname(target) !== resolve(tmpdir()) || !/^blog-x-canonical-runtime-[A-Za-z0-9_-]{6,64}$/.test(basename(target))) {
+  if (dirname(target) !== resolve(root, "apps") || !/^\.canonical-runtime-[A-Za-z0-9_-]{6,64}$/.test(basename(target))) {
     throw new Error("canonical runtime cleanup target is invalid");
   }
   await rm(target, { recursive: true, force: true });
@@ -847,10 +850,10 @@ async function runGeneratedMainBrowserFixtureSelection(context, runtime, selecte
     backup: resolve(fixtureRoot, "backup"),
     media: resolve(fixtureRoot, "media"),
   });
-  await Promise.all([mkdir(paths.backup, { mode: 0o700 }), mkdir(paths.media, { mode: 0o700 })]);
   const suites = [];
   let result;
   try {
+    await Promise.all([mkdir(paths.backup, { mode: 0o700 }), mkdir(paths.media, { mode: 0o700 })]);
     for (const [index, file] of selectedPaths.entries()) {
       const scenarioContext = { ...context, username: `${context.username}-${index + 1}` };
       const scenarioFacts = await seedScenario(scenarioContext, file, paths);
@@ -1667,6 +1670,14 @@ async function runSingle(options) {
     else if (options.fullPhase) await fullPhaseChecks(context, options.phase2Full);
     await assertCleanLogs(context);
     process.stdout.write(`[local-verify] ${namespace} passed\n`);
+  } catch (error) {
+    if (options.canonicalIntegration) {
+      const diagnostics = await command("docker-compose", composeArgs(context, "logs", "--no-color", "api", "web"), {
+        env: composeEnvironment(context), allowFailure: true, allowDuringShutdown: true,
+      });
+      throw new Error(`${error instanceof Error ? error.message : String(error)}\n${redactText(diagnostics.combined, context.secrets)}`);
+    }
+    throw error;
   } finally {
     await stopManaged(context);
     validateNamespace(context.namespace);
