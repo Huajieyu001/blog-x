@@ -142,6 +142,30 @@ export default function ArticleEditor({
   }, [pendingRecovery]);
 
   useEffect(() => {
+    if (!pendingRecovery) return;
+    const backdrop = document.querySelector<HTMLElement>("[data-editor-recovery-backdrop]");
+    if (!backdrop) return;
+    const changed = new Map<HTMLElement, { inert: boolean; ariaHidden: string | null }>();
+    let active: HTMLElement | null = backdrop;
+    while (active?.parentElement) {
+      for (const sibling of Array.from(active.parentElement.children)) {
+        if (sibling === active || !(sibling instanceof HTMLElement) || changed.has(sibling)) continue;
+        changed.set(sibling, { inert: sibling.inert, ariaHidden: sibling.getAttribute("aria-hidden") });
+        sibling.inert = true;
+        sibling.setAttribute("aria-hidden", "true");
+      }
+      active = active.parentElement;
+    }
+    return () => {
+      for (const [element, previous] of changed) {
+        element.inert = previous.inert;
+        if (previous.ariaHidden === null) element.removeAttribute("aria-hidden");
+        else element.setAttribute("aria-hidden", previous.ariaHidden);
+      }
+    };
+  }, [pendingRecovery]);
+
+  useEffect(() => {
     if (!editorReady || pendingRecovery) return;
     const target: EditorRecoveryTarget = postId ? { kind: "post", id: postId } : { kind: "new" };
     const storage = getEditorRecoveryStorage();
@@ -456,7 +480,7 @@ export default function ArticleEditor({
 
   return (
     <>
-    <main className={styles.page} inert={pendingRecovery ? true : undefined} aria-hidden={pendingRecovery ? true : undefined}>
+    <main className={styles.page}>
       <div className={styles.titleRow}>
         <div><p className={styles.eyebrow}>Blog X / 内容管理</p><h1>{heading}</h1></div>
         <button className={styles.primaryButton} type="button" disabled={saving || Boolean(pendingRecovery)} onClick={() => { void save(); }}>{saving ? "保存中…" : (postId ? "保存更改" : "保存草稿")}</button>
@@ -567,7 +591,7 @@ export default function ArticleEditor({
       )}
     </main>
     {pendingRecovery && (
-      <div className={styles.dialogBackdrop}>
+      <div className={styles.dialogBackdrop} data-editor-recovery-backdrop>
         <section className={`${styles.dialog} ${styles.recoveryDialog}`} role="dialog" aria-modal="true" aria-labelledby="recovery-title" aria-describedby="recovery-description" data-testid="editor-recovery-notice" onKeyDown={handleRecoveryDialogKeyDown}>
           <h2 id="recovery-title">发现未保存的内容</h2>
           <p id="recovery-description">本机在 {new Date(pendingRecovery.writtenAt).toLocaleString("zh-CN")} 保存了恢复副本。是否恢复由你决定，不会自动覆盖服务器内容。</p>
