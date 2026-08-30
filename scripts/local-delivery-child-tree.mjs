@@ -29,6 +29,19 @@ export function createBoundedChildFailure(kind, { exitCode = null, signal = null
   return error;
 }
 
+function createTerminationUnconfirmedFailure(closeResult) {
+  return createBoundedChildFailure("termination_unconfirmed", {
+    exitCode: closeResult?.exitCode,
+    signal: closeResult?.signal,
+    message: "bounded child process tree termination was not confirmed",
+  });
+}
+
+function normalizeTerminationFailure(error, closeResult) {
+  if (BOUNDED_CHILD_FAILURE_KINDS.includes(error?.boundedFailureKind)) return error;
+  return createTerminationUnconfirmedFailure(closeResult);
+}
+
 function positiveInteger(value, label) {
   if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${label} must be a positive integer`);
   return value;
@@ -141,7 +154,7 @@ export function runBoundedChildTree(command, args, {
           throw createBoundedChildFailure("cleanup_unconfirmed", { ...closeResult, message: `local delivery acceptance ${reason}; process tree terminated but generated authority cleanup was not acknowledged` });
         }
         throw createBoundedChildFailure(kind, { ...closeResult, message: `local delivery acceptance ${reason}; process tree terminated without generated-authority acknowledgement` });
-      })();
+      })().catch((error) => { throw normalizeTerminationFailure(error, closeResult); });
       terminationPromise.catch((error) => settle(reject, error));
       return terminationPromise;
     };
@@ -163,7 +176,10 @@ export function runBoundedChildTree(command, args, {
       closeResult = { exitCode, signal };
       resolveClose(closeResult);
       if (terminationPromise) return;
-      if (exactTreeIsAlive(child)) {
+      let treeAlive;
+      try { treeAlive = exactTreeIsAlive(child); }
+      catch { return settle(reject, createTerminationUnconfirmedFailure(closeResult)); }
+      if (treeAlive) {
         terminate("descendant_alive", "child left a generated descendant running");
         return;
       }

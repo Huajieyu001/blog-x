@@ -190,6 +190,69 @@ test("bounded child failures expose only an allowlisted kind and safe close fact
   assert.equal(cleanup.boundedSignal, null);
 });
 
+test("bounded child termination maps kill EPERM to a stable secret-free class", { skip: process.platform === "win32" }, async () => {
+  const nativeKill = process.kill;
+  const rawDetail = "kill EPERM /private/runtime secret-token-value";
+  let childGroupPid;
+  let failure;
+  try {
+    process.kill = (pid, signal) => {
+      if (typeof pid === "number" && pid < 0 && signal === "SIGTERM") {
+        childGroupPid = pid;
+        const error = new Error(rawDetail);
+        error.code = "EPERM";
+        throw error;
+      }
+      return nativeKill(pid, signal);
+    };
+    await assert.rejects(runBoundedChildTree(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+      cwd: process.cwd(), env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", TMPDIR: process.env.TMPDIR ?? "/tmp", LANG: "C" },
+      maximumOutputBytes: 128, timeoutMs: 50, terminationGraceMs: 100, killGraceMs: 1_000,
+    }), (error) => {
+      failure = error;
+      return true;
+    });
+  } finally {
+    process.kill = nativeKill;
+    if (childGroupPid) {
+      try { nativeKill(childGroupPid, "SIGKILL"); } catch (error) { if (error?.code !== "ESRCH") throw error; }
+    }
+  }
+  assert.equal(failure?.boundedFailureKind, "termination_unconfirmed");
+  assert.equal(failure?.boundedExitCode, null);
+  assert.equal(failure?.boundedSignal, null);
+  assert.doesNotMatch(JSON.stringify({ message: failure?.message, stack: failure?.stack }), /EPERM|private\/runtime|secret-token-value/i);
+});
+
+test("bounded child close maps liveness probe errors to a stable secret-free class", { skip: process.platform === "win32" }, async () => {
+  const nativeKill = process.kill;
+  const rawDetail = "liveness EPERM /private/runtime secret-token-value";
+  let failure;
+  try {
+    process.kill = (pid, signal) => {
+      if (typeof pid === "number" && pid < 0 && signal === 0) {
+        const error = new Error(rawDetail);
+        error.code = "EPERM";
+        throw error;
+      }
+      return nativeKill(pid, signal);
+    };
+    await assert.rejects(runBoundedChildTree(process.execPath, ["-e", "process.exit(0)"], {
+      cwd: process.cwd(), env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", TMPDIR: process.env.TMPDIR ?? "/tmp", LANG: "C" },
+      maximumOutputBytes: 128, timeoutMs: 2_000, terminationGraceMs: 100, killGraceMs: 1_000,
+    }), (error) => {
+      failure = error;
+      return true;
+    });
+  } finally {
+    process.kill = nativeKill;
+  }
+  assert.equal(failure?.boundedFailureKind, "termination_unconfirmed");
+  assert.equal(failure?.boundedExitCode, 0);
+  assert.equal(failure?.boundedSignal, null);
+  assert.doesNotMatch(JSON.stringify({ message: failure?.message, stack: failure?.stack }), /EPERM|private\/runtime|secret-token-value/i);
+});
+
 test("acceptance wraps generated and Phase 7 bounded failures into distinct secret-free classes", async () => {
   const ambient = {
     PATH: "/usr/bin:/bin",
