@@ -30,6 +30,7 @@ const webImage = "blog-x-web-verify:phase2";
 let shutdownSignal;
 const allocatedGeneratedNamespaces = new Set();
 const confirmedGeneratedNamespaces = new Set();
+const allocatedGeneratedAuthorities = new Map();
 const migratedMainBrowserSpecs = Object.freeze([
   "apps/web/e2e/article-lifecycle.spec.ts",
   "apps/web/e2e/auth-session.spec.ts",
@@ -593,6 +594,21 @@ function generatedNamespace() {
 
 function generatedRestoreNamespace() {
   return `blogxrestore_${randomBytes(6).toString("hex")}`;
+}
+
+function generatedCleanupAuthority(namespace, webPort) {
+  validateNamespace(namespace);
+  const database = validateDatabaseName(`blog_x_${namespace.slice("blogxverify_".length)}`, namespace);
+  const publicOrigin = validateLoopbackHttpOrigin(`http://127.0.0.1:${webPort}`);
+  const authority = {
+    namespace,
+    database,
+    webPort,
+    publicOrigin,
+    mediaVolume: validateMediaVolume(`${namespace}_media-data`, namespace),
+  };
+  allocatedGeneratedAuthorities.set(namespace, authority);
+  return authority;
 }
 
 async function freePort() {
@@ -1597,6 +1613,7 @@ async function runSingle(options) {
     canonicalIntegration: options.canonicalIntegration,
     internalRun: options.internalRun,
   };
+  allocatedGeneratedAuthorities.set(namespace, context);
   context.secrets.push(context.password, context.databaseUrl);
   if (context.publicOrigin === context.internalApiOrigin) throw new Error("public and internal API origins must remain separate");
   const nextEnvironmentBefore = await readFile(resolve(root, "apps/web/next-env.d.ts"), "utf8");
@@ -1638,7 +1655,11 @@ async function runSingle(options) {
     await seed(context);
     if (options.lifecycleOnly) {
       const interruption = options.interruptAfterReady ? new Promise((_accept, reject) => {
-        const rejectForShutdown = () => reject(shutdownSignal.reason);
+        const keepAlive = setInterval(() => {}, 1_000);
+        const rejectForShutdown = () => {
+          clearInterval(keepAlive);
+          reject(shutdownSignal.reason);
+        };
         if (shutdownSignal?.aborted) rejectForShutdown();
         else shutdownSignal?.addEventListener("abort", rejectForShutdown, { once: true });
       }) : undefined;
@@ -1687,17 +1708,25 @@ async function runSingle(options) {
     }
     throw error;
   } finally {
-    await stopManaged(context);
-    validateNamespace(context.namespace);
-    validateDatabaseName(context.database, context.namespace);
-    validateMediaVolume(context.mediaVolume, context.namespace);
-    await command("docker-compose", composeArgs(context, "down", "--remove-orphans", "--volumes"), {
-      env: composeEnvironment(context), allowFailure: true, allowDuringShutdown: true,
-    });
-    await confirmGeneratedProjectAbsent(context.namespace, { allowDuringShutdown: true });
-    await cleanupCanonicalRuntimeAuthority(context);
+    const cleanup = await Promise.allSettled([
+      (async () => {
+        await stopManaged(context);
+        validateNamespace(context.namespace);
+        validateDatabaseName(context.database, context.namespace);
+        validateMediaVolume(context.mediaVolume, context.namespace);
+        try {
+          await convergeGeneratedProjectCleanup(context);
+        } finally {
+          await cleanupCanonicalRuntimeAuthority(context);
+        }
+      })(),
+      restoreVerifierOwnedNextEnvironment(nextEnvironmentBefore),
+    ]);
+    const cleanupFailures = cleanup.filter((result) => result.status === "rejected");
+    if (cleanupFailures.length) {
+      throw new AggregateError(cleanupFailures.map((result) => result.reason), "generated verification cleanup did not converge");
+    }
     process.stdout.write("[local-verify] GENERATED CLEANUP PASS\n");
-    await restoreVerifierOwnedNextEnvironment(nextEnvironmentBefore);
   }
   return options.canonicalIntegration
     ? {
@@ -1796,11 +1825,21 @@ function runLifecycleChild(namespace, webPort, interrupt) {
   });
 }
 
+async function runLifecycleChildWithRecovery(namespace, webPort, interrupt) {
+  const authority = generatedCleanupAuthority(namespace, webPort);
+  const child = await Promise.allSettled([runLifecycleChild(namespace, webPort, interrupt)]);
+  const cleanup = await Promise.allSettled([convergeGeneratedProjectCleanup(authority)]);
+  const failures = [...child, ...cleanup].filter((result) => result.status === "rejected");
+  if (failures.length) {
+    throw new AggregateError(failures.map((result) => result.reason), `lifecycle child ${namespace} did not converge`);
+  }
+  return child[0].value;
+}
+
 async function runLifecycleInterruptionProbe() {
   const namespace = generatedNamespace();
   const webPort = await freePort();
-  await runLifecycleChild(namespace, webPort, true);
-  await confirmGeneratedProjectAbsent(namespace);
+  await runLifecycleChildWithRecovery(namespace, webPort, true);
   return createLifecycleProbeResult({ kind: "interruption", namespaces: [namespace], interrupted: true });
 }
 
@@ -1808,12 +1847,11 @@ async function runLifecycleParallelProbe() {
   const namespaces = [generatedNamespace(), generatedNamespace()];
   const ports = await Promise.all([freePort(), freePort()]);
   if (new Set(namespaces).size !== 2 || new Set(ports).size !== 2) throw new Error("parallel lifecycle authorities collided");
-  const settled = await Promise.allSettled(namespaces.map((namespace, index) => runLifecycleChild(namespace, ports[index], false)));
+  const settled = await Promise.allSettled(namespaces.map((namespace, index) => runLifecycleChildWithRecovery(namespace, ports[index], false)));
   const failures = settled.filter((result) => result.status === "rejected");
   if (failures.length) {
     throw new Error(failures.map((result) => result.reason instanceof Error ? result.reason.message : String(result.reason)).join("\n"));
   }
-  await Promise.all(namespaces.map((namespace) => confirmGeneratedProjectAbsent(namespace)));
   return createLifecycleProbeResult({ kind: "parallel", namespaces, interrupted: false });
 }
 
@@ -1840,6 +1878,37 @@ async function confirmGeneratedProjectAbsent(namespace, options = {}) {
     if (inspected.exitCode === 0) throw new Error(`generated project ${namespace} retained volume ${volume}`);
   }
   confirmedGeneratedNamespaces.add(namespace);
+}
+
+async function convergeGeneratedProjectCleanup(context) {
+  validateNamespace(context.namespace);
+  validateDatabaseName(context.database, context.namespace);
+  validateMediaVolume(context.mediaVolume, context.namespace);
+  const failures = [];
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const down = await command("docker-compose", composeArgs(context, "down", "--remove-orphans", "--volumes"), {
+      env: composeEnvironment(context), allowFailure: true, allowDuringShutdown: true,
+    });
+    try {
+      await confirmGeneratedProjectAbsent(context.namespace, { allowDuringShutdown: true });
+      return;
+    } catch (error) {
+      failures.push(new Error(`generated cleanup attempt ${attempt + 1} down exit ${down.exitCode}`), error);
+      if (attempt === 0) await new Promise((accept) => setTimeout(accept, 200));
+    }
+  }
+  throw new AggregateError(failures, `generated project ${context.namespace} cleanup did not converge`);
+}
+
+async function convergeAllocatedGeneratedAuthorities() {
+  const results = await Promise.allSettled([...allocatedGeneratedNamespaces].map((namespace) => {
+    const authority = allocatedGeneratedAuthorities.get(namespace);
+    return authority
+      ? convergeGeneratedProjectCleanup(authority)
+      : confirmGeneratedProjectAbsent(namespace, { allowDuringShutdown: true });
+  }));
+  const failures = results.filter((result) => result.status === "rejected");
+  if (failures.length) throw new AggregateError(failures.map((result) => result.reason), "allocated generated cleanup did not converge");
 }
 
 function emitLifecycleCleanupAcknowledgement(namespace) {
@@ -1974,9 +2043,7 @@ async function main() {
         }
       }
       if (options.canonicalIntegration && mainError) {
-        for (const namespace of allocatedGeneratedNamespaces) {
-          if (!confirmedGeneratedNamespaces.has(namespace)) await confirmGeneratedProjectAbsent(namespace, { allowDuringShutdown: true });
-        }
+        await convergeAllocatedGeneratedAuthorities();
       }
     } catch (cleanupError) {
       mainError = mainError ? new AggregateError([mainError, cleanupError], "verification execution and generated cleanup acknowledgement failed") : cleanupError;

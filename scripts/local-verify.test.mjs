@@ -118,7 +118,11 @@ test("lifecycle probes attest zero manifest paths and cannot inflate package cou
   for (const path of INTEGRATION_TEST_FILES) assert.equal(lifecycle.includes(path), false, path);
   assert.doesNotMatch(lifecycle, /semanticTestCommand|playwright|runDatabaseSuite|runGeneratedMainBrowserFixture|--canonical-integration/i);
   assert.match(source, /const interruption = options\.interruptAfterReady[\s\S]*addEventListener\("abort"[\s\S]*LIFECYCLE READY[\s\S]*await interruption/);
-  assert.match(lifecycle, /Promise\.allSettled\([\s\S]*runLifecycleChild[\s\S]*failures\.length/);
+  assert.match(source, /const keepAlive = setInterval[\s\S]*clearInterval\(keepAlive\)[\s\S]*LIFECYCLE READY/);
+  assert.match(source, /async function runLifecycleChildWithRecovery[\s\S]*Promise\.allSettled[\s\S]*convergeGeneratedProjectCleanup/);
+  assert.match(lifecycle, /Promise\.allSettled\([\s\S]*runLifecycleChildWithRecovery[\s\S]*failures\.length/);
+  assert.match(source, /async function convergeGeneratedProjectCleanup[\s\S]*attempt < 2[\s\S]*down[\s\S]*confirmGeneratedProjectAbsent/);
+  assert.match(source, /canonicalIntegration && mainError[\s\S]*convergeAllocatedGeneratedAuthorities/);
 });
 
 test("legacy Web E2E specs require runner facts and own no infrastructure", async () => {
@@ -226,7 +230,8 @@ test("generated main-browser fixture schedules exact specs and cleans its paths 
 
   const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
   const lifecycle = runner.slice(runner.indexOf("async function runSingle"), runner.indexOf("async function parallelCheck"));
-  assert.match(lifecycle, /finally[\s\S]*docker-compose[\s\S]*down[\s\S]*confirmGeneratedProjectAbsent/);
+  assert.match(lifecycle, /finally[\s\S]*convergeGeneratedProjectCleanup/);
+  assert.match(runner, /async function convergeGeneratedProjectCleanup[\s\S]*docker-compose[\s\S]*down[\s\S]*confirmGeneratedProjectAbsent/);
   assert.doesNotMatch(lifecycle, /blogxlocal|127\.0\.0\.1:3100/);
 });
 
