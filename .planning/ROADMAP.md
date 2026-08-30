@@ -72,19 +72,37 @@ Plans:
 **Depends on:** Phase 7
 **Requirements:** DEVX-01, DEVX-02, DEVX-03
 **UI hint:** no
-**Plans:** 3/3 plans complete; phase verification next
+**Plans:** 3/9 plans complete; verification gap closure in progress
 
 Plans:
 
 - [x] 08-01-PLAN.md — Seal the fixed local-delivery command, v1.1 authority, offline provenance and pre-mutation safety checks. (completed 2026-08-20)
 - [x] 08-02-PLAN.md — Turn complete Phase 6/7 gates into one sealed generated-authority acceptance result. (completed 2026-08-20)
 - [x] 08-03-PLAN.md — Bind acceptance before cutover, verify fixed routes and publish the final BLOCKED v1.1 receipt. (completed 2026-08-20)
+- [ ] 08-04-PLAN.md — Replace the exhausted numbered receipt with strict immutable per-revision delivery authority.
+- [ ] 08-05-PLAN.md — Establish a self-contained default test gate and complete executable test inventory.
+- [ ] 08-06-PLAN.md — Move legacy browser scenarios under one generated fixture owner.
+- [ ] 08-07-PLAN.md — Execute and attest the complete runner-owned integration inventory exactly once.
+- [ ] 08-08-PLAN.md — Complete the bounded GSD review gate and bind the final reviewed HEAD.
+- [ ] 08-09-PLAN.md — Deliver the reviewed revision once and close Phase 08 from independent evidence.
 
 **Wave 1:** 08-01
 
 **Wave 2** *(blocked on Wave 1 completion)*: 08-02
 
 **Wave 3** *(blocked on Waves 1–2 completion)*: 08-03
+
+**Wave 4** *(blocked on Wave 3 completion)*: 08-04
+
+**Wave 5** *(blocked on Wave 4 completion)*: 08-05
+
+**Wave 6** *(blocked on Wave 5 completion)*: 08-06
+
+**Wave 7** *(blocked on Wave 6 completion)*: 08-07
+
+**Wave 8** *(blocked on Wave 7 completion)*: 08-08
+
+**Wave 9** *(terminal one-shot closeout after Wave 8 review)*: 08-09
 
 **Success Criteria:**
 
@@ -100,4 +118,4 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 6. Public Discovery Data | v1.1 | 8/8 active | Complete | 2026-08-17 |
 | 7. Responsive Discovery Experience | v1.1 | 4/4 | Complete    | 2026-08-19 |
-| 8. Reliable Local Delivery | v1.1 | 3/3 | In verification | — |
+| 8. Reliable Local Delivery | v1.1 | 3/9 | Gap closure planned | — |
