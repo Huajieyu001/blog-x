@@ -29,6 +29,7 @@ import {
   HISTORICAL_LOCAL_DELIVERY_EVIDENCE_PATH,
   LOCAL_DELIVERY_CLAIM_ROOT,
   LOCAL_DELIVERY_EVIDENCE_DIRECTORY,
+  REFRESH_FAILURE_CLASSES,
   REFRESH_TERMINAL_STAGES,
   SAFE_RECOVERY_BY_STAGE,
   assertSeedPrerequisiteFacts,
@@ -865,7 +866,7 @@ function targetImage(app, id, revision, lock, seedId) {
   return { Id: id, Config: { Image: `blog-x-${app}-local:${revision.slice(0, 12)}`, WorkingDir: "/refresh-workspace", Cmd: ["corepack", "pnpm", "--filter", `@blog-x/${app}`, "start"], Labels: { "org.opencontainers.image.revision": revision, "io.blog-x.lockfile-sha256": lock, "io.blog-x.seed-image-id": seedId, "io.blog-x.application": app, "io.blog-x.public-origin": "http://127.0.0.1:3100", "io.blog-x.refresh-kind": "v1.1-offline-local-delivery" } } };
 }
 
-function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, rollbackCutoverFault = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, withdrawalFault, seedPrerequisite, acceptanceStdout = acceptanceOutput, verificationChangedPaths, verificationTouchedPaths = verificationChangedPaths, identity = { uid: TEST_UID }, revision = TEST_REVISION, artifactFs, oldImages = { api: SHA("a"), web: SHA("b") }, targetIds = { api: SHA("e"), web: SHA("f") } } = {}) {
+function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, rollbackCutoverFault = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, withdrawalFault, seedPrerequisite, acceptanceStdout = acceptanceOutput, acceptanceFailureClass, acceptanceFailureSecret = "", verificationChangedPaths, verificationTouchedPaths = verificationChangedPaths, identity = { uid: TEST_UID }, revision = TEST_REVISION, artifactFs, oldImages = { api: SHA("a"), web: SHA("b") }, targetIds = { api: SHA("e"), web: SHA("f") } } = {}) {
   const lock = createHash("sha256").update("raw-lock\n").digest("hex");
   const old = structuredClone(oldImages);
   const evidencePath = deliveryAuthorityForRevision(revision).evidencePath;
@@ -925,7 +926,14 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
     if (command === "git" && args[0] === "merge-base") return { stdout: "" };
     if (command === "git" && args[0] === "diff") return { stdout: `${changedPaths.join("\n")}\n` };
     if (command === "git" && args[0] === "log") return { stdout: `${touchedPaths.join("\0")}\0` };
-    if (command === "node" && args.join(" ") === "scripts/local-delivery-acceptance.mjs") return { stdout: acceptanceStdout };
+    if (command === "node" && args.join(" ") === "scripts/local-delivery-acceptance.mjs") {
+      if (acceptanceFailureClass) {
+        const error = new Error(`raw acceptance output ${acceptanceFailureSecret} /private/secret/path`);
+        Object.defineProperty(error, "acceptanceFailureClass", { value: acceptanceFailureClass });
+        throw error;
+      }
+      return { stdout: acceptanceStdout };
+    }
     if (command === "node") return { stdout: "" };
     throw new Error(`unexpected raw fake argv: ${command} ${args.join(" ")}`);
   };
@@ -972,6 +980,41 @@ test("full isolated acceptance is one strict pre-cutover barrier and failure lea
     const report = await fixture.runtime.createAttemptStore().assertFailureReportPresent(fixture.revision);
     assert.equal(report.report.stage, "accept-v1.1");
   }
+});
+
+test("generated and Phase 7 typed failures persist distinct allowlisted secret-free error classes", async () => {
+  const secret = "super-secret-token-value";
+  for (const errorClass of ["generated_child_exit", "phase7_timeout", "generated_output_limit", "phase7_cleanup_unconfirmed"]) {
+    const fixture = liveFixture({ acceptanceFailureClass: errorClass, acceptanceFailureSecret: secret });
+    await assert.rejects(fixture.runtime.runCli(), /accept-v1\.1/i);
+    const failure = await fixture.runtime.createAttemptStore().assertFailureReportPresent(fixture.revision);
+    assert.equal(failure.report.stage, "accept-v1.1");
+    assert.equal(failure.report.errorClass, errorClass);
+    assert.ok(REFRESH_FAILURE_CLASSES.includes(failure.report.errorClass));
+    assert.doesNotMatch(JSON.stringify(failure.report), new RegExp(`${secret}|raw acceptance output|/private/secret/path`, "i"));
+  }
+});
+
+test("failure report schema accepts only stable allowlisted classes and live runner preserves typed acceptance records", async () => {
+  const liveSource = await readFile(join(process.cwd(), "scripts/refresh-local-live.mjs"), "utf8");
+  assert.match(liveSource, /parseLocalDeliveryAcceptanceFailure/);
+  assert.doesNotMatch(liveSource, /new Error\(`\$\{command\} failed/);
+
+  const fixture = liveFixture();
+  const store = fixture.runtime.createAttemptStore();
+  const claim = await store.claimRefreshAttempt(fixture.revision);
+  await assert.rejects(store.writeFailureReport({
+    format: "blog-x-local-refresh-failure",
+    version: 1,
+    implementationRevision: fixture.revision,
+    claimSha256: claim.sha256,
+    stage: "accept-v1.1",
+    errorClass: "attacker_chosen_class",
+    baseline: "applicable",
+    recollection: "failed",
+    preservation: "unproved",
+    facts: { preflight: null, current: null, rollback: null },
+  }), /failure report schema/i);
 });
 
 test("normal delivery emits exact progress and a verified evidence-derived BLOCKED terminal block", async () => {

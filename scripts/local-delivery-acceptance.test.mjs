@@ -4,10 +4,14 @@ import { join } from "node:path";
 import { createServer, connect } from "node:net";
 import test from "node:test";
 import {
+  ACCEPTANCE_FAILURE_CLASSES,
   LOCAL_DELIVERY_ACCEPTANCE_FORMAT,
   assertGeneratedIntegrationCleanupAcknowledgement,
   assertPhase7CleanupAcknowledgement,
+  buildLocalDeliveryAcceptanceEnvironment,
+  formatLocalDeliveryAcceptanceFailure,
   parseLocalDeliveryAcceptanceOutputs,
+  parseLocalDeliveryAcceptanceFailure,
   parseLocalDeliveryAcceptanceRecord,
   runLocalDeliveryAcceptance,
 } from "./local-delivery-acceptance.mjs";
@@ -15,7 +19,7 @@ import { createLocalDeliveryAcceptanceTestRuntime } from "./local-delivery-accep
 import { canonicalIntegrationSelection, createGeneratedIntegrationResult, createLifecycleProbeResult } from "./local-verify.mjs";
 import { createPhase7BrowserResult, phase7BrowserSelection } from "./phase7-browser-verify.mjs";
 import { PACKAGE_TEST_INVENTORY } from "./test-inventory.mjs";
-import { runBoundedChildTree } from "./local-delivery-child-tree.mjs";
+import { BOUNDED_CHILD_FAILURE_KINDS, runBoundedChildTree } from "./local-delivery-child-tree.mjs";
 
 const counts = { tests: 3, passed: 3, failed: 0, cancelled: 0, skipped: 0, todo: 0 };
 const generatedSelection = canonicalIntegrationSelection();
@@ -134,6 +138,111 @@ test("test-only runtime records the only two sealed child argv families and reje
     { exitCode: 0, signal: null, combined: "", overflow: true },
   ]) {
     await assert.rejects(createLocalDeliveryAcceptanceTestRuntime({ processBoundary: async () => result }).run(), /child|complete/i);
+  }
+});
+
+test("bounded child failures expose only an allowlisted kind and safe close facts", async () => {
+  const secret = "bounded-secret-token-value";
+  const capture = async (args, options = {}) => {
+    let failure;
+    await assert.rejects(runBoundedChildTree(process.execPath, args, {
+      cwd: process.cwd(),
+      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", TMPDIR: process.env.TMPDIR ?? "/tmp", LANG: "C" },
+      maximumOutputBytes: 128,
+      timeoutMs: 2_000,
+      terminationGraceMs: 100,
+      killGraceMs: 1_000,
+      cleanupAcknowledgementMs: 500,
+      ...options,
+    }), (error) => {
+      failure = error;
+      return true;
+    });
+    assert.ok(BOUNDED_CHILD_FAILURE_KINDS.includes(failure.boundedFailureKind));
+    assert.doesNotMatch(JSON.stringify({ message: failure.message, stack: failure.stack }), new RegExp(secret));
+    return failure;
+  };
+
+  const exited = await capture(["-e", `process.stderr.write(${JSON.stringify(secret)});process.exit(7)`]);
+  assert.equal(exited.boundedFailureKind, "child_exit");
+  assert.equal(exited.boundedExitCode, 7);
+  assert.equal(exited.boundedSignal, null);
+
+  const signalled = await capture(["-e", "process.kill(process.pid, 'SIGTERM')"]);
+  assert.equal(signalled.boundedFailureKind, "child_signal");
+  assert.equal(signalled.boundedExitCode, null);
+  assert.equal(signalled.boundedSignal, "SIGTERM");
+
+  const timedOut = await capture(["-e", "setInterval(() => {}, 1000)"], {
+    timeoutMs: 100,
+    confirmCleanup: () => true,
+  });
+  assert.equal(timedOut.boundedFailureKind, "timeout");
+
+  const overflow = await capture(["-e", `process.stdout.write(${JSON.stringify(secret.repeat(32))});setInterval(() => {}, 1000)`], {
+    confirmCleanup: () => true,
+  });
+  assert.equal(overflow.boundedFailureKind, "output_limit");
+
+  const cleanup = await capture(["-e", "process.exit(0)"], { confirmCleanup: () => false });
+  assert.equal(cleanup.boundedFailureKind, "cleanup_unconfirmed");
+  assert.equal(cleanup.boundedExitCode, 0);
+  assert.equal(cleanup.boundedSignal, null);
+});
+
+test("acceptance wraps generated and Phase 7 bounded failures into distinct secret-free classes", async () => {
+  const ambient = {
+    PATH: "/usr/bin:/bin",
+    HOME: "/Users/acceptance",
+    TMPDIR: "/private/tmp/acceptance",
+    LANG: "C",
+    LC_ALL: "C",
+    BLOG_X_SECRET_TOKEN: "must-not-cross",
+  };
+  assert.deepEqual(buildLocalDeliveryAcceptanceEnvironment(ambient), {
+    PATH: ambient.PATH,
+    HOME: ambient.HOME,
+    TMPDIR: ambient.TMPDIR,
+    LANG: ambient.LANG,
+    LC_ALL: ambient.LC_ALL,
+  });
+
+  const cases = [
+    { stage: "generated", result: { exitCode: 9, signal: null, combined: "generated raw secret-token" }, expected: "generated_child_exit" },
+    { stage: "generated", result: { exitCode: null, signal: null, combined: "raw timeout", timedOut: true }, expected: "generated_timeout" },
+    { stage: "phase7", result: { exitCode: null, signal: null, combined: "raw overflow", overflow: true }, expected: "phase7_output_limit" },
+    { stage: "phase7", result: { exitCode: 0, signal: null, combined: "raw cleanup", cleanupConfirmed: false }, expected: "phase7_cleanup_unconfirmed" },
+  ];
+  for (const scenario of cases) {
+    const calls = [];
+    const runtime = createLocalDeliveryAcceptanceTestRuntime({
+      ambient,
+      async processBoundary(command, args, options) {
+        calls.push({ command, args, options });
+        const generated = args[0]?.endsWith("local-verify.mjs");
+        if (scenario.stage === "generated" && generated || scenario.stage === "phase7" && !generated) return scenario.result;
+        return { exitCode: 0, signal: null, combined: generated ? generatedOutput : phase7Output, cleanupConfirmed: true };
+      },
+    });
+    let failure;
+    await assert.rejects(runtime.run(), (error) => {
+      failure = error;
+      return true;
+    });
+    assert.equal(failure.acceptanceFailureClass, scenario.expected);
+    assert.ok(ACCEPTANCE_FAILURE_CLASSES.includes(failure.acceptanceFailureClass));
+    assert.doesNotMatch(JSON.stringify({ message: failure.message, stack: failure.stack }), /raw |secret-token|must-not-cross|\/private\/tmp\/acceptance/i);
+    assert.deepEqual(calls[0].options.env, buildLocalDeliveryAcceptanceEnvironment(ambient));
+
+    const line = formatLocalDeliveryAcceptanceFailure(failure);
+    assert.doesNotMatch(line, /raw |secret-token|must-not-cross|\/private\/tmp\/acceptance/i);
+    assert.deepEqual(parseLocalDeliveryAcceptanceFailure(line), {
+      format: "blog-x-v1.1-local-delivery-acceptance-failure",
+      version: 1,
+      acceptanceFailureClass: scenario.expected,
+      exitCode: Number.isSafeInteger(failure.boundedExitCode) ? failure.boundedExitCode : null,
+      signal: failure.boundedSignal ?? null,
+    });
   }
 });
 
