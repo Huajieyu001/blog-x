@@ -124,6 +124,9 @@ export function createGeneratedIntegrationResult({ suites, cleanup, probes = [] 
     if (JSON.stringify(probe) !== JSON.stringify(canonical)) throw new Error("generated integration lifecycle probes are invalid or coverage-bearing");
     return canonical;
   });
+  if (canonicalProbes.length !== 2 || canonicalProbes[0].kind !== "interruption" || canonicalProbes[1].kind !== "parallel") {
+    throw new Error("generated integration requires the exact ordered lifecycle probe pair");
+  }
   const body = {
     format: GENERATED_INTEGRATION_RESULT_FORMAT,
     version: 1,
@@ -1329,7 +1332,7 @@ async function runCanonicalIntegrationChecks(context) {
   const selection = canonicalIntegrationSelection();
   if (!context.internalRun && !context.canonicalPrebuilt) {
     await runStep(context, "typecheck workspace for canonical integration", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
-    await runStep(context, "build workspace for canonical integration", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin } });
+    await runStep(context, "build workspace for canonical integration", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin, INTERNAL_API_ORIGIN: context.internalApiOrigin } });
   }
   const suites = [];
   for (const file of selection.groups.database) {
@@ -1607,7 +1610,7 @@ async function runSingle(options) {
       await preflightOfflinePrerequisites(context);
       process.stdout.write("[local-verify] build current canonical Web runtime from offline workspace authority\n");
       await runStep(context, "typecheck workspace for canonical integration", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
-      await runStep(context, "build workspace for canonical integration", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin } });
+      await runStep(context, "build workspace for canonical integration", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin, INTERNAL_API_ORIGIN: context.internalApiOrigin } });
       await createCanonicalRuntimeAuthority(context);
       context.canonicalPrebuilt = true;
     }

@@ -79,7 +79,11 @@ test("generated integration result binds exact paths actual counts cleanup and d
     counts: { tests: 1, passed: 1, failed: 0, cancelled: 0, skipped: 0, todo: 0 },
   }));
   const cleanup = { namespace: "blogxverify_a1b2c3d4", containersAbsent: true, volumesAbsent: true, pathsAbsent: true };
-  const result = createGeneratedIntegrationResult({ suites, cleanup });
+  const probes = [
+    createLifecycleProbeResult({ kind: "interruption", namespaces: ["blogxverify_b1c2d3e4"], interrupted: true }),
+    createLifecycleProbeResult({ kind: "parallel", namespaces: ["blogxverify_c1d2e3f4", "blogxverify_d1e2f3a4"], interrupted: false }),
+  ];
+  const result = createGeneratedIntegrationResult({ suites, cleanup, probes });
   assert.equal(result.format, "blog-x-generated-integration-result");
   assert.equal(result.version, 1);
   assert.equal(result.releaseState, "BLOCKED");
@@ -88,11 +92,13 @@ test("generated integration result binds exact paths actual counts cleanup and d
   assert.deepEqual(result.cleanup, cleanup);
   assert.equal(result.manifestSha256, selection.manifestSha256);
   assert.match(result.resultSha256, /^[a-f0-9]{64}$/);
-  assert.throws(() => createGeneratedIntegrationResult({ suites: suites.slice(1), cleanup }), /missing|inventory|exact/i);
-  assert.throws(() => createGeneratedIntegrationResult({ suites: [...suites, suites[0]], cleanup }), /duplicate|inventory|exact/i);
-  assert.throws(() => createGeneratedIntegrationResult({ suites: suites.map((suite, index) => index ? suite : { ...suite, counts: { ...suite.counts, skipped: 1, passed: 0 } }), cleanup }), /pass-only|counts/i);
+  assert.throws(() => createGeneratedIntegrationResult({ suites: suites.slice(1), cleanup, probes }), /missing|inventory|exact/i);
+  assert.throws(() => createGeneratedIntegrationResult({ suites: [...suites, suites[0]], cleanup, probes }), /duplicate|inventory|exact/i);
+  assert.throws(() => createGeneratedIntegrationResult({ suites: suites.map((suite, index) => index ? suite : { ...suite, counts: { ...suite.counts, skipped: 1, passed: 0 } }), cleanup, probes }), /pass-only|counts/i);
   const probe = createLifecycleProbeResult({ kind: "interruption", namespaces: ["blogxverify_b1c2d3e4"], interrupted: true });
-  assert.throws(() => createGeneratedIntegrationResult({ suites, cleanup, probes: [{ ...probe, version: 2 }] }), /probe|invalid/i);
+  assert.throws(() => createGeneratedIntegrationResult({ suites, cleanup, probes: [{ ...probe, version: 2 }, probes[1]] }), /probe|invalid/i);
+  assert.throws(() => createGeneratedIntegrationResult({ suites, cleanup, probes: [] }), /exact|probe|pair/i);
+  assert.throws(() => createGeneratedIntegrationResult({ suites, cleanup, probes: [probes[1], probes[0]] }), /exact|probe|pair/i);
 });
 
 test("lifecycle probes attest zero manifest paths and cannot inflate package counts", async () => {
