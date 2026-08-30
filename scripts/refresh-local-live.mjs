@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseLocalDeliveryAcceptanceFailure } from "./local-delivery-acceptance.mjs";
 import {
   LOCAL_DELIVERY_CLAIM_ROOT,
   assertAllowedRefreshArgv,
@@ -29,8 +30,22 @@ function nativeProductionRun(command, args, options = {}) {
     let stdout = ""; let stderr = "";
     child.stdout.on("data", (chunk) => { stdout += chunk; });
     child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.once("error", reject);
-    child.once("close", (code) => code === 0 ? resolvePromise({ stdout, stderr }) : reject(new Error(`${command} failed with code ${code}`)));
+    child.once("error", () => reject(new Error("production child spawn failed")));
+    child.once("close", (code) => {
+      if (code === 0) return resolvePromise({ stdout, stderr });
+      const failure = new Error("production child failed");
+      if (command === "node" && args.length === 1 && args[0] === "scripts/local-delivery-acceptance.mjs") {
+        try {
+          const typed = parseLocalDeliveryAcceptanceFailure(`${stdout}${stderr}`);
+          Object.defineProperties(failure, {
+            acceptanceFailureClass: { value: typed.acceptanceFailureClass },
+            boundedExitCode: { value: typed.exitCode },
+            boundedSignal: { value: typed.signal },
+          });
+        } catch { /* untyped child failure remains the stable generic class */ }
+      }
+      reject(failure);
+    });
     if (options.input) child.stdin.end(options.input);
   });
 }

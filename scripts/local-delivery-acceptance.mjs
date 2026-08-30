@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runBoundedChildTree } from "./local-delivery-child-tree.mjs";
+import { BOUNDED_CHILD_FAILURE_KINDS, runBoundedChildTree } from "./local-delivery-child-tree.mjs";
 import { createGeneratedIntegrationResult } from "./local-verify.mjs";
 import { validatePhase7BrowserResult } from "./phase7-browser-verify.mjs";
 import { DEFAULT_TEST_FILES, INTEGRATION_TEST_FILES, PACKAGE_TEST_INVENTORY } from "./test-inventory.mjs";
@@ -17,8 +17,67 @@ const phase7Prefix = "BLOG X PHASE7 BROWSER RESULT ";
 const generatedIntegrationCleanupPrefix = "BLOG X GENERATED INTEGRATION CLEANUP ACK ";
 const phase7CleanupPrefix = "BLOG X PHASE7 CLEANUP ACK ";
 const acceptancePrefix = "BLOG X V1.1 ACCEPTANCE RESULT ";
+const acceptanceFailurePrefix = "BLOG X V1.1 ACCEPTANCE FAILURE ";
+
+const acceptanceStages = Object.freeze(["generated", "phase7"]);
+export const ACCEPTANCE_FAILURE_CLASSES = Object.freeze(acceptanceStages.flatMap((stage) => BOUNDED_CHILD_FAILURE_KINDS.map((kind) => `${stage}_${kind}`)));
+const safeSignals = Object.freeze(["SIGABRT", "SIGHUP", "SIGINT", "SIGKILL", "SIGQUIT", "SIGTERM"]);
 
 export const LOCAL_DELIVERY_ACCEPTANCE_FORMAT = "blog-x-v1.1-local-delivery-acceptance";
+
+function safeExitCode(value) { return Number.isSafeInteger(value) && value >= 0 && value <= 255 ? value : null; }
+function safeSignal(value) { return safeSignals.includes(value) ? value : null; }
+
+export function buildLocalDeliveryAcceptanceEnvironment(ambient = process.env) {
+  if (!ambient || typeof ambient !== "object" || Array.isArray(ambient)) throw new Error("local delivery acceptance environment authority is invalid");
+  const output = {};
+  for (const key of ["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL"]) if (typeof ambient[key] === "string" && ambient[key]) output[key] = ambient[key];
+  if (!output.TMPDIR) output.TMPDIR = "/tmp";
+  if (!output.LANG) output.LANG = "C";
+  return Object.freeze(output);
+}
+
+export function wrapLocalDeliveryAcceptanceFailure(stage, error) {
+  if (!acceptanceStages.includes(stage) || !BOUNDED_CHILD_FAILURE_KINDS.includes(error?.boundedFailureKind)) {
+    throw new Error("local delivery acceptance failure classification is invalid");
+  }
+  const acceptanceFailureClass = `${stage}_${error.boundedFailureKind}`;
+  if (!ACCEPTANCE_FAILURE_CLASSES.includes(acceptanceFailureClass)) throw new Error("local delivery acceptance failure class is invalid");
+  const wrapped = new Error(`local delivery acceptance ${stage} child failed`);
+  Object.defineProperties(wrapped, {
+    acceptanceFailureClass: { value: acceptanceFailureClass },
+    boundedExitCode: { value: safeExitCode(error.boundedExitCode) },
+    boundedSignal: { value: safeSignal(error.boundedSignal) },
+  });
+  return wrapped;
+}
+
+export function formatLocalDeliveryAcceptanceFailure(error) {
+  if (!ACCEPTANCE_FAILURE_CLASSES.includes(error?.acceptanceFailureClass)) throw new Error("local delivery acceptance failure is not typed");
+  const record = {
+    format: "blog-x-v1.1-local-delivery-acceptance-failure",
+    version: 1,
+    acceptanceFailureClass: error.acceptanceFailureClass,
+    exitCode: safeExitCode(error.boundedExitCode),
+    signal: safeSignal(error.boundedSignal),
+  };
+  return `${acceptanceFailurePrefix}${JSON.stringify(record)}\n`;
+}
+
+export function parseLocalDeliveryAcceptanceFailure(output) {
+  const lines = String(output).replace(/\r\n?/g, "\n").split("\n").filter((line) => line.startsWith(acceptanceFailurePrefix));
+  if (lines.length !== 1) throw new Error("local delivery acceptance failure output must contain exactly one record");
+  let record;
+  try { record = JSON.parse(lines[0].slice(acceptanceFailurePrefix.length)); } catch { throw new Error("local delivery acceptance failure record is invalid"); }
+  if (!exactKeys(record, ["acceptanceFailureClass", "exitCode", "format", "signal", "version"])
+    || record.format !== "blog-x-v1.1-local-delivery-acceptance-failure" || record.version !== 1
+    || !ACCEPTANCE_FAILURE_CLASSES.includes(record.acceptanceFailureClass)
+    || record.exitCode !== null && safeExitCode(record.exitCode) !== record.exitCode
+    || record.signal !== null && safeSignal(record.signal) !== record.signal) {
+    throw new Error("local delivery acceptance failure record is invalid");
+  }
+  return structuredClone(record);
+}
 
 function exactKeys(value, keys) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
@@ -229,14 +288,10 @@ export function parseLocalDeliveryAcceptanceOutputs({ generatedIntegrationOutput
   return parseLocalDeliveryAcceptanceRecord(result);
 }
 
-function minimalEnvironment() {
-  return Object.freeze({ PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", TMPDIR: process.env.TMPDIR ?? "/tmp", LANG: "C" });
-}
-
 function runBounded(command, args, confirmCleanup) {
   return runBoundedChildTree(command, args, {
     cwd: root,
-    env: minimalEnvironment(),
+    env: buildLocalDeliveryAcceptanceEnvironment(),
     maximumOutputBytes,
     timeoutMs: childTimeoutMs,
     terminationGraceMs: childTerminationGraceMs,
@@ -247,8 +302,18 @@ function runBounded(command, args, confirmCleanup) {
 
 export async function runLocalDeliveryAcceptance(...args) {
   if (args.length) throw new Error("local delivery acceptance accepts zero arguments only");
-  const generatedIntegrationOutput = await runBounded(process.execPath, ["scripts/local-verify.mjs", "--canonical-integration", "--interruption-check", "--parallel-check"], (output) => Boolean(assertGeneratedIntegrationCleanupAcknowledgement(output)));
-  const phase7Output = await runBounded(process.execPath, ["scripts/phase7-browser-verify.mjs"], (output) => Boolean(assertPhase7CleanupAcknowledgement(output)));
+  let generatedIntegrationOutput;
+  try {
+    generatedIntegrationOutput = await runBounded(process.execPath, ["scripts/local-verify.mjs", "--canonical-integration", "--interruption-check", "--parallel-check"], (output) => Boolean(assertGeneratedIntegrationCleanupAcknowledgement(output)));
+  } catch (error) {
+    throw wrapLocalDeliveryAcceptanceFailure("generated", error);
+  }
+  let phase7Output;
+  try {
+    phase7Output = await runBounded(process.execPath, ["scripts/phase7-browser-verify.mjs"], (output) => Boolean(assertPhase7CleanupAcknowledgement(output)));
+  } catch (error) {
+    throw wrapLocalDeliveryAcceptanceFailure("phase7", error);
+  }
   const result = parseLocalDeliveryAcceptanceOutputs({ generatedIntegrationOutput, phase7Output });
   process.stdout.write(`${acceptancePrefix}${JSON.stringify(result)}\n`);
   process.stdout.write("[local-delivery-acceptance] PASS; RELEASE BLOCKED\n");
@@ -257,7 +322,8 @@ export async function runLocalDeliveryAcceptance(...args) {
 
 if (process.argv[1] && resolve(process.argv[1]) === scriptPath) {
   runLocalDeliveryAcceptance(...process.argv.slice(2)).catch((error) => {
-    console.error(error instanceof Error ? error.message : String(error));
+    try { process.stderr.write(formatLocalDeliveryAcceptanceFailure(error)); }
+    catch { process.stderr.write("BLOG X V1.1 ACCEPTANCE FAILED\n"); }
     process.exitCode = 1;
   });
 }

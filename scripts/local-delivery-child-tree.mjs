@@ -1,6 +1,33 @@
 import { spawn } from "node:child_process";
 
 const exactProcessGroups = process.platform !== "win32";
+const SAFE_SIGNALS = Object.freeze(["SIGABRT", "SIGHUP", "SIGINT", "SIGKILL", "SIGQUIT", "SIGTERM"]);
+
+export const BOUNDED_CHILD_FAILURE_KINDS = Object.freeze([
+  "spawn_error",
+  "child_exit",
+  "child_signal",
+  "timeout",
+  "output_limit",
+  "descendant_alive",
+  "termination_unconfirmed",
+  "close_unconfirmed",
+  "cleanup_unconfirmed",
+]);
+
+function safeExitCode(value) { return Number.isSafeInteger(value) && value >= 0 && value <= 255 ? value : null; }
+function safeSignal(value) { return SAFE_SIGNALS.includes(value) ? value : null; }
+
+export function createBoundedChildFailure(kind, { exitCode = null, signal = null, message = "bounded child tree failed" } = {}) {
+  if (!BOUNDED_CHILD_FAILURE_KINDS.includes(kind)) throw new Error("bounded child failure kind is invalid");
+  const error = new Error(message);
+  Object.defineProperties(error, {
+    boundedFailureKind: { value: kind },
+    boundedExitCode: { value: safeExitCode(exitCode) },
+    boundedSignal: { value: safeSignal(signal) },
+  });
+  return error;
+}
 
 function positiveInteger(value, label) {
   if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${label} must be a positive integer`);
@@ -86,7 +113,7 @@ export function runBoundedChildTree(command, args, {
       clearTimeout(timeout);
       operation(value);
     };
-    const terminate = (reason) => {
+    const terminate = (kind, reason) => {
       if (terminationPromise) return terminationPromise;
       terminationPromise = (async () => {
         let forced = false;
@@ -95,10 +122,14 @@ export function runBoundedChildTree(command, args, {
           forced = true;
           signalExactTree(child, "SIGKILL");
           if (!await waitForExactTreeClose(child, killGraceMs)) {
-            throw new Error(`local delivery acceptance ${reason}; process tree termination was not confirmed`);
+            throw createBoundedChildFailure("termination_unconfirmed", { ...closeResult, message: `local delivery acceptance ${reason}; process tree termination was not confirmed` });
           }
         }
-        await withTimeout(closePromise, killGraceMs, "child close acknowledgement timed out");
+        try {
+          await withTimeout(closePromise, killGraceMs, "child close acknowledgement timed out");
+        } catch {
+          throw createBoundedChildFailure("close_unconfirmed", { ...closeResult, message: `local delivery acceptance ${reason}; child close acknowledgement was not confirmed` });
+        }
         if (confirmCleanup) {
           let confirmed = false;
           try {
@@ -106,10 +137,10 @@ export function runBoundedChildTree(command, args, {
           } catch {
             confirmed = false;
           }
-          if (confirmed === true) throw new Error(`local delivery acceptance ${reason}; generated authority cleanup confirmed`);
-          throw new Error(`local delivery acceptance ${reason}; process tree terminated but generated authority cleanup was not acknowledged`);
+          if (confirmed === true) throw createBoundedChildFailure(kind, { ...closeResult, message: `local delivery acceptance ${reason}; generated authority cleanup confirmed` });
+          throw createBoundedChildFailure("cleanup_unconfirmed", { ...closeResult, message: `local delivery acceptance ${reason}; process tree terminated but generated authority cleanup was not acknowledged` });
         }
-        throw new Error(`local delivery acceptance ${reason}; process tree terminated without generated-authority acknowledgement`);
+        throw createBoundedChildFailure(kind, { ...closeResult, message: `local delivery acceptance ${reason}; process tree terminated without generated-authority acknowledgement` });
       })();
       terminationPromise.catch((error) => settle(reject, error));
       return terminationPromise;
@@ -118,7 +149,7 @@ export function runBoundedChildTree(command, args, {
       const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       capturedBytes += bytes.length;
       if (capturedBytes > maximumOutputBytes) {
-        if (!terminationPromise) terminate("child exceeded bounded output");
+        if (!terminationPromise) terminate("output_limit", "child exceeded bounded output");
         return;
       }
       const value = bytes.toString();
@@ -127,30 +158,31 @@ export function runBoundedChildTree(command, args, {
     };
     child.stdout.on("data", capture);
     child.stderr.on("data", capture);
-    child.once("error", (error) => settle(reject, error));
+    child.once("error", () => settle(reject, createBoundedChildFailure("spawn_error")));
     child.once("close", async (exitCode, signal) => {
       closeResult = { exitCode, signal };
       resolveClose(closeResult);
       if (terminationPromise) return;
       if (exactTreeIsAlive(child)) {
-        terminate("child left a generated descendant running");
+        terminate("descendant_alive", "child left a generated descendant running");
         return;
       }
       if (exitCode !== 0 || signal !== null) {
-        settle(reject, new Error("local delivery acceptance child did not complete successfully"));
+        const kind = signal === null ? "child_exit" : "child_signal";
+        settle(reject, createBoundedChildFailure(kind, { exitCode, signal, message: "local delivery acceptance child did not complete successfully" }));
         return;
       }
       if (confirmCleanup) {
         try {
           const confirmed = await withTimeout(Promise.resolve().then(() => confirmCleanup(combined, { forced: false, closeResult })), cleanupAcknowledgementMs, "cleanup acknowledgement timed out");
-          if (confirmed !== true) return settle(reject, new Error("local delivery acceptance child completed without confirmed generated-authority cleanup"));
+          if (confirmed !== true) return settle(reject, createBoundedChildFailure("cleanup_unconfirmed", { exitCode, signal, message: "local delivery acceptance child completed without confirmed generated-authority cleanup" }));
         } catch {
-          return settle(reject, new Error("local delivery acceptance child completed without confirmed generated-authority cleanup"));
+          return settle(reject, createBoundedChildFailure("cleanup_unconfirmed", { exitCode, signal, message: "local delivery acceptance child completed without confirmed generated-authority cleanup" }));
         }
       }
       settle(resolveResult, combined);
     });
-    const timeout = setTimeout(() => terminate("child exceeded bounded time"), timeoutMs);
+    const timeout = setTimeout(() => terminate("timeout", "child exceeded bounded time"), timeoutMs);
   });
 }
 

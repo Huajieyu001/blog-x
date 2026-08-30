@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { lstat, link, mkdir, open, readFile, readdir, realpath, unlink } from "node:fs/promises";
 import { basename, dirname, relative, resolve } from "node:path";
-import { parseLocalDeliveryAcceptanceRecord } from "./local-delivery-acceptance.mjs";
+import { ACCEPTANCE_FAILURE_CLASSES, parseLocalDeliveryAcceptanceRecord } from "./local-delivery-acceptance.mjs";
 import {
   REFRESH_AUTHORITY,
   assertCanonicalPortOwner,
@@ -28,6 +28,8 @@ export const LOCAL_DELIVERY_FORMAT = "blog-x-v1.1-local-delivery-evidence";
 export const LOCAL_DELIVERY_VERSION = 1;
 export const LOCAL_DELIVERY_REFRESH_KIND = "v1.1-offline-local-delivery";
 export const SEED_PREREQUISITE_KINDS = Object.freeze(["missing", "stale", "incompatible", "lock-drifted", "incomplete-store"]);
+const ROLLBACK_FAILURE_CLASSES = Object.freeze(["runtime_rollback_error", "runtime_rollback_and_evidence_cleanup_error", "evidence_cleanup_error_after_verified_rollback"]);
+export const REFRESH_FAILURE_CLASSES = Object.freeze(["error", ...ACCEPTANCE_FAILURE_CLASSES, ...ROLLBACK_FAILURE_CLASSES]);
 export const REFRESH_TERMINAL_STAGES = Object.freeze(["cli_validation", "source_authority", "attempt_claim_preflight", "attempt_claim_publication", "adapter_construction", "claim_attachment", "lockfile_plan_materialization", "local_docker_authority", "preflight_collection", "seed-prerequisites", "build-api", "build-web", "inspect-target-images", "accept-v1.1", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence", "evidence_verification", "final_output", "rollback-api-web", "verify-rollback", "failure_recollection", "failure_report_publication"]);
 export const SAFE_RECOVERY_BY_STAGE = Object.freeze({
   cli_validation: "Correct the fixed invocation, commit the correction, and begin one new clean revision attempt.",
@@ -88,8 +90,9 @@ function rollbackAggregate(kind, errors, message) {
   return error;
 }
 function sanitizedErrorClass(error) {
-  if (typeof error?.rollbackFailureKind === "string" && /^[a-z][a-z0-9_-]*$/.test(error.rollbackFailureKind)) return error.rollbackFailureKind;
-  return String(error?.name ?? "error").toLowerCase().replace(/[^a-z0-9_-]/g, "_") || "error";
+  if (ACCEPTANCE_FAILURE_CLASSES.includes(error?.acceptanceFailureClass)) return error.acceptanceFailureClass;
+  if (ROLLBACK_FAILURE_CLASSES.includes(error?.rollbackFailureKind)) return error.rollbackFailureKind;
+  return "error";
 }
 function exactKeys(value, keys, label) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !same(Object.keys(value).sort(), [...keys].sort())) fail(`${label} keys are not exact`);
@@ -165,7 +168,7 @@ function canonicalClaim(revision) {
 const FAILURE_KEYS = ["baseline", "claimSha256", "errorClass", "facts", "format", "implementationRevision", "preservation", "recollection", "stage", "version"];
 function canonicalFailureReport(report) {
   exactKeys(report, FAILURE_KEYS, "failure report");
-  if (report.format !== "blog-x-local-refresh-failure" || report.version !== 1 || !validRevision(report.implementationRevision) || !validDigest(report.claimSha256) || !["applicable", "not_applicable"].includes(report.baseline) || !["collected", "failed", "not_attempted"].includes(report.recollection) || !["proved", "unproved", "not_applicable_pre_runtime"].includes(report.preservation) || typeof report.stage !== "string" || !/^[a-z][a-z0-9_-]*$/.test(report.errorClass)) fail("failure report schema is invalid");
+  if (report.format !== "blog-x-local-refresh-failure" || report.version !== 1 || !validRevision(report.implementationRevision) || !validDigest(report.claimSha256) || !["applicable", "not_applicable"].includes(report.baseline) || !["collected", "failed", "not_attempted"].includes(report.recollection) || !["proved", "unproved", "not_applicable_pre_runtime"].includes(report.preservation) || typeof report.stage !== "string" || !REFRESH_FAILURE_CLASSES.includes(report.errorClass)) fail("failure report schema is invalid");
   exactKeys(report.facts, ["current", "preflight", "rollback"], "failure report facts");
   if (Object.values(report.facts).some((value) => value !== null && !validDigest(value))) fail("failure report fact digest is invalid");
   const canonical = {
