@@ -66,11 +66,53 @@ function confirmationMatches(id: string, current: StoredAdminPost, input: AdminP
     && input.slugChangeConfirmation.version === current.updatedAt.toISOString();
 }
 
+const editableFields = [
+  "title",
+  "summary",
+  "coverUrl",
+  "slug",
+  "markdown",
+  "publishedAt",
+  "seoDescription",
+  "categoryId",
+  "tagIds",
+  "coverMedia",
+] as const;
+
+function equalDates(left: Date | null, right: string | null) {
+  return (left?.toISOString() ?? null) === right;
+}
+
+function equalStringArrays(left: string[], right: string[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function equalCoverMedia(left: StoredAdminPost["coverMedia"], right: AdminPostUpdateInput["coverMedia"]) {
+  if (!left || !right) return left === null && right == null;
+  return left.id === right.id && left.alt === right.alt && left.decorative === right.decorative;
+}
+
+function changedFieldNames(current: StoredAdminPost, input: AdminPostUpdateInput, publishedAt: Date | null) {
+  const valuesMatch: Record<(typeof editableFields)[number], boolean> = {
+    title: current.title === input.title,
+    summary: current.summary === input.summary,
+    coverUrl: current.coverUrl === input.coverUrl,
+    slug: current.slug === input.slug,
+    markdown: current.markdown === input.markdown,
+    publishedAt: equalDates(publishedAt, current.publishedAt?.toISOString() ?? null),
+    seoDescription: current.seoDescription === input.seoDescription,
+    categoryId: current.categoryId === input.categoryId,
+    tagIds: equalStringArrays(current.tagIds, input.tagIds),
+    coverMedia: equalCoverMedia(current.coverMedia, input.coverMedia),
+  };
+  return editableFields.filter((field) => !valuesMatch[field]);
+}
+
 export function createArticleService(repository: AdminPostRepository) {
-  async function createDraft(input: AdminPostInput) {
+  async function createDraft(input: AdminPostInput, actorAdministratorId: string) {
     const fields = mediaValidationFields(input);
     if (fields) return { ok: false, detail: { error: "validation_failed", fields } } as const;
-    const post = await repository.createDraft(input);
+    const post = await repository.createDraft(input, actorAdministratorId);
     if (!post) throw new Error("draft was not persisted");
     return { ok: true, post: serialize(post) } as const;
   }
@@ -84,8 +126,8 @@ export function createArticleService(repository: AdminPostRepository) {
     return Promise.all((await repository.listRetained()).map(serialize));
   }
 
-  async function updateDraft(id: string, input: AdminPostUpdateInput): Promise<ArticleServiceResult> {
-    const result = await repository.transactRetained<ArticleServiceResult>(id, async (current, update) => {
+  async function updateDraft(id: string, input: AdminPostUpdateInput, actorAdministratorId: string): Promise<ArticleServiceResult> {
+    const result = await repository.transactRetained<ArticleServiceResult>(id, actorAdministratorId, async (current, update, audit) => {
       const status = statusOf(current);
       if (!resolveRetainedTransition(status, "edit")) return { ok: false, detail: { error: "not_found" } };
       const mediaFields = mediaValidationFields(input);
@@ -108,6 +150,7 @@ export function createArticleService(repository: AdminPostRepository) {
       const publishedAt = status === "draft" || input.publishedAtCorrection
         ? (input.publishedAt ? new Date(input.publishedAt) : null)
         : current.publishedAt;
+      const changedFields = changedFieldNames(current, input, publishedAt);
       const updated = await update({
         title: input.title,
         summary: input.summary,
@@ -123,19 +166,21 @@ export function createArticleService(repository: AdminPostRepository) {
         legacyMediaReview: "clear",
         updatedAt: nextVersion(current),
       }, input.tagIds);
+      await audit("article.updated", { previousStatus: status, status, changedFields });
       return { ok: true, post: serialize(updated) };
     });
     return result ?? { ok: false, detail: { error: "not_found" } };
   }
 
-  async function transition(id: string, action: ArticleAction): Promise<ArticleServiceResult | DeleteServiceResult> {
-    const result = await repository.transactRetained<ArticleServiceResult | DeleteServiceResult>(id, async (current, update) => {
+  async function transition(id: string, action: ArticleAction, actorAdministratorId: string): Promise<ArticleServiceResult | DeleteServiceResult> {
+    const result = await repository.transactRetained<ArticleServiceResult | DeleteServiceResult>(id, actorAdministratorId, async (current, update, audit) => {
       const status = statusOf(current);
       const target = resolveRetainedTransition(status, action);
       if (!target) return { ok: false, detail: { error: "invalid_transition", status, action } };
 
       if (action === "delete") {
         await update({ deletedAt: new Date(), updatedAt: nextVersion(current) });
+        await audit("article.deleted", { previousStatus: status, status: "deleted" });
         return { ok: true, deleted: { id, deleted: true } };
       }
 
@@ -170,6 +215,12 @@ export function createArticleService(repository: AdminPostRepository) {
         ...(action === "publish" || action === "republish" ? { legacyMediaReview: "clear" } : {}),
         updatedAt: nextVersion(current),
       });
+      const event = {
+        publish: "article.published",
+        unpublish: "article.unpublished",
+        republish: "article.republished",
+      }[action] as "article.published" | "article.unpublished" | "article.republished";
+      await audit(event, { previousStatus: status, status: target });
       return { ok: true, post: serialize(updated) };
     });
     return result ?? { ok: false, detail: { error: "not_found" } };

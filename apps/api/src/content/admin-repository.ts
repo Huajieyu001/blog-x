@@ -1,6 +1,7 @@
-import { legacyMediaReviewSchema, mediaReferenceSchema, type AdminPostInput, type MediaReference } from "@blog-x/contracts";
+import { legacyMediaReviewSchema, mediaReferenceSchema, type AdminPostInput, type AuditMetadata, type MediaReference } from "@blog-x/contracts";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import { appendAuditEvent } from "../audit/audit-repository.js";
 import * as schema from "../db/schema.js";
 
 type Database = NodePgDatabase<typeof schema>;
@@ -62,6 +63,11 @@ type RetainedArticleUpdate = (
   tagIds?: string[],
 ) => Promise<StoredAdminPost>;
 
+type RetainedArticleAudit = (
+  event: "article.updated" | "article.published" | "article.unpublished" | "article.republished" | "article.deleted",
+  metadata?: AuditMetadata,
+) => Promise<void>;
+
 function values(input: AdminPostInput) {
   const { tagIds, coverMedia, ...article } = input;
   return {
@@ -90,8 +96,21 @@ export function createAdminPostRepository(db: Database) {
     return { ...stored, legacyMediaReview: legacyMediaReviewSchema.parse(legacyMediaReview), tagIds: resolvedTags, coverMedia };
   }
 
-  async function createDraft(input: AdminPostInput) {
-    return db.transaction(async (tx) => { const { tagIds, article } = values(input); const created = (await tx.insert(schema.articles).values({ ...article, status: "draft" }).returning(selectedPost))[0]; if (!created) return null; if (tagIds.length) await tx.insert(schema.articleTags).values(tagIds.map((tagId) => ({ articleId: created.id, tagId }))); return hydrate(tx as Database, created as typeof schema.articles.$inferSelect, tagIds); });
+  async function createDraft(input: AdminPostInput, actorAdministratorId: string) {
+    return db.transaction(async (tx) => {
+      const { tagIds, article } = values(input);
+      const created = (await tx.insert(schema.articles).values({ ...article, status: "draft" }).returning(selectedPost))[0];
+      if (!created) return null;
+      if (tagIds.length) await tx.insert(schema.articleTags).values(tagIds.map((tagId) => ({ articleId: created.id, tagId })));
+      await appendAuditEvent(tx, {
+        actorAdministratorId,
+        event: "article.created",
+        targetType: "article",
+        targetId: created.id,
+        metadata: { status: "draft" },
+      });
+      return hydrate(tx as Database, created as typeof schema.articles.$inferSelect, tagIds);
+    });
   }
 
   async function findRetainedById(id: string) {
@@ -104,7 +123,8 @@ export function createAdminPostRepository(db: Database) {
 
   async function transactRetained<T>(
     id: string,
-    operation: (current: StoredAdminPost, update: RetainedArticleUpdate) => Promise<T>,
+    actorAdministratorId: string,
+    operation: (current: StoredAdminPost, update: RetainedArticleUpdate, audit: RetainedArticleAudit) => Promise<T>,
   ): Promise<T | null> {
     return db.transaction(async (tx) => {
       const current = (await tx.select(selectedPost).from(schema.articles)
@@ -122,7 +142,14 @@ export function createAdminPostRepository(db: Database) {
         }
         return hydrate(tx as Database, updated as typeof schema.articles.$inferSelect, tagIds ?? currentWithTags.tagIds);
       };
-      return operation(currentWithTags, update);
+      const audit: RetainedArticleAudit = (event, metadata) => appendAuditEvent(tx, {
+        actorAdministratorId,
+        event,
+        targetType: "article",
+        targetId: id,
+        ...(metadata ? { metadata } : {}),
+      });
+      return operation(currentWithTags, update, audit);
     });
   }
 

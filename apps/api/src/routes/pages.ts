@@ -14,11 +14,12 @@ export const pageRoutes: FastifyPluginAsync<Options> = async (app, options) => {
     return page ?? reply.code(404).send({ error: "not_found" });
   });
   app.post("/admin/about", { bodyLimit: 256 * 1024 }, async (request, reply) => {
-    if (!await requireAdministratorMutation(request, reply, options.mutationGuard)) return;
+    const actorAdministratorId = await requireAdministratorMutation(request, reply, options.mutationGuard);
+    if (!actorAdministratorId) return;
     if (!requireContentType(request, reply, "application/json")) return;
     const parsed = aboutInputSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "validation_failed" });
-    const result = await options.pageService.save(parsed.data);
+    const result = await options.pageService.save(parsed.data, actorAdministratorId);
     return result.stale ? reply.code(409).send(staleVersionSchema.parse({ error: "stale_version" })) : result.page;
   });
   app.post("/admin/about/preview", { bodyLimit: 256 * 1024 }, async (request, reply) => {
@@ -29,11 +30,12 @@ export const pageRoutes: FastifyPluginAsync<Options> = async (app, options) => {
     return aboutPreviewSchema.parse({ html: (await renderMarkdown(parsed.data.markdown)).html });
   });
   app.post("/admin/about/publish", { bodyLimit: 64 * 1024 }, async (request, reply) => {
-    if (!await requireAdministratorMutation(request, reply, options.mutationGuard)) return;
+    const actorAdministratorId = await requireAdministratorMutation(request, reply, options.mutationGuard);
+    if (!actorAdministratorId) return;
     if (!requireContentType(request, reply, "application/json")) return;
     const parsed = aboutVersionSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "validation_failed" });
-    const result = await options.pageService.publish(parsed.data.version);
+    const result = await options.pageService.publish(parsed.data.version, actorAdministratorId);
     return !result ? reply.code(404).send({ error: "not_found" }) : result.stale ? reply.code(409).send(staleVersionSchema.parse({ error: "stale_version" })) : result.page;
   });
 };

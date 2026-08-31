@@ -1,4 +1,4 @@
-import { boolean, check, index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 export const administrators = pgTable("administrators", {
@@ -16,6 +16,29 @@ export const sessions = pgTable("sessions", {
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [uniqueIndex("sessions_token_digest_unique").on(table.tokenDigest), index("sessions_expiry_index").on(table.expiresAt)]);
+
+export const auditEvents = pgTable("audit_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  // Deliberately not a foreign key: deleting or rotating an administrator must
+  // never rewrite or cascade into historical audit evidence.
+  actorAdministratorId: uuid("actor_administrator_id").notNull(),
+  event: text("event").notNull(),
+  targetType: text("target_type").notNull(),
+  targetId: uuid("target_id").notNull(),
+  metadata: jsonb("metadata").notNull().default({}),
+  occurredAt: timestamp("occurred_at", { withTimezone: true, precision: 3 }).defaultNow().notNull(),
+}, (table) => [
+  index("audit_events_newest_index").on(table.occurredAt.desc(), table.id.desc()),
+  check("audit_events_event_check", sql`${table.event} in ('auth.login.succeeded', 'auth.logout.succeeded', 'article.created', 'article.updated', 'article.published', 'article.unpublished', 'article.republished', 'article.deleted', 'category.created', 'category.updated', 'category.deleted', 'tag.created', 'tag.updated', 'tag.deleted', 'about.saved', 'about.published')`),
+  check("audit_events_target_check", sql`(
+    (${table.event} in ('auth.login.succeeded', 'auth.logout.succeeded') and ${table.targetType} = 'administrator' and ${table.targetId} = ${table.actorAdministratorId})
+    or (${table.event} like 'article.%' and ${table.targetType} = 'article' and ${table.targetId} is not null)
+    or (${table.event} like 'category.%' and ${table.targetType} = 'category' and ${table.targetId} is not null)
+    or (${table.event} like 'tag.%' and ${table.targetType} = 'tag' and ${table.targetId} is not null)
+    or (${table.event} like 'about.%' and ${table.targetType} = 'about' and ${table.targetId} is not null)
+  )`),
+  check("audit_events_metadata_check", sql`jsonb_typeof(${table.metadata}) = 'object' and octet_length(${table.metadata}::text) <= 2048`),
+]);
 
 export const media = pgTable("media", {
   id: uuid("id").defaultRandom().primaryKey(),

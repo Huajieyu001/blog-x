@@ -23,6 +23,8 @@ import {
   type PublicSearchResponse,
   publicRelatedPostsResponseSchema,
   type PublicRelatedPostsResponse,
+  auditEventListSchema,
+  type AuditEventList,
 } from "@blog-x/contracts";
 
 const internalApiOrigin = process.env.INTERNAL_API_ORIGIN ?? "http://127.0.0.1:3001";
@@ -97,6 +99,22 @@ export async function getAdminPosts(cookieHeader: string): Promise<AdminPost[]> 
     return parsed.success ? parsed.data : [];
   } catch {
     return [];
+  }
+}
+
+export async function getAdminAuditEvents(cookieHeader: string, cursor?: string): Promise<AuditEventList | null> {
+  try {
+    const search = new URLSearchParams({ limit: "25" });
+    if (cursor) search.set("cursor", cursor);
+    const response = await fetch(`${internalApiOrigin}/admin/audit-events?${search.toString()}`, {
+      cache: "no-store",
+      headers: cookieHeader ? { cookie: cookieHeader } : undefined,
+    });
+    if (!response.ok) return null;
+    const parsed = auditEventListSchema.safeParse(await response.json());
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
   }
 }
 

@@ -19,8 +19,8 @@ test("taxonomy mutations are guarded and public discovery is published-only", as
   if (!databaseUrl) { context.skip("AUTH_TEST_DATABASE_URL must name a disposable migrated PostgreSQL database"); return; }
   const pool = new Pool({ connectionString: databaseUrl });
   const db = drizzle({ client: pool, schema: { administrators, sessions, articles, categories, tags, articleTags } });
-  await pool.query("truncate table sessions, article_tags, articles, categories, tags, administrators cascade");
-  context.after(async () => { await pool.query("truncate table sessions, article_tags, articles, categories, tags, administrators cascade"); await pool.end(); });
+  await pool.query("truncate table audit_events, sessions, article_tags, articles, categories, tags, administrators cascade");
+  context.after(async () => { await pool.query("truncate table audit_events, sessions, article_tags, articles, categories, tags, administrators cascade"); await pool.end(); });
   const app = await buildApp({ publicOrigin: origin });
   context.after(async () => app.close());
 
@@ -44,6 +44,16 @@ test("taxonomy mutations are guarded and public discovery is published-only", as
   assert.equal(apiEditedCategory.json().name, "生活随笔");
   const apiDeletedCategory = await app.inject({ method: "DELETE", url: `/admin/categories/${apiCreatedCategory.json().id}`, headers: { origin, cookie } });
   assert.equal(apiDeletedCategory.statusCode, 204, apiDeletedCategory.body);
+
+  const auditTagMarker = `private-tag-${Date.now()}`;
+  const apiCreatedTag = await app.inject({ method: "POST", url: "/admin/tags", headers, payload: { name: auditTagMarker, slug: auditTagMarker } });
+  assert.equal(apiCreatedTag.statusCode, 201, apiCreatedTag.body);
+  const duplicateTag = await app.inject({ method: "POST", url: "/admin/tags", headers, payload: { name: "duplicate", slug: auditTagMarker } });
+  assert.equal(duplicateTag.statusCode, 409, duplicateTag.body);
+  const apiEditedTag = await app.inject({ method: "PUT", url: `/admin/tags/${apiCreatedTag.json().id}`, headers, payload: { name: `${auditTagMarker}-edited`, slug: `${auditTagMarker}-edited` } });
+  assert.equal(apiEditedTag.statusCode, 200, apiEditedTag.body);
+  const apiDeletedTag = await app.inject({ method: "DELETE", url: `/admin/tags/${apiCreatedTag.json().id}`, headers: { origin, cookie } });
+  assert.equal(apiDeletedTag.statusCode, 204, apiDeletedTag.body);
 
   const category = await db.insert(categories).values({ name: "技术", slug: "tech" }).returning();
   const tag = await db.insert(tags).values({ name: "TypeScript", slug: "typescript" }).returning();
@@ -98,4 +108,21 @@ test("taxonomy mutations are guarded and public discovery is published-only", as
   assert.ok(blockedDelete.json().articleCount >= 1);
   const retainedCategory = await db.select().from(categories);
   assert.equal(retainedCategory.some((row) => row.id === category[0]!.id), true, "associated delete retains the category");
+
+  const audit = await pool.query<{ event: string; target_type: string; target_id: string; metadata: Record<string, unknown> }>(
+    "select event, target_type, target_id, metadata from audit_events where target_type in ('category', 'tag') order by occurred_at, id",
+  );
+  assert.deepEqual(audit.rows.map((row) => row.event).sort(), [
+    "category.created",
+    "category.deleted",
+    "category.updated",
+    "tag.created",
+    "tag.deleted",
+    "tag.updated",
+  ]);
+  assert.equal(audit.rows.filter((row) => row.target_type === "category").every((row) => row.target_id === apiCreatedCategory.json().id), true);
+  assert.equal(audit.rows.filter((row) => row.target_type === "tag").every((row) => row.target_id === apiCreatedTag.json().id), true);
+  assert.equal(audit.rows.every((row) => Object.keys(row.metadata).every((key) => key === "changedFields")), true);
+  assert.doesNotMatch(JSON.stringify(audit.rows), new RegExp(auditTagMarker));
+  assert.equal(audit.rows.some((row) => row.target_id === category[0]!.id), false, "associated-delete conflicts append no event");
 });

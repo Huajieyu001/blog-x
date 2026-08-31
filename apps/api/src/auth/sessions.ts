@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import { appendAuditEvent } from "../audit/audit-repository.js";
 import * as schema from "../db/schema.js";
 
 type Database = NodePgDatabase<typeof schema>;
@@ -38,21 +39,41 @@ export function createSessionService(db: Database) {
 
   async function issue(administratorId: string) {
     const now = new Date();
-    await db.update(schema.sessions).set({ revokedAt: now })
-      .where(and(eq(schema.sessions.administratorId, administratorId), isNull(schema.sessions.revokedAt)));
     const token = randomBytes(32).toString("base64url");
-    await db.insert(schema.sessions).values({
-      administratorId,
-      tokenDigest: digest(token),
-      expiresAt: new Date(now.getTime() + sessionLifetimeSeconds * 1000),
+    await db.transaction(async (tx) => {
+      await tx.update(schema.sessions).set({ revokedAt: now })
+        .where(and(eq(schema.sessions.administratorId, administratorId), isNull(schema.sessions.revokedAt)));
+      await tx.insert(schema.sessions).values({
+        administratorId,
+        tokenDigest: digest(token),
+        expiresAt: new Date(now.getTime() + sessionLifetimeSeconds * 1000),
+      });
+      await appendAuditEvent(tx, {
+        actorAdministratorId: administratorId,
+        event: "auth.login.succeeded",
+        targetType: "administrator",
+        targetId: administratorId,
+      });
     });
     return token;
   }
 
-  async function revoke(token: string | undefined) {
-    if (!token) return;
-    await db.update(schema.sessions).set({ revokedAt: new Date() })
-      .where(and(eq(schema.sessions.tokenDigest, digest(token)), isNull(schema.sessions.revokedAt)));
+  async function revoke(token: string | undefined, administratorId: string) {
+    if (!token) throw new Error("authenticated session token is missing");
+    await db.transaction(async (tx) => {
+      await tx.update(schema.sessions).set({ revokedAt: new Date() })
+        .where(and(
+          eq(schema.sessions.tokenDigest, digest(token)),
+          eq(schema.sessions.administratorId, administratorId),
+          isNull(schema.sessions.revokedAt),
+        ));
+      await appendAuditEvent(tx, {
+        actorAdministratorId: administratorId,
+        event: "auth.logout.succeeded",
+        targetType: "administrator",
+        targetId: administratorId,
+      });
+    });
   }
 
   return { administratorIdForToken, issue, revoke };

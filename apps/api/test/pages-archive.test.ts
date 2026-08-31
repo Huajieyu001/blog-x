@@ -23,9 +23,9 @@ test("About stale draft/published boundary and deterministic archive are enforce
 
   const pool = new Pool({ connectionString: databaseUrl });
   const db = drizzle({ client: pool, schema: { administrators, articles, sessions, sitePages } });
-  await pool.query("truncate table sessions, article_tags, articles, site_pages, administrators cascade");
+  await pool.query("truncate table audit_events, sessions, article_tags, articles, site_pages, administrators cascade");
   context.after(async () => {
-    await pool.query("truncate table sessions, article_tags, articles, site_pages, administrators cascade");
+    await pool.query("truncate table audit_events, sessions, article_tags, articles, site_pages, administrators cascade");
     await pool.end();
   });
 
@@ -140,6 +140,15 @@ test("About stale draft/published boundary and deterministic archive are enforce
   assert.equal(returnedToDraft.statusCode, 200, returnedToDraft.body);
   assert.equal(returnedToDraft.json().status, "draft");
   assert.equal((await app.inject({ method: "GET", url: "/public/about" })).body, missingPublic.body, "unpublished About leaks no draft state");
+
+  const aboutAudit = await pool.query<{ event: string; target_type: string; target_id: string; metadata: Record<string, unknown> }>(
+    "select event, target_type, target_id, metadata from audit_events where target_type = 'about' order by occurred_at, id",
+  );
+  assert.equal(aboutAudit.rows.filter((row) => row.event === "about.saved").length, 3);
+  assert.equal(aboutAudit.rows.filter((row) => row.event === "about.published").length, 1);
+  assert.equal(aboutAudit.rows.every((row) => row.target_id === initial.json().id), true);
+  assert.equal(aboutAudit.rows.every((row) => Object.keys(row.metadata).every((key) => ["changedFields", "previousStatus", "status"].includes(key))), true);
+  assert.doesNotMatch(JSON.stringify(aboutAudit.rows), /Safe About|stale overwrite|secret|未发布的新版本|# Draft/);
 
   const emptyArchive = await app.inject({ method: "GET", url: "/public/archives" });
   assert.equal(emptyArchive.statusCode, 200);

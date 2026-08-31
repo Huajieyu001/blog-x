@@ -70,9 +70,10 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
   });
 
   app.post("/auth/logout", async (request, reply) => {
-    if (!await requireAdministratorMutation(request, reply, options.mutationGuard)) return;
+    const administratorId = await requireAdministratorMutation(request, reply, options.mutationGuard);
+    if (!administratorId) return;
     const token = request.cookies[sessionCookieName];
-    await options.sessionAuth.revoke(token);
+    await options.sessionAuth.revoke(token, administratorId);
     reply.setCookie(sessionCookieName, "", { ...sessionCookieOptions(options.secureCookies), maxAge: 0 });
     return logoutResponseSchema.parse({ ok: true });
   });

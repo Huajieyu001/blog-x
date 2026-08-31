@@ -88,6 +88,14 @@
 .postRow a { color: #20201d; font: 600 1.05rem/1.4 ui-serif, Georgia, serif; }
 .postRow p { margin: 4px 0; }
 .postRow > div:last-child { display: flex; align-items: center; gap: 14px; }
+.auditIntro { margin: -10px 0 22px; color: #6b6962; font: .92rem/1.65 ui-sans-serif, system-ui, sans-serif; }
+.auditList { display: grid; border-top: 1px solid #d8d4ca; }
+.auditRow { display: grid; grid-template-columns: minmax(11rem, 1fr) minmax(14rem, 2fr) minmax(12rem, 1.3fr); gap: 20px; align-items: start; padding: 18px 0; border-bottom: 1px solid #d8d4ca; }
+.auditEvent { margin: 0; font: 650 .95rem/1.4 ui-sans-serif, system-ui, sans-serif; }
+.auditDetail { margin: 5px 0 0; color: #6b6962; font: .82rem/1.55 ui-sans-serif, system-ui, sans-serif; overflow-wrap: anywhere; }
+.auditTime { margin: 0; color: #6b6962; font: .82rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.auditPager { display: flex; justify-content: flex-end; margin-top: 24px; }
+.auditPager a { display: inline-flex; min-height: 44px; align-items: center; border: 1px solid #20201d; border-radius: 999px; padding: 0 18px; color: #20201d; text-decoration: none; }
 
 @media (max-width: 720px) {
   .page { padding: 24px 16px 48px; }
@@ -104,6 +112,8 @@
   .mobileInactive { display: none; }
   .mobileActive { display: block; }
   .markdownLabel textarea { min-height: 440px; }
-  .lifecycle, .postRow, .postRow > div:last-child { display: grid; grid-template-columns: 1fr; }
+  .lifecycle, .postRow, .postRow > div:last-child, .auditRow { display: grid; grid-template-columns: 1fr; }
   .recoveryNotice, .recoveryActions { display: grid; grid-template-columns: 1fr; }
+  .managementTitle { align-items: flex-start; flex-wrap: wrap; gap: 8px 16px; padding-bottom: 16px; }
+  .managementTitle h1 { flex-basis: 100%; margin-bottom: 8px; }
 }

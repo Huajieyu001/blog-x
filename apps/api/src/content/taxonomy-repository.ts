@@ -2,6 +2,7 @@ import { and, count, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { publicPostListResponseSchema, publicPostPageSize } from "@blog-x/contracts";
 import * as schema from "../db/schema.js";
+import { appendAuditEvent } from "../audit/audit-repository.js";
 import { publicPredicate } from "./public-repository.js";
 
 type Database = NodePgDatabase<typeof schema>;
@@ -20,9 +21,39 @@ export function createTaxonomyRepository(db: Database) {
     return publishedOnly ? rows.filter((row) => Number(row.articleCount) > 0) : rows;
   }
   async function find(kind: Kind, slug: string) { const table = tableFor(kind); return (await db.select().from(table).where(eq(table.slug, slug)).limit(1))[0] ?? null; }
-  async function create(kind: Kind, value: { name: string; slug: string }) { const table = tableFor(kind); return (await db.insert(table).values(value).returning())[0]!; }
-  async function update(kind: Kind, id: string, value: { name: string; slug: string }) { const table = tableFor(kind); return (await db.update(table).set({ ...value, updatedAt: new Date() }).where(eq(table.id, id)).returning())[0] ?? null; }
-  async function remove(kind: Kind, id: string) {
+  async function create(kind: Kind, value: { name: string; slug: string }, actorAdministratorId: string) {
+    return db.transaction(async (tx) => {
+      const table = tableFor(kind);
+      const created = (await tx.insert(table).values(value).returning())[0]!;
+      await appendAuditEvent(tx, {
+        actorAdministratorId,
+        event: kind === "categories" ? "category.created" : "tag.created",
+        targetType: kind === "categories" ? "category" : "tag",
+        targetId: created.id,
+        metadata: { changedFields: ["name", "slug"] },
+      });
+      return created;
+    });
+  }
+  async function update(kind: Kind, id: string, value: { name: string; slug: string }, actorAdministratorId: string) {
+    return db.transaction(async (tx) => {
+      const table = tableFor(kind);
+      const current = (await tx.select({ id: table.id, name: table.name, slug: table.slug }).from(table).where(eq(table.id, id)).limit(1).for("update"))[0];
+      if (!current) return null;
+      const updated = (await tx.update(table).set({ ...value, updatedAt: new Date() }).where(eq(table.id, id)).returning())[0];
+      if (!updated) return null;
+      const changedFields = (["name", "slug"] as const).filter((field) => current[field] !== value[field]);
+      await appendAuditEvent(tx, {
+        actorAdministratorId,
+        event: kind === "categories" ? "category.updated" : "tag.updated",
+        targetType: kind === "categories" ? "category" : "tag",
+        targetId: updated.id,
+        metadata: { changedFields },
+      });
+      return updated;
+    });
+  }
+  async function remove(kind: Kind, id: string, actorAdministratorId: string) {
     return db.transaction(async (tx) => {
       const associated = kind === "categories"
         ? await tx.select({ total: count() }).from(schema.articles).where(eq(schema.articles.categoryId, id))
@@ -31,6 +62,14 @@ export function createTaxonomyRepository(db: Database) {
       if (articleCount) return { deleted: false as const, articleCount };
       const table = tableFor(kind);
       const deleted = await tx.delete(table).where(eq(table.id, id)).returning({ id: table.id });
+      if (deleted[0]) {
+        await appendAuditEvent(tx, {
+          actorAdministratorId,
+          event: kind === "categories" ? "category.deleted" : "tag.deleted",
+          targetType: kind === "categories" ? "category" : "tag",
+          targetId: deleted[0].id,
+        });
+      }
       return deleted[0] ? { deleted: true as const, articleCount: 0 } : null;
     });
   }

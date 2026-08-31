@@ -10,7 +10,7 @@ import cookie from "@fastify/cookie";
 import { drizzle } from "drizzle-orm/node-postgres";
 import Fastify, { type FastifyInstance, type FastifyLoggerOptions, type FastifyPluginAsync } from "fastify";
 import { Pool } from "pg";
-import { administrators, articleTags, articles, categories, media, sessions, sitePages, tags } from "./db/schema.js";
+import { administrators, articleTags, articles, auditEvents, categories, media, sessions, sitePages, tags } from "./db/schema.js";
 import { seedAdministrator } from "./db/seed-admin.js";
 import { authRoutes } from "./routes/auth.js";
 import { createSessionService } from "./auth/sessions.js";
@@ -38,8 +38,10 @@ import { BoundedRateLimitStore, createRateLimitKey } from "./security/rate-limit
 import { requireAdministratorMutation, requireContentType, type MutationGuardOptions } from "./security/mutation-guard.js";
 import { writePortableExport } from "./ops/portable-export.js";
 import { classifyRetainedLegacyMedia } from "./ops/legacy-media-migration.js";
+import { appendAuditEvent, createAuditRepository } from "./audit/audit-repository.js";
+import { adminAuditRoutes } from "./routes/admin-audit.js";
 
-const databaseSchema = { administrators, articles, sessions, categories, tags, articleTags, sitePages, media };
+const databaseSchema = { administrators, articles, sessions, categories, tags, articleTags, sitePages, media, auditEvents };
 
 export function createRuntimeResources(config: ApiRuntimeConfig) {
   const pool = new Pool({ connectionString: config.databaseUrl });
@@ -118,6 +120,10 @@ export async function buildApp(options: BuildAppOptions = {}) {
     rateStore,
     mutationGuard,
   });
+  await app.register(adminAuditRoutes, {
+    auditRepository: createAuditRepository(db),
+    sessionAuth: app.sessionAuth,
+  });
   await app.register(adminPostRoutes, {
     articleService: createArticleService(createAdminPostRepository(db)),
     sessionAuth: app.sessionAuth,
@@ -147,7 +153,8 @@ export async function buildApp(options: BuildAppOptions = {}) {
     mutationGuard,
   });
   app.post("/articles/publish", { bodyLimit: 256 * 1024 }, async (request, reply) => {
-    if (!await requireAdministratorMutation(request, reply, mutationGuard)) return;
+    const administratorId = await requireAdministratorMutation(request, reply, mutationGuard);
+    if (!administratorId) return;
     if (!requireContentType(request, reply, "application/json")) return;
     const parsed = publishInputSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid article" });
@@ -159,11 +166,16 @@ export async function buildApp(options: BuildAppOptions = {}) {
       });
     }
     try {
-      const now = new Date();
-      const inserted = await db.insert(articles).values({ ...parsed.data, status: "published", legacyMediaReview: "clear", publishedAt: now, updatedAt: now }).returning({ slug: articles.slug, title: articles.title, publishedAt: articles.publishedAt });
-      const article = inserted[0];
+      const article = await db.transaction(async (tx) => {
+        const now = new Date();
+        const inserted = await tx.insert(articles).values({ ...parsed.data, status: "published", legacyMediaReview: "clear", publishedAt: now, updatedAt: now }).returning({ id: articles.id, slug: articles.slug, title: articles.title, publishedAt: articles.publishedAt });
+        const created = inserted[0];
+        if (!created) throw new Error("published article was not persisted");
+        await appendAuditEvent(tx, { actorAdministratorId: administratorId, event: "article.published", targetType: "article", targetId: created.id, metadata: { status: "published" } });
+        return created;
+      });
       if (!article?.publishedAt) throw new Error("published article was not persisted");
-      return publishedArticleSchema.parse({ ...article, publishedAt: article.publishedAt.toISOString() });
+      return publishedArticleSchema.parse({ title: article.title, slug: article.slug, publishedAt: article.publishedAt.toISOString() });
     } catch (error: unknown) {
       if ((error as { code?: string }).code === "23505") return reply.code(409).send({ error: "slug already reserved" });
       throw error;
@@ -212,14 +224,16 @@ async function seed(db: RuntimeResources["db"], administrator: { username: strin
   await seedAdministrator(db, administrator);
 }
 async function schemaVerify(pool: Pool) {
-  const result = await pool.query("select tablename from pg_tables where schemaname = 'public' and tablename = any($1)", [["administrators", "sessions", "articles", "categories", "tags", "article_tags", "site_pages", "media"]]);
-  if (result.rowCount !== 8) throw new Error("media schema is not active; run pnpm db:migrate first");
+  const result = await pool.query("select tablename from pg_tables where schemaname = 'public' and tablename = any($1)", [["administrators", "sessions", "articles", "categories", "tags", "article_tags", "site_pages", "media", "audit_events"]]);
+  if (result.rowCount !== 9) throw new Error("audit schema is not active; run pnpm db:migrate first");
   const ledger = await pool.query("select migration_count from blog_x_schema_ledger where scope = 'phase1'");
-  if (ledger.rowCount !== 1 || Number(ledger.rows[0]?.migration_count) !== 7) throw new Error("media migration ledger is incomplete; run pnpm db:migrate first");
-  const indices = await pool.query("select indexname from pg_indexes where schemaname = 'public' and indexname = any($1)", [["taxonomy_category_slug_unique", "taxonomy_tag_slug_unique", "article_tags_article_tag_unique", "articles_category_public_index", "site_pages_key_unique", "media_source_key_unique", "media_derivative_key_unique", "articles_cover_media_index"]]);
-  if (indices.rowCount !== 8) throw new Error("required indexes are incomplete; run pnpm db:migrate first");
+  if (ledger.rowCount !== 1 || Number(ledger.rows[0]?.migration_count) !== 8) throw new Error("audit migration ledger is incomplete; run pnpm db:migrate first");
+  const indices = await pool.query("select indexname from pg_indexes where schemaname = 'public' and indexname = any($1)", [["taxonomy_category_slug_unique", "taxonomy_tag_slug_unique", "article_tags_article_tag_unique", "articles_category_public_index", "site_pages_key_unique", "media_source_key_unique", "media_derivative_key_unique", "articles_cover_media_index", "audit_events_newest_index"]]);
+  if (indices.rowCount !== 9) throw new Error("required indexes are incomplete; run pnpm db:migrate first");
   const constraints = await pool.query("select conname from pg_constraint where conrelid = 'site_pages'::regclass and conname = any($1)", [["site_pages_key_about_check", "site_pages_status_check"]]);
   if (constraints.rowCount !== 2) throw new Error("site_pages singleton constraints are incomplete; run pnpm db:migrate first");
+  const auditConstraints = await pool.query("select conname from pg_constraint where conrelid = 'audit_events'::regclass and conname = any($1)", [["audit_events_event_check", "audit_events_target_check", "audit_events_metadata_check"]]);
+  if (auditConstraints.rowCount !== 3) throw new Error("audit constraints are incomplete; run pnpm db:migrate first");
   const mediaConstraints = await pool.query("select conname from pg_constraint where conname = any($1)", [["media_source_mime_check", "media_derivative_mime_check", "media_dimensions_check", "media_bytes_check", "articles_cover_alt_check", "articles_cover_media_id_media_id_fk"]]);
   if (mediaConstraints.rowCount !== 6) throw new Error("media constraints are incomplete; run pnpm db:migrate first");
   const legacyMedia = await pool.query("select column_name from information_schema.columns where table_schema = 'public' and table_name = 'articles' and column_name = 'legacy_media_review'");

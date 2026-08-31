@@ -69,6 +69,6 @@ export function validateProductionBackupStaging(root, authority) {
 
 export async function verifyProductionBackupSource(root, authority) {
   const result = await verifyCompleteBackupSetContents(root, (candidate) => validateProductionBackupSource(candidate, authority));
-  if (result.inventory.migration.count !== 7) throw new Error("production migration inventory count must be 7");
+  if (result.inventory.migration.count !== 8) throw new Error("production migration inventory count must be 8");
   return result;
 }

@@ -88,12 +88,13 @@ export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async 
   });
 
   app.post("/admin/posts", { bodyLimit: 256 * 1024 }, async (request, reply) => {
-    if (!await requireAdministratorMutation(request, reply, options.mutationGuard)) return;
+    const administratorId = await requireAdministratorMutation(request, reply, options.mutationGuard);
+    if (!administratorId) return;
     if (!requireContentType(request, reply, "application/json")) return;
     const parsed = adminPostInputSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send(fieldErrors(parsed.error));
     try {
-      const result = await options.articleService.createDraft(parsed.data);
+      const result = await options.articleService.createDraft(parsed.data, administratorId);
       if (!result.ok) return sendServiceResult(result, reply);
       const post = result.post;
       reply.header("location", `/admin/posts/${post.id}`);
@@ -120,14 +121,15 @@ export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async 
   });
 
   app.put<{ Params: { id: string } }>("/admin/posts/:id", { bodyLimit: 256 * 1024 }, async (request, reply) => {
-    if (!await requireAdministratorMutation(request, reply, options.mutationGuard)) return;
+    const administratorId = await requireAdministratorMutation(request, reply, options.mutationGuard);
+    if (!administratorId) return;
     if (!requireContentType(request, reply, "application/json")) return;
     const id = adminPostIdSchema.safeParse(request.params.id);
     if (!id.success) return reply.code(404).send({ error: "not_found" });
     const parsed = adminPostUpdateSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send(fieldErrors(parsed.error));
     try {
-      return sendServiceResult(await options.articleService.updateDraft(id.data, parsed.data), reply);
+      return sendServiceResult(await options.articleService.updateDraft(id.data, parsed.data, administratorId), reply);
     } catch (error) {
       if (isSlugConflict(error)) return reply.code(409).send(slugConflictResponseSchema.parse({ error: "slug_conflict", fields: { slug: ["Slug 已被占用"] } }));
       if (isForeignKeyConflict(error)) return invalidTaxonomy(reply);
@@ -137,13 +139,14 @@ export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async 
 
   for (const action of articleActionSchema.options) {
     app.post<{ Params: { id: string } }>(`/admin/posts/:id/${action}`, { bodyLimit: 64 * 1024 }, async (request, reply) => {
-      if (!await requireAdministratorMutation(request, reply, options.mutationGuard)) return;
+      const administratorId = await requireAdministratorMutation(request, reply, options.mutationGuard);
+      if (!administratorId) return;
       if (!requireContentType(request, reply, "application/json")) return;
       const id = adminPostIdSchema.safeParse(request.params.id);
       if (!id.success) return reply.code(404).send({ error: "not_found" });
       const input = lifecycleActionInputSchema.safeParse(request.body);
       if (!input.success) return reply.code(400).send(fieldErrors(input.error));
-      return sendServiceResult(await options.articleService.transition(id.data, action), reply);
+      return sendServiceResult(await options.articleService.transition(id.data, action, administratorId), reply);
     });
   }
 };

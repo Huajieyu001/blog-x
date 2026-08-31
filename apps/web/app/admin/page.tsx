@@ -11,6 +11,7 @@ export default async function AdminPage() {
         <h1 id="management-title">文章管理</h1>
         <a href="/admin/taxonomy">分类与标签</a>
         <a href="/admin/about">关于页</a>
+        <a href="/admin/audit">操作日志</a>
         <a href="/admin/new">新建草稿</a>
         <form action="/api/admin/export" method="post">
           <button type="submit">导出文章 Markdown</button>

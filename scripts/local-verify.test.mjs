@@ -291,7 +291,7 @@ test("Phase 4 operations and restore selections are explicit", () => {
   });
 });
 
-test("Phase 5 media selection owns seventh-migration and legacy restore evidence", async () => {
+test("Phase 5 media selection owns eighth-migration and legacy restore evidence", async () => {
   assert.deepEqual(phase5MediaSelection(), {
     databaseSuites: [
       ["ARTICLE_TEST_DATABASE_URL", "apps/api/test/article-draft-preview.test.ts"],
@@ -304,7 +304,7 @@ test("Phase 5 media selection owns seventh-migration and legacy restore evidence
     browserSuites: ["apps/web/e2e/phase1-publishing.spec.ts", "apps/web/e2e/phase4-restore.spec.ts"],
   });
   const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
-  assert.match(runner, /values\[1\] !== 7/);
+  assert.match(runner, /values\[1\] !== 8/);
   assert.doesNotMatch(runner, /values\[1\] !== 6/);
   assert.match(runner, /--phase5-media/);
   assert.match(runner, /PHASE5_LEGACY_ARTICLE_ID/);

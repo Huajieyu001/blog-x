@@ -100,12 +100,13 @@ test("publish, edit, slug confirmation, unpublish, republish, and soft delete ar
   const db = drizzle({ client: pool, schema: { administrators, articles, sessions } });
   const username = `lifecycle-test-${Date.now()}`;
   const password = "lifecycle-test-password";
-  await pool.query("truncate table sessions, articles, administrators cascade");
+  await pool.query("truncate table audit_events, sessions, articles, administrators cascade");
   context.after(async () => {
-    await pool.query("truncate table sessions, articles, administrators cascade");
+    await pool.query("truncate table audit_events, sessions, articles, administrators cascade");
     await pool.end();
   });
   await seedAdministrator(db, { username, password });
+  const administrator = (await db.select({ id: administrators.id }).from(administrators).limit(1))[0]!;
 
   const app = await buildApp({ publicOrigin });
   context.after(async () => { await app.close(); });
@@ -269,4 +270,31 @@ test("publish, edit, slug confirmation, unpublish, republish, and soft delete ar
   const retainedList = await app.inject({ method: "GET", url: "/admin/posts", headers: { cookie } });
   assert.equal(retainedList.statusCode, 200);
   assert.equal(retainedList.json().some((post: { id: string }) => post.id === draft.json().id), false);
+
+  const audit = await pool.query<{ event: string; actor_administrator_id: string; target_id: string; metadata: Record<string, unknown> }>(
+    "select event, actor_administrator_id, target_id, metadata from audit_events where target_type = 'article' order by occurred_at, id",
+  );
+  assert.deepEqual(Object.fromEntries(
+    [...new Set(audit.rows.map((row) => row.event))].sort().map((event) => [event, audit.rows.filter((row) => row.event === event).length]),
+  ), {
+    "article.created": 2,
+    "article.deleted": 2,
+    "article.published": 2,
+    "article.republished": 1,
+    "article.unpublished": 1,
+    "article.updated": 3,
+  });
+  const permittedMetadataKeys = new Set(["previousStatus", "status", "changedFields"]);
+  const permittedChangedFields = new Set(["title", "summary", "coverUrl", "slug", "markdown", "publishedAt", "seoDescription", "categoryId", "tagIds", "coverMedia"]);
+  for (const event of audit.rows) {
+    assert.equal(event.actor_administrator_id, administrator.id);
+    assert.match(event.target_id, /^[0-9a-f-]{36}$/);
+    assert.equal(Object.keys(event.metadata).every((key) => permittedMetadataKeys.has(key)), true);
+    if (Array.isArray(event.metadata.changedFields)) {
+      assert.equal(event.metadata.changedFields.every((field) => typeof field === "string" && permittedChangedFields.has(field)), true);
+    }
+    const serializedMetadata = JSON.stringify(event.metadata);
+    assert.doesNotMatch(serializedMetadata, /Lifecycle article|Lifecycle summary|Original source/);
+    assert.doesNotMatch(serializedMetadata, new RegExp(slug));
+  }
 });

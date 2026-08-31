@@ -671,21 +671,23 @@ function composeArgs(context, ...args) {
   return ["-p", context.namespace, "-f", composeFile, ...(context.composeOverride ? ["-f", context.composeOverride] : []), ...args];
 }
 
-async function createCanonicalRuntimeAuthority(context) {
+async function createCanonicalRuntimeAuthority(context, { includeWeb = true } = {}) {
   const runtimeRoot = await mkdtemp(resolve(root, "apps/.canonical-runtime-"));
   context.canonicalRuntimeRoot = runtimeRoot;
   const nextRoot = resolve(runtimeRoot, ".next");
   const override = resolve(runtimeRoot, "compose.override.yaml");
-  await cp(resolve(root, "apps/web/.next"), nextRoot, { recursive: true });
+  if (includeWeb) await cp(resolve(root, "apps/web/.next"), nextRoot, { recursive: true });
   const yaml = [
     "services:",
     "  api:",
     "    volumes:",
     `      - ${JSON.stringify(`${resolve(root, "apps/api")}:/workspace/apps/api:ro`)}`,
     `      - ${JSON.stringify(`${resolve(root, "packages/contracts")}:/workspace/packages/contracts:ro`)}`,
-    "  web:",
-    "    volumes:",
-    `      - ${JSON.stringify(`${nextRoot}:/workspace/apps/web/.next`)}`,
+    ...(includeWeb ? [
+      "  web:",
+      "    volumes:",
+      `      - ${JSON.stringify(`${nextRoot}:/workspace/apps/web/.next`)}`,
+    ] : []),
     "",
   ].join("\n");
   await writeFile(override, yaml, { mode: 0o600 });
@@ -738,12 +740,12 @@ async function inspectSchema(context) {
   const result = await compose(context, "inspect migration ledger and schema", ...psqlArgs(context, [
     "select (select count(*) from blog_x_schema_ledger),",
     "(select migration_count from blog_x_schema_ledger where scope = 'phase1'),",
-    "(select count(*) from pg_tables where schemaname = 'public' and tablename = any(array['administrators','articles','sessions','categories','tags','article_tags','site_pages','media'])),",
-    "(select count(*) from pg_constraint where conname = any(array['site_pages_key_about_check','site_pages_status_check','articles_cover_alt_check','articles_legacy_media_review_check'])),",
-    "(select count(*) from pg_indexes where schemaname = 'public' and indexname = any(array['taxonomy_category_slug_unique','taxonomy_tag_slug_unique','article_tags_article_tag_unique','site_pages_key_unique','media_source_key_unique','media_derivative_key_unique']));",
+    "(select count(*) from pg_tables where schemaname = 'public' and tablename = any(array['administrators','articles','sessions','categories','tags','article_tags','site_pages','media','audit_events'])),",
+    "(select count(*) from pg_constraint where conname = any(array['site_pages_key_about_check','site_pages_status_check','articles_cover_alt_check','articles_legacy_media_review_check','audit_events_event_check','audit_events_target_check','audit_events_metadata_check'])),",
+    "(select count(*) from pg_indexes where schemaname = 'public' and indexname = any(array['taxonomy_category_slug_unique','taxonomy_tag_slug_unique','article_tags_article_tag_unique','site_pages_key_unique','media_source_key_unique','media_derivative_key_unique','audit_events_newest_index']));",
   ].join(" ")));
   const values = result.stdout.trim().split("|").map(Number);
-  if (values.length !== 5 || values[0] !== 1 || values[1] !== 7 || values[2] !== 8 || values[3] !== 4 || values[4] !== 6) {
+  if (values.length !== 5 || values[0] !== 1 || values[1] !== 8 || values[2] !== 9 || values[3] !== 7 || values[4] !== 7) {
     throw new Error(`unexpected schema inspection result: ${result.stdout.trim()}`);
   }
 }
@@ -1494,7 +1496,7 @@ async function runPhase5GeneratedPipeline() {
       writePortableExportV1: async () => JSON.stringify({ format: "blog-x-portable-export", version: 1, exportedAt: new Date().toISOString(), articles: [], categories: [], tags: [], about: null, media: [{ id: mediaId, width: 1, height: 1, mimeType: "image/webp", createdAt: new Date().toISOString() }] }),
       copyApiMedia: async () => [{ id: mediaId, sourceKey: `source/${mediaId}.bin`, derivativeKey: `derivative/${mediaId}.webp`, source, derivative }],
       readAllowlistedInventory: async () => ({
-        migration: { count: 7, fingerprint: inventoryDigest },
+        migration: { count: 8, fingerprint: inventoryDigest },
         images: { api: imageDigest("api"), web: imageDigest("web"), postgres: imageDigest("postgres") },
         configChecksums: [{ path: "compose.yaml", sha256: hashText(await readFile(resolve(root, "compose.yaml"))) }],
         variableNamesPresent: ["DATABASE_URL", "MEDIA_ROOT", "PUBLIC_ORIGIN"],
@@ -1623,6 +1625,9 @@ async function runSingle(options) {
   let canonicalSuites;
 
   try {
+    // Lifecycle children use sealed cached images but must exercise the current
+    // migration and schema verifier sources, just like the canonical parent.
+    if (options.lifecycleOnly) await createCanonicalRuntimeAuthority(context, { includeWeb: false });
     if (options.phase6Data && !options.skipBuild) {
       await preflightOfflinePrerequisites(context);
       process.stdout.write("[local-verify] use prevalidated verifier dependency images with read-only committed integration sources\n");

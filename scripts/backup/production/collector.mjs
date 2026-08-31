@@ -118,7 +118,7 @@ function normalizedMedia(entry) {
 export function createProductionInventory(value) {
   if (!value || typeof value !== "object" || !value.migration || !value.images || !Array.isArray(value.configChecksums)
     || !Array.isArray(value.variableNamesPresent) || typeof value.secretAuthorityRef !== "string") failure("allowlisted inventory is invalid");
-  if (!Number.isSafeInteger(value.migration.count) || value.migration.count !== 7 || !digestPattern.test(value.migration.fingerprint ?? "")) failure("migration inventory is invalid");
+  if (!Number.isSafeInteger(value.migration.count) || value.migration.count !== 8 || !digestPattern.test(value.migration.fingerprint ?? "")) failure("migration inventory is invalid");
   if (Object.keys(value.images).sort().join(",") !== "api,postgres,web" || Object.values(value.images).some((item) => typeof item !== "string" || !/^sha256:[a-f0-9]{64}$/.test(item))) failure("image inventory is invalid");
   for (const item of value.configChecksums) if (!item || !fixedConfigInventoryPaths.has(item.path) || !digestPattern.test(item.sha256 ?? "")) failure("config inventory is not allowlisted");
   if (!/^external:[a-z0-9-]+$/.test(value.secretAuthorityRef)) failure("secret authority reference is invalid");

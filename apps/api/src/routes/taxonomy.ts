@@ -17,30 +17,33 @@ export const taxonomyRoutes: FastifyPluginAsync<Options> = async (app, options) 
     return taxonomyListSchema.parse(await options.taxonomyService.list(parsed.data));
   });
   app.post<{ Params: { kind: string } }>("/admin/:kind(categories|tags)", { bodyLimit: 16 * 1024 }, async (request, reply) => {
-    if (!await requireAdministratorMutation(request, reply, options.mutationGuard)) return;
+    const actorAdministratorId = await requireAdministratorMutation(request, reply, options.mutationGuard);
+    if (!actorAdministratorId) return;
     if (!requireContentType(request, reply, "application/json")) return;
     const parsedKind = kind(request.params.kind);
     const parsed = taxonomyInputSchema.safeParse(request.body);
     if (!parsedKind.success) return reply.code(404).send({ error: "not_found" });
     if (!parsed.success) return reply.code(400).send(errors(parsed.error));
-    try { return reply.code(201).send(taxonomyTermSchema.parse(await options.taxonomyService.create(parsedKind.data, parsed.data))); }
+    try { return reply.code(201).send(taxonomyTermSchema.parse(await options.taxonomyService.create(parsedKind.data, parsed.data, actorAdministratorId))); }
     catch (error) { if (conflict(error)) return reply.code(409).send({ error: "slug_conflict" }); throw error; }
   });
   app.put<{ Params: { kind: string; id: string } }>("/admin/:kind(categories|tags)/:id", { bodyLimit: 16 * 1024 }, async (request, reply) => {
-    if (!await requireAdministratorMutation(request, reply, options.mutationGuard)) return;
+    const actorAdministratorId = await requireAdministratorMutation(request, reply, options.mutationGuard);
+    if (!actorAdministratorId) return;
     if (!requireContentType(request, reply, "application/json")) return;
     const parsedKind = kind(request.params.kind);
     const parsed = taxonomyInputSchema.safeParse(request.body);
     if (!parsedKind.success || !/^[\da-f-]{36}$/i.test(request.params.id)) return reply.code(404).send({ error: "not_found" });
     if (!parsed.success) return reply.code(400).send(errors(parsed.error));
-    try { const term = await options.taxonomyService.update(parsedKind.data, request.params.id, parsed.data); return term ?? reply.code(404).send({ error: "not_found" }); }
+    try { const term = await options.taxonomyService.update(parsedKind.data, request.params.id, parsed.data, actorAdministratorId); return term ?? reply.code(404).send({ error: "not_found" }); }
     catch (error) { if (conflict(error)) return reply.code(409).send({ error: "slug_conflict" }); throw error; }
   });
   app.delete<{ Params: { kind: string; id: string } }>("/admin/:kind(categories|tags)/:id", { bodyLimit: 1 }, async (request, reply) => {
-    if (!await requireAdministratorMutation(request, reply, options.mutationGuard)) return;
+    const actorAdministratorId = await requireAdministratorMutation(request, reply, options.mutationGuard);
+    if (!actorAdministratorId) return;
     const parsedKind = kind(request.params.kind);
     if (!parsedKind.success) return reply.code(404).send({ error: "not_found" });
-    const result = await options.taxonomyService.remove(parsedKind.data, request.params.id);
+    const result = await options.taxonomyService.remove(parsedKind.data, request.params.id, actorAdministratorId);
     if (!result) return reply.code(404).send({ error: "not_found" });
     if (!result.deleted) return reply.code(409).send(taxonomyDeleteConflictSchema.parse({ error: "associated_delete", articleCount: result.articleCount }));
     return reply.code(204).send();

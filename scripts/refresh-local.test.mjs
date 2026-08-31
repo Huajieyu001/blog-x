@@ -649,7 +649,7 @@ function factsFixture({ apiImage = SHA("a"), webImage = SHA("w"), phase1 = "2026
     containers: [inspectContainer("api", apiImage), inspectContainer("postgres", SHA("p")), inspectContainer("web", webImage)],
     volumes: [volumeFixture("blogxlocal_media-data"), volumeFixture("blogxlocal_postgres-data")],
     business: { count: 3, sha256: "a".repeat(64) }, sequences: { count: 2, sha256: "b".repeat(64) },
-    ledger: [{ scope: "phase1", migration_count: 7, migration_fingerprint: "fingerprint", applied_at: phase1 }],
+    ledger: [{ scope: "phase1", migration_count: 8, migration_fingerprint: "fingerprint", applied_at: phase1 }],
     media: { count: 2, bytes: 42, sha256: "c".repeat(64) }, protected: { count: 9, sha256: "d".repeat(64) },
     git: { implementationRevision: "a".repeat(40), clean: true, lockfileSha256: "b".repeat(64), ref: "refs/heads/dev" },
     database: { name: "blog_x", systemIdentifier: "1".repeat(32), schemaSha256: "2".repeat(64), schemaRows: 12 },
@@ -912,7 +912,7 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
       if (joined.endsWith("ps --all --format json")) return { stdout: JSON.stringify([{ Service: "api" }, { Service: "postgres" }, { Service: "web" }]) };
       if (args.includes("pg_dump")) return { stdout: "1\tarticle\n2\tarticle\n" };
       if (typeof sql === "string" && sql.includes("pg_sequences")) return { stdout: JSON.stringify([{ schemaname: "public", sequencename: "articles_id_seq", last_value: 3 }]) };
-      if (typeof sql === "string" && sql.includes("blog_x_schema_ledger")) return { stdout: JSON.stringify([{ scope: "phase1", migration_count: 7, migration_fingerprint: "stable", applied_at: snapshot >= 2 ? "2026-08-16T00:00:00.000Z" : "2026-08-15T00:00:00.000Z" }]) };
+      if (typeof sql === "string" && sql.includes("blog_x_schema_ledger")) return { stdout: JSON.stringify([{ scope: "phase1", migration_count: 8, migration_fingerprint: "stable", applied_at: snapshot >= 2 ? "2026-08-16T00:00:00.000Z" : "2026-08-15T00:00:00.000Z" }]) };
       if (typeof sql === "string" && sql.includes("current_database")) return { stdout: JSON.stringify({ name: "blog_x", systemIdentifier: "system-1" }) };
       if (typeof sql === "string" && sql.includes("information_schema.columns")) return { stdout: JSON.stringify([["column", "articles.id", "bigint:NO"]]) };
       if (args.includes("api") && args.includes("node") && args.includes("-e")) return { stdout: JSON.stringify(failPostCutover && snapshot === 3 ? [{ relativePath: "asset", bytes: 8, sha256: "9".repeat(64) }] : [{ relativePath: "asset", bytes: 7, sha256: "8".repeat(64) }]) };

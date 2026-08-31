@@ -78,4 +78,19 @@ test("draft completes publish, edit, slug confirmation, unpublish, republish, an
   await deleteDialog.getByRole("button", { name: "确认软删除" }).click();
   await expect(row).toHaveCount(0);
   expect((await context.request.get(`${webOrigin}/api/public/articles/${changedSlug}`)).status()).toBe(404);
+
+  await page.goto(`${webOrigin}/admin/audit`);
+  await expect(page.getByRole("heading", { name: "操作日志" })).toBeVisible();
+  const audit = page.getByLabel("管理员操作记录");
+  await expect(audit.getByText("创建文章草稿").first()).toBeVisible();
+  await expect(audit.getByText("发布文章").first()).toBeVisible();
+  await expect(audit.getByText("下线文章").first()).toBeVisible();
+  await expect(audit.getByText("重新发布文章").first()).toBeVisible();
+  await expect(audit.getByText("删除文章").first()).toBeVisible();
+  await expect(audit).not.toContainText(originalTitle);
+  await expect(audit).not.toContainText(editedTitle);
+  await expect(audit).not.toContainText("Original content");
+  await expect(audit).not.toContainText(changedSlug);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
