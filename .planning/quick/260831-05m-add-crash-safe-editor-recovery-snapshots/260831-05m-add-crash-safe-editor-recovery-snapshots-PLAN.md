@@ -1,7 +1,7 @@
 ---
 quick: 260831-05m
 title: Add crash-safe editor recovery snapshots
-status: in_progress
+status: complete
 scope: local-only
 requirements: [CONT-04, CMS-009]
 ---
