@@ -207,8 +207,10 @@ function assertPersistenceFacts(facts) {
   assertReadingFact(facts.reading);
   if (facts.portOwnerExact !== true) fail("published-port ownership is not exact");
 }
-function persistenceEqual(before, after) {
-  for (const key of ["business", "database", "git", "media", "protected", "reading", "seeds", "sequences", "targets", "volumes"]) if (!same(before[key], after[key])) fail(`${key} persistence changed`);
+function persistenceEqual(before, after, { allowForwardSchema = false } = {}) {
+  for (const key of ["business", "git", "media", "protected", "reading", "seeds", "sequences", "targets", "volumes"]) if (!same(before[key], after[key])) fail(`${key} persistence changed`);
+  if (before.database.name !== after.database.name || before.database.systemIdentifier !== after.database.systemIdentifier) fail("database identity changed");
+  if (!allowForwardSchema && !same(before.database, after.database)) fail("database persistence changed");
   const beforePg = containerByService(before, "postgres");
   const afterPg = containerByService(after, "postgres");
   if (beforePg?.Id !== afterPg?.Id || beforePg?.Image !== afterPg?.Image) fail("PostgreSQL identity changed");
@@ -224,14 +226,22 @@ export function assertPersistenceTransition(before, after, { stage, targetImageI
   assertPersistenceFacts(after);
   assertRouteObservations(before.routes);
   assertRouteObservations(after.routes);
-  persistenceEqual(before, after);
   const stableBefore = ledgerStable(before.ledger);
   const stableAfter = ledgerStable(after.ledger);
-  if (!same(stableBefore, stableAfter)) fail("ledger stable tuples changed");
   const timestampsBefore = Object.fromEntries(Object.entries(normalizedLedgerRows(before.ledger)).map(([scope, row]) => [scope, row.appliedAt]));
   const timestampsAfter = Object.fromEntries(Object.entries(normalizedLedgerRows(after.ledger)).map(([scope, row]) => [scope, row.appliedAt]));
   if (!same(Object.keys(timestampsBefore).sort(), Object.keys(timestampsAfter).sort())) fail("ledger row count changed");
   if (stage === "postMigration") {
+    persistenceEqual(before, after, { allowForwardSchema: true });
+    const beforePhase1 = stableBefore.find((row) => row.scope === "phase1");
+    const afterPhase1 = stableAfter.find((row) => row.scope === "phase1");
+    if (!beforePhase1 || !afterPhase1 || afterPhase1.migration_count < beforePhase1.migration_count) fail("phase1 migration count moved backward");
+    for (const row of stableBefore.filter((item) => item.scope !== "phase1")) if (!same(row, stableAfter.find((item) => item.scope === row.scope))) fail("non-phase1 ledger stable tuple changed");
+    const advanced = afterPhase1.migration_count > beforePhase1.migration_count;
+    if (advanced === (afterPhase1.migration_fingerprint === beforePhase1.migration_fingerprint)) fail("phase1 migration fingerprint transition is invalid");
+    if (advanced) {
+      if (after.database.schemaSha256 === before.database.schemaSha256 || after.database.schemaRows < before.database.schemaRows) fail("forward schema transition is invalid");
+    } else if (!same(before.database, after.database)) fail("idempotent migration changed database schema");
     if (!(Date.parse(timestampsAfter.phase1) > Date.parse(timestampsBefore.phase1))) fail("phase1 applied_at must advance strictly");
     for (const scope of Object.keys(timestampsBefore).filter((value) => value !== "phase1")) if (timestampsAfter[scope] !== timestampsBefore[scope]) fail("non-phase1 ledger timestamp changed");
     for (const service of ["api", "web"]) if (containerByService(before, service)?.Image !== containerByService(after, service)?.Image) fail("runtime image changed before cutover");
@@ -241,11 +251,15 @@ export function assertPersistenceTransition(before, after, { stage, targetImageI
     }
     if (!same(before.routes, after.routes)) fail("pre-cutover route observations changed");
   } else if (stage === "postCutover") {
+    persistenceEqual(before, after);
+    if (!same(stableBefore, stableAfter)) fail("ledger stable tuples changed");
     if (!same(timestampsBefore, timestampsAfter)) fail("ledger timestamps changed after migration");
     if (!targetImageIds) fail("target image IDs are required");
     assertImages(after, targetImageIds, "cutover");
     assertRouteFacts(after.routes);
   } else if (stage === "rollback") {
+    persistenceEqual(before, after);
+    if (!same(stableBefore, stableAfter)) fail("ledger stable tuples changed");
     if (!same(timestampsBefore, timestampsAfter)) fail("ledger timestamps changed during rollback");
     if (!oldImageIds) fail("old image IDs are required");
     assertImages(after, oldImageIds, "rollback");

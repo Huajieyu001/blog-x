@@ -446,6 +446,7 @@ test("source contracts require neutral stores, offline frozen installs and sanit
   assert.match(runtime, /--pull=false/);
   assert.match(runtime, /--no-build/);
   assert.match(runtime, /--no-deps/);
+  assert.match(runtime, /pg_dump[\s\S]*--inserts/);
   assert.doesNotMatch(runtime, /\b(?:ssh|scp|curl)\b/);
 });
 
@@ -680,15 +681,15 @@ function fakeRouteResponse(url, response) {
     async text() { return response.body; },
   };
 }
-function factsFixture({ apiImage = SHA("a"), webImage = SHA("w"), phase1 = "2026-08-15T00:00:00.000Z", routes = exactRoutes, reading = verifiedReading } = {}) {
+function factsFixture({ apiImage = SHA("a"), webImage = SHA("w"), phase1 = "2026-08-15T00:00:00.000Z", routes = exactRoutes, reading = verifiedReading, migrationCount = 8, migrationFingerprint = "fingerprint", schemaRows = 12, schemaSha256 = "2".repeat(64), business = { count: 3, sha256: "a".repeat(64) } } = {}) {
   return {
     containers: [inspectContainer("api", apiImage), inspectContainer("postgres", SHA("p")), inspectContainer("web", webImage)],
     volumes: [volumeFixture("blogxlocal_media-data"), volumeFixture("blogxlocal_postgres-data")],
-    business: { count: 3, sha256: "a".repeat(64) }, sequences: { count: 2, sha256: "b".repeat(64) },
-    ledger: [{ scope: "phase1", migration_count: 8, migration_fingerprint: "fingerprint", applied_at: phase1 }],
+    business, sequences: { count: 2, sha256: "b".repeat(64) },
+    ledger: [{ scope: "phase1", migration_count: migrationCount, migration_fingerprint: migrationFingerprint, applied_at: phase1 }],
     media: { count: 2, bytes: 42, sha256: "c".repeat(64) }, protected: { count: 9, sha256: "d".repeat(64) },
     git: { implementationRevision: "a".repeat(40), clean: true, lockfileSha256: "b".repeat(64), ref: "refs/heads/dev" },
-    database: { name: "blog_x", systemIdentifier: "1".repeat(32), schemaSha256: "2".repeat(64), schemaRows: 12 },
+    database: { name: "blog_x", systemIdentifier: "1".repeat(32), schemaSha256, schemaRows },
     seeds: { api: { reference: "blog-x-api-local", inspectedId: SHA("a") }, web: { reference: "blog-x-web-local", inspectedId: SHA("b") } },
     targets: { api: { id: SHA("e"), labelsSha256: "3".repeat(64), filesystemSha256: "4".repeat(64), storeSha256: "5".repeat(64) }, web: { id: SHA("f"), labelsSha256: "6".repeat(64), filesystemSha256: "7".repeat(64), storeSha256: "8".repeat(64) } },
     portOwnerExact: true, routes, reading, releaseState: "BLOCKED",
@@ -740,6 +741,14 @@ test("postMigration permits only phase1 timestamp advance and later stages prese
   assert.throws(() => assertPersistenceTransition(preflight, factsFixture(), { stage: "postMigration" }), /phase1|advance/i);
   const drift = structuredClone(postMigration); drift.media.sha256 = "e".repeat(64);
   assert.throws(() => assertPersistenceTransition(postMigration, drift, { stage: "postCutover", targetImageIds: { api: SHA("n"), web: SHA("x") } }), /media|persistence/i);
+
+  const version7 = factsFixture({ migrationCount: 7, migrationFingerprint: "version-7", schemaRows: 11, schemaSha256: "1".repeat(64) });
+  const version8 = factsFixture({ phase1: "2026-08-16T00:00:00.000Z", migrationCount: 8, migrationFingerprint: "version-8", schemaRows: 12, schemaSha256: "2".repeat(64) });
+  assert.doesNotThrow(() => assertPersistenceTransition(version7, version8, { stage: "postMigration" }));
+  const version6 = factsFixture({ phase1: "2026-08-16T00:00:00.000Z", migrationCount: 6, migrationFingerprint: "version-6", schemaRows: 12, schemaSha256: "2".repeat(64) });
+  assert.throws(() => assertPersistenceTransition(version7, version6, { stage: "postMigration" }), /migration count|backward/i);
+  const dataDrift = structuredClone(version8); dataDrift.business.sha256 = "9".repeat(64);
+  assert.throws(() => assertPersistenceTransition(version7, dataDrift, { stage: "postMigration" }), /business persistence/i);
 });
 
 test("route observations stay exact before cutover and rollback requires an explicit preflight baseline", () => {
@@ -902,7 +911,7 @@ function targetImage(app, id, revision, lock, seedId) {
   return { Id: id, Config: { Image: `blog-x-${app}-local:${revision.slice(0, 12)}`, WorkingDir: "/refresh-workspace", Cmd: ["corepack", "pnpm", "--filter", `@blog-x/${app}`, "start"], Labels: { "org.opencontainers.image.revision": revision, "io.blog-x.lockfile-sha256": lock, "io.blog-x.seed-image-id": seedId, "io.blog-x.application": app, "io.blog-x.public-origin": "http://127.0.0.1:3100", "io.blog-x.refresh-kind": "v1.1-offline-local-delivery" } } };
 }
 
-function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, rollbackCutoverFault = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, withdrawalFault, seedPrerequisite, acceptanceStdout = acceptanceOutput, acceptanceFailureClass, acceptanceFailureSecret = "", verificationChangedPaths, verificationTouchedPaths = verificationChangedPaths, identity = { uid: TEST_UID }, revision = TEST_REVISION, artifactFs, oldImages = { api: SHA("a"), web: SHA("b") }, targetIds = { api: SHA("e"), web: SHA("f") } } = {}) {
+function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, rollbackCutoverFault = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, withdrawalFault, seedPrerequisite, acceptanceStdout = acceptanceOutput, acceptanceFailureClass, acceptanceFailureSecret = "", verificationChangedPaths, verificationTouchedPaths = verificationChangedPaths, identity = { uid: TEST_UID }, revision = TEST_REVISION, artifactFs, oldImages = { api: SHA("a"), web: SHA("b") }, targetIds = { api: SHA("e"), web: SHA("f") }, migrationUpgrade = false } = {}) {
   const lock = createHash("sha256").update("raw-lock\n").digest("hex");
   const old = structuredClone(oldImages);
   const evidencePath = deliveryAuthorityForRevision(revision).evidencePath;
@@ -948,9 +957,9 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
       if (joined.endsWith("ps --all --format json")) return { stdout: JSON.stringify([{ Service: "api" }, { Service: "postgres" }, { Service: "web" }]) };
       if (args.includes("pg_dump")) return { stdout: "1\tarticle\n2\tarticle\n" };
       if (typeof sql === "string" && sql.includes("pg_sequences")) return { stdout: JSON.stringify([{ schemaname: "public", sequencename: "articles_id_seq", last_value: 3 }]) };
-      if (typeof sql === "string" && sql.includes("blog_x_schema_ledger")) return { stdout: JSON.stringify([{ scope: "phase1", migration_count: 8, migration_fingerprint: "stable", applied_at: snapshot >= 2 ? "2026-08-16T00:00:00.000Z" : "2026-08-15T00:00:00.000Z" }]) };
+      if (typeof sql === "string" && sql.includes("blog_x_schema_ledger")) return { stdout: JSON.stringify([{ scope: "phase1", migration_count: migrationUpgrade && snapshot < 2 ? 7 : 8, migration_fingerprint: migrationUpgrade && snapshot < 2 ? "version-7" : "version-8", applied_at: snapshot >= 2 ? "2026-08-16T00:00:00.000Z" : "2026-08-15T00:00:00.000Z" }]) };
       if (typeof sql === "string" && sql.includes("current_database")) return { stdout: JSON.stringify({ name: "blog_x", systemIdentifier: "system-1" }) };
-      if (typeof sql === "string" && sql.includes("information_schema.columns")) return { stdout: JSON.stringify([["column", "articles.id", "bigint:NO"]]) };
+      if (typeof sql === "string" && sql.includes("information_schema.columns")) return { stdout: JSON.stringify(migrationUpgrade && snapshot < 2 ? [["column", "articles.id", "bigint:NO"]] : [["column", "articles.id", "bigint:NO"], ["table", "audit_events", "present"]]) };
       if (args.includes("api") && args.includes("node") && args.includes("-e")) return { stdout: JSON.stringify(failPostCutover && snapshot === 3 ? [{ relativePath: "asset", bytes: 8, sha256: "9".repeat(64) }] : [{ relativePath: "asset", bytes: 7, sha256: "8".repeat(64) }]) };
       return { stdout: "" };
     }
@@ -1070,6 +1079,17 @@ test("normal delivery emits exact progress and a verified evidence-derived BLOCK
   assert.match(output, /ACCEPTANCE generated=18 phase7=6 total=24/);
   assert.equal(output.includes(`EVIDENCE ${TEST_EVIDENCE_PATH}\nRELEASE BLOCKED`), true);
   assert.doesNotMatch(output, /hello-world|postgres:\/\/|blog_x_session=|token=|\/Users\/|sha256:/i);
+});
+
+test("formal delivery accepts one verified forward schema migration and seals the migrated evidence", async () => {
+  const fixture = liveFixture({ migrationUpgrade: true });
+  const result = await fixture.runtime.runCli();
+  assert.equal(result.implementationRevision, fixture.revision);
+  const evidence = JSON.parse(await fixture.evidenceFs.readFile(`/virtual-workspace/${TEST_EVIDENCE_PATH}`));
+  assert.notEqual(evidence.stages.preflight.ledger.rows.phase1.stableSha256, evidence.stages.postMigration.ledger.rows.phase1.stableSha256);
+  assert.notEqual(evidence.stages.preflight.database.schemaSha256, evidence.stages.postMigration.database.schemaSha256);
+  assert.deepEqual(evidence.stages.postMigration.database, evidence.stages.postCutover.database);
+  assert.deepEqual(evidence.stages.postMigration.ledger.rows.phase1, evidence.stages.postCutover.ledger.rows.phase1);
 });
 
 test("later evidence verification admits only the receipt and finite Phase 08 closeout documents", async () => {

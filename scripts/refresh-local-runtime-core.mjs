@@ -69,7 +69,7 @@ const MEDIA_PROGRAM = "const fs=require('node:fs'),crypto=require('node:crypto')
 const TARGET_FS_PROGRAM = "const fs=require('node:fs');const app=process.argv[1],store=process.argv[2],required=app==='web'?['/refresh-workspace/apps/web/.next','/refresh-workspace/node_modules']:['/refresh-workspace/apps/api/src/app.ts','/refresh-workspace/node_modules'],forbidden=['/workspace','/pnpm-store/files',app==='web'?'/refresh-workspace/apps/web/dist':'/refresh-workspace/apps/api/dist'],roots=fs.readdirSync('/pnpm-store');if(!/^\\/pnpm-store\\/v\\d+$/.test(store)||roots.length!==1||!/^v\\d+$/.test(roots[0])||required.some(p=>!fs.existsSync(p))||forbidden.some(p=>fs.existsSync(p)))process.exit(42);";
 const SEED_PREREQUISITE_PROGRAM = "const fs=require('node:fs');const app=process.argv[1],root='/pnpm-store',versions=fs.readdirSync(root);if(versions.length!==1||!/^v\\d+$/.test(versions[0])||fs.readdirSync(root+'/'+versions[0]).length===0||!fs.existsSync('/refresh-workspace/apps/'+app))process.exit(42);";
 const ONEOFF_PROGRAM = "setInterval(()=>{},2147483647)";
-const BUSINESS_ARGS = ["-p", PROJECT, "-f", COMPOSE_FILE, "exec", "-T", "postgres", "pg_dump", "--data-only", "--no-owner", "--no-privileges", "--exclude-table=public.blog_x_schema_ledger", "--dbname=postgres://blog_x@127.0.0.1:5432/blog_x"];
+const BUSINESS_ARGS = ["-p", PROJECT, "-f", COMPOSE_FILE, "exec", "-T", "postgres", "pg_dump", "--data-only", "--inserts", "--no-owner", "--no-privileges", "--exclude-table=public.blog_x_schema_ledger", "--dbname=postgres://blog_x@127.0.0.1:5432/blog_x"];
 const SEQUENCE_SQL = "SELECT COALESCE(json_agg(x ORDER BY schemaname,sequencename),'[]'::json) FROM (SELECT schemaname,sequencename,sequenceowner,data_type,start_value,min_value,max_value,increment_by,cycle,cache_size,last_value FROM pg_sequences WHERE schemaname='public') x;";
 const LEDGER_SQL = "SELECT COALESCE(json_agg(x ORDER BY scope),'[]'::json) FROM (SELECT scope,migration_count,migration_fingerprint,applied_at FROM blog_x_schema_ledger) x;";
 const DATABASE_SQL = "SELECT json_build_object('name',current_database(),'systemIdentifier',(SELECT system_identifier::text FROM pg_control_system()));";
@@ -219,7 +219,7 @@ function parseComposePs(stdout) {
   return records;
 }
 function cleanOutput(result) { return String(result?.stdout ?? "").trim(); }
-function normalizeDump(value) { return value.split("\n").filter((line) => !/^--|^SET |^SELECT pg_catalog\.set_config|^\\restrict |^\\unrestrict /.test(line)).join("\n").trim(); }
+function normalizeDump(value) { return value.split("\n").filter((line) => line && !/^--|^SET |^SELECT pg_catalog\.set_config|^\\restrict |^\\unrestrict /.test(line)).join("\n").trim(); }
 
 const ENV_OVERRIDE = /^(?:DOCKER_|COMPOSE_|BUILDX_|BUILDKIT_|COLIMA_)/;
 export function buildMinimalChildEnvironment(ambient = process.env, additions = {}) {
@@ -907,6 +907,9 @@ function assertProjectionSchema(value, label, { routeContract = "final" } = {}) 
   if (!Number.isSafeInteger(value.ledger.count) || value.ledger.count < 1 || !validDigest(value.ledger.stableSha256) || !validDigest(value.ledger.timestampSha256)) fail(`${label} ledger projection is invalid`);
   if (!value.ledger.rows || Object.keys(value.ledger.rows).length !== value.ledger.count) fail(`${label} ledger rows are invalid`);
   for (const [scope, row] of Object.entries(value.ledger.rows)) { if (!scope || !row || !same(Object.keys(row).sort(), ["appliedAt", "stableSha256"]) || !validDigest(row.stableSha256) || new Date(row.appliedAt).toISOString() !== row.appliedAt) fail(`${label} ledger row is invalid`); }
+  const projectedStable = Object.fromEntries(Object.entries(value.ledger.rows).map(([scope, row]) => [scope, row.stableSha256]));
+  const projectedTimestamps = Object.fromEntries(Object.entries(value.ledger.rows).map(([scope, row]) => [scope, row.appliedAt]));
+  if (value.ledger.stableSha256 !== factsSha256(projectedStable) || value.ledger.timestampSha256 !== factsSha256(projectedTimestamps)) fail(`${label} ledger projection digest is invalid`);
   exactKeys(value.containers, ["api", "postgres", "web"], `${label} containers`);
   for (const service of ["api", "postgres", "web"]) {
     const container = value.containers[service];
@@ -944,7 +947,7 @@ function assertEvidenceSchema(evidence, expectedAuthority = deliveryAuthorityFor
   for (const name of ["preflight", "postMigration"]) assertProjectionSchema(evidence.stages[name], `evidence ${name}`, { routeContract: "observed" });
   assertProjectionSchema(evidence.stages.postCutover, "evidence postCutover", { routeContract: "final" });
   if (!factsEqual(evidence.stages.preflight.routes, evidence.stages.postMigration.routes)) fail("evidence pre-cutover route observations changed");
-  for (const key of ["business", "database", "git", "media", "protected", "reading", "seeds", "sequences", "targets", "volumes"]) if (!factsEqual(evidence.stages.preflight[key], evidence.stages.postMigration[key]) || !factsEqual(evidence.stages.postMigration[key], evidence.stages.postCutover[key])) fail(`evidence ${key} stages are inconsistent`);
+  for (const key of ["business", "git", "media", "protected", "reading", "seeds", "sequences", "targets", "volumes"]) if (!factsEqual(evidence.stages.preflight[key], evidence.stages.postMigration[key]) || !factsEqual(evidence.stages.postMigration[key], evidence.stages.postCutover[key])) fail(`evidence ${key} stages are inconsistent`);
   for (const stage of Object.values(evidence.stages)) {
     if (stage.git.clean !== true || stage.git.implementationRevision !== evidence.implementationRevision || stage.git.lockfileSha256 !== evidence.lockfileSha256 || !validBranchRef(stage.git.ref) || !factsEqual(stage.git.ref, evidence.stages.preflight.git.ref) || !factsEqual(stage.seeds, evidence.seeds)) fail("evidence Git/lock/seed linkage is invalid");
     for (const app of ["api", "web"]) {
@@ -952,10 +955,14 @@ function assertEvidenceSchema(evidence, expectedAuthority = deliveryAuthorityFor
       if (!factsEqual(stage.targets[app], expected)) fail(`evidence ${app} target linkage is invalid`);
     }
   }
-  if (evidence.stages.preflight.ledger.stableSha256 !== evidence.stages.postMigration.ledger.stableSha256 || evidence.stages.postMigration.ledger.stableSha256 !== evidence.stages.postCutover.ledger.stableSha256 || evidence.stages.preflight.ledger.timestampSha256 === evidence.stages.postMigration.ledger.timestampSha256 || evidence.stages.postMigration.ledger.timestampSha256 !== evidence.stages.postCutover.ledger.timestampSha256) fail("evidence ledger stage transition is invalid");
+  if (evidence.stages.postMigration.ledger.stableSha256 !== evidence.stages.postCutover.ledger.stableSha256 || evidence.stages.preflight.ledger.timestampSha256 === evidence.stages.postMigration.ledger.timestampSha256 || evidence.stages.postMigration.ledger.timestampSha256 !== evidence.stages.postCutover.ledger.timestampSha256) fail("evidence ledger stage transition is invalid");
   const beforeRows = evidence.stages.preflight.ledger.rows; const migratedRows = evidence.stages.postMigration.ledger.rows; const cutoverRows = evidence.stages.postCutover.ledger.rows;
   if (!same(Object.keys(beforeRows), Object.keys(migratedRows)) || !same(Object.keys(migratedRows), Object.keys(cutoverRows))) fail("evidence ledger scopes changed");
-  for (const scope of Object.keys(beforeRows)) { if (beforeRows[scope].stableSha256 !== migratedRows[scope].stableSha256 || !same(migratedRows[scope], cutoverRows[scope]) || (scope === "phase1" ? !(Date.parse(migratedRows[scope].appliedAt) > Date.parse(beforeRows[scope].appliedAt)) : migratedRows[scope].appliedAt !== beforeRows[scope].appliedAt)) fail("evidence row-addressed ledger transition is invalid"); }
+  for (const scope of Object.keys(beforeRows)) { if ((scope !== "phase1" && beforeRows[scope].stableSha256 !== migratedRows[scope].stableSha256) || !same(migratedRows[scope], cutoverRows[scope]) || (scope === "phase1" ? !(Date.parse(migratedRows[scope].appliedAt) > Date.parse(beforeRows[scope].appliedAt)) : migratedRows[scope].appliedAt !== beforeRows[scope].appliedAt)) fail("evidence row-addressed ledger transition is invalid"); }
+  const phase1Advanced = beforeRows.phase1.stableSha256 !== migratedRows.phase1.stableSha256;
+  const beforeDatabase = evidence.stages.preflight.database; const migratedDatabase = evidence.stages.postMigration.database; const cutoverDatabase = evidence.stages.postCutover.database;
+  if (!factsEqual(migratedDatabase, cutoverDatabase) || beforeDatabase.name !== migratedDatabase.name || beforeDatabase.systemIdentifier !== migratedDatabase.systemIdentifier) fail("evidence database identity transition is invalid");
+  if (phase1Advanced ? beforeDatabase.schemaSha256 === migratedDatabase.schemaSha256 || migratedDatabase.schemaRows < beforeDatabase.schemaRows : !factsEqual(beforeDatabase, migratedDatabase)) fail("evidence forward schema transition is invalid");
   for (const app of ["api", "web"]) {
     if (evidence.stages.preflight.containers[app].imageId !== evidence.oldImages[app] || evidence.stages.postMigration.containers[app].imageId !== evidence.oldImages[app] || evidence.stages.postCutover.containers[app].imageId !== evidence.targets[app].id) fail(`evidence ${app} image transition is invalid`);
   }
