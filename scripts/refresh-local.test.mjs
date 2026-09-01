@@ -12,6 +12,7 @@ import {
 } from "./refresh-seed-store.mjs";
 import {
   FIXED_REFRESH,
+  assessDockerBuildCapacity,
   createRefreshPlan,
   inspectTargetFilesystem,
   runLocalRefresh,
@@ -456,6 +457,41 @@ test("runRefreshCli consumes the raw test runtime only after publishing an absen
   assert.ok(fixture.calls.some((call) => call.command === "docker" && call.args[0] === "context"));
   await assert.rejects(fixture.runtime.runCli({ argv: ["--verify-evidence=ops/phase6-local-refresh-evidence.json"] }), /revision-addressed|evidence path/i);
   await assert.rejects(fixture.runtime.runCli({ argv: ["--probe-offline-builds", "extra"] }), /probe option.*exact/i);
+});
+
+test("Docker capacity preflight is retryable, exact, claim-free, and rejects insufficient resources", async () => {
+  assert.deepEqual(assessDockerBuildCapacity({
+    apiImageBytes: String(5n * 1024n ** 3n),
+    webImageBytes: String(6n * 1024n ** 3n),
+    availableBytes: String(14n * 1024n ** 3n),
+    availableInodes: "200000",
+  }), {
+    requiredBytes: String(13n * 1024n ** 3n),
+    availableBytes: String(14n * 1024n ** 3n),
+    availableInodes: "200000",
+  });
+  assert.throws(() => assessDockerBuildCapacity({ apiImageBytes: "1", webImageBytes: "1", availableBytes: "2", availableInodes: "200000" }), /free bytes/i);
+  assert.throws(() => assessDockerBuildCapacity({ apiImageBytes: "1", webImageBytes: "1", availableBytes: String(3n * 1024n ** 3n), availableInodes: "199999" }), /inodes/i);
+  for (const invalid of ["-1", "1.5", "01", "", "1e9"]) assert.throws(() => assessDockerBuildCapacity({ apiImageBytes: invalid, webImageBytes: "1", availableBytes: String(3n * 1024n ** 3n), availableInodes: "200000" }), /invalid/i);
+
+  const fixture = liveFixture();
+  const adapterConstructions = fixture.runtime.adapterConstructionCount();
+  const passed = [];
+  await fixture.runtime.runCli({ argv: ["--check-docker-capacity"], output: { write(value) { passed.push(value); } } });
+  assert.equal(passed.join(""), "LOCAL DOCKER CAPACITY PASSED required_bytes=1 available_bytes=2 available_inodes=200000\n");
+  await fixture.runtime.createAttemptStore().assertAbsent(fixture.revision);
+  assert.equal(fixture.runtime.adapterConstructionCount(), adapterConstructions);
+
+  const failed = [];
+  await assert.rejects(fixture.runtime.runCli({
+    argv: ["--check-docker-capacity"],
+    output: { write(value) { failed.push(value); } },
+    checkDockerCapacity: async () => { throw new Error("raw Docker path and output"); },
+  }), /capacity preflight/i);
+  assert.match(failed.join(""), /LOCAL DOCKER CAPACITY FAILED/);
+  assert.doesNotMatch(failed.join(""), /raw Docker path|\/Users\//);
+  await fixture.runtime.createAttemptStore().assertAbsent(fixture.revision);
+  await assert.rejects(fixture.runtime.runCli({ argv: ["--check-docker-capacity", "extra"] }), /option is not exact/i);
 });
 
 test("branch-qualified source authority rejects dirty, detached and malformed refs before adapter mutation", async () => {

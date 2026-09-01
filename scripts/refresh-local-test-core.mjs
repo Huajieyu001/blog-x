@@ -50,7 +50,7 @@ export function createRefreshTestRuntime(boundaries) {
     adapterConstructionCount() { return adapterConstructions; },
     inspectClaim(revision) { return inspectRefreshAttemptClaimWithStore(revision, claimStore()); },
     verifyEvidence(path) { return verifyRawRefreshEvidence(path, { claimStore: claimStore(), fs, runArgv: processBoundary, fetch, root: "/virtual-workspace", identity }); },
-    runCli({ argv = [], output = { write() {} } } = {}) {
+    runCli({ argv = [], output = { write() {} }, checkDockerCapacity = async () => ({ requiredBytes: "1", availableBytes: "2", availableInodes: "200000" }) } = {}) {
       const resolveRevision = async () => {
         const status = String((await processBoundary("git", ["status", "--porcelain"])).stdout ?? "").trim();
         const ref = String((await processBoundary("git", ["symbolic-ref", "--quiet", "HEAD"])).stdout ?? "").trim();
@@ -63,7 +63,7 @@ export function createRefreshTestRuntime(boundaries) {
         const revision = /^[a-f0-9]{40}$/.test(revisionOrPath) ? revisionOrPath : parseRevisionAddressedEvidencePath(revisionOrPath);
         return runtime.verifyEvidence(`/virtual-workspace/${deliveryAuthorityForRevision(revision).evidencePath}`);
       };
-      return runRefreshCliBoundary({ argv, resolveRevision, attemptStore: claimStore(), adapterFactory: () => runtime.createAdapter(), output, readLockfile: () => fs.readFile("/virtual-workspace/pnpm-lock.yaml"), materializePlan: (bytes, revision) => createRefreshPlan({ revision, lockSha256: sha256(bytes), apiSeedId: "sha256:0", webSeedId: "sha256:0" }), executeRefresh: (adapter, plan, { onStage }) => runLocalRefresh({ adapter, plan, onStage }), verifyEvidence, probeOffline: async () => { throw new Error("probe is not available in unit boundaries"); }, stageBoundary: boundaries.clock });
+      return runRefreshCliBoundary({ argv, resolveRevision, attemptStore: claimStore(), adapterFactory: () => runtime.createAdapter(), output, readLockfile: () => fs.readFile("/virtual-workspace/pnpm-lock.yaml"), materializePlan: (bytes, revision) => createRefreshPlan({ revision, lockSha256: sha256(bytes), apiSeedId: "sha256:0", webSeedId: "sha256:0" }), executeRefresh: (adapter, plan, { onStage }) => runLocalRefresh({ adapter, plan, onStage }), verifyEvidence, probeOffline: async () => { throw new Error("probe is not available in unit boundaries"); }, checkDockerCapacity, stageBoundary: boundaries.clock });
     },
     stage(name) { return boundaries.clock(name); },
   };

@@ -23,6 +23,9 @@ const composeFile = resolve(root, "compose.yaml");
 const lockfile = resolve(root, "pnpm-lock.yaml");
 const REFRESH_ROOT = "/refresh-workspace";
 const STORE_ROOT = "/pnpm-store";
+const CAPACITY_HEADROOM_BYTES = 2n * 1024n * 1024n * 1024n;
+const CAPACITY_MINIMUM_INODES = 200_000n;
+const CAPACITY_PROGRAM = "const fs=require('node:fs'),s=fs.statfsSync('/',{bigint:true});process.stdout.write(JSON.stringify({availableBytes:String(s.bavail*s.bsize),availableInodes:String(s.ffree)}));";
 const REQUIRED_LABELS = [
   "org.opencontainers.image.revision",
   "io.blog-x.lockfile-sha256",
@@ -44,6 +47,22 @@ function sha256(value) { return createHash("sha256").update(value).digest("hex")
 function shortRevision(revision) {
   if (!/^[a-f0-9]{40}$/.test(revision)) fail("revision must be a clean full Git SHA");
   return revision.slice(0, 12);
+}
+
+function decimalBigInt(value, label) {
+  if (typeof value !== "string" || !/^(?:0|[1-9]\d*)$/.test(value)) fail(`${label} is invalid`);
+  return BigInt(value);
+}
+
+export function assessDockerBuildCapacity({ apiImageBytes, webImageBytes, availableBytes, availableInodes } = {}) {
+  const api = decimalBigInt(apiImageBytes, "API image size");
+  const web = decimalBigInt(webImageBytes, "Web image size");
+  const available = decimalBigInt(availableBytes, "available Docker bytes");
+  const inodes = decimalBigInt(availableInodes, "available Docker inodes");
+  const required = api + web + CAPACITY_HEADROOM_BYTES;
+  if (available < required) fail("local Docker build filesystem has insufficient free bytes");
+  if (inodes < CAPACITY_MINIMUM_INODES) fail("local Docker build filesystem has insufficient free inodes");
+  return Object.freeze({ requiredBytes: String(required), availableBytes: String(available), availableInodes: String(inodes) });
 }
 
 export function createRefreshPlan({ revision, lockSha256, apiSeedId, webSeedId }) {
@@ -155,6 +174,29 @@ async function inspectImage(reference) {
   return image;
 }
 
+async function checkLocalDockerCapacity() {
+  const containerRows = JSON.parse((await run("docker", ["inspect", "blogxlocal-api-1", "blogxlocal-web-1"])).stdout);
+  if (!Array.isArray(containerRows) || containerRows.length !== 2) fail("canonical local containers are unavailable for capacity preflight");
+  const containers = new Map(containerRows.map((item) => [item?.Name, item]));
+  const apiContainer = containers.get("/blogxlocal-api-1");
+  const webContainer = containers.get("/blogxlocal-web-1");
+  if (![apiContainer, webContainer].every((item) => item?.State?.Running === true && /^sha256:[a-f0-9]{64}$/.test(item?.Image ?? ""))) fail("canonical local containers are invalid for capacity preflight");
+  const imageRows = JSON.parse((await run("docker", ["image", "inspect", apiContainer.Image, webContainer.Image])).stdout);
+  if (!Array.isArray(imageRows) || imageRows.length !== 2) fail("canonical local images are unavailable for capacity preflight");
+  const images = new Map(imageRows.map((item) => [item?.Id, item]));
+  const apiImage = images.get(apiContainer.Image);
+  const webImage = images.get(webContainer.Image);
+  if (![apiImage?.Size, webImage?.Size].every((value) => Number.isSafeInteger(value) && value > 0)) fail("canonical local image sizes are invalid");
+  const statfs = JSON.parse((await run("docker", ["run", "--rm", "--network=none", "--entrypoint", "node", webContainer.Image, "-e", CAPACITY_PROGRAM])).stdout);
+  if (!statfs || typeof statfs !== "object" || Array.isArray(statfs) || Object.keys(statfs).sort().join(",") !== "availableBytes,availableInodes") fail("Docker filesystem capacity output is invalid");
+  return assessDockerBuildCapacity({
+    apiImageBytes: String(apiImage.Size),
+    webImageBytes: String(webImage.Size),
+    availableBytes: statfs.availableBytes,
+    availableInodes: statfs.availableInodes,
+  });
+}
+
 async function probeOne(application, seedImage, revision, lockSha256) {
   const unique = randomBytes(8).toString("hex");
   const tag = `blog-x-refresh-probe-${application}:${unique}`;
@@ -214,6 +256,7 @@ export async function runRefreshCli(...args) {
     executeRefresh: (adapter, plan, { onStage }) => runLocalRefresh({ adapter, plan, onStage }),
     verifyEvidence: verifyProductionLiveRefreshEvidence,
     probeOffline: probeOfflineBuilds,
+    checkDockerCapacity: checkLocalDockerCapacity,
   });
 }
 

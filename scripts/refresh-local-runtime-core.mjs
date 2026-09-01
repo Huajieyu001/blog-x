@@ -1057,7 +1057,7 @@ const PHASE_REPORT_STAGE = Object.freeze({
   preflight: "preflight_collection",
 });
 
-export async function runRefreshCliBoundary({ argv, resolveRevision, attemptStore, adapterFactory, output, readLockfile, materializePlan, executeRefresh, verifyEvidence, probeOffline, stageBoundary = () => undefined }) {
+export async function runRefreshCliBoundary({ argv, resolveRevision, attemptStore, adapterFactory, output, readLockfile, materializePlan, executeRefresh, verifyEvidence, probeOffline, checkDockerCapacity, stageBoundary = () => undefined }) {
   const evidenceOption = argv.find((item) => item.startsWith("--verify-evidence="));
   if (evidenceOption) {
     const evidencePath = evidenceOption.slice("--verify-evidence=".length);
@@ -1068,6 +1068,21 @@ export async function runRefreshCliBoundary({ argv, resolveRevision, attemptStor
   if (argv.includes("--probe-offline-builds")) {
     if (argv.length !== 1 || argv[0] !== "--probe-offline-builds") fail("offline probe option is not exact");
     const result = await probeOffline(); output.write(`OFFLINE REFRESH PROBES PASSED ${result.revision.slice(0, 12)}\n`); return result;
+  }
+  if (argv.includes("--check-docker-capacity")) {
+    if (argv.length !== 1 || argv[0] !== "--check-docker-capacity" || typeof checkDockerCapacity !== "function") fail("Docker capacity check option is not exact");
+    try {
+      const result = await checkDockerCapacity();
+      exactKeys(result, ["availableBytes", "availableInodes", "requiredBytes"], "Docker capacity result");
+      if (![result.availableBytes, result.availableInodes, result.requiredBytes].every((value) => typeof value === "string" && /^(?:0|[1-9]\d*)$/.test(value))) fail("Docker capacity result is invalid");
+      output.write(`LOCAL DOCKER CAPACITY PASSED required_bytes=${result.requiredBytes} available_bytes=${result.availableBytes} available_inodes=${result.availableInodes}\n`);
+      return result;
+    } catch (cause) {
+      output.write("LOCAL DOCKER CAPACITY FAILED\nRECOVERY Reclaim only unused local Docker build artifacts, rerun this preflight on the same clean revision, and do not start delivery until it passes.\n");
+      const reported = new Error("local Docker capacity preflight failed", { cause });
+      Object.defineProperty(reported, "refreshFailureReported", { value: true });
+      throw reported;
+    }
   }
   const claimOption = argv.find((item) => item.startsWith("--check-attempt-claim="));
   if (claimOption) {
