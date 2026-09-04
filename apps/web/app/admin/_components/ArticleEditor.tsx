@@ -471,7 +471,6 @@ export default function ArticleEditor({
           <div><p className={styles.eyebrow}>Blog X / 内容管理</p><h1>{heading}</h1></div>
         </div>
         <p role="status" aria-label="编辑器状态" className={styles.status}>编辑器加载中…</p>
-        {post && <noscript><ArticleActions post={post} /></noscript>}
       </main>
     );
   }
