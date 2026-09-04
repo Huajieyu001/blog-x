@@ -68,9 +68,9 @@ coverage:
         status: pass
       - kind: integration
         ref: apps/web/e2e/public-reading.spec.ts#published permalink is a safe focused technical reading surface and every unavailable state is one 404
-        status: unknown
-    human_judgment: true
-    rationale: Final fixed local-delivery integration is intentionally owned by the orchestrator and has not run in this executor.
+        status: pass
+    human_judgment: false
+    rationale: Revision-bound local delivery evidence records the complete real lifecycle integration and browser inventory passing 68/68.
 duration: 6min
 completed: 2026-09-04
 status: complete

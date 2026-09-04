@@ -32,7 +32,7 @@
 
 **Milestone Goal:** 让博主可以安全地预约文章发布，并让已公开文章向搜索引擎提供严格、可验证的结构化数据。
 
-- [ ] **Phase 9: Public Article Structured Data** - 已发布文章输出安全且与可见内容一致的 `BlogPosting` JSON-LD，其他页面不输出。
+- [x] **Phase 9: Public Article Structured Data** - 已发布文章输出安全且与可见内容一致的 `BlogPosting` JSON-LD，其他页面不输出。— completed 2026-09-04
 - [ ] **Phase 10: Controlled Scheduled Publishing** - 管理员可预约、改期和取消发布，本地有界任务在并发与失败下仍安全收敛。
 
 ## Phase Details
@@ -76,7 +76,7 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 9. Public Article Structured Data | v1.2 | 1/1 | In Progress|  |
+| 9. Public Article Structured Data | v1.2 | 1/1 | Complete | 2026-09-04 |
 | 10. Controlled Scheduled Publishing | v1.2 | 0/TBD | Not started | - |
 
 Complete prior milestone plans, requirements and phase records are archived under `.planning/milestones/`.
