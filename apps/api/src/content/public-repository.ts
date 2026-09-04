@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { alias } from "drizzle-orm/pg-core";
 import {
@@ -18,6 +18,9 @@ export const publicPredicate = and(
   eq(schema.articles.status, "published"),
   isNull(schema.articles.deletedAt),
   isNotNull(schema.articles.publishedAt),
+  // PostgreSQL time is shared by all API processes and is the authority that
+  // prevents malformed future-publication rows from entering any projection.
+  lte(schema.articles.publishedAt, sql`CURRENT_TIMESTAMP`),
 );
 
 export const publicListSelection = {
