@@ -43,13 +43,16 @@
 **Depends on**: Phase 8
 **Requirements**: SEO-03, SEO-04, SEO-05
 **Success Criteria** (what must be TRUE):
+
   1. 访客打开已发布文章时，页面含有可解析的 Schema.org `BlogPosting` JSON-LD，其标题、摘要、时间与 canonical URL 均与页面可见内容一致。
   2. 访客获得的 JSON-LD 只含来自严格公开投影的字段，不会泄露 Markdown 源文、内部地址、存储路径或管理状态。
   3. 草稿、已下线、已删除、未知文章和非文章页面不输出文章 JSON-LD，含 `</script>` 等输入也无法逃逸受控序列化边界。
-**Plans**: 1 plan
+
+**Plans**: 1/1 plans executed
 
 Plans:
-- [ ] 09-01-PLAN.md — Emit strict article-only BlogPosting JSON-LD and prove parity, privacy, injection containment, and all zero-output routes.
+
+- [x] 09-01-PLAN.md — Emit strict article-only BlogPosting JSON-LD and prove parity, privacy, injection containment, and all zero-output routes.
 
 ### Phase 10: Controlled Scheduled Publishing
 
@@ -57,11 +60,13 @@ Plans:
 **Depends on**: Phase 9
 **Requirements**: CONT-05, CONT-06, CONT-07, CONT-08
 **Success Criteria** (what must be TRUE):
+
   1. 已登录管理员可在手机、平板和桌面端为草稿设置未来发布时间，看到明确时区，并在到期前查看、改期或取消计划。
   2. 已预约但未到期的文章不会出现在首页、搜索、分类、标签、归档、RSS、Sitemap 或相关阅读中，直接访问也不会泄露内容。
   3. 本地单次任务只扫描有界数量的已到期草稿；重试或并发执行不会重复发布，且首次公开时间与稳定 slug 语义保持不变。
   4. 预约、改期、取消和到期发布都受既有单管理员认证与审计边界保护；无效时间、非草稿状态或部分失败会失败关闭并产生可观测的非零失败结果。
   5. 管理员与访客可在固定 `http://127.0.0.1:3100` 本地生成环境验证完整闭环，生产调度和发布决定始终保持 `BLOCKED`。
+
 **Plans**: TBD
 **UI hint**: yes
 
@@ -71,7 +76,7 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 9. Public Article Structured Data | v1.2 | 0/TBD | Not started | - |
+| 9. Public Article Structured Data | v1.2 | 1/1 | In Progress|  |
 | 10. Controlled Scheduled Publishing | v1.2 | 0/TBD | Not started | - |
 
 Complete prior milestone plans, requirements and phase records are archived under `.planning/milestones/`.

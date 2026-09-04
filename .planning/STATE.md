@@ -5,16 +5,16 @@ milestone_name: Publishing Quality
 current_phase: 9
 current_phase_name: first of 2 in v1.2
 status: executing
-stopped_at: v1.2 roadmap complete; Phase 9 ready for planning
-last_updated: "2026-09-04T12:39:08.174Z"
+stopped_at: Implementation tasks for 09-01 complete; final local delivery owned by orchestrator
+last_updated: "2026-09-04T12:45:54.312Z"
 last_activity: 2026-09-04
 last_activity_desc: v1.2 roadmap created with all seven requirements mapped
 progress:
   total_phases: 2
   completed_phases: 0
   total_plans: 1
-  completed_plans: 0
-  percent: 0
+  completed_plans: 1
+  percent: 50
 ---
 
 # Project State
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-09-04)
 ## Current Position
 
 Phase: 9 of 10 (first of 2 in v1.2)
-Plan: 0 of TBD in current phase
-Status: Ready to execute
-Last activity: 2026-09-04 — v1.2 roadmap created with all seven requirements mapped
+Plan: 1 of 1 in current phase
+Status: Awaiting final local delivery
+Last activity: 2026-09-04 — Phase 9 implementation tasks and isolated verification completed
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -49,6 +49,11 @@ Progress: [░░░░░░░░░░] 0%
 | v1.0 Local MVP | 26 | Complete |
 | v1.1 Content Discovery | 24 | Complete |
 | v1.2 Publishing Quality | TBD | Not started |
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 09-public-article-structured-data P01 | 6min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -59,6 +64,8 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [v1.2]: 先交付仅依赖严格公开投影的 JSON-LD，再扩展发布状态机。
 - [v1.2]: 定时发布使用 UTC 持久化和有界本地单次任务，不引入 Redis、队列或常驻调度服务。
 - [v1.2]: 所有开发与验证仅在本地进行，固定 `3100` 交付链路与 `BLOCKED` 生产决定保持不变。
+- [Phase ?]: [Phase 9]: BlogPosting is limited to four explicit public inputs and an exact seven-field output.
+- [Phase ?]: [Phase 9]: Native JSON-LD serializes once and escapes raw <, U+2028, and U+2029 before script embedding.
 
 ### Pending Todos
 
@@ -78,6 +85,6 @@ None for the active milestone.
 
 ## Session Continuity
 
-Last session: 2026-09-04
-Stopped at: v1.2 roadmap complete; Phase 9 ready for planning
-Resume file: None
+Last session: 2026-09-04T12:45:54.308Z
+Stopped at: Implementation tasks for 09-01 complete; final local delivery owned by orchestrator
+Resume file: .planning/phases/09-public-article-structured-data/09-01-SUMMARY.md

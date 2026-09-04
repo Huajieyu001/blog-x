@@ -7,9 +7,9 @@
 
 ### Structured Article Data
 
-- [ ] **SEO-03**: 访客访问已发布文章时，页面输出与可见内容和 canonical URL 一致的 Schema.org `BlogPosting` JSON-LD。
-- [ ] **SEO-04**: 结构化数据只使用公开投影中的严格字段，不包含 Markdown 源文、内部地址、存储路径或管理状态。
-- [ ] **SEO-05**: 草稿、已下线、已删除、未知文章与非文章页面不得输出文章结构化数据，且输出必须可被自动化解析验证。
+- [x] **SEO-03**: 访客访问已发布文章时，页面输出与可见内容和 canonical URL 一致的 Schema.org `BlogPosting` JSON-LD。
+- [x] **SEO-04**: 结构化数据只使用公开投影中的严格字段，不包含 Markdown 源文、内部地址、存储路径或管理状态。
+- [x] **SEO-05**: 草稿、已下线、已删除、未知文章与非文章页面不得输出文章结构化数据，且输出必须可被自动化解析验证。
 
 ### Scheduled Publishing
 
@@ -46,9 +46,9 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEO-03 | Phase 9 | Pending |
-| SEO-04 | Phase 9 | Pending |
-| SEO-05 | Phase 9 | Pending |
+| SEO-03 | Phase 9 | Complete |
+| SEO-04 | Phase 9 | Complete |
+| SEO-05 | Phase 9 | Complete |
 | CONT-05 | Phase 10 | Pending |
 | CONT-06 | Phase 10 | Pending |
 | CONT-07 | Phase 10 | Pending |
