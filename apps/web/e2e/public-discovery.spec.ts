@@ -150,6 +150,35 @@ test("desktop search tracer", async ({ page, browser }) => {
   await noScript.close();
 });
 
+test("published article emits strict BlogPosting", async ({ page }) => {
+  const expectedOrigin = requireGeneratedOrigin(webOrigin, "E2E_WEB_ORIGIN");
+  const browserRequests: string[] = [];
+  page.on("request", (request) => {
+    if (/^https?:/.test(request.url())) browserRequests.push(request.url());
+  });
+
+  const response = await page.goto(`${expectedOrigin}/posts/related-populated`);
+  expect(response?.status()).toBe(200);
+  const script = page.locator('script[type="application/ld+json"]');
+  await expect(script).toHaveCount(1);
+  const raw = await script.textContent();
+  expect(raw).not.toBeNull();
+  const posting = JSON.parse(raw!);
+  expect(Object.keys(posting)).toEqual(["@context", "@type", "headline", "description", "datePublished", "mainEntityOfPage", "url"]);
+  expect(posting["@context"]).toBe("https://schema.org");
+  expect(posting["@type"]).toBe("BlogPosting");
+  await expect(page.locator("h1")).toHaveText(posting.headline);
+  await expect(page.locator(".articleSummary")).toHaveText(posting.description);
+  await expect(page.locator("article time[datetime]").first()).toHaveAttribute("datetime", posting.datePublished);
+  const canonical = page.locator('link[rel="canonical"]');
+  await expect(canonical).toHaveCount(1);
+  const canonicalHref = await canonical.getAttribute("href");
+  expect(posting.mainEntityOfPage).toBe(canonicalHref);
+  expect(posting.url).toBe(canonicalHref);
+  expect(new URL(posting.url).origin).toBe(expectedOrigin);
+  for (const url of browserRequests) expect(new URL(url).origin).toBe(expectedOrigin);
+});
+
 test.describe("related populated zero and failure", () => {
   test("renders four strict related cards after the complete article in API order", async ({ page }) => {
     const expectedOrigin = requireGeneratedOrigin(webOrigin, "E2E_WEB_ORIGIN");

@@ -5,7 +5,7 @@ import ArticleBody from "../../_components/ArticleBody";
 import ArticleToc from "../../_components/ArticleToc";
 import PostCard from "../../_components/PostCard";
 import { getPublicPost, getPublicRelatedPosts } from "../../lib/api";
-import { pageMetadata } from "../../lib/site-metadata";
+import { buildBlogPosting, pageMetadata, serializeJsonLd } from "../../lib/site-metadata";
 import styles from "../../public.module.css";
 
 export default async function PublicArticlePage({ params }: { params: Promise<{ slug: string }> }) {
@@ -14,6 +14,12 @@ export default async function PublicArticlePage({ params }: { params: Promise<{ 
   if (result.kind === "not_found") notFound();
   if (result.kind === "upstream_error") throw new Error("public content unavailable");
   const article = result.data;
+  const jsonLd = serializeJsonLd(buildBlogPosting({
+    title: article.title,
+    summary: article.summary,
+    slug: article.slug,
+    publishedAt: article.publishedAt,
+  }));
   const relatedResult = await getPublicRelatedPosts(slug);
   const seenSlugs = new Set([article.slug]);
   const relatedItems = relatedResult.kind === "ok"
@@ -25,6 +31,7 @@ export default async function PublicArticlePage({ params }: { params: Promise<{ 
     : [];
   return (
     <main className={styles.page}>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd }} />
       <article className={styles.articleShell}>
         <header className={styles.articleHeader}>
           <p className={styles.eyebrow}>Published note</p>
@@ -35,7 +42,7 @@ export default async function PublicArticlePage({ params }: { params: Promise<{ 
             </div>
           ) : null}
           <h1>{article.title}</h1>
-          <p className={styles.articleSummary}>{article.summary}</p>
+          <p className={`${styles.articleSummary} articleSummary`}>{article.summary}</p>
           <time dateTime={article.publishedAt}>
             {new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeZone: "Asia/Shanghai" }).format(new Date(article.publishedAt))}
           </time>

@@ -32,6 +32,33 @@ export function publicUrl(path: string, origin = publicOrigin()) {
   return resolved.toString();
 }
 
+type PublicBlogPostingInput = {
+  title: string;
+  summary: string;
+  slug: string;
+  publishedAt: string;
+};
+
+export function buildBlogPosting({ title, summary, slug, publishedAt }: PublicBlogPostingInput, origin = publicOrigin()) {
+  const canonical = publicUrl(`/posts/${encodeURIComponent(slug)}`, origin);
+  return {
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    headline: title,
+    description: summary,
+    datePublished: publishedAt,
+    mainEntityOfPage: canonical,
+    url: canonical,
+  };
+}
+
+export function serializeJsonLd(value: ReturnType<typeof buildBlogPosting>) {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
 type SearchParameters = Record<string, string | string[] | undefined>;
 
 export type CanonicalPage = {

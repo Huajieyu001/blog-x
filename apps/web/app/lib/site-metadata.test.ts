@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { escapeXml, pageMetadata, publicOrigin, publicUrl, renderRss, resolveCanonicalPage } from "./site-metadata";
+import { buildBlogPosting, escapeXml, pageMetadata, publicOrigin, publicUrl, renderRss, resolveCanonicalPage, serializeJsonLd } from "./site-metadata";
 
 test("public origin accepts only an absolute HTTP(S) origin and fails closed in production", () => {
   const origin = publicOrigin("https://blog.example");
@@ -95,4 +95,46 @@ test("page metadata keeps canonical, robots and Open Graph decisions independent
   assert.deepEqual(noCanonical.robots, { index: false, follow: true });
   assert.equal(noCanonical.alternates, undefined);
   assert.equal(noCanonical.openGraph?.url, "https://blog.example/search");
+});
+
+test("BlogPosting uses only four public facts and the exact canonical seven-key shape", () => {
+  const origin = publicOrigin("https://blog.example");
+  const posting = buildBlogPosting({
+    title: "A public title",
+    summary: "A public summary",
+    slug: "中文 / trusted result",
+    publishedAt: "2026-09-04T08:00:00.000Z",
+  }, origin);
+
+  assert.deepEqual(Object.keys(posting), ["@context", "@type", "headline", "description", "datePublished", "mainEntityOfPage", "url"]);
+  assert.deepEqual(posting, {
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    headline: "A public title",
+    description: "A public summary",
+    datePublished: "2026-09-04T08:00:00.000Z",
+    mainEntityOfPage: "https://blog.example/posts/%E4%B8%AD%E6%96%87%20%2F%20trusted%20result",
+    url: "https://blog.example/posts/%E4%B8%AD%E6%96%87%20%2F%20trusted%20result",
+  });
+  const raw = serializeJsonLd(posting);
+  for (const excluded of ["markdown", "renderedHtml", "seoDescription", "category", "tags", "cover", "status", "INTERNAL_API_ORIGIN", "storage"]) {
+    assert.doesNotMatch(raw, new RegExp(excluded, "i"));
+  }
+});
+
+test("BlogPosting serialization is inert raw script text and round-trips all public values", () => {
+  const input = {
+    title: 'Closing </script><div id="json-ld-injected">never</div>',
+    summary: "line\u2028separator\u2029paragraph < safe",
+    slug: "hostile slug",
+    publishedAt: "2026-09-04T08:00:00.000Z",
+  };
+  const posting = buildBlogPosting(input, publicOrigin("https://blog.example"));
+  const raw = serializeJsonLd(posting);
+
+  assert.doesNotMatch(raw, /</);
+  assert.match(raw, /\\u003c\/script>/);
+  assert.match(raw, /\\u2028/);
+  assert.match(raw, /\\u2029/);
+  assert.deepEqual(JSON.parse(raw), posting);
 });
