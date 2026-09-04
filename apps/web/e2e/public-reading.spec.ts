@@ -80,6 +80,16 @@ test("published permalink is a safe focused technical reading surface and every 
   await expect(page.getByRole("heading", { level: 1, name: publishedTitle })).toBeVisible();
   await expect(page.getByText("A concise introduction to the reading surface.")).toBeVisible();
   await expect(page.locator("article time")).toHaveAttribute("datetime", /^\d{4}-\d{2}-\d{2}T/);
+  const script = page.locator('script[type="application/ld+json"]');
+  await expect(script).toHaveCount(1);
+  const posting = JSON.parse(await script.textContent() ?? "");
+  expect(Object.keys(posting)).toEqual(["@context", "@type", "headline", "description", "datePublished", "mainEntityOfPage", "url"]);
+  expect(posting.headline).toBe(publishedTitle);
+  expect(posting.description).toBe("A concise introduction to the reading surface.");
+  expect(posting.datePublished).toBe(await page.locator("article time[datetime]").first().getAttribute("datetime"));
+  const canonicalHref = await page.locator('link[rel="canonical"]').getAttribute("href");
+  expect(posting.mainEntityOfPage).toBe(canonicalHref);
+  expect(posting.url).toBe(canonicalHref);
   const body = page.getByTestId("article-body");
   await expect(body.getByRole("heading", { level: 2, name: "Reliable rendering" })).toBeVisible();
   await expect(body.locator("blockquote")).toBeVisible();
@@ -103,6 +113,7 @@ test("published permalink is a safe focused technical reading surface and every 
   for (const slug of [slugs.draft, slugs.unpublished, slugs.deleted, `unknown-${suffix}`]) {
     const response = await page.goto(`${webOrigin}/posts/${slug}`);
     expect(response?.status()).toBe(404);
+    await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(0);
     unavailableBodies.push((await page.locator("body").innerText()).replace(/\s+/g, " ").trim());
   }
   expect(new Set(unavailableBodies).size).toBe(1);

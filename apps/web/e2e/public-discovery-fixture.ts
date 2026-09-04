@@ -95,6 +95,28 @@ const emptyRelated = publicRelatedPostsResponseSchema.parse({ items: [] });
 const oneRelated = publicRelatedPostsResponseSchema.parse({ items: [relatedCard(1)] });
 const twoRelated = publicRelatedPostsResponseSchema.parse({ items: [relatedCard(1), relatedCard(2)] });
 
+const structuredDataDetail = publicPostDetailSchema.parse({
+  title: 'Strict public </script><span data-jsonld-injected="true">never</span> title',
+  summary: "A public summary with line\u2028separator and paragraph\u2029separator.",
+  slug: "structured-data-hostile",
+  publishedAt: "2026-09-04T08:00:00.000Z",
+  status: "published",
+  category: { name: "CATEGORY_EXCLUDED_SENTINEL", slug: "structured-data-category" },
+  tags: [{ name: "TAG_EXCLUDED_SENTINEL", slug: "structured-data-tag" }],
+  seoDescription: "SEO_DESCRIPTION_EXCLUDED_SENTINEL",
+  renderedHtml: "<p>RENDERED_HTML_EXCLUDED_SENTINEL</p>",
+  toc: [{ id: "structured-data-heading", depth: 2, text: "TOC_EXCLUDED_SENTINEL" }],
+  cover: null,
+});
+
+const structuredDataMalformed = {
+  ...structuredDataDetail,
+  slug: "structured-data-malformed",
+  markdown: "RAW_MARKDOWN_PRIVATE_SENTINEL",
+  internalPath: "INTERNAL_PATH_PRIVATE_SENTINEL",
+  administrativeState: "ADMINISTRATIVE_STATE_PRIVATE_SENTINEL",
+};
+
 const matrixResults = Array.from({ length: 11 }, (_, index) => ({
   title: `矩阵结果 ${String(index + 1).padStart(2, "0")}`,
   summary: index === 1 ? "" : `严格公开矩阵摘要 ${index + 1}`,
@@ -184,6 +206,9 @@ const server = createServer((request, response) => {
     });
   }
 
+  if (url.pathname === "/public/articles/structured-data-hostile") return json(response, 200, structuredDataDetail);
+  if (url.pathname === "/public/articles/structured-data-malformed") return json(response, 200, structuredDataMalformed);
+
   const articleMatch = /^\/public\/articles\/([^/]+)$/.exec(url.pathname);
   if (articleMatch && relatedSlugs.includes(articleMatch[1] as (typeof relatedSlugs)[number])) {
     return json(response, 200, articleDetail(articleMatch[1] as (typeof relatedSlugs)[number]));
@@ -210,6 +235,7 @@ const server = createServer((request, response) => {
     response.socket?.destroy();
     return;
   }
+  if (relatedSlug === "structured-data-hostile") return json(response, 200, emptyRelated);
 
   if (url.pathname === "/public/search") {
     const query = (url.searchParams.get("q") ?? "").normalize("NFC").trim();

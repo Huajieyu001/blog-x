@@ -179,6 +179,48 @@ test("published article emits strict BlogPosting", async ({ page }) => {
   for (const url of browserRequests) expect(new URL(url).origin).toBe(expectedOrigin);
 });
 
+test("hostile and non-article JSON-LD boundaries", async ({ page }) => {
+  const expectedOrigin = requireGeneratedOrigin(webOrigin, "E2E_WEB_ORIGIN");
+  const browserRequests: string[] = [];
+  page.on("request", (request) => {
+    if (/^https?:/.test(request.url())) browserRequests.push(request.url());
+  });
+
+  const hostile = await page.goto(`${expectedOrigin}/posts/structured-data-hostile`);
+  expect(hostile?.status()).toBe(200);
+  const script = page.locator('script[type="application/ld+json"]');
+  await expect(script).toHaveCount(1);
+  const raw = await script.textContent();
+  expect(raw).not.toBeNull();
+  expect(raw).not.toContain("<");
+  const posting = JSON.parse(raw!);
+  expect(Object.keys(posting)).toEqual(["@context", "@type", "headline", "description", "datePublished", "mainEntityOfPage", "url"]);
+  await expect(page.locator("h1")).toHaveText(posting.headline);
+  await expect(page.locator(".articleSummary")).toHaveText(posting.description);
+  await expect(page.locator("article time[datetime]").first()).toHaveAttribute("datetime", posting.datePublished);
+  const canonicalHref = await page.locator('link[rel="canonical"]').getAttribute("href");
+  expect(posting.mainEntityOfPage).toBe(canonicalHref);
+  expect(posting.url).toBe(canonicalHref);
+  await expect(page.locator("[data-jsonld-injected]")).toHaveCount(0);
+  for (const excluded of ["SEO_DESCRIPTION_EXCLUDED_SENTINEL", "RENDERED_HTML_EXCLUDED_SENTINEL", "CATEGORY_EXCLUDED_SENTINEL", "TAG_EXCLUDED_SENTINEL", "TOC_EXCLUDED_SENTINEL"]) {
+    expect(raw).not.toContain(excluded);
+  }
+
+  for (const path of ["/", "/search"]) {
+    await page.goto(`${expectedOrigin}${path}`);
+    await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(0);
+  }
+
+  await page.goto(`${expectedOrigin}/posts/structured-data-malformed`);
+  await expect(page.getByTestId("service-unavailable")).toBeVisible();
+  await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(0);
+  const rendered = await page.content();
+  for (const sentinel of ["RAW_MARKDOWN_PRIVATE_SENTINEL", "INTERNAL_PATH_PRIVATE_SENTINEL", "ADMINISTRATIVE_STATE_PRIVATE_SENTINEL"]) {
+    expect(rendered).not.toContain(sentinel);
+  }
+  for (const url of browserRequests) expect(new URL(url).origin).toBe(expectedOrigin);
+});
+
 test.describe("related populated zero and failure", () => {
   test("renders four strict related cards after the complete article in API order", async ({ page }) => {
     const expectedOrigin = requireGeneratedOrigin(webOrigin, "E2E_WEB_ORIGIN");
