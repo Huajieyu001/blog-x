@@ -57,25 +57,25 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| STAT-01 | TBD | Pending |
-| STAT-02 | TBD | Pending |
-| STAT-03 | TBD | Pending |
-| STAT-04 | TBD | Pending |
-| STAT-05 | TBD | Pending |
-| STAT-06 | TBD | Pending |
-| ADMN-01 | TBD | Pending |
-| ADMN-02 | TBD | Pending |
-| ADMN-03 | TBD | Pending |
-| ADMN-04 | TBD | Pending |
-| ADMN-05 | TBD | Pending |
-| QUAL-01 | TBD | Pending |
-| QUAL-02 | TBD | Pending |
+| STAT-01 | Phase 11 | Pending |
+| STAT-02 | Phase 11 | Pending |
+| STAT-03 | Phase 11 | Pending |
+| STAT-04 | Phase 11 | Pending |
+| STAT-05 | Phase 12 | Pending |
+| STAT-06 | Phase 11 | Pending |
+| ADMN-01 | Phase 13 | Pending |
+| ADMN-02 | Phase 12 | Pending |
+| ADMN-03 | Phase 13 | Pending |
+| ADMN-04 | Phase 13 | Pending |
+| ADMN-05 | Phase 13 | Pending |
+| QUAL-01 | Phase 13 | Pending |
+| QUAL-02 | Phase 13 | Pending |
 
 **Coverage:**
 
 - v1.3 requirements: 13 total
-- Mapped to phases: 0
-- Unmapped: 13
+- Mapped to phases: 13
+- Unmapped: 0
 - Completed: 0/13
 
 ---
