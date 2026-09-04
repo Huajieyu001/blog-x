@@ -403,7 +403,7 @@ function assertEnv(options, expected) {
 export function assertAllowedRefreshCommand(command, args, options = {}) {
   if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string" || arg.includes("\0"))) fail("command argv is invalid");
   let allowed = false;
-  if (command === "git") allowed = exact(command, args, ["git", ["status", "--porcelain"]]) || exact(command, args, ["git", ["symbolic-ref", "--quiet", "HEAD"]]) || exact(command, args, ["git", ["rev-parse", "HEAD"]]) || exact(command, args, ["git", ["hash-object", "pnpm-lock.yaml"]]) || exact(command, args, ["git", ["ls-files", ".planning/milestones"]]) || (args.length === 2 && args[0] === "show" && /^[a-f0-9]{40}:pnpm-lock\.yaml$/.test(args[1])) || (args.length === 4 && same(args.slice(0, 2), ["merge-base", "--is-ancestor"]) && validRevision(args[2]) && validRevision(args[3])) || (args.length === 8 && same(args.slice(0, 6), ["log", "--format=", "--name-only", "-z", "-m", "--no-renames"]) && /^[a-f0-9]{40}\.\.[a-f0-9]{40}$/.test(args[6]) && args[7] === "--");
+  if (command === "git") allowed = exact(command, args, ["git", ["status", "--porcelain"]]) || exact(command, args, ["git", ["symbolic-ref", "--quiet", "HEAD"]]) || exact(command, args, ["git", ["rev-parse", "HEAD"]]) || exact(command, args, ["git", ["hash-object", "pnpm-lock.yaml"]]) || exact(command, args, ["git", ["ls-files", ".planning/milestones", ".planning/phases/06-public-discovery-data/06-VERIFICATION.md"]]) || (args.length === 2 && args[0] === "show" && /^[a-f0-9]{40}:pnpm-lock\.yaml$/.test(args[1])) || (args.length === 4 && same(args.slice(0, 2), ["merge-base", "--is-ancestor"]) && validRevision(args[2]) && validRevision(args[3])) || (args.length === 8 && same(args.slice(0, 6), ["log", "--format=", "--name-only", "-z", "-m", "--no-renames"]) && /^[a-f0-9]{40}\.\.[a-f0-9]{40}$/.test(args[6]) && args[7] === "--");
   if (command === "docker") {
     allowed = same(args, ["context", "show"])
       || (args.length === 3 && same(args.slice(0, 2), ["context", "inspect"]) && ["colima", "default"].includes(args[2]))
@@ -528,8 +528,8 @@ export function createRawRefreshFactSources({ run, fetch, root = process.cwd(), 
     async ledger() { return parseJson(cleanOutput(await run("docker-compose", [...PSQL_PREFIX, LEDGER_SQL])), "ledger query"); },
     async media() { const rows = parseJson(cleanOutput(await run("docker-compose", ["-p", PROJECT, "-f", COMPOSE_FILE, "exec", "-T", "api", "node", "-e", MEDIA_PROGRAM])), "media inventory"); return { count: rows.length, bytes: rows.reduce((sum, row) => sum + row.bytes, 0), sha256: factsSha256(rows) }; },
     async protected() {
-      const tracked = cleanOutput(await run("git", ["ls-files", ".planning/milestones"])).split("\n").filter(Boolean);
-      const paths = [...tracked, "ops/phase5-full-gate-receipt.json", ".planning/phases/06-public-discovery-data/06-VERIFICATION.md"].sort();
+      const tracked = cleanOutput(await run("git", ["ls-files", ".planning/milestones", ".planning/phases/06-public-discovery-data/06-VERIFICATION.md"])).split("\n").filter(Boolean);
+      const paths = [...tracked, "ops/phase5-full-gate-receipt.json"].sort();
       const hashes = [];
       for (const path of paths) hashes.push({ path, sha256: digest(await fs.readFile(resolve(root, path))) });
       return { count: hashes.length, sha256: factsSha256(hashes) };
