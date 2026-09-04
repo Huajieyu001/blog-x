@@ -45,6 +45,49 @@
 
 ---
 
+## Milestone: v1.1 — Content Discovery
+
+**Shipped:** 2026-09-04
+**Phases:** 3 | **Plans:** 24 | **Tasks:** 40
+
+### What Was Built
+
+- 仅公开内容的中英文全文搜索、稳定分页与可解释排序。
+- 基于分类和标签的确定性相关阅读，配套手机、平板和桌面端界面。
+- 固定 `3100` 的离线优先本地交付、完整验收、不可变收据和后继提交复验。
+
+### What Worked
+
+- 公开数据投影和严格合同让搜索、相关阅读与 SEO 保持同一隐私边界。
+- 生成端口的浏览器门禁与固定展示环境分离，既能隔离验收，又能证明用户所见版本。
+- 独立审查在归档前发现了 UAT 后继收据 allowlist 缺口，并通过回归先行完成修复。
+
+### What Was Inefficient
+
+- 本地交付证据经历了多次编号方案与 allowlist 收紧，导致后期计划偏多。
+- 历史集成测试的自启动责任分散，直到 Phase 8 才收敛为单一 fixture owner。
+- 部分规划文档的状态与实际代码完成时间不同步，增加了归档核对成本。
+
+### Patterns Established
+
+- 默认测试只包含零基础设施套件，完整集成套件只由一个封装的生成环境协调器执行。
+- 每个清洁完整 Git SHA 拥有唯一不可变交付收据，后继文档修改只能通过有限路径复验。
+- 本地完成、发布证据和生产授权始终是三个独立事实。
+
+### Key Lessons
+
+1. 收据验证器必须覆盖完整关闭链路，包括 UAT 和验证文档的后继提交。
+2. 测试清单和执行 owner 需要从第一天就建立机器可验证的完整性约束。
+3. 大步骤交付必须同时给出源码修订、可见运行时和完整收据三种证据。
+
+### Cost Observations
+
+- Model mix: GSD planner、executor、reviewer 与 verifier 多 Agent 协作。
+- Sessions: 跨多个连续开发会话。
+- Notable: 审查与收据收紧增加了返工，但关闭了静默漏测和不安全后继验证的风险。
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -52,12 +95,14 @@
 | Milestone | Phases | Plans | Key Change |
 |-----------|--------|-------|------------|
 | v1.0 | 5 | 26 | 从功能验收演进到真实执行收据，并新增大步骤后本地展示更新规则 |
+| v1.1 | 3 | 24 | 引入不可变修订收据、集成测试单 owner 与后继提交复验 |
 
 ### Cumulative Quality
 
 | Milestone | Final Gate | Receipt | Production Decision |
 |-----------|------------|---------|---------------------|
 | v1.0 | 503/503 | 30 actual result records | BLOCKED |
+| v1.1 | 66/66 final acceptance | immutable per-revision receipt | BLOCKED |
 
 ### Top Lessons (Verified Across Milestones)
 
