@@ -105,7 +105,8 @@ test("Phase 1 completes the local author-to-reader publishing journey through vi
   await expect(page).toHaveURL(/\/admin\/posts\/[0-9a-f-]+$/);
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("草稿已保存");
   const editorUrl = page.url();
-  await expect(page.getByLabel("发布时间", { exact: true })).toHaveValue("");
+  await expect(page.getByText("首次公开发布时间会在成功发布时由系统记录；预约发布时间请在下方“文章生命周期”中单独设置。")).toBeVisible();
+  await expect(page.getByLabel("首次发布时间更正", { exact: true })).toHaveCount(0);
   await expect(page.getByTestId("markdown-preview").getByRole("heading", { name: "Reliable rendering" })).toBeVisible();
   await expect(page.getByTestId("markdown-preview").locator("script, style, [data-hostile]")).toHaveCount(0);
 
@@ -116,7 +117,7 @@ test("Phase 1 completes the local author-to-reader publishing journey through vi
   await page.goto(editorUrl);
   await page.getByRole("button", { name: "发布" }).click();
   await expect(page.getByText("状态：已发布")).toBeVisible();
-  const publishedAt = await page.getByLabel("发布时间", { exact: true }).inputValue();
+  const publishedAt = await page.getByLabel("首次发布时间更正", { exact: true }).inputValue();
   expect(publishedAt).not.toBe("");
 
   await page.goto(webOrigin);
@@ -141,10 +142,10 @@ test("Phase 1 completes the local author-to-reader publishing journey through vi
   await page.goto(editorUrl);
   await page.getByLabel("标题").fill(editedTitle);
   await page.getByLabel("摘要").fill(`${summary} Edited.`);
-  await page.getByLabel("发布时间", { exact: true }).fill("2026-01-02T03:04");
+  await page.getByLabel("首次发布时间更正", { exact: true }).fill("2026-01-02T03:04");
   await page.getByRole("button", { name: "保存更改" }).click();
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("更改已保存");
-  await expect(page.getByLabel("发布时间", { exact: true })).toHaveValue(publishedAt);
+  await expect(page.getByLabel("首次发布时间更正", { exact: true })).toHaveValue(publishedAt);
 
   await page.getByLabel("Slug").fill(changedSlug);
   await page.getByRole("button", { name: "保存更改" }).click();
@@ -159,7 +160,7 @@ test("Phase 1 completes the local author-to-reader publishing journey through vi
 
   await page.getByRole("button", { name: "下线" }).click();
   await expect(page.getByText("状态：已下线")).toBeVisible();
-  await expect(page.getByLabel("发布时间", { exact: true })).toHaveValue(publishedAt);
+  await expect(page.getByLabel("首次发布时间更正", { exact: true })).toHaveValue(publishedAt);
   await page.goto(webOrigin);
   await expect(page.getByRole("link", { name: editedTitle, exact: true })).toHaveCount(0);
   const unpublishedNotFound = await expectUnavailable(page, changedSlug);
@@ -167,7 +168,7 @@ test("Phase 1 completes the local author-to-reader publishing journey through vi
   await page.goto(editorUrl);
   await page.getByRole("button", { name: "重新发布" }).click();
   await expect(page.getByText("状态：已发布")).toBeVisible();
-  await expect(page.getByLabel("发布时间", { exact: true })).toHaveValue(publishedAt);
+  await expect(page.getByLabel("首次发布时间更正", { exact: true })).toHaveValue(publishedAt);
   expect((await context.request.get(`${webOrigin}/posts/${changedSlug}`)).status()).toBe(200);
 
   const draftSlug = `${runId}-hidden-draft`;

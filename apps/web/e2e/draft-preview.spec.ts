@@ -52,7 +52,8 @@ test("administrator saves, recovers, and responsively previews a complete Markdo
   await expect(page.getByLabel("Slug")).toHaveValue(manualSlug);
 
   await page.getByLabel("摘要").fill("完整元数据摘要");
-  await page.getByLabel("发布时间").fill("2026-08-07T16:30");
+  await expect(page.getByText("首次公开发布时间会在成功发布时由系统记录；预约发布时间请在下方“文章生命周期”中单独设置。")).toBeVisible();
+  await expect(page.getByLabel("首次发布时间更正", { exact: true })).toHaveCount(0);
   await page.getByLabel("SEO 描述").fill("完整元数据 SEO 描述");
   const markdown = "# 浏览器预览\n\n正文 **保留**\n\n<script>alert(1)</script>";
   await page.getByLabel("Markdown").fill(markdown);
@@ -69,7 +70,8 @@ test("administrator saves, recovers, and responsively previews a complete Markdo
   await expect(page.getByLabel("摘要")).toHaveValue("完整元数据摘要");
   await expect(page.getByLabel("Slug")).toHaveValue(manualSlug);
   await expect(page.getByLabel("Markdown")).toHaveValue(markdown);
-  await expect(page.getByLabel("发布时间")).toHaveValue("2026-08-07T16:30");
+  await expect(page.getByText("首次公开发布时间会在成功发布时由系统记录；预约发布时间请在下方“文章生命周期”中单独设置。")).toBeVisible();
+  await expect(page.getByLabel("首次发布时间更正", { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("SEO 描述")).toHaveValue("完整元数据 SEO 描述");
 
   let releaseSave!: () => void;
