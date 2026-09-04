@@ -69,6 +69,8 @@
 .correctionToggle { display: flex !important; grid-template-columns: auto 1fr; align-items: center; margin-top: 16px; }
 .correctionToggle input { width: auto; }
 .lifecycle { display: flex; align-items: center; gap: 18px; margin-top: 22px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.nativeLifecycleFallback { display: block; }
+@media (scripting: enabled) { .nativeLifecycleFallback { display: none; } }
 .lifecycleState { min-width: 8em; margin: 0; font-weight: 600; }
 .scheduleControls { display: grid; min-width: 0; gap: 8px; }
 .scheduledAt { margin: 0; color: var(--muted); font: .82rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }

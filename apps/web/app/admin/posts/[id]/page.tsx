@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import ArticleEditor from "../../_components/ArticleEditor";
 import ArticleActions from "../../_components/ArticleActions";
 import { getAdminPost, getAdminTaxonomy } from "../../../lib/api";
+import styles from "../../admin.module.css";
 
 export default async function EditDraftPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -16,7 +17,9 @@ export default async function EditDraftPage({ params }: { params: Promise<{ id: 
   return (
     <>
       <ArticleEditor post={post} heading="编辑草稿" categories={categories} tags={tags} />
-      <noscript><ArticleActions post={post} /></noscript>
+      <div className={styles.nativeLifecycleFallback} data-testid="native-lifecycle-fallback">
+        <ArticleActions post={post} />
+      </div>
     </>
   );
 }

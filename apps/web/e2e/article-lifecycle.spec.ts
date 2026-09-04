@@ -28,11 +28,13 @@ test("draft completes publish, edit, slug confirmation, unpublish, republish, an
   await page.getByLabel("Markdown").fill("# Browser lifecycle\n\nOriginal content");
   await page.getByRole("button", { name: "保存草稿" }).click();
   await expect(page).toHaveURL(/\/admin\/posts\/[0-9a-f-]+$/);
+  await expect(page.getByTestId("native-lifecycle-fallback")).toBeHidden();
   await expect(page.getByRole("button", { name: "发布" })).toBeVisible();
   await expect(page.getByRole("button", { name: "下线" })).toHaveCount(0);
 
-  await page.getByLabel("预约发布时间").fill("2032-01-01T09:30");
-  await page.getByLabel("UTC 偏移").fill("+08:00");
+  const scheduleForm = page.getByRole("form", { name: "预约发布" });
+  await scheduleForm.getByLabel("预约发布时间").fill("2032-01-01T09:30");
+  await scheduleForm.getByLabel("UTC 偏移").fill("+08:00");
   await page.getByRole("button", { name: "设定预约" }).click();
   await expect(page.getByRole("status", { name: "生命周期状态" })).toHaveText("已设定预约");
   await expect(page.getByText("当前预约：2032-01-01T01:30:00.000Z")).toBeVisible();
@@ -42,7 +44,7 @@ test("draft completes publish, edit, slug confirmation, unpublish, republish, an
     const scheduleButton = await page.getByRole("button", { name: "改期预约" }).boundingBox();
     expect(scheduleButton?.height).toBeGreaterThanOrEqual(44);
   }
-  await page.getByLabel("预约发布时间").fill("2032-01-02T09:30");
+  await scheduleForm.getByLabel("预约发布时间").fill("2032-01-02T09:30");
   await page.getByRole("button", { name: "改期预约" }).click();
   await expect(page.getByRole("status", { name: "生命周期状态" })).toHaveText("改期预约成功");
   await expect(page.getByText("当前预约：2032-01-02T01:30:00.000Z")).toBeVisible();
@@ -138,6 +140,7 @@ test("schedule form remains a no-script, keyboard-operable same-origin control",
     await page.goto(detailUrl);
 
     const schedule = page.getByRole("form", { name: "预约发布" });
+    await expect(page.getByTestId("native-lifecycle-fallback")).toBeVisible();
     await expect(schedule).toBeVisible();
     const scheduleAction = new URL(await schedule.getAttribute("action") ?? "", webOrigin);
     expect(scheduleAction.origin).toBe(new URL(webOrigin).origin);
