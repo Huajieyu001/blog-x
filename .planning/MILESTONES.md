@@ -1,5 +1,31 @@
 # Project Milestones: Blog X
 
+## v1.2 Publishing Quality (Shipped: 2026-09-05)
+
+**Delivered:** 与可见公开内容一致的安全 `BlogPosting` 结构化数据，以及可预约、改期、取消、并发安全并在到期前严格保密的受控定时发布闭环；生产继续保持 `BLOCKED`。
+
+**Phases completed:** 2 phases, 4 plans, 11 tasks
+
+**Key accomplishments:**
+
+- Published articles now expose one exact, safe seven-field BlogPosting record that is built from reader-visible public facts and stays absent outside a validated article route.
+- Separate, attributed UTC schedule authority now survives strict contracts, PostgreSQL migration checks, portable export, and local recovery.
+- Draft schedules now use PostgreSQL transaction time, retained-row locks, exact audit evidence, and responsive native admin forms without treating a deadline as public history.
+- A local, bounded due publisher now atomically turns eligible retained drafts into public articles while every public reader rejects future publication times at the database boundary.
+
+**Stats:**
+
+- 91 files changed from the v1.1 tag through the verified v1.2 closeout
+- 8,474 insertions and 353 deletions; 33,643 TypeScript/TSX/MJS lines in the current application and verification owners
+- 2 phases, 4 plans, 11 planned tasks
+- 2 local calendar days from initialization to ship (2026-09-04 → 2026-09-05)
+
+**Git range:** `29c96f1` → `03d0e3c`
+
+**What's next:** 由产品负责人选择下一个纯本地里程碑；隐私保护聚合统计是已记录候选，服务器、TLS 与生产调度仍冻结。
+
+---
+
 ## v1.1 Content Discovery (Shipped: 2026-09-04)
 
 **Delivered:** 仅公开内容的站内搜索、确定性相关阅读和可复现的固定本地交付链路，全部保持生产发布 `BLOCKED`。

@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Publishing Quality
-current_phase: 10
-current_phase_name: second of 2 in v1.2
-status: complete
+status: Awaiting next milestone
 stopped_at: Phase 10 verified; v1.2 Publishing Quality complete
-last_updated: "2026-09-04T19:52:35Z"
+last_updated: "2026-09-04T19:57:35.538Z"
 last_activity: 2026-09-05
-last_activity_desc: Phase 10 passed independent review and revision-bound 74/74 local delivery verification
+last_activity_desc: Milestone v1.2 completed and archived
 progress:
   total_phases: 2
   completed_phases: 2
   total_plans: 4
   completed_plans: 4
   percent: 100
+current_phase: 10
+current_phase_name: second of 2 in v1.2
 ---
 
 # Project State
@@ -28,12 +28,10 @@ See: .planning/PROJECT.md (updated 2026-09-05)
 
 ## Current Position
 
-Phase: 10 of 10 (second of 2 in v1.2)
-Plan: 3 of 3 in current phase
-Status: Complete
-Last activity: 2026-09-05 — Phase 10 verified against delivery revision `b0556cb`
-
-Progress: [██████████] 100%
+Phase: Milestone v1.2 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-09-05 — Milestone v1.2 completed and archived
 
 ## Performance Metrics
 
@@ -93,3 +91,8 @@ None. The completed milestone has no remaining autonomous implementation task.
 Last session: 2026-09-04T19:52:35Z
 Stopped at: Phase 10 verified; v1.2 Publishing Quality complete
 Resume file: .planning/phases/10-controlled-scheduled-publishing/10-VERIFICATION.md
+
+## Operator Next Steps
+
+- Start the next milestone with $gsd-new-milestone
+- The v1.2 ROADMAP and REQUIREMENTS snapshots are archived; active requirements and phase directories were intentionally preserved because this autonomous goal forbids destructive removal.

@@ -88,6 +88,49 @@
 
 ---
 
+## Milestone: v1.2 — Publishing Quality
+
+**Shipped:** 2026-09-05
+**Phases:** 2 | **Plans:** 4 | **Tasks:** 11
+
+### What Was Built
+
+- 已发布文章页从严格公开投影输出唯一、安全且与可见内容一致的七字段 `BlogPosting` JSON-LD。
+- 管理员可在响应式后台预约、改期和取消草稿发布，JavaScript 与无脚本路径都保持同一 UTC 时刻和正确目标日期时区。
+- 有界 DB-only 任务用 PostgreSQL 时间、稳定顺序和 `FOR UPDATE SKIP LOCKED` 并发安全地发布到期草稿；所有公开表面在到期前严格不可见。
+
+### What Worked
+
+- 先用独立深度审查暴露时区、恢复运行时和数据库元数据权威缺口，再用小型测试先行 quick tasks 逐项关闭，最终复审为零问题。
+- 固定 `local:deliver` 将 reviewed implementation SHA、57 个生成集成结果、17 个响应式浏览器结果和实际 `3100` 镜像绑定为一份不可变收据。
+- 数据库时间、行锁、公开投影和便携恢复各自只有一个权威，减少了跨层隐式推断。
+
+### What Was Inefficient
+
+- 初次执行摘要保留了过期的浏览器 fixture 阻塞与网络移交状态，直到里程碑收尾才统一回写最终证据。
+- 恢复验证曾复用父环境的 Web 构建与 Compose 权威，导致当前源码和旧缓存合同混合；需要两轮 quick task 才完整隔离。
+- GSD quick summary 的 `status: complete` 元数据有两处遗漏，造成里程碑审计误报未完成任务。
+
+### Patterns Established
+
+- 预约时间由完整的“本地墙钟时间 + 目标日期数值偏移”组成，SSR、hydration、无脚本和 DST 场景必须往返同一 UTC instant。
+- 定时发布命令必须显式提供 1–100 的有界 limit，在连接数据库前拒绝任何其他参数。
+- 恢复验证必须为自身 loopback origin 构建 Web 产物，并在结束时证明精确容器、卷与临时路径均已消失。
+
+### Key Lessons
+
+1. 日期时区测试必须覆盖目标日期的 DST，而不能使用“今天”的偏移代替未来日期权威。
+2. 通过 `down` 命令不等于清理完成；隔离验收需要独立证明资源不存在并保留主错误与清理错误。
+3. 计划、摘要、审查、交付收据和固定运行时必须在里程碑收尾时收敛到同一实现修订。
+
+### Cost Observations
+
+- Model mix: GSD planner、executor、reviewer、verifier 与并行只读审计 Agent。
+- Sessions: 一个长时间自主 Goal 跨多轮持续推进。
+- Notable: 主要成本来自完整生成环境和恢复/并发验证，但换来了 74/74 的修订绑定证据及零遗留实现缺口。
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -96,6 +139,7 @@
 |-----------|--------|-------|------------|
 | v1.0 | 5 | 26 | 从功能验收演进到真实执行收据，并新增大步骤后本地展示更新规则 |
 | v1.1 | 3 | 24 | 引入不可变修订收据、集成测试单 owner 与后继提交复验 |
+| v1.2 | 2 | 4 | 将数据库时间、目标日期时区、并发发布和恢复运行时收敛为单一可验证权威 |
 
 ### Cumulative Quality
 
@@ -103,8 +147,10 @@
 |-----------|------------|---------|---------------------|
 | v1.0 | 503/503 | 30 actual result records | BLOCKED |
 | v1.1 | 66/66 final acceptance | immutable per-revision receipt | BLOCKED |
+| v1.2 | 74/74 final acceptance | reviewed-revision immutable receipt | BLOCKED |
 
 ### Top Lessons (Verified Across Milestones)
 
 1. 用户可见环境更新必须和代码完成、自动化验收同等对待。
 2. 生产授权永远不能由本地成功或自动化流程隐式推导。
+3. 跨环境恢复与排期时间必须绑定自己的运行时/目标日期权威，不能继承调用者的隐式状态。
