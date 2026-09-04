@@ -1,18 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 08-reliable-local-delivery
 source: [08-01-SUMMARY.md, 08-02-SUMMARY.md, 08-03-SUMMARY.md, 08-04-SUMMARY.md, 08-05-SUMMARY.md, 08-06-SUMMARY.md, 08-07-SUMMARY.md, 08-08-SUMMARY.md, 08-09-SUMMARY.md]
 started: 2026-09-04T05:08:12Z
-updated: 2026-09-04T05:15:30Z
+updated: 2026-09-04T05:45:58Z
 ---
 
 ## Current Test
 
-number: 2
-name: 执行固定本地交付
-expected: |
-  运行 `corepack pnpm local:deliver` 后，当前干净 `dev` 修订被安全、可复现地交付到固定 `3100` 环境，命令不会获得云服务器或生产部署能力。
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -22,15 +18,21 @@ result: pass
 
 ### 2. 执行固定本地交付
 expected: 运行 `corepack pnpm local:deliver` 后，当前干净 `dev` 修订被安全、可复现地交付到固定 `3100` 环境，命令不会获得云服务器或生产部署能力。
-result: [pending]
+result: pass
+source: automated
+evidence: `corepack pnpm local:deliver` completed for revision `1f47a8dc29211defa04280606b26f1b2676fa8dc`.
 
 ### 3. 打开固定本地预览
 expected: 在浏览器打开 `http://127.0.0.1:3100`，能够看到由固定 `blogxlocal` 环境提供的 Blog X 页面，并可访问搜索与健康检查入口。
-result: [pending]
+result: pass
+source: automated
+evidence: Delivery browser acceptance passed 15/15; live homepage and `/api/health` returned successfully from `127.0.0.1:3100`.
 
 ### 4. 核对完整集成与运行时证据
 expected: 交付结果显示完整生成式集成与浏览器检查全部通过、三个本地服务健康、两个持久卷保留、主要路由正常，并保持生产状态 `BLOCKED`。
-result: [pending]
+result: pass
+source: automated
+evidence: Revision receipt records 66/66 acceptance checks passing, retained canonical runtime evidence, healthy routes, and `releaseState: BLOCKED`.
 
 ### 5. Sealed v1.1 receipt authority with branch-qualified clean revision checks.
 expected: Sealed v1.1 receipt authority with branch-qualified clean revision checks.
@@ -154,14 +156,16 @@ coverage_id: D3
 
 ### 25. 确认最新修订的机器可读结果
 expected: 最终机器可读证据绑定当前交付修订，证明固定 `3100` 环境提供最新版本；本地验收成功不改变生产发布 `BLOCKED` 状态。
-result: [pending]
+result: pass
+source: automated
+evidence: `ops/local-deliveries/1f47a8dc29211defa04280606b26f1b2676fa8dc.json` independently verified with release blocked.
 
 ## Summary
 
 total: 25
-passed: 21
+passed: 25
 issues: 0
-pending: 4
+pending: 0
 skipped: 0
 blocked: 0
 
