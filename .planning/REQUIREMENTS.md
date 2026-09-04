@@ -46,19 +46,19 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEO-03 | TBD | Pending |
-| SEO-04 | TBD | Pending |
-| SEO-05 | TBD | Pending |
-| CONT-05 | TBD | Pending |
-| CONT-06 | TBD | Pending |
-| CONT-07 | TBD | Pending |
-| CONT-08 | TBD | Pending |
+| SEO-03 | Phase 9 | Pending |
+| SEO-04 | Phase 9 | Pending |
+| SEO-05 | Phase 9 | Pending |
+| CONT-05 | Phase 10 | Pending |
+| CONT-06 | Phase 10 | Pending |
+| CONT-07 | Phase 10 | Pending |
+| CONT-08 | Phase 10 | Pending |
 
 **Coverage:**
 
 - v1.2 requirements: 7 total
-- Mapped to phases: 0
-- Unmapped: 7
+- Mapped to phases: 7
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-09-04 for v1.2 Publishing Quality*
