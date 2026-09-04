@@ -1,64 +1,64 @@
-# Requirements: Blog X v1.1 Content Discovery
+# Requirements: Blog X v1.2 Publishing Quality
 
-**Defined:** 2026-08-15
+**Defined:** 2026-09-04
 **Core Value:** 博主能够可靠地发布和保存 Markdown 内容，访客能够持续、快速地通过博客域名阅读已发布文章。
 
-## v1.1 Requirements
+## v1.2 Requirements
 
-### Search
+### Structured Article Data
 
-- [x] **SRCH-01**: 访客可按标题、摘要和 Markdown 正文搜索已发布文章；草稿、下线和已删除文章永不出现在结果中。
-- [x] **SRCH-02**: 搜索支持中文与英文普通查询、稳定分页、明确的空查询/无结果/服务异常状态，并限制查询长度和资源消耗。
-- [x] **SRCH-03**: 搜索结果按可解释且确定性的相关度排序，标题匹配优先于摘要和正文，排序相同时使用稳定公开时间与 UUID 次序。
+- [ ] **SEO-03**: 访客访问已发布文章时，页面输出与可见内容和 canonical URL 一致的 Schema.org `BlogPosting` JSON-LD。
+- [ ] **SEO-04**: 结构化数据只使用公开投影中的严格字段，不包含 Markdown 源文、内部地址、存储路径或管理状态。
+- [ ] **SEO-05**: 草稿、已下线、已删除、未知文章与非文章页面不得输出文章结构化数据，且输出必须可被自动化解析验证。
 
-### Related Reading
+### Scheduled Publishing
 
-- [x] **READ-08**: 文章详情展示仅含其他已发布文章的相关文章，优先共享分类与标签，并在分数相同时保持确定性顺序。
-- [x] **READ-09**: 相关文章在无匹配、文章状态变化及手机/桌面布局下保持诚实、可访问且不会泄露非公开元数据。
-
-### Local Delivery
-
-- [x] **DEVX-01**: 开发者可用一条固定命令更新 `blogxlocal` Web/API，保留 PostgreSQL 与媒体卷，执行幂等迁移并等待健康状态。
-- [x] **DEVX-02**: 本地更新在 registry 不可用时优先复用已安装依赖完成离线构建，且不会误建另一 Compose 项目或把临时验收 URL 固化到 `3100`。
-- [x] **DEVX-03**: 每个 v1.1 大步骤完成后，自动化验收必须检查当前 Git revision 对应的本地页面、API 健康和主要公开路由，并报告可见变化。
+- [ ] **CONT-05**: 管理员可为草稿设置未来发布时间，并在到期前查看、改期或取消该计划。
+- [ ] **CONT-06**: 已预约但未到期的文章在首页、搜索、分类、标签、归档、RSS、Sitemap 和相关阅读中始终不可见。
+- [ ] **CONT-07**: 受控的本地任务只处理已到期文章，重试或并发执行时保持幂等，并保留首次公开时间和稳定 slug 语义。
+- [ ] **CONT-08**: 预约、改期、取消与到期发布均通过既有单管理员认证/审计边界记录，无效时间、非草稿状态和部分失败必须失败关闭。
 
 ## Acceptance Constraints
 
-- 搜索与相关文章只使用现有 PostgreSQL，不引入 Elasticsearch、Meilisearch 或其他常驻搜索服务。
-- 浏览器继续只访问同源 Web 入口；搜索 API、媒体和文章请求不暴露副服务器地址。
-- 所有新页面与组件必须适配手机、平板和桌面，并支持现有浅色/深色/跟随系统主题。
-- 搜索页不得进入 Sitemap；无效或非规范查询必须采用明确的 canonical/noindex 策略。
-- 主服务器保持冻结，生产发布状态保持 `BLOCKED`；v1.1 的完成只代表本地实现与验收完成。
+- 所有开发、数据库和浏览器验证均在本地生成环境执行，不连接任何云服务器。
+- 定时发布不引入 Redis、消息队列或常驻重型调度服务；调度时间以 UTC 持久化，界面明确呈现时区。
+- 工作任务必须有界扫描、数据库级并发保护、可观测结果和非零失败退出，不得将生产任务激活纳入本里程碑。
+- JSON-LD 必须使用受控 JSON 序列化防止 `</script>` 等注入边界，且只能派生于已验证的公开来源。
+- 每个大步骤仍须通过固定 `blogxlocal` / `http://127.0.0.1:3100` 交付链路，生产决定始终为 `BLOCKED`。
+- 新增管理界面必须适配手机、平板和桌面端，并保持键盘可达、无脚本核心提交与现有浅色/深色/跟随系统主题。
+
+## Future Requirements
+
+- **STAT-01**: 在明确隐私、保留周期和去重口径后提供聚合访问统计。
+- **STAT-02**: 管理员可在后台查看不能反查单个访客的内容趋势。
+- 生产调度器激活、跨节点安全网络、TLS 和主服务器发布，继续受生产冻结限制。
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| 个性化推荐与用户画像 | 当前没有访客账户，且不符合隐私与低资源约束 |
-| 外部搜索集群 | 两台低配置服务器不适合新增常驻重型服务 |
-| 搜索历史、热门词与行为追踪 | 需先明确隐私策略与统计口径 |
-| 自动保存、定时发布与审计日志 | 保留为后续里程碑，不与内容发现范围混合 |
-| 生产部署与主服务器更新 | 备案审查冻结与真实发布门禁尚未解除 |
+| 私密文章与访客账户 | 需要新的授权模型，与当前单管理员边界不同 |
+| 自建评论与邮件订阅 | 需要审核、反垃圾、邮件供应商和隐私决策 |
+| 分布式任务队列 | 两台低配服务器的当前规模不值得引入常驻组件 |
+| 任何生产连接或部署 | 用户明确禁止服务器操作，生产仍处于冻结状态 |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SRCH-01 | Phase 6 | Complete |
-| SRCH-02 | Phase 6 | Complete |
-| SRCH-03 | Phase 6 | Complete |
-| READ-08 | Phase 6 | Complete |
-| READ-09 | Phase 7 | Complete |
-| DEVX-01 | Phase 8 | Complete — verified 2026-08-30 |
-| DEVX-02 | Phase 8 | Complete — verified 2026-08-30 |
-| DEVX-03 | Phase 8 | Complete — verified 2026-08-30 |
+| SEO-03 | TBD | Pending |
+| SEO-04 | TBD | Pending |
+| SEO-05 | TBD | Pending |
+| CONT-05 | TBD | Pending |
+| CONT-06 | TBD | Pending |
+| CONT-07 | TBD | Pending |
+| CONT-08 | TBD | Pending |
 
 **Coverage:**
 
-- v1.1 requirements: 8 total
-- Mapped to phases: 8
-- Complete: 8
-- Unmapped: 0 ✓
+- v1.2 requirements: 7 total
+- Mapped to phases: 0
+- Unmapped: 7
 
 ---
-*Requirements defined: 2026-08-15 for v1.1 Content Discovery*
+*Requirements defined: 2026-09-04 for v1.2 Publishing Quality*
