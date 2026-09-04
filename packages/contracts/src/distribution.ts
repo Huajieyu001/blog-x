@@ -58,6 +58,9 @@ const portableArticleSchema = z.object({
   if (hasScheduledAt && (article.scheduledAt === null) !== (article.scheduledByAdministratorId === null)) {
     context.addIssue({ code: "custom", message: "schedule authority fields must both be null or both have values", path: ["scheduledAt"] });
   }
+  if (article.scheduledAt != null && article.scheduledByAdministratorId != null && (article.status !== "draft" || article.deletedAt !== null)) {
+    context.addIssue({ code: "custom", message: "schedule authority is allowed only for a retained draft", path: ["scheduledAt"] });
+  }
 });
 
 const portableAboutSchema = z.object({

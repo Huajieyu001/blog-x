@@ -29,7 +29,7 @@ export const auditEvents = pgTable("audit_events", {
   occurredAt: timestamp("occurred_at", { withTimezone: true, precision: 3 }).defaultNow().notNull(),
 }, (table) => [
   index("audit_events_newest_index").on(table.occurredAt.desc(), table.id.desc()),
-  check("audit_events_event_check", sql`${table.event} in ('auth.login.succeeded', 'auth.logout.succeeded', 'article.created', 'article.updated', 'article.published', 'article.unpublished', 'article.republished', 'article.deleted', 'category.created', 'category.updated', 'category.deleted', 'tag.created', 'tag.updated', 'tag.deleted', 'about.saved', 'about.published')`),
+  check("audit_events_event_check", sql`${table.event} in ('auth.login.succeeded', 'auth.logout.succeeded', 'article.created', 'article.updated', 'article.published', 'article.unpublished', 'article.republished', 'article.deleted', 'article.scheduled', 'article.rescheduled', 'article.schedule_cancelled', 'article.scheduled_published', 'category.created', 'category.updated', 'category.deleted', 'tag.created', 'tag.updated', 'tag.deleted', 'about.saved', 'about.published')`),
   check("audit_events_target_check", sql`(
     (${table.event} in ('auth.login.succeeded', 'auth.logout.succeeded') and ${table.targetType} = 'administrator' and ${table.targetId} = ${table.actorAdministratorId})
     or (${table.event} like 'article.%' and ${table.targetType} = 'article' and ${table.targetId} is not null)

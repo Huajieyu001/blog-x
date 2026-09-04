@@ -57,6 +57,13 @@
       "when": 1788151632813,
       "tag": "0007_admin-audit",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788549919283,
+      "tag": "0008_scheduled-publishing",
+      "breakpoints": true
     }
   ]
 }
