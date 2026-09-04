@@ -67,7 +67,7 @@ Plans:
 
 ### Phase 8: Reliable Local Delivery
 
-**Goal:** 每个大步骤完成后，最新代码都能安全、可复现地出现在固定 `3100` 环境并获得机器可读验证。
+**Goal:** As a Blog X developer, I want to deliver every major-step revision safely and reproducibly to the fixed local port 3100 environment, so that machine-readable verification proves the latest version is available.
 **Mode:** mvp
 **Depends on:** Phase 7
 **Requirements:** DEVX-01, DEVX-02, DEVX-03

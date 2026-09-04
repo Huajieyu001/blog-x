@@ -6,9 +6,9 @@ current_phase: 08
 current_phase_name: Reliable Local Delivery
 status: complete
 stopped_at: Completed 08-09-PLAN.md
-last_updated: "2026-09-04T00:00:00.000Z"
+last_updated: "2026-09-04T05:02:34.854Z"
 last_activity: 2026-09-04
-last_activity_desc: Completed quick task 260901-jgl with Phase 08 API coverage gate passing; production release remains BLOCKED
+last_activity_desc: Phase 08 goal normalized to the canonical MVP user story; production release remains BLOCKED
 progress:
   total_phases: 3
   completed_phases: 3
@@ -204,6 +204,10 @@ Decisions are logged in PROJECT.md Key Decisions table.
 |---|-------------|------|--------|-----------|
 | 260831-hh1 | Add administrator audit trail | 2026-09-01 | 117c328 | [260831-hh1-add-administrator-audit-trail](./quick/260831-hh1-add-administrator-audit-trail/) |
 | 260901-jgl | 补齐 Phase 08 的 API COVERAGE.md 覆盖矩阵，准确记录本阶段没有外部 API 集成并给出 OPT-OUT 理由，使 api-coverage.verify-pre 门禁通过；不得修改运行时代码、服务器配置或连接云服务器。 | 2026-09-01 | af44025 | [260901-jgl-phase-08-api-coverage-md-api-opt-out-api](./quick/260901-jgl-phase-08-api-coverage-md-api-opt-out-api/) |
+
+### Roadmap Evolution
+
+- Phase 08 edited: edited fields: goal
 
 ## Session Continuity
 
