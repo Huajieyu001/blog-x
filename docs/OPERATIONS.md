@@ -27,6 +27,22 @@ corepack pnpm local:verify -- --phase4-operations
 
 该命令只使用 Docker/Colima、生成的 Compose 命名空间和回环地址；它会终止生成环境中的 API 容器并验证 30 秒内恢复、重启计数增加以及数据库和媒体卷身份不变。
 
+## 本地一次性处理到期排期文章
+
+此操作仅限已手动启动的本地 `blogxlocal` Compose 项目。执行前必须确认 PostgreSQL 已健康、已完成迁移且已通过 schema 校验；不要在生产或任何远程主机上改写、执行此命令。
+
+```bash
+docker-compose -p blogxlocal -f compose.yaml run --rm api corepack pnpm --filter @blog-x/api publish:due -- --limit=25
+```
+
+命令必须且只能带一个 `--limit=N` 参数，`N` 必须是 1 到 100 的安全整数。示例中的 `25` 是操作者本次选择的上限，不是默认值。参数不合法会在创建 PostgreSQL 连接池之前失败。
+
+该命令没有 dry-run：它会在一次 PostgreSQL 事务中，按确定性顺序声明并立即发布最多 N 篇仍保留、仍为草稿且到期的本地文章。`CURRENT_TIMESTAMP`（PostgreSQL 事务时间）是唯一的到期与发布时钟，不使用 API 主机时间。候选校验、文章更新和审计必须一起提交；任何候选或事务失败都会回滚整个批次。每次调用只处理一个批次、关闭连接池并退出；这是一个 one-shot 操作，不拥有定时器、队列、HTTP 路由、守护进程或进程内调度器。若仍有待处理文章，请在确认本地状态后有意识地重新执行同一命令。
+
+成功时标准输出仅包含 JSON 的 `format`、`version`、`command`、UTC `at`、`limit`、`claimed`、`published` 与 `publishedIds`。失败时标准错误仅包含同一信封、可选的 `limit` 与类型化 `code`（`invalid_arguments`、`configuration_failed`、`invalid_candidate` 或 `transaction_failed`），并以 nonzero 状态退出。两类输出都不得包含正文、标题、slug、数据库 URL、凭据、Cookie 或原始环境变量；日志采集也应保持这一脱敏边界。
+
+此处记录的是本地人工一次性操作，不是生产调度器启用或部署授权。它不会创建自动任务，也不会解除生产冻结；生产发布和生产排期均继续为 **BLOCKED**。
+
 ## 生产待决事项
 
 以下内容尚未选择或测量，不能由本地通过结果代替：生产资源限制、日志采集目的地、告警接收人、证书与续期状态、节点间防火墙/加密链路、异机备份目的地、保留策略、加密密钥权威以及 RPO/RTO。

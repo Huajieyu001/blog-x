@@ -65,6 +65,18 @@ docker-compose -p blogxlocal -f compose.yaml down --remove-orphans
 
 再次启动时可重复执行迁移；迁移带有 PostgreSQL advisory lock，并应收敛到唯一账本记录。普通停止不删除数据卷。
 
+### 本地一次性处理到期排期文章
+
+在 `blogxlocal` 已启动、PostgreSQL 健康且已完成迁移与 schema 校验后，管理员可以手动处理一批已到期的本地草稿：
+
+```bash
+docker-compose -p blogxlocal -f compose.yaml run --rm api corepack pnpm --filter @blog-x/api publish:due -- --limit=25
+```
+
+`25` 只是本次操作选择的批量大小，不是默认值；每次必须且只能提供一个 `--limit=N`，其中 `N` 为 1 到 100 的安全整数。此操作没有 dry-run，会立刻发布最多 N 篇符合条件的本地草稿；到期判断只使用 PostgreSQL 的事务时间。命令处理完一批即退出，不创建定时器、队列、HTTP 端点或常驻调度器。请按需、有意识地重新执行，而不是把它理解为自动生产调度。
+
+成功会输出经过脱敏的 JSON 摘要，失败会输出带类型代码的脱敏 JSON 并以非零状态退出；不会输出文章内容、标题、slug、数据库地址、凭据或 Cookie。详细的前置条件、输出字段与重试边界见 [本地定时发布操作说明](docs/OPERATIONS.md#本地一次性处理到期排期文章)。该命令只适用于本地 `blogxlocal` 环境，不启用生产排期；生产仍为 **BLOCKED**。
+
 ## 常用开发检查
 
 ```bash
