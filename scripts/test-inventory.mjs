@@ -10,6 +10,7 @@ const entries = [
   { path: "packages/contracts/src/tracer.test.ts", kind: "contracts-unit", scope: "default", fixtureOwner: null },
   { path: "apps/api/test/markdown-renderer.test.ts", kind: "api-unit", scope: "default", fixtureOwner: null },
   { path: "apps/api/test/security-hardening.test.ts", kind: "api-unit", scope: "default", fixtureOwner: null },
+  { path: "apps/web/app/admin/_components/article-actions-schedule.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
   { path: "apps/web/app/admin/_components/article-editor-recovery.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
   { path: "apps/web/app/lib/search-discovery.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
   { path: "apps/web/app/lib/site-metadata.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },

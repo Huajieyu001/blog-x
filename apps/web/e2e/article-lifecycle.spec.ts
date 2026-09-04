@@ -120,6 +120,67 @@ test("draft completes publish, edit, slug confirmation, unpublish, republish, an
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+test("schedule form keeps the selected local wall time and target-date browser offset together", async ({ browser }) => {
+  const newYorkContext = await browser.newContext({ timezoneId: "America/New_York" });
+  try {
+    const login = await newYorkContext.request.post(`${webOrigin}/api/auth/login`, {
+      headers: { origin: webOrigin, "content-type": "application/json" },
+      data: { username, password },
+    });
+    expect(login.status()).toBe(200);
+
+    const slug = `browser-timezone-schedule-${runId}`;
+    const created = await newYorkContext.request.post(`${webOrigin}/api/admin/posts`, {
+      headers: { origin: webOrigin, "content-type": "application/json" },
+      data: { title: "Timezone schedule", summary: "", coverUrl: "", slug, markdown: "# Timezone schedule", publishedAt: null, seoDescription: "" },
+    });
+    expect(created.status()).toBe(201);
+    const article = await created.json() as { id: string };
+    const detailUrl = `${webOrigin}/admin/posts/${article.id}`;
+    const page = await newYorkContext.newPage();
+    await page.goto(detailUrl);
+
+    const schedule = page.getByRole("form", { name: "预约发布" });
+    const scheduleAction = new URL(await schedule.getAttribute("action") ?? "", webOrigin);
+    await schedule.getByLabel("预约发布时间").fill("2032-01-01T09:30");
+    await expect(schedule.getByLabel("UTC 偏移")).toHaveValue("-05:00");
+    const [winterResponse] = await Promise.all([
+      page.waitForResponse((response) => response.request().method() === "POST" && response.url() === scheduleAction.href),
+      schedule.getByRole("button", { name: "设定预约" }).click(),
+    ]);
+    expect(winterResponse.status()).toBe(200);
+    expect((await winterResponse.json() as { scheduledAt: string | null }).scheduledAt).toBe("2032-01-01T14:30:00.000Z");
+    await expect(schedule.getByLabel("预约发布时间")).toHaveValue("2032-01-01T09:30");
+    await expect(schedule.getByLabel("UTC 偏移")).toHaveValue("-05:00");
+
+    await page.reload();
+    await expect(schedule.getByLabel("预约发布时间")).toHaveValue("2032-01-01T09:30");
+    await expect(schedule.getByLabel("UTC 偏移")).toHaveValue("-05:00");
+    const [unchangedResponse] = await Promise.all([
+      page.waitForResponse((response) => response.request().method() === "POST" && response.url() === scheduleAction.href),
+      schedule.getByRole("button", { name: "改期预约" }).click(),
+    ]);
+    expect(unchangedResponse.status()).toBe(200);
+    expect((await unchangedResponse.json() as { scheduledAt: string | null }).scheduledAt).toBe("2032-01-01T14:30:00.000Z");
+    const unchangedPost = await newYorkContext.request.get(`${webOrigin}/api/admin/posts/${article.id}`);
+    expect(unchangedPost.status()).toBe(200);
+    expect((await unchangedPost.json() as { scheduledAt: string | null }).scheduledAt).toBe("2032-01-01T14:30:00.000Z");
+
+    await schedule.getByLabel("预约发布时间").fill("2032-07-01T09:30");
+    await expect(schedule.getByLabel("UTC 偏移")).toHaveValue("-04:00");
+    const [summerResponse] = await Promise.all([
+      page.waitForResponse((response) => response.request().method() === "POST" && response.url() === scheduleAction.href),
+      schedule.getByRole("button", { name: "改期预约" }).click(),
+    ]);
+    expect(summerResponse.status()).toBe(200);
+    expect((await summerResponse.json() as { scheduledAt: string | null }).scheduledAt).toBe("2032-07-01T13:30:00.000Z");
+    await expect(schedule.getByLabel("预约发布时间")).toHaveValue("2032-07-01T09:30");
+    await expect(schedule.getByLabel("UTC 偏移")).toHaveValue("-04:00");
+  } finally {
+    await newYorkContext.close();
+  }
+});
+
 test("schedule form remains a no-script, keyboard-operable same-origin control", async ({ browser }) => {
   const noJsContext = await browser.newContext({ javaScriptEnabled: false });
   try {
@@ -159,6 +220,21 @@ test("schedule form remains a no-script, keyboard-operable same-origin control",
     expect(scheduledPost.status()).toBe(200);
     expect((await scheduledPost.json() as { scheduledAt: string | null }).scheduledAt).toBe("2032-02-01T01:30:00.000Z");
     await expect(page.getByText("当前预约：2032-02-01T01:30:00.000Z")).toBeVisible();
+    await expect(schedule.getByLabel("预约发布时间")).toHaveValue("2032-02-01T09:30");
+    await expect(schedule.getByLabel("UTC 偏移")).toHaveValue("+08:00");
+    const [unchangedResponse] = await Promise.all([
+      page.waitForResponse((response) => response.request().method() === "POST" && response.url() === scheduleAction.href),
+      page.waitForNavigation({ waitUntil: "load" }),
+      schedule.getByRole("button", { name: "改期预约" }).press("Enter"),
+    ]);
+    expect(unchangedResponse.status()).toBe(302);
+    expect(unchangedResponse.headers()["location"]).toBe(`/admin/posts/${article.id}`);
+    await expect(page).toHaveURL(detailUrl);
+    const unchangedPost = await noJsContext.request.get(`${webOrigin}/api/admin/posts/${article.id}`);
+    expect(unchangedPost.status()).toBe(200);
+    expect((await unchangedPost.json() as { scheduledAt: string | null }).scheduledAt).toBe("2032-02-01T01:30:00.000Z");
+    await expect(schedule.getByLabel("预约发布时间")).toHaveValue("2032-02-01T09:30");
+    await expect(schedule.getByLabel("UTC 偏移")).toHaveValue("+08:00");
 
     const cancel = page.getByRole("button", { name: "取消预约" }).locator("..");
     const cancelAction = new URL(await cancel.getAttribute("action") ?? "", webOrigin);
