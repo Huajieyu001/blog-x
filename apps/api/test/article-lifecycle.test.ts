@@ -4,7 +4,10 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { buildApp } from "../src/app.js";
+import { formatPublishDueFailure, formatPublishDueSuccess, parsePublishDueArguments } from "../src/app.js";
+import { createAdminPostRepository } from "../src/content/admin-repository.js";
 import { articleActions, articleStatuses, resolveArticleTransition } from "../src/content/article-state.js";
+import { createScheduledPublisher } from "../src/content/scheduled-publisher.js";
 import { classifyRetainedLegacyMedia } from "../src/ops/legacy-media-migration.js";
 import { seedAdministrator } from "../src/db/seed-admin.js";
 import { administrators, articles, media, sessions } from "../src/db/schema.js";
@@ -29,6 +32,55 @@ test("the complete article state/action table allows only explicit lifecycle tra
   for (const status of articleStatuses) {
     for (const action of articleActions) assert.equal(resolveArticleTransition(status, action), expected[status][action]);
   }
+});
+
+test("the bounded due publisher is DB-only, redacted, and changes an exactly-due draft once", async (context) => {
+  assert.deepEqual(parsePublishDueArguments(["--limit=1"]), { ok: true, limit: 1 });
+  for (const args of [[], ["--limit=0"], ["--limit=101"], ["--limit=1.5"], ["--limit=1", "--limit=2"], ["--unknown=1"]]) {
+    assert.deepEqual(parsePublishDueArguments(args), { ok: false, code: "invalid_arguments" });
+  }
+  const safeSuccess = formatPublishDueSuccess({ at: new Date("2032-01-01T00:00:00.000Z"), limit: 1, claimed: 1, publishedIds: ["11111111-1111-4111-8111-111111111111"] });
+  const safeFailure = formatPublishDueFailure({ at: new Date("2032-01-01T00:00:00.000Z"), limit: 1, code: "transaction_failed" });
+  assert.doesNotMatch(`${safeSuccess}\n${safeFailure}`, /DATABASE_URL|password|markdown|slug|title|summary|cookie|postgres/i);
+
+  if (!databaseUrl) {
+    context.skip("LIFECYCLE_TEST_DATABASE_URL must name a disposable migrated PostgreSQL database");
+    return;
+  }
+  const pool = new Pool({ connectionString: databaseUrl });
+  const db = drizzle({ client: pool, schema: { administrators, articles, sessions } });
+  await pool.query("truncate table audit_events, sessions, articles, administrators cascade");
+  context.after(async () => {
+    await pool.query("truncate table audit_events, sessions, articles, administrators cascade");
+    await pool.end();
+  });
+  await seedAdministrator(db, { username: `due-publisher-${Date.now()}`, password: "due-publisher-password" });
+  const administrator = (await db.select({ id: administrators.id }).from(administrators).limit(1))[0]!;
+  const transactionNow = (await pool.query<{ now: Date }>("select CURRENT_TIMESTAMP as now")).rows[0]!.now;
+  const dueSlug = `due-exact-${Date.now()}`;
+  const futureSlug = `due-future-${Date.now()}`;
+  const [due] = await db.insert(articles).values([
+    { title: "Exactly due", summary: "must stay private until publication", slug: dueSlug, markdown: "# Exactly due", status: "draft", scheduledAt: transactionNow, scheduledByAdministratorId: administrator.id },
+    { title: "Future draft", summary: "must remain private", slug: futureSlug, markdown: "# Future", status: "draft", scheduledAt: new Date("2099-01-01T00:00:00.000Z"), scheduledByAdministratorId: administrator.id },
+  ]).returning({ id: articles.id });
+  const publisher = createScheduledPublisher(createAdminPostRepository(db));
+  const result = await publisher.publishDue(1);
+  assert.equal(result.limit, 1);
+  assert.equal(result.claimed, 1);
+  assert.deepEqual(result.publishedIds, [due!.id]);
+  const dueAfter = (await db.select().from(articles).where(eq(articles.id, due!.id)))[0]!;
+  assert.equal(dueAfter.status, "published");
+  assert.equal(dueAfter.slug, dueSlug);
+  assert.equal(dueAfter.scheduledAt, null);
+  assert.equal(dueAfter.scheduledByAdministratorId, null);
+  assert.equal(dueAfter.publishedAt?.toISOString(), result.at.toISOString());
+  const dueAudit = await pool.query<{ event: string; actor_administrator_id: string; metadata: Record<string, unknown> }>("select event, actor_administrator_id, metadata from audit_events where target_id = $1", [due!.id]);
+  assert.deepEqual(dueAudit.rows, [{ event: "article.scheduled_published", actor_administrator_id: administrator.id, metadata: { scheduledAt: transactionNow.toISOString() } }]);
+  const futureAfter = (await db.select().from(articles).where(eq(articles.slug, futureSlug)))[0]!;
+  assert.equal(futureAfter.status, "draft");
+  const retry = await publisher.publishDue(1);
+  assert.equal(retry.claimed, 0);
+  assert.deepEqual(retry.publishedIds, []);
 });
 
 test("legacy media classification is transactional, idempotent, and lossless", async (context) => {
