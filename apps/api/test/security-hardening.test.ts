@@ -113,7 +113,7 @@ test("five generic failed logins are followed by a no-store bounded retry respon
   assert.equal(recovered.statusCode, 401);
 });
 
-test("auth logout and legacy publish have named unsafe route policies", () => {
+test("auth logout, schedule mutations, and legacy publish have named unsafe route policies", () => {
   const named = unsafeRoutePolicies.map((policy) => `${policy.method} ${policy.url}`);
   assert.deepEqual(named, [
     "POST /auth/login",
@@ -121,6 +121,10 @@ test("auth logout and legacy publish have named unsafe route policies", () => {
     "POST /admin/posts/preview",
     "POST /admin/posts",
     "PUT /admin/posts/:id",
+    "PUT /admin/posts/:id/schedule",
+    "DELETE /admin/posts/:id/schedule",
+    "POST /admin/posts/:id/schedule",
+    "POST /admin/posts/:id/schedule/cancel",
     "POST /admin/posts/:id/:action",
     "POST /admin/export",
     "POST /admin/categories",
