@@ -2,6 +2,12 @@
 
 import { adminPostSchema, deletedArticleSchema, type AdminPost, type ArticleAction } from "@blog-x/contracts";
 import { useEffect, useState, type FormEvent } from "react";
+import {
+  CHINA_TIMEZONE_OFFSET_MINUTES,
+  formatTimezoneOffset,
+  scheduleFormStateAtOffset,
+  type ScheduleFormState,
+} from "./article-actions-schedule";
 import styles from "../admin.module.css";
 
 const statusLabels = { draft: "草稿", published: "已发布", unpublished: "已下线" } as const;
@@ -19,25 +25,14 @@ const actionLabels: Record<ArticleAction, string> = {
   delete: "删除",
 };
 
-function initialTimezoneOffset() {
-  // The server-rendered form remains usable without JavaScript. +08:00 is a
-  // clear, editable China-local default; hydration replaces it with the
-  // visitor's numeric browser offset when enhancement is available.
-  return "+08:00";
+function browserOffsetAtInstant(instant: string) {
+  return -new Date(instant).getTimezoneOffset();
 }
 
-function browserTimezoneOffset() {
-  const minutes = -new Date().getTimezoneOffset();
-  const sign = minutes >= 0 ? "+" : "-";
-  const absolute = Math.abs(minutes);
-  return `${sign}${String(Math.floor(absolute / 60)).padStart(2, "0")}:${String(absolute % 60).padStart(2, "0")}`;
-}
-
-function toLocalDateTime(value: string | null) {
-  if (!value) return "";
-  const date = new Date(value);
-  const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+function browserOffsetAtLocalDateTime(localDateTime: string, fallbackOffsetMinutes: number) {
+  if (!localDateTime) return fallbackOffsetMinutes;
+  const target = new Date(localDateTime);
+  return Number.isFinite(target.getTime()) ? -target.getTimezoneOffset() : fallbackOffsetMinutes;
 }
 
 export default function ArticleActions({
@@ -58,11 +53,21 @@ export default function ArticleActions({
   const [pendingDelete, setPendingDelete] = useState(false);
   const [deleted, setDeleted] = useState(false);
   const [schedulePending, setSchedulePending] = useState(false);
-  const [timezoneOffset, setTimezoneOffset] = useState(initialTimezoneOffset);
+  const [scheduleForm, setScheduleForm] = useState<ScheduleFormState>(() => scheduleFormStateAtOffset(initialPost.scheduledAt, CHINA_TIMEZONE_OFFSET_MINUTES));
+
+  function scheduleFormForBrowser(nextPost: AdminPost, fallbackOffsetMinutes = CHINA_TIMEZONE_OFFSET_MINUTES) {
+    if (nextPost.scheduledAt) return scheduleFormStateAtOffset(nextPost.scheduledAt, browserOffsetAtInstant(nextPost.scheduledAt));
+    return scheduleFormStateAtOffset(null, fallbackOffsetMinutes);
+  }
+
+  function applyPost(nextPost: AdminPost) {
+    setPost(nextPost);
+    setScheduleForm(scheduleFormForBrowser(nextPost, browserOffsetAtLocalDateTime(scheduleForm.scheduledAt, CHINA_TIMEZONE_OFFSET_MINUTES)));
+  }
 
   useEffect(() => {
     setPost(initialPost);
-    setTimezoneOffset(browserTimezoneOffset());
+    setScheduleForm(scheduleFormForBrowser(initialPost, browserOffsetAtLocalDateTime(scheduleForm.scheduledAt, CHINA_TIMEZONE_OFFSET_MINUTES)));
   }, [initialPost]);
 
   async function perform(action: ArticleAction) {
@@ -91,7 +96,7 @@ export default function ArticleActions({
       }
       const parsed = adminPostSchema.safeParse(body);
       if (!parsed.success) throw new Error("invalid lifecycle response");
-      setPost(parsed.data);
+      applyPost(parsed.data);
       setMessage(`${actionLabels[action]}成功`);
       onChanged?.(parsed.data);
     } catch {
@@ -102,7 +107,7 @@ export default function ArticleActions({
   function changedFromResponse(body: unknown, success: string) {
     const parsed = adminPostSchema.safeParse(body);
     if (!parsed.success) throw new Error("invalid schedule response");
-    setPost(parsed.data);
+    applyPost(parsed.data);
     setMessage(success);
     onChanged?.(parsed.data);
   }
@@ -168,8 +173,12 @@ export default function ArticleActions({
         <div className={styles.scheduleControls}>
           {post.scheduledAt ? <p className={styles.scheduledAt}>当前预约：{post.scheduledAt}</p> : null}
           <form aria-label="预约发布" className={styles.scheduleForm} action={`/api/admin/posts/${post.id}/schedule`} method="post" onSubmit={(event) => { void schedule(event); }}>
-            <label>预约发布时间<input name="scheduledAt" type="datetime-local" required defaultValue={toLocalDateTime(post.scheduledAt)} disabled={disabled || schedulePending} /></label>
-            <label>UTC 偏移<input name="timezoneOffset" inputMode="text" pattern="[+-](0[0-9]|1[0-4]):[0-5][0-9]" required value={timezoneOffset} onChange={(event) => setTimezoneOffset(event.target.value)} disabled={disabled || schedulePending} /></label>
+            <label>预约发布时间<input name="scheduledAt" type="datetime-local" required value={scheduleForm.scheduledAt} onChange={(event) => {
+              const scheduledAt = event.target.value;
+              const offsetMinutes = browserOffsetAtLocalDateTime(scheduledAt, CHINA_TIMEZONE_OFFSET_MINUTES);
+              setScheduleForm({ scheduledAt, timezoneOffset: formatTimezoneOffset(offsetMinutes) });
+            }} disabled={disabled || schedulePending} /></label>
+            <label>UTC 偏移<input name="timezoneOffset" inputMode="text" pattern="[+-](0[0-9]|1[0-4]):[0-5][0-9]" required value={scheduleForm.timezoneOffset} onChange={(event) => setScheduleForm((current) => ({ ...current, timezoneOffset: event.target.value }))} disabled={disabled || schedulePending} /></label>
             <button type="submit" disabled={disabled || schedulePending}>{post.scheduledAt ? "改期预约" : "设定预约"}</button>
           </form>
           {post.scheduledAt ? (
