@@ -1,23 +1,36 @@
 ---
 phase: 08-reliable-local-delivery
-verified: 2026-08-30T14:37:41Z
-status: passed
-score: 5/5 ROADMAP success criteria verified
+verified: 2026-09-04T06:20:00Z
+status: gaps_found
+score: 4/5 must-haves verified
+behavior_unverified: 1
 requirements: [DEVX-01, DEVX-02, DEVX-03]
 ---
 
-# Phase 08 Verification
+# Phase 08: Reliable Local Delivery Verification Report
 
-Phase 08 is complete. Reviewed and delivered SHA `538840a825d192710550fcae8fa53f9fa68346ff` is bound to immutable receipt `ops/local-deliveries/538840a825d192710550fcae8fa53f9fa68346ff.json` (receipt commit `42a5812`).
+## Interim Verdict
 
-## Goal Evidence
+Phase 08 implementation and its completed UAT remain healthy, but the closeout is not yet canonical for the current source revision.
 
-| Outcome | Result | Evidence |
-|---|---|---|
-| DEVX-01 | Passed | Canonical `blogxlocal` has three healthy services, retains PostgreSQL and media volumes, and serves only from `127.0.0.1:3100`. |
-| DEVX-02 | Passed | Reviewed delivery used the sealed offline-capable workflow and preserved the fixed local origin and canonical project authority. |
-| DEVX-03 | Passed | Acceptance passed 65/65 (50 generated integration + 15 browser), default tests passed 38/38, focused tests passed 143/143, and boundary audit checked 433 files with 0 findings. |
+The previous delivery receipt binds revision `1f47a8dc29211defa04280606b26f1b2676fa8dc`. Independent review found that its descendant verification rejected the newly added Phase 08 UAT path. Quick task `260904-jio` added one exact allowlist member and regression coverage, but changing the verifier source intentionally requires a fresh clean delivery revision and a new immutable receipt.
 
-The canonical `/`, `/search`, and `/api/health` routes returned HTTP 200. No `blogxverify` residue remained. The four historical v1 temporary evidence artifacts remained byte-identical. Neither cloud server was contacted.
+## Verified Evidence
 
-Production release remains `BLOCKED`; local completion grants no deployment authority.
+- `corepack pnpm test`: 42/42 semantic tests passed with zero failed, cancelled, skipped, or TODO results.
+- `node --test scripts/refresh-local.test.mjs`: 71/71 focused tests passed.
+- The finite descendant policy now accepts only `.planning/phases/08-reliable-local-delivery/08-UAT.md` as the newly authorized path and rejects near-miss and foreign-phase UAT paths.
+- Phase 08 UAT remains complete at 25/25.
+- Production release remains `BLOCKED`; no server was contacted.
+
+## Gap
+
+- A fresh `dev` revision containing the allowlist correction has not yet completed `corepack pnpm local:deliver` and formal descendant receipt verification.
+
+## Next Action
+
+Run the fixed local delivery from a clean `dev` revision, commit the immutable receipt and closeout-only documents, then invoke the production receipt verifier from the descendant HEAD. Mark this report `passed` only after that command succeeds.
+
+---
+
+*Interim verification: 2026-09-04T06:20:00Z*
