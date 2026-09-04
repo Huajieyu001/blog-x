@@ -1,5 +1,38 @@
 # Project Milestones: Blog X
 
+## v1.1 Content Discovery (Shipped: 2026-09-04)
+
+**Delivered:** 仅公开内容的站内搜索、确定性相关阅读和可复现的固定本地交付链路，全部保持生产发布 `BLOCKED`。
+
+**Phases completed:** 3 phases, 24 plans, 40 tasks
+
+**Key accomplishments:**
+
+- Strict NFC search contracts and a published-only PostgreSQL query with literal wildcard handling, 3/2/1 ranking, and stable pagination
+- Public-only related ranking and strict Fastify search/related endpoints with exact opaque failure boundaries
+- The exact generated Phase 6 gate passes with interruption and parallel evidence; the fixed local refresh safely stopped before mutation because its offline install cache is missing
+- Current-source API and Web targets can be rebuilt from sanitized offline dependency seeds, with the fixed runtime mutation deliberately deferred to the ordered 06-05 execution.
+- A clean future revision can perform one bounded `blogxlocal` refresh through a real adapter, while this plan made no live attempt.
+- The future local refresh now has one strict fact authority, target-image migration, immutable rollback, safe claims, and reconstructable sanitized evidence without consuming a live attempt.
+- Reconstructable evidence v4, terminal revision-bound failure reports, proven local Docker authority and fail-closed atomic publication are ready for the single 06-11 live attempt.
+- One fd5ef1b refresh attempt successfully replaced the fixed local API/Web images, preserved persistent content, published committed strict v4 evidence, and remains gated for independent Phase 6 verification.
+- A shared native GET form now reaches a strict server-rendered public result through a same-origin, responsive, no-JavaScript-capable path.
+- Raw and decoded search requests now fail closed into one exhaustive SSR outcome that drives honest metadata, exact states, compact public cards and stable pagination.
+- Strict related reading now follows complete articles with honest zero/failure states, while one responsive discovery surface is proven across mobile, tablet and desktop interaction modes.
+- A strict generated-port Chromium gate now proves every Phase 7 search, related-reading, responsive, SEO, privacy and topology contract with bounded exact-child cleanup.
+- A sealed local-delivery implementation binds canonical `3100` ownership, clean branch-qualified source, offline target provenance, and a v1.1 evidence contract that can only end in `BLOCKED`.
+- Strict Phase 6/7 count records now feed a sealed, zero-argument acceptance coordinator that remains local-only and explicitly BLOCKED.
+- The final reviewed implementation is now the healthy canonical `blogxlocal` runtime at fixed port 3100, backed by a verified non-overwriting successor v1.1 receipt and an explicit `BLOCKED` production decision.
+- Every clean full Git SHA now owns one immutable receipt and terminal claim authority, with strict independent verification and a regression proving two successive deliveries preserve the first receipt byte-for-byte.
+- A frozen 37-file ownership inventory now drives a zero-infrastructure default gate that passes 38/38 Contracts, API and Web tests while retaining all 30 integration files behind the formal acceptance authority.
+- Six formerly self-spawning Web journeys now run solely against one generated, scenario-seeded fixture whose ports, database, identities and temporary paths are isolated and cleaned fail-closed.
+- One sealed zero-argument coordinator now executes and attests every integration-owned package path exactly once, with actual pass-only counts, digests, generated cleanup proof and an unchanged `BLOCKED` release state.
+- A clean dual-reviewed 25-file implementation is now protected by a fixed reviewed-HEAD gate, secure per-revision receipt identity, and full descendant-history auditing before any formal delivery can start.
+
+**What's next:** 规划下一个纯本地里程碑，优先考虑公开文章结构化数据与受控的定时发布。
+
+---
+
 ## v1.0 Local MVP (Shipped: 2026-08-15)
 
 **Delivered:** 一套经过独立验收的自托管博客本地 MVP，覆盖写作发布、响应式阅读、媒体与分发、备份恢复和失败关闭的生产发布门禁。

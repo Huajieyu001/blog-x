@@ -2,36 +2,37 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Content Discovery
-current_phase: 08
-current_phase_name: Reliable Local Delivery
-status: complete
+status: Awaiting next milestone
 stopped_at: Completed 08-09-PLAN.md
-last_updated: "2026-09-04T11:13:14Z"
+last_updated: "2026-09-04T11:17:10.452Z"
 last_activity: 2026-09-04
-last_activity_desc: Phase 08 delivery revision 479b735 and descendant closeout verified; production release remains BLOCKED
+last_activity_desc: Milestone v1.1 completed and archived
 progress:
   total_phases: 3
   completed_phases: 3
   total_plans: 21
   completed_plans: 21
   percent: 100
+current_phase: 08
+current_phase_name: Reliable Local Delivery
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-15)
+See: .planning/PROJECT.md (updated 2026-09-04)
 
-**Core value:** 博主能够可靠地发布和保存 Markdown 内容，访客能够持续、快速地通过博客域名阅读已发布文章。  
-**Current focus:** v1.1 Content Discovery complete; production release remains BLOCKED
+**Core value:** 博主能够可靠地发布和保存 Markdown 内容，访客能够持续、快速地通过博客域名阅读已发布文章。
+
+**Current focus:** Planning the next local-only milestone; production release remains BLOCKED
 
 ## Current Position
 
-Phase: 08 (Reliable Local Delivery) — COMPLETE
-Plan: 9 of 9
-Status: Delivered SHA `479b7356409cd7cc0f08e1de1a56beea75ec56da` independently verified from its descendant closeout; DEVX-01..03 complete
-Last activity: 2026-09-04 — Phase 08 UAT closeout allowlist fixed, redelivered, and independently verified; release remains BLOCKED
+Phase: Milestone v1.1 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-09-04 — Milestone v1.1 completed and archived
 
 ## Performance Metrics
 
@@ -218,4 +219,4 @@ Resume file: None
 
 ## Operator Next Steps
 
-- Keep both cloud servers out of scope until separately authorized; local completion retains `releaseState: BLOCKED`.
+- Start the next milestone with $gsd-new-milestone
