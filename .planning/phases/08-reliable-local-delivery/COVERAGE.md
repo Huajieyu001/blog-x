@@ -1,0 +1,1 @@
+No external API integration: Phase 08 uses first-party local Blog X Web/Fastify/PostgreSQL/Compose delivery and verification only; no third-party APIs, SDKs, services, webhooks, remote credentials, or cloud connections.
