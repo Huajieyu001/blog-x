@@ -106,8 +106,8 @@ result: pass
 source: automated
 coverage_id: D1
 
-### 17. The zero-argument default command runs exact Contracts, API and Web unit children and reports 38 of 38 semantic tests with no non-pass result.
-expected: The zero-argument default command runs exact Contracts, API and Web unit children and reports 38 of 38 semantic tests with no non-pass result.
+### 17. The zero-argument default command runs exact Contracts, API and Web unit children and reports 42 of 42 semantic tests with no non-pass result.
+expected: The zero-argument default command runs exact Contracts, API and Web unit children and reports 42 of 42 semantic tests with no non-pass result.
 result: pass
 source: automated
 coverage_id: D2
