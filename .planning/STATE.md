@@ -4,9 +4,9 @@ milestone: v1.2
 milestone_name: Publishing Quality
 status: Awaiting next milestone
 stopped_at: Phase 10 verified; v1.2 Publishing Quality complete
-last_updated: "2026-09-04T19:57:35.538Z"
+last_updated: "2026-09-04T20:10:00Z"
 last_activity: 2026-09-05
-last_activity_desc: Milestone v1.2 completed and archived
+last_activity_desc: Completed quick task 260905-5mw documenting the local scheduled publishing operation
 progress:
   total_phases: 2
   completed_phases: 2
@@ -78,6 +78,12 @@ None. The completed milestone has no remaining autonomous implementation task.
 
 - 生产调度器激活、服务器连接、TLS 和部署不属于 v1.2，且继续受生产冻结限制。
 - A future milestone needs an owner decision: privacy-preserving analytics, another product feature, or production-readiness work after the server freeze is explicitly lifted.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260905-5mw | Document local scheduled publishing operation and reconcile final coverage metadata | 2026-09-05 | 825e27f | [260905-5mw](./quick/260905-5mw-document-the-local-scheduled-publishing-/) |
 
 ## Deferred Items
 
