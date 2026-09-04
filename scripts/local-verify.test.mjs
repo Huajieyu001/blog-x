@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -419,6 +419,47 @@ test("Phase 6 interruption and parallel paths keep exact generated authority", a
   assert.doesNotMatch(parallel, /phase5|receipt/i);
 });
 
+test("Phase 10 migration authority is a complete nine-entry Drizzle history", async () => {
+  const drizzleRoot = join(process.cwd(), "apps/api/drizzle");
+  const metadataRoot = join(drizzleRoot, "meta");
+  const sqlFiles = (await readdir(drizzleRoot)).filter((name) => /^\d{4}_.+\.sql$/.test(name)).sort();
+  const metadataFiles = (await readdir(metadataRoot)).sort();
+  const journal = JSON.parse(await readFile(join(metadataRoot, "_journal.json"), "utf8"));
+  const migration = await readFile(join(drizzleRoot, "0008_scheduled-publishing.sql"), "utf8");
+  const schema = await readFile(join(process.cwd(), "apps/api/src/db/schema.ts"), "utf8");
+  const findings = [];
+
+  if (sqlFiles.length !== 9 || sqlFiles[0] !== "0000_phase1_walking_skeleton.sql" || sqlFiles.at(-1) !== "0008_scheduled-publishing.sql") {
+    findings.push(`numbered SQL authority must contain exactly 0000 through 0008; found ${sqlFiles.join(", ")}`);
+  }
+  const journalTail = journal.entries?.at(-1);
+  if (journal.entries?.length !== 9 || journalTail?.idx !== 8 || journalTail?.tag !== "0008_scheduled-publishing") {
+    findings.push(`journal must end at idx 8 / 0008_scheduled-publishing; found ${JSON.stringify(journalTail)}`);
+  }
+  if (!metadataFiles.includes("0008_snapshot.json")) findings.push("generated metadata must include meta/0008_snapshot.json");
+
+  const snapshot = metadataFiles.includes("0008_snapshot.json")
+    ? await readFile(join(metadataRoot, "0008_snapshot.json"), "utf8")
+    : "";
+  for (const token of [
+    "scheduled_at",
+    "scheduled_by_administrator_id",
+    "articles_schedule_pair_check",
+    "articles_schedule_draft_check",
+    "articles_schedule_due_index",
+  ]) {
+    if (!migration.includes(token)) findings.push(`tracked migration is missing ${token}`);
+    if (!schema.includes(token)) findings.push(`Drizzle schema is missing ${token}`);
+    if (snapshot && !snapshot.includes(token)) findings.push(`generated snapshot is missing ${token}`);
+  }
+  for (const event of ["article.scheduled", "article.rescheduled", "article.schedule_cancelled", "article.scheduled_published"]) {
+    if (!migration.includes(event)) findings.push(`tracked migration is missing ${event}`);
+    if (!schema.includes(event)) findings.push(`Drizzle schema is missing ${event}`);
+    if (snapshot && !snapshot.includes(event)) findings.push(`generated snapshot is missing ${event}`);
+  }
+  assert.deepEqual(findings, [], "Phase 10 migration authorities must be structurally identical");
+});
+
 test("Phase 8 machine records require every exact Phase 6 suite to pass with nonzero parser counts", () => {
   const suites = [
     ...phase6Selection("data").databaseSuites.map(([, id]) => ({ id, kind: "database", counts: { tests: 2, passed: 2, failed: 0, cancelled: 0, skipped: 0, todo: 0 } })),
@@ -548,13 +589,36 @@ test("Phase 4 restore runner preserves backup evidence through authority and bro
   assert.match(runner, /cleanupGeneratedRestoreRoot/);
 });
 
-test("Phase 4 restore runner reuses the parent canonical runtime override", async () => {
+test("Phase 4 restore runner owns an origin-bound runtime and absence-confirmed teardown", async () => {
   const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
   const restoreRunner = runner.slice(runner.indexOf("async function runPhase4RestoreChecks"), runner.indexOf("async function runPhase4ReleaseChecks"));
-  assert.match(restoreRunner, /const restoreContext = \{[\s\S]*composeOverride: context\.composeOverride/);
+  const findings = [];
+  if (/composeOverride:\s*context\.composeOverride/.test(restoreRunner)) findings.push("restore context reuses the parent Compose override");
+  if (!/const restoreContext = \{[\s\S]*internalApiOrigin:\s*context\.internalApiOrigin/.test(restoreRunner)) findings.push("restore context does not retain the current internal API origin");
+  if (!/PUBLIC_ORIGIN:\s*restoreContext\.publicOrigin/.test(restoreRunner)
+    || !/INTERNAL_API_ORIGIN:\s*restoreContext\.internalApiOrigin/.test(restoreRunner)) {
+    findings.push("Web is not built with the exact restore public/internal origins");
+  }
+  const buildIndex = restoreRunner.search(/PUBLIC_ORIGIN:\s*restoreContext\.publicOrigin/);
+  const authorityIndex = restoreRunner.search(/createCanonicalRuntimeAuthority\(restoreContext\)/);
+  const restoreIndex = restoreRunner.search(/restoreBackupSet\(/);
+  if (buildIndex < 0 || authorityIndex <= buildIndex || restoreIndex <= authorityIndex) findings.push("restore runtime authority is not created after its origin-specific Web build and before restore");
+  if (!/validateRestoreNamespace|validateRestoreDatabase|validateRestoreMediaVolume/.test(runner)) findings.push("restore-specific validators are not used for teardown authority");
+  if (!/async function converge\w*Restore\w*Cleanup[\s\S]*attempt\s*<\s*[2-9][\s\S]*confirm\w*Restore\w*Absent/.test(runner)) findings.push("restore teardown has no bounded convergence followed by exact absence confirmation");
+  if (!/confirm\w*Restore\w*Absent[\s\S]*com\.docker\.compose\.project[\s\S]*postgres-data[\s\S]*media-data/.test(runner)) findings.push("restore teardown does not inspect exact project containers and both exact volumes");
+  if (!/finally\s*\{[\s\S]*Promise\.allSettled[\s\S]*cleanupGeneratedRestoreRoot[\s\S]*cleanupGeneratedBackupRoot[\s\S]*cleanupCanonicalRuntimeAuthority[\s\S]*AggregateError/.test(restoreRunner)) findings.push("restore finalization does not attempt and aggregate every generated authority cleanup");
+  if (/await command\("docker-compose", composeArgs\(restoreContext, "down", "--remove-orphans", "--volumes"\), \{ env: composeEnvironment\(restoreContext\), allowFailure: true \}\);/.test(restoreRunner)) findings.push("one ignored Compose down remains the restore cleanup success criterion");
+
+  assert.deepEqual(findings, [], "restore verification must own current origin-bound runtime and prove teardown");
   assert.match(restoreRunner, /\}, \{ env: composeEnvironment\(restoreContext\), composeOverride: restoreContext\.composeOverride \}\)/);
   assert.match(restoreRunner, /compose\(restoreContext, "resolve restored API for authority comparison"/);
-  assert.match(restoreRunner, /composeArgs\(restoreContext, "down", "--remove-orphans", "--volumes"\)/);
+});
+
+test("canonical generated production inventory declares current migration count 9", async () => {
+  const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
+  const pipeline = runner.slice(runner.indexOf("async function runPhase5GeneratedPipeline"), runner.indexOf("async function committedImplementationHead"));
+  assert.match(pipeline, /migration:\s*\{\s*count:\s*9,/);
+  assert.doesNotMatch(pipeline, /migration:\s*\{\s*count:\s*8,/);
 });
 
 test("Phase 4 full runner is offline-preflighted, exhaustive, and ends in machine-checked BLOCKED state", async () => {

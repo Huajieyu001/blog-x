@@ -123,10 +123,12 @@ test("schedule audit and portable contracts preserve only complete paired author
     about: null,
   };
   assert.equal(portableExportManifestSchema.safeParse(manifest).success, true, "legacy v1 authority remains readable");
-  assert.equal(portableExportManifestSchema.safeParse({
-    ...manifest,
-    articles: [{ ...manifest.articles[0], scheduledAt, scheduledByAdministratorId: administratorId }],
-  }).success, true);
+  for (const [label, article] of [
+    ["explicit null schedule authority remains readable", { ...manifest.articles[0], scheduledAt: null, scheduledByAdministratorId: null }],
+    ["retained draft may carry a complete schedule authority", { ...manifest.articles[0], scheduledAt, scheduledByAdministratorId: administratorId }],
+  ] as const) {
+    assert.equal(portableExportManifestSchema.safeParse({ ...manifest, articles: [article] }).success, true, label);
+  }
   for (const article of [
     { ...manifest.articles[0], scheduledAt },
     { ...manifest.articles[0], scheduledByAdministratorId: administratorId },
@@ -134,4 +136,12 @@ test("schedule audit and portable contracts preserve only complete paired author
     { ...manifest.articles[0], scheduledAt: null, scheduledByAdministratorId: administratorId },
     { ...manifest.articles[0], scheduledAt, scheduledByAdministratorId: undefined },
   ]) assert.equal(portableExportManifestSchema.safeParse({ ...manifest, articles: [article] }).success, false);
+
+  for (const [label, article] of [
+    ["published article cannot retain schedule authority", { ...manifest.articles[0], status: "published", publishedAt: scheduledAt, scheduledAt, scheduledByAdministratorId: administratorId }],
+    ["unpublished article cannot retain schedule authority", { ...manifest.articles[0], status: "unpublished", publishedAt: scheduledAt, scheduledAt, scheduledByAdministratorId: administratorId }],
+    ["soft-deleted draft cannot retain schedule authority", { ...manifest.articles[0], deletedAt: scheduledAt, scheduledAt, scheduledByAdministratorId: administratorId }],
+  ] as const) {
+    assert.equal(portableExportManifestSchema.safeParse({ ...manifest, articles: [article] }).success, false, label);
+  }
 });

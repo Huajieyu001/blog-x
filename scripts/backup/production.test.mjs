@@ -44,7 +44,7 @@ function collectorDependencies(overrides = {}) {
     }),
     copyApiMedia: async () => [{ id, sourceKey: `source/${id}.bin`, derivativeKey: `derivative/${id}.webp`, source, derivative }],
     readAllowlistedInventory: async () => ({
-      migration: { count: 8, fingerprint: "a".repeat(64) },
+      migration: { count: 9, fingerprint: "a".repeat(64) },
       images: { api: `sha256:${"b".repeat(64)}`, web: `sha256:${"c".repeat(64)}`, postgres: `sha256:${"d".repeat(64)}` },
       configChecksums: [{ path: "compose.yaml", sha256: "e".repeat(64) }],
       variableNamesPresent: ["DATABASE_URL", "MEDIA_ROOT", "PUBLIC_ORIGIN"],
@@ -121,7 +121,7 @@ async function pipelineFixture(context, suffix = "j1b2c3d4") {
   };
 }
 
-async function writeCompleteSet(root) {
+async function writeCompleteSet(root, migrationCount = 9) {
   const id = "11111111-1111-4111-8111-111111111111";
   const source = Buffer.from("production-source-bytes");
   const derivative = Buffer.from("production-derivative-bytes");
@@ -139,7 +139,7 @@ async function writeCompleteSet(root) {
   await writeFile(join(root, derivativePath), derivative, { mode: 0o600 });
   await writeFile(join(root, "config/inventory.json"), JSON.stringify({
     format: "blog-x-backup-config-inventory", version: 1,
-    migration: { count: 8, fingerprint: "a".repeat(64) },
+    migration: { count: migrationCount, fingerprint: "a".repeat(64) },
     images: { api: `sha256:${"b".repeat(64)}`, web: `sha256:${"c".repeat(64)}`, postgres: `sha256:${"d".repeat(64)}` },
     configChecksums: [{ path: "ops/topology-policy.json", sha256: "e".repeat(64) }],
     variableNamesPresent: ["DATABASE_URL", "MEDIA_ROOT", "PUBLIC_ORIGIN"],
@@ -164,12 +164,34 @@ test("production source authority accepts only an exact generated root and share
 
   assert.equal(validateProductionBackupSource(root, authority), root);
   const result = await verifyProductionBackupSource(root, authority);
-  assert.equal(result.inventory.migration.count, 8);
+  assert.equal(result.inventory.migration.count, 9);
   await assert.rejects(verifyBackupSet(root), /backup root|staging/i);
 
   for (const unsafe of ["/", tmpdir(), process.cwd(), join(sourceBase, "..", "escape"), join(sourceBase, "blogxverify_a1b2c3d4")]) {
     assert.throws(() => validateProductionBackupSource(unsafe, authority), /production backup source/i);
   }
+});
+
+test("production authorities reject stale migration count 8 after accepting current count 9", async (context) => {
+  const sourceBase = await mkdtemp(join(tmpdir(), "blog-x-production-source-"));
+  context.after(async () => { await rm(sourceBase, { recursive: true, force: true }); });
+  const currentInventory = await collectorDependencies().readAllowlistedInventory();
+  assert.doesNotThrow(() => createProductionInventory(currentInventory), "collector inventory accepts current migration count 9");
+  assert.throws(() => createProductionInventory({
+    ...currentInventory,
+    migration: { ...currentInventory.migration, count: 8 },
+  }), /migration/i, "collector inventory rejects stale migration count 8");
+
+  const currentRoot = join(sourceBase, setId);
+  await mkdir(currentRoot, { mode: 0o700 });
+  await writeCompleteSet(currentRoot);
+  const authority = { kind: "generated-test", sourceBase };
+  assert.equal((await verifyProductionBackupSource(currentRoot, authority)).inventory.migration.count, 9);
+
+  const staleRoot = join(sourceBase, "20260809T100001Z-b1c2d3e4");
+  await mkdir(staleRoot, { mode: 0o700 });
+  await writeCompleteSet(staleRoot, 8);
+  await assert.rejects(verifyProductionBackupSource(staleRoot, authority), /migration.*count/i, "source authority rejects stale migration count 8");
 });
 
 test("production source authority rejects rehearsal roots, links, and content mutations before success", async (context) => {
@@ -201,11 +223,11 @@ test("collector atomically creates a fresh all-authority production set through 
   assert.equal(parseProductionBackupPolicy(policy).collector.project, "blogxprodverify_a1b2c3d4");
   const result = await collectProductionBackupSet(policy, collectorDependencies());
   const verified = await verifyProductionBackupSource(result.finalRoot, policy.sourceAuthority);
-  assert.equal(verified.inventory.migration.count, 8);
+  assert.equal(verified.inventory.migration.count, 9);
   assert.equal(await readFile(join(result.finalRoot, "database.dump"), "utf8"), "PGDMP-collector-fixture");
   assert.equal(JSON.parse(await readFile(join(result.finalRoot, "portable-export-v1.json"), "utf8")).media.length, 1);
   assert.equal((await readFile(join(result.finalRoot, "media/source/11111111-1111-4111-8111-111111111111.bin"), "utf8")), "collector-source-bytes");
-  assert.equal(createProductionInventory(verified.inventory).migration.count, 8);
+  assert.equal(createProductionInventory(verified.inventory).migration.count, 9);
   assert.deepEqual((await readdir(sourceBase)).filter((name) => name.startsWith(".")).length, 0);
 });
 
