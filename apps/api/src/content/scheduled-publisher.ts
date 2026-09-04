@@ -17,6 +17,13 @@ export class ScheduledPublicationError extends Error {
   }
 }
 
+/** Internal test seams model database failures without widening the CLI contract. */
+export type ScheduledPublisherHooks = {
+  beforeValidation?: (candidate: DueArticleCandidate) => void | Promise<void>;
+  beforeUpdate?: (candidate: DueArticleCandidate) => void | Promise<void>;
+  beforeAudit?: (candidate: DueArticleCandidate) => void | Promise<void>;
+};
+
 function nextVersion(current: StoredAdminPost, transactionNow: Date) {
   return new Date(Math.max(transactionNow.getTime(), current.updatedAt.getTime() + 1));
 }
@@ -37,7 +44,7 @@ function assertDueCandidate(candidate: DueArticleCandidate, transactionNow: Date
  * HTTP route, or process-local mutex: PostgreSQL row locks are the shared
  * authority across concurrent invocations.
  */
-export function createScheduledPublisher(repository: Pick<AdminPostRepository, "transactDue">) {
+export function createScheduledPublisher(repository: Pick<AdminPostRepository, "transactDue">, hooks: ScheduledPublisherHooks = {}) {
   async function publishDue(limit: number): Promise<PublishDueResult> {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > publishDueMaximumLimit) {
       throw new ScheduledPublicationError("transaction_failed");
@@ -45,10 +52,14 @@ export function createScheduledPublisher(repository: Pick<AdminPostRepository, "
     return repository.transactDue(limit, async (candidates, transactionNow) => {
       // Validate every locked row before making one of them externally visible.
       // Throwing from this callback rolls the complete ordered batch back.
-      for (const candidate of candidates) assertDueCandidate(candidate, transactionNow);
+      for (const candidate of candidates) {
+        await hooks.beforeValidation?.(candidate);
+        assertDueCandidate(candidate, transactionNow);
+      }
       for (const candidate of candidates) {
         const scheduledAt = candidate.current.scheduledAt;
         if (!scheduledAt) throw new ScheduledPublicationError("invalid_candidate");
+        await hooks.beforeUpdate?.(candidate);
         await candidate.update({
           status: "published",
           publishedAt: transactionNow,
@@ -57,6 +68,7 @@ export function createScheduledPublisher(repository: Pick<AdminPostRepository, "
           legacyMediaReview: "clear",
           updatedAt: nextVersion(candidate.current, transactionNow),
         });
+        await hooks.beforeAudit?.(candidate);
         await candidate.audit("article.scheduled_published", { scheduledAt: scheduledAt.toISOString() });
       }
       return {
@@ -70,4 +82,3 @@ export function createScheduledPublisher(repository: Pick<AdminPostRepository, "
 
   return { publishDue };
 }
-
