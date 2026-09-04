@@ -7,6 +7,7 @@ import {
   type AdminPostUpdateInput,
   type ArticleAction,
   type ArticleStatus,
+  type ScheduleArticleInput,
 } from "@blog-x/contracts";
 import type { AdminPostRepository, StoredAdminPost } from "./admin-repository.js";
 import { resolveRetainedTransition } from "./article-state.js";
@@ -15,6 +16,7 @@ import { classifyArticleMedia } from "./media-reference-policy.js";
 export type ArticleServiceError =
   | { error: "not_found" }
   | { error: "invalid_transition"; status: ArticleStatus; action: ArticleAction }
+  | { error: "schedule_conflict"; status: ArticleStatus; reason: "not_draft" | "not_scheduled" }
   | { error: "validation_failed"; fields: Record<string, string[]> }
   | { error: "published_slug_confirmation_required"; currentSlug: string; requestedSlug: string; version: string };
 
@@ -52,12 +54,34 @@ function mediaValidationFields({ markdown, coverUrl }: { markdown: string; cover
   return Object.keys(fields).length ? fields : null;
 }
 
+/**
+ * Validates stored article state immediately before the draft-to-published
+ * transition. The due publisher consumes this same policy in Plan 10-03, so
+ * an article edited after scheduling cannot bypass manual publish validation.
+ */
+export function publicationReadinessFields(current: StoredAdminPost) {
+  const valid = adminPostInputSchema.safeParse({
+    title: current.title,
+    summary: current.summary,
+    coverUrl: current.coverUrl,
+    slug: current.slug,
+    markdown: current.markdown,
+    publishedAt: current.publishedAt?.toISOString() ?? null,
+    seoDescription: current.seoDescription,
+    categoryId: current.categoryId,
+    tagIds: current.tagIds,
+    ...(current.coverMedia ? { coverMedia: current.coverMedia } : {}),
+  });
+  if (!valid.success) return validationFields(valid.error);
+  return mediaValidationFields(current);
+}
+
 function statusOf(post: StoredAdminPost) {
   return articleStatusSchema.parse(post.status);
 }
 
-function nextVersion(current: StoredAdminPost) {
-  return new Date(Math.max(Date.now(), current.updatedAt.getTime() + 1));
+function nextVersion(current: StoredAdminPost, transactionNow: Date) {
+  return new Date(Math.max(transactionNow.getTime(), current.updatedAt.getTime() + 1));
 }
 
 function confirmationMatches(id: string, current: StoredAdminPost, input: AdminPostUpdateInput) {
@@ -127,7 +151,7 @@ export function createArticleService(repository: AdminPostRepository) {
   }
 
   async function updateDraft(id: string, input: AdminPostUpdateInput, actorAdministratorId: string): Promise<ArticleServiceResult> {
-    const result = await repository.transactRetained<ArticleServiceResult>(id, actorAdministratorId, async (current, update, audit) => {
+    const result = await repository.transactRetained<ArticleServiceResult>(id, actorAdministratorId, async (current, update, audit, transactionNow) => {
       const status = statusOf(current);
       if (!resolveRetainedTransition(status, "edit")) return { ok: false, detail: { error: "not_found" } };
       const mediaFields = mediaValidationFields(input);
@@ -164,7 +188,7 @@ export function createArticleService(repository: AdminPostRepository) {
         coverAlt: input.coverMedia?.alt ?? "",
         coverDecorative: input.coverMedia?.decorative ?? false,
         legacyMediaReview: "clear",
-        updatedAt: nextVersion(current),
+        updatedAt: nextVersion(current, transactionNow),
       }, input.tagIds);
       await audit("article.updated", { previousStatus: status, status, changedFields });
       return { ok: true, post: serialize(updated) };
@@ -173,33 +197,25 @@ export function createArticleService(repository: AdminPostRepository) {
   }
 
   async function transition(id: string, action: ArticleAction, actorAdministratorId: string): Promise<ArticleServiceResult | DeleteServiceResult> {
-    const result = await repository.transactRetained<ArticleServiceResult | DeleteServiceResult>(id, actorAdministratorId, async (current, update, audit) => {
+    const result = await repository.transactRetained<ArticleServiceResult | DeleteServiceResult>(id, actorAdministratorId, async (current, update, audit, transactionNow) => {
       const status = statusOf(current);
       const target = resolveRetainedTransition(status, action);
       if (!target) return { ok: false, detail: { error: "invalid_transition", status, action } };
 
       if (action === "delete") {
-        await update({ deletedAt: new Date(), updatedAt: nextVersion(current) });
+        await update({
+          deletedAt: transactionNow,
+          scheduledAt: null,
+          scheduledByAdministratorId: null,
+          updatedAt: nextVersion(current, transactionNow),
+        });
         await audit("article.deleted", { previousStatus: status, status: "deleted" });
         return { ok: true, deleted: { id, deleted: true } };
       }
 
       if (action === "publish") {
-        const valid = adminPostInputSchema.safeParse({
-          title: current.title,
-          summary: current.summary,
-          coverUrl: current.coverUrl,
-          slug: current.slug,
-          markdown: current.markdown,
-          publishedAt: current.publishedAt?.toISOString() ?? null,
-          seoDescription: current.seoDescription,
-          categoryId: current.categoryId,
-          tagIds: current.tagIds,
-          ...(current.coverMedia ? { coverMedia: current.coverMedia } : {}),
-        });
-        if (!valid.success) return { ok: false, detail: { error: "validation_failed", fields: validationFields(valid.error) } };
-        const mediaFields = mediaValidationFields(current);
-        if (mediaFields) return { ok: false, detail: { error: "validation_failed", fields: mediaFields } };
+        const fields = publicationReadinessFields(current);
+        if (fields) return { ok: false, detail: { error: "validation_failed", fields } };
       }
 
       if (action === "republish" && !current.publishedAt) {
@@ -211,9 +227,13 @@ export function createArticleService(repository: AdminPostRepository) {
       }
       const updated = await update({
         status: target,
-        publishedAt: action === "publish" ? (current.publishedAt ?? new Date()) : current.publishedAt,
+        // A draft's old authored timestamp is never schedule authority. The
+        // first successful draft-to-published transition establishes public
+        // history from the database transaction, while republish keeps it.
+        publishedAt: action === "publish" ? transactionNow : current.publishedAt,
+        ...(action === "publish" ? { scheduledAt: null, scheduledByAdministratorId: null } : {}),
         ...(action === "publish" || action === "republish" ? { legacyMediaReview: "clear" } : {}),
-        updatedAt: nextVersion(current),
+        updatedAt: nextVersion(current, transactionNow),
       });
       const event = {
         publish: "article.published",
@@ -226,7 +246,47 @@ export function createArticleService(repository: AdminPostRepository) {
     return result ?? { ok: false, detail: { error: "not_found" } };
   }
 
-  return { createDraft, getDraft, listDrafts, updateDraft, transition };
+  async function schedule(id: string, input: ScheduleArticleInput, actorAdministratorId: string): Promise<ArticleServiceResult> {
+    const requestedAt = new Date(input.scheduledAt);
+    const result = await repository.transactRetained<ArticleServiceResult>(id, actorAdministratorId, async (current, update, audit, transactionNow) => {
+      const status = statusOf(current);
+      if (status !== "draft") return { ok: false, detail: { error: "schedule_conflict", status, reason: "not_draft" } };
+      if (requestedAt.getTime() <= transactionNow.getTime()) {
+        return { ok: false, detail: { error: "validation_failed", fields: { scheduledAt: ["预约时间必须晚于数据库当前时间"] } } };
+      }
+      const event = current.scheduledAt ? "article.rescheduled" : "article.scheduled";
+      const updated = await update({
+        scheduledAt: requestedAt,
+        scheduledByAdministratorId: actorAdministratorId,
+        updatedAt: nextVersion(current, transactionNow),
+      });
+      await audit(event, { scheduledAt: requestedAt.toISOString() });
+      return { ok: true, post: serialize(updated) };
+    });
+    return result ?? { ok: false, detail: { error: "not_found" } };
+  }
+
+  async function cancelSchedule(id: string, actorAdministratorId: string): Promise<ArticleServiceResult> {
+    const result = await repository.transactRetained<ArticleServiceResult>(id, actorAdministratorId, async (current, update, audit, transactionNow) => {
+      const status = statusOf(current);
+      if (status !== "draft") return { ok: false, detail: { error: "schedule_conflict", status, reason: "not_draft" } };
+      if (!current.scheduledAt) return { ok: false, detail: { error: "schedule_conflict", status, reason: "not_scheduled" } };
+      const scheduledAt = current.scheduledAt.toISOString();
+      // Record the former deadline before clearing its retained authority in
+      // the same transaction, so cancellation has durable evidence but no
+      // scheduling metadata survives the commit.
+      await audit("article.schedule_cancelled", { scheduledAt });
+      const updated = await update({
+        scheduledAt: null,
+        scheduledByAdministratorId: null,
+        updatedAt: nextVersion(current, transactionNow),
+      });
+      return { ok: true, post: serialize(updated) };
+    });
+    return result ?? { ok: false, detail: { error: "not_found" } };
+  }
+
+  return { createDraft, getDraft, listDrafts, updateDraft, transition, schedule, cancelSchedule };
 }
 
 export type ArticleService = ReturnType<typeof createArticleService>;

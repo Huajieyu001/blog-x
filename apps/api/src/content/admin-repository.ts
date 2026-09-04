@@ -1,5 +1,5 @@
 import { legacyMediaReviewSchema, mediaReferenceSchema, type AdminPostInput, type AuditMetadata, type MediaReference } from "@blog-x/contracts";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { appendAuditEvent } from "../audit/audit-repository.js";
 import * as schema from "../db/schema.js";
@@ -13,6 +13,8 @@ const selectedPost = {
   slug: schema.articles.slug,
   markdown: schema.articles.markdown,
   publishedAt: schema.articles.publishedAt,
+  scheduledAt: schema.articles.scheduledAt,
+  scheduledByAdministratorId: schema.articles.scheduledByAdministratorId,
   seoDescription: schema.articles.seoDescription,
   status: schema.articles.status,
   updatedAt: schema.articles.updatedAt,
@@ -31,6 +33,8 @@ export type StoredAdminPost = {
   slug: string;
   markdown: string;
   publishedAt: Date | null;
+  scheduledAt: Date | null;
+  scheduledByAdministratorId: string | null;
   seoDescription: string;
   status: string;
   updatedAt: Date;
@@ -47,6 +51,8 @@ export type RetainedArticleChanges = Partial<{
   slug: string;
   markdown: string;
   publishedAt: Date | null;
+  scheduledAt: Date | null;
+  scheduledByAdministratorId: string | null;
   seoDescription: string;
   status: string;
   deletedAt: Date;
@@ -64,7 +70,7 @@ type RetainedArticleUpdate = (
 ) => Promise<StoredAdminPost>;
 
 type RetainedArticleAudit = (
-  event: "article.updated" | "article.published" | "article.unpublished" | "article.republished" | "article.deleted",
+  event: "article.updated" | "article.published" | "article.unpublished" | "article.republished" | "article.deleted" | "article.scheduled" | "article.rescheduled" | "article.schedule_cancelled",
   metadata?: AuditMetadata,
 ) => Promise<void>;
 
@@ -124,13 +130,18 @@ export function createAdminPostRepository(db: Database) {
   async function transactRetained<T>(
     id: string,
     actorAdministratorId: string,
-    operation: (current: StoredAdminPost, update: RetainedArticleUpdate, audit: RetainedArticleAudit) => Promise<T>,
+    operation: (current: StoredAdminPost, update: RetainedArticleUpdate, audit: RetainedArticleAudit, transactionNow: Date) => Promise<T>,
   ): Promise<T | null> {
     return db.transaction(async (tx) => {
       const current = (await tx.select(selectedPost).from(schema.articles)
         .where(and(eq(schema.articles.id, id), isNull(schema.articles.deletedAt))).limit(1).for("update"))[0];
       if (!current) return null;
       const currentWithTags = await hydrate(tx as Database, current as typeof schema.articles.$inferSelect);
+      // PostgreSQL evaluates CURRENT_TIMESTAMP once per transaction. Exposing that
+      // exact value keeps schedule policy, versioning, and later due publication
+      // independent of the API host clock.
+      const transactionNow = (await tx.execute<{ transactionNow: Date }>(sql`select CURRENT_TIMESTAMP as "transactionNow"`)).rows[0]?.transactionNow;
+      if (!(transactionNow instanceof Date)) throw new Error("transaction timestamp is unavailable");
       const update: RetainedArticleUpdate = async (changes, tagIds) => {
         const updated = (await tx.update(schema.articles).set(changes).where(eq(schema.articles.id, id)).returning(selectedPost))[0];
         if (!updated) throw new Error("retained article update did not return a row");
@@ -149,7 +160,7 @@ export function createAdminPostRepository(db: Database) {
         targetId: id,
         ...(metadata ? { metadata } : {}),
       });
-      return operation(currentWithTags, update, audit);
+      return operation(currentWithTags, update, audit, transactionNow);
     });
   }
 

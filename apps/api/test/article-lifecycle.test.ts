@@ -156,6 +156,84 @@ test("scheduled publication schema preserves legacy draft publication timestamps
   );
 });
 
+test("a retained draft schedule is authenticated, future-only, row-locked, and content-free audited", async (context) => {
+  if (!databaseUrl) {
+    context.skip("LIFECYCLE_TEST_DATABASE_URL must name a disposable migrated PostgreSQL database");
+    return;
+  }
+
+  const pool = new Pool({ connectionString: databaseUrl });
+  const db = drizzle({ client: pool, schema: { administrators, articles, sessions } });
+  const username = `schedule-lifecycle-${Date.now()}`;
+  const password = "schedule-lifecycle-password";
+  await pool.query("truncate table audit_events, sessions, articles, administrators cascade");
+  context.after(async () => {
+    await pool.query("truncate table audit_events, sessions, articles, administrators cascade");
+    await pool.end();
+  });
+  await seedAdministrator(db, { username, password });
+  const administrator = (await db.select({ id: administrators.id }).from(administrators).limit(1))[0]!;
+  const app = await buildApp({ publicOrigin });
+  context.after(async () => { await app.close(); });
+  const login = await app.inject({ method: "POST", url: "/auth/login", headers: { origin: publicOrigin, "content-type": "application/json" }, payload: { username, password } });
+  const cookie = sessionCookie(String(login.headers["set-cookie"]));
+  const headers = { origin: publicOrigin, cookie, "content-type": "application/json" };
+  const draftInput = {
+    title: "Scheduled lifecycle article", summary: "Scheduled lifecycle summary", coverUrl: "", slug: `scheduled-lifecycle-${Date.now()}`,
+    markdown: "# Scheduled lifecycle\n\nContent must never enter audit metadata", publishedAt: null, seoDescription: "Scheduled lifecycle SEO",
+  };
+  const created = await app.inject({ method: "POST", url: "/admin/posts", headers, payload: draftInput });
+  assert.equal(created.statusCode, 201, created.body);
+  const id = created.json().id as string;
+  const auditCount = async () => Number((await pool.query("select count(*)::int as count from audit_events where target_id = $1", [id])).rows[0]?.count ?? 0);
+  assert.equal(await auditCount(), 1);
+
+  const unauthorized = await app.inject({ method: "PUT", url: `/admin/posts/${id}/schedule`, headers: { "content-type": "application/json" }, payload: { scheduledAt: "2032-01-01T00:00:00.000Z" } });
+  assert.equal(unauthorized.statusCode, 401);
+  const wrongOrigin = await app.inject({ method: "PUT", url: `/admin/posts/${id}/schedule`, headers: { ...headers, origin: "https://untrusted.invalid" }, payload: { scheduledAt: "2032-01-01T00:00:00.000Z" } });
+  assert.equal(wrongOrigin.statusCode, 403);
+  const malformed = await app.inject({ method: "PUT", url: `/admin/posts/${id}/schedule`, headers, payload: { scheduledAt: "2032-01-01T00:00:00", extra: true } });
+  assert.equal(malformed.statusCode, 400);
+  const past = await app.inject({ method: "PUT", url: `/admin/posts/${id}/schedule`, headers, payload: { scheduledAt: "2000-01-01T00:00:00.000Z" } });
+  assert.equal(past.statusCode, 400);
+  assert.equal(await auditCount(), 1, "rejected schedule attempts must not write audit evidence");
+
+  const firstAt = "2032-01-01T00:00:00.000Z";
+  const scheduled = await app.inject({ method: "PUT", url: `/admin/posts/${id}/schedule`, headers, payload: { scheduledAt: firstAt } });
+  assert.equal(scheduled.statusCode, 200, scheduled.body);
+  assert.equal(scheduled.json().status, "draft");
+  assert.equal(scheduled.json().publishedAt, null, "a pending schedule is never a publication timestamp");
+  assert.equal(scheduled.json().scheduledAt, firstAt);
+
+  const secondAt = "2032-01-02T00:00:00.000Z";
+  const rescheduled = await app.inject({ method: "PUT", url: `/admin/posts/${id}/schedule`, headers, payload: { scheduledAt: secondAt } });
+  assert.equal(rescheduled.statusCode, 200, rescheduled.body);
+  assert.equal(rescheduled.json().scheduledAt, secondAt);
+  const cancelled = await app.inject({ method: "DELETE", url: `/admin/posts/${id}/schedule`, headers: { origin: publicOrigin, cookie } });
+  assert.equal(cancelled.statusCode, 200, cancelled.body);
+  assert.equal(cancelled.json().scheduledAt, null);
+  const repeatedCancel = await app.inject({ method: "DELETE", url: `/admin/posts/${id}/schedule`, headers: { origin: publicOrigin, cookie } });
+  assert.equal(repeatedCancel.statusCode, 409);
+  assert.deepEqual(repeatedCancel.json(), { error: "schedule_conflict", status: "draft", reason: "not_scheduled" });
+
+  const events = await pool.query<{ event: string; actor_administrator_id: string; metadata: Record<string, unknown> }>(
+    "select event, actor_administrator_id, metadata from audit_events where target_id = $1 order by occurred_at, id", [id],
+  );
+  assert.deepEqual(events.rows.map((row) => row.event), ["article.created", "article.scheduled", "article.rescheduled", "article.schedule_cancelled"]);
+  for (const event of events.rows.slice(1)) {
+    assert.equal(event.actor_administrator_id, administrator.id);
+    assert.deepEqual(Object.keys(event.metadata), ["scheduledAt"]);
+    assert.doesNotMatch(JSON.stringify(event.metadata), /Scheduled lifecycle|Content must never/);
+  }
+
+  const manuallyScheduled = await app.inject({ method: "PUT", url: `/admin/posts/${id}/schedule`, headers, payload: { scheduledAt: "2032-01-03T00:00:00.000Z" } });
+  assert.equal(manuallyScheduled.statusCode, 200);
+  const manuallyPublished = await app.inject({ method: "POST", url: `/admin/posts/${id}/publish`, headers, payload: {} });
+  assert.equal(manuallyPublished.statusCode, 200, manuallyPublished.body);
+  assert.equal(manuallyPublished.json().scheduledAt, null, "manual publication clears retained schedule authority under the same lock");
+  assert.match(manuallyPublished.json().publishedAt, /^\d{4}-\d{2}-\d{2}T/);
+});
+
 test("publish, edit, slug confirmation, unpublish, republish, and soft delete are atomic and recoverable", async (context) => {
   if (!databaseUrl) {
     context.skip("LIFECYCLE_TEST_DATABASE_URL must name a disposable migrated PostgreSQL database");
@@ -229,7 +307,9 @@ test("publish, edit, slug confirmation, unpublish, republish, and soft delete ar
   const published = await app.inject({ method: "POST", url: `/admin/posts/${draft.json().id}/publish`, headers, payload: {} });
   assert.equal(published.statusCode, 200);
   assert.equal(published.json().status, "published");
-  assert.equal(published.json().publishedAt, explicitPublishedAt);
+  const firstPublishedAt = published.json().publishedAt as string;
+  assert.match(firstPublishedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.notEqual(firstPublishedAt, explicitPublishedAt, "a draft's legacy authored timestamp is not first-public history");
   assert.equal((await app.inject({ method: "GET", url: `/public/articles/${slug}` })).statusCode, 200);
 
   const unsafePublishedEdit = await app.inject({
@@ -245,7 +325,7 @@ test("publish, edit, slug confirmation, unpublish, republish, and soft delete ar
   const ordinaryEditInput = { ...draftInput, title: "Ordinary edit", publishedAt: "2026-08-02T02:30:00.000Z", publishedAtCorrection: false };
   const ordinaryEdit = await app.inject({ method: "PUT", url: `/admin/posts/${draft.json().id}`, headers, payload: ordinaryEditInput });
   assert.equal(ordinaryEdit.statusCode, 200);
-  assert.equal(ordinaryEdit.json().publishedAt, explicitPublishedAt);
+  assert.equal(ordinaryEdit.json().publishedAt, firstPublishedAt);
   assert.equal(ordinaryEdit.json().status, "published");
   assert.notEqual(ordinaryEdit.json().version, published.json().version);
 
@@ -289,7 +369,7 @@ test("publish, edit, slug confirmation, unpublish, republish, and soft delete ar
   });
   assert.equal(confirmedChange.statusCode, 200);
   assert.equal(confirmedChange.json().slug, changedSlug);
-  assert.equal(confirmedChange.json().publishedAt, explicitPublishedAt);
+  assert.equal(confirmedChange.json().publishedAt, firstPublishedAt);
 
   const correctedPublishedAt = "2026-07-31T01:15:00.000Z";
   const correction = await app.inject({

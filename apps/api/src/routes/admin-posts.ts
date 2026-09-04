@@ -11,6 +11,8 @@ import {
   invalidTransitionResponseSchema,
   lifecycleActionInputSchema,
   publishedSlugConfirmationRequiredSchema,
+  scheduleArticleInputSchema,
+  scheduleConflictResponseSchema,
   slugConflictResponseSchema,
   slugSuggestionSchema,
   suggestSlug,
@@ -19,7 +21,7 @@ import type { FastifyPluginAsync } from "fastify";
 import type { SessionService } from "../auth/sessions.js";
 import type { ArticleService, ArticleServiceResult, DeleteServiceResult } from "../content/article-service.js";
 import { renderMarkdown } from "../content/markdown.js";
-import { requireAdministrator, requireAdministratorMutation, requireContentType, type MutationGuardOptions } from "../security/mutation-guard.js";
+import { requireAdministrator, requireAdministratorMutation, requireContentType, requireEmptyFormContent, type MutationGuardOptions } from "../security/mutation-guard.js";
 
 type AdminPostRouteOptions = {
   articleService: ArticleService;
@@ -69,11 +71,36 @@ function sendServiceResult(result: ArticleServiceResult | DeleteServiceResult, r
   }
   if (result.detail.error === "not_found") return reply.code(404).send({ error: "not_found" });
   if (result.detail.error === "validation_failed") return reply.code(400).send(fieldErrorResponseSchema.parse(result.detail));
+  if (result.detail.error === "schedule_conflict") return reply.code(409).send(scheduleConflictResponseSchema.parse(result.detail));
   if (result.detail.error === "invalid_transition") return reply.code(409).send(invalidTransitionResponseSchema.parse(result.detail));
   return reply.code(409).send(publishedSlugConfirmationRequiredSchema.parse(result.detail));
 }
 
+function invalidScheduleForm(reply: { code: (statusCode: number) => { send: (payload: unknown) => unknown } }) {
+  return reply.code(400).send(fieldErrorResponseSchema.parse({
+    error: "validation_failed",
+    fields: { scheduledAt: ["预约时间必须是含明确 UTC 偏移量的本地日期时间"] },
+  }));
+}
+
+function parseScheduleForm(body: unknown) {
+  if (typeof body !== "string") return null;
+  const form = new URLSearchParams(body);
+  const allowed = new Set(["scheduledAt", "timezoneOffset"]);
+  const entries = [...form.entries()];
+  if (entries.length !== 2 || entries.some(([key]) => !allowed.has(key))) return null;
+  const local = form.get("scheduledAt");
+  const offset = form.get("timezoneOffset");
+  if (!local || !offset || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/.test(local) || !/^[+-](?:0\d|1[0-4]):[0-5]\d$/.test(offset)) return null;
+  const seconds = local.length === 16 ? `${local}:00` : local;
+  const parsed = scheduleArticleInputSchema.safeParse({ scheduledAt: `${seconds}${offset}` });
+  return parsed.success ? parsed.data : null;
+}
+
 export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async (app, options) => {
+  app.addContentTypeParser("application/x-www-form-urlencoded", { parseAs: "string" }, (_request, body, done) => {
+    done(null, body);
+  });
   app.get<{ Querystring: { title?: string } }>("/admin/posts/slug-suggestion", async (request, reply) => {
     if (!await requireAdministrator(request, reply, options.mutationGuard)) return;
     return slugSuggestionSchema.parse({ slug: suggestSlug(request.query.title ?? "") });
@@ -135,6 +162,54 @@ export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async 
       if (isForeignKeyConflict(error)) return invalidTaxonomy(reply);
       throw error;
     }
+  });
+
+  app.put<{ Params: { id: string } }>("/admin/posts/:id/schedule", { bodyLimit: 4 * 1024 }, async (request, reply) => {
+    const administratorId = await requireAdministratorMutation(request, reply, options.mutationGuard);
+    if (!administratorId) return;
+    if (!requireContentType(request, reply, "application/json")) return;
+    const id = adminPostIdSchema.safeParse(request.params.id);
+    if (!id.success) return reply.code(404).send({ error: "not_found" });
+    const parsed = scheduleArticleInputSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send(fieldErrors(parsed.error));
+    return sendServiceResult(await options.articleService.schedule(id.data, parsed.data, administratorId), reply);
+  });
+
+  app.delete<{ Params: { id: string } }>("/admin/posts/:id/schedule", { bodyLimit: 1 }, async (request, reply) => {
+    const administratorId = await requireAdministratorMutation(request, reply, options.mutationGuard);
+    if (!administratorId) return;
+    if (request.headers["content-type"] !== undefined || request.body !== undefined) return reply.code(415).send({ error: "unsupported_media_type" });
+    const id = adminPostIdSchema.safeParse(request.params.id);
+    if (!id.success) return reply.code(404).send({ error: "not_found" });
+    return sendServiceResult(await options.articleService.cancelSchedule(id.data, administratorId), reply);
+  });
+
+  // Native forms can only submit POST. These aliases deliberately preserve the
+  // stricter JSON semantic API above while providing a no-script, same-origin
+  // schedule path with an explicit author-supplied UTC offset.
+  app.post<{ Params: { id: string }; Body: string | undefined }>("/admin/posts/:id/schedule", { bodyLimit: 4 * 1024 }, async (request, reply) => {
+    const administratorId = await requireAdministratorMutation(request, reply, options.mutationGuard);
+    if (!administratorId) return;
+    if (!requireContentType(request, reply, "application/x-www-form-urlencoded")) return;
+    const id = adminPostIdSchema.safeParse(request.params.id);
+    if (!id.success) return reply.code(404).send({ error: "not_found" });
+    const parsed = parseScheduleForm(request.body);
+    if (!parsed) return invalidScheduleForm(reply);
+    const result = await options.articleService.schedule(id.data, parsed, administratorId);
+    if (result.ok && !request.headers.accept?.includes("application/json")) return reply.redirect(`/admin/posts/${id.data}`);
+    return sendServiceResult(result, reply);
+  });
+
+  app.post<{ Params: { id: string }; Body: string | undefined }>("/admin/posts/:id/schedule/cancel", { bodyLimit: 1 }, async (request, reply) => {
+    const administratorId = await requireAdministratorMutation(request, reply, options.mutationGuard);
+    if (!administratorId) return;
+    if (!requireEmptyFormContent(request, reply)) return;
+    if (request.body !== undefined && request.body !== "") return reply.code(400).send({ error: "validation_failed" });
+    const id = adminPostIdSchema.safeParse(request.params.id);
+    if (!id.success) return reply.code(404).send({ error: "not_found" });
+    const result = await options.articleService.cancelSchedule(id.data, administratorId);
+    if (result.ok && !request.headers.accept?.includes("application/json")) return reply.redirect(`/admin/posts/${id.data}`);
+    return sendServiceResult(result, reply);
   });
 
   for (const action of articleActionSchema.options) {
