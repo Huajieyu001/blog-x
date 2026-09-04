@@ -22,6 +22,8 @@ export function createExportRepository(db: Database) {
           coverUrl: schema.articles.coverUrl, slug: schema.articles.slug, markdown: schema.articles.markdown,
           seoDescription: schema.articles.seoDescription, status: schema.articles.status,
           publishedAt: schema.articles.publishedAt, deletedAt: schema.articles.deletedAt,
+          scheduledAt: schema.articles.scheduledAt,
+          scheduledByAdministratorId: schema.articles.scheduledByAdministratorId,
           createdAt: schema.articles.createdAt, updatedAt: schema.articles.updatedAt,
           categoryId: schema.articles.categoryId, coverMediaId: schema.articles.coverMediaId,
           coverAlt: schema.articles.coverAlt, coverDecorative: schema.articles.coverDecorative,
@@ -43,6 +45,7 @@ export function createExportRepository(db: Database) {
         articles: articleRows.map((article) => ({
           ...article,
           publishedAt: nullableIso(article.publishedAt), deletedAt: nullableIso(article.deletedAt),
+          scheduledAt: nullableIso(article.scheduledAt),
           createdAt: toIso(article.createdAt), updatedAt: toIso(article.updatedAt), tagIds: tagIdsByArticle.get(article.id) ?? [],
         })),
         categories: categoryRows.map((term) => ({ ...term, createdAt: toIso(term.createdAt), updatedAt: toIso(term.updatedAt) })),

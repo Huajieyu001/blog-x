@@ -34,6 +34,12 @@ test("restored database authority and every media byte equal the complete source
   try {
     const actual = portableExportManifestSchema.parse(await createExportRepository(db).archive());
     assert.deepEqual(authority(actual), authority(expected), "raw Markdown, lifecycle/nullability, taxonomy, About, cover, and media metadata must be identical");
+    const scheduledSource = expected.articles.find((article) => article.scheduledAt != null);
+    assert.ok(scheduledSource, "source backup must retain one pending schedule");
+    assert.ok(scheduledSource.scheduledByAdministratorId, "source backup must retain the scheduling administrator");
+    const scheduledRestored = actual.articles.find((article) => article.id === scheduledSource.id);
+    assert.deepEqual(scheduledRestored?.scheduledAt, scheduledSource.scheduledAt, "restored pending schedule must retain its exact UTC instant");
+    assert.deepEqual(scheduledRestored?.scheduledByAdministratorId, scheduledSource.scheduledByAdministratorId, "restored pending schedule must retain its administrator attribution");
     if (phase5LegacyArticleId) {
       const sourceLegacy = expected.articles.find((article) => article.id === phase5LegacyArticleId);
       const restoredLegacy = actual.articles.find((article) => article.id === phase5LegacyArticleId);
