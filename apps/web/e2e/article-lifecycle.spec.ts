@@ -144,16 +144,34 @@ test("schedule form remains a no-script, keyboard-operable same-origin control",
     expect(scheduleAction.pathname).toBe(`/api/admin/posts/${article.id}/schedule`);
     await schedule.getByLabel("预约发布时间").fill("2032-02-01T09:30");
     await schedule.getByLabel("UTC 偏移").fill("+08:00");
-    await schedule.getByRole("button", { name: "设定预约" }).press("Enter");
+    const [scheduleResponse] = await Promise.all([
+      page.waitForResponse((response) => response.request().method() === "POST" && response.url() === scheduleAction.href),
+      page.waitForNavigation({ waitUntil: "load" }),
+      schedule.getByRole("button", { name: "设定预约" }).press("Enter"),
+    ]);
+    expect(scheduleResponse.status()).toBe(302);
+    expect(scheduleResponse.headers()["location"]).toBe(`/admin/posts/${article.id}`);
     await expect(page).toHaveURL(detailUrl);
+    const scheduledPost = await noJsContext.request.get(`${webOrigin}/api/admin/posts/${article.id}`);
+    expect(scheduledPost.status()).toBe(200);
+    expect((await scheduledPost.json() as { scheduledAt: string | null }).scheduledAt).toBe("2032-02-01T01:30:00.000Z");
     await expect(page.getByText("当前预约：2032-02-01T01:30:00.000Z")).toBeVisible();
 
     const cancel = page.getByRole("button", { name: "取消预约" }).locator("..");
     const cancelAction = new URL(await cancel.getAttribute("action") ?? "", webOrigin);
     expect(cancelAction.origin).toBe(new URL(webOrigin).origin);
     expect(cancelAction.pathname).toBe(`/api/admin/posts/${article.id}/schedule/cancel`);
-    await cancel.getByRole("button", { name: "取消预约" }).press("Enter");
+    const [cancelResponse] = await Promise.all([
+      page.waitForResponse((response) => response.request().method() === "POST" && response.url() === cancelAction.href),
+      page.waitForNavigation({ waitUntil: "load" }),
+      cancel.getByRole("button", { name: "取消预约" }).press("Enter"),
+    ]);
+    expect(cancelResponse.status()).toBe(302);
+    expect(cancelResponse.headers()["location"]).toBe(`/admin/posts/${article.id}`);
     await expect(page).toHaveURL(detailUrl);
+    const cancelledPost = await noJsContext.request.get(`${webOrigin}/api/admin/posts/${article.id}`);
+    expect(cancelledPost.status()).toBe(200);
+    expect((await cancelledPost.json() as { scheduledAt: string | null }).scheduledAt).toBeNull();
     await expect(page.getByText("当前预约：")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "设定预约" })).toBeVisible();
   } finally {

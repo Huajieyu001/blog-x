@@ -3,10 +3,6 @@ import { getAdminPosts } from "../lib/api";
 import ArticleActions from "./_components/ArticleActions";
 import styles from "./admin.module.css";
 
-// Native lifecycle forms redirect back to this protected server-rendered page.
-// Never serve a cached list after those mutations.
-export const dynamic = "force-dynamic";
-
 export default async function AdminPage() {
   const posts = await getAdminPosts((await cookies()).toString());
   return (
