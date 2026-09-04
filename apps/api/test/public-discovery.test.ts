@@ -73,6 +73,7 @@ test("published search is literal, multilingual, strict, ranked, and stable", as
     article({ id: "30000000-0000-4000-8000-000000000013", slug: "hidden-unpublished", title: "HIDDEN_UNPUBLISHED_TITLE", summary: "HIDDEN_UNPUBLISHED_SUMMARY", markdown: "HIDDEN_UNPUBLISHED_MARKDOWN", status: "unpublished" }),
     article({ id: "30000000-0000-4000-8000-000000000014", slug: "hidden-deleted", title: "HIDDEN_DELETED_TITLE", summary: "HIDDEN_DELETED_SUMMARY", markdown: "HIDDEN_DELETED_MARKDOWN", deletedAt: baseTime }),
     article({ id: "30000000-0000-4000-8000-000000000015", slug: "hidden-null-time", title: "HIDDEN_NULL_TITLE", summary: "HIDDEN_NULL_SUMMARY", markdown: "HIDDEN_NULL_MARKDOWN", publishedAt: null }),
+    article({ id: "30000000-0000-4000-8000-000000000016", slug: "hidden-future-time", title: "HIDDEN_FUTURE_TITLE", summary: "HIDDEN_FUTURE_SUMMARY", markdown: "HIDDEN_FUTURE_MARKDOWN", publishedAt: new Date("2099-01-01T00:00:00.000Z") }),
   ];
   await db.insert(schema.articles).values(rows);
   await db.insert(schema.articleTags).values([
@@ -122,7 +123,7 @@ test("published search is literal, multilingual, strict, ranked, and stable", as
     assert.deepEqual(result.items.map((item) => item.slug), expectedSlugs, query);
   }
 
-  for (const query of ["' OR 1=1 --", "HIDDEN_DRAFT", "HIDDEN_UNPUBLISHED", "HIDDEN_DELETED", "HIDDEN_NULL"]) {
+  for (const query of ["' OR 1=1 --", "HIDDEN_DRAFT", "HIDDEN_UNPUBLISHED", "HIDDEN_DELETED", "HIDDEN_NULL", "HIDDEN_FUTURE"]) {
     const result = await repository.searchPage(normalizedQuery(query), 1);
     assert.deepEqual(result, { state: "no_results", query: normalizedQuery(query), page: 1, pageSize: 10, totalItems: 0, totalPages: 0, items: [] });
   }
@@ -209,6 +210,7 @@ test("related posts require public overlap and use deterministic category/tag/ti
     article({ id: "52000000-0000-4000-8000-000000000009", slug: "hidden-unpublished-related", title: "RELATED_HIDDEN_UNPUBLISHED", categoryId: category, status: "unpublished" }),
     article({ id: "52000000-0000-4000-8000-000000000010", slug: "hidden-deleted-related", title: "RELATED_HIDDEN_DELETED", categoryId: category, deletedAt: tiedTime }),
     article({ id: "52000000-0000-4000-8000-000000000011", slug: "hidden-null-related", title: "RELATED_HIDDEN_NULL", categoryId: category, publishedAt: null }),
+    article({ id: "52000000-0000-4000-8000-000000000012", slug: "hidden-future-related", title: "RELATED_HIDDEN_FUTURE", categoryId: category, publishedAt: new Date("2099-01-01T00:00:00.000Z") }),
   ];
   await db.insert(schema.articles).values(candidates);
   const tagsFor = (articleId: string, count: number) => tagIds.slice(0, count).map((tagId) => ({ articleId, tagId }));
@@ -222,6 +224,7 @@ test("related posts require public overlap and use deterministic category/tag/ti
     ...tagsFor(candidates[8]!.id, 3),
     ...tagsFor(candidates[9]!.id, 3),
     ...tagsFor(candidates[10]!.id, 3),
+    ...tagsFor(candidates[11]!.id, 3),
   ]);
 
   const related = await repository.relatedBySlug("source");
@@ -243,7 +246,7 @@ test("related posts require public overlap and use deterministic category/tag/ti
   assert.equal(routeResult.statusCode, 200, routeResult.body);
   assert.deepEqual(routeResult.json(), related);
 
-  for (const hiddenSlug of ["hidden-strong", "hidden-unpublished-related", "hidden-deleted-related", "hidden-null-related", "unknown-related"]) {
+  for (const hiddenSlug of ["hidden-strong", "hidden-unpublished-related", "hidden-deleted-related", "hidden-null-related", "hidden-future-related", "unknown-related"]) {
     assert.equal(await repository.relatedBySlug(hiddenSlug), null, hiddenSlug);
   }
 

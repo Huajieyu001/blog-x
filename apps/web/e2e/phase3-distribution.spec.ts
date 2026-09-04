@@ -79,6 +79,11 @@ async function createHiddenDraft(page: Page) {
   await page.getByLabel("Markdown").fill("# Hidden");
   await page.getByRole("button", { name: "保存草稿" }).click();
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("草稿已保存");
+  const schedule = page.getByRole("form", { name: "预约发布" });
+  await schedule.getByLabel("预约发布时间").fill("2099-01-01T00:00");
+  await schedule.getByLabel("UTC 偏移").fill("+00:00");
+  await schedule.getByRole("button", { name: "设定预约" }).click();
+  await expect(page.getByRole("status", { name: "生命周期状态" })).toHaveText("已设定预约");
 }
 
 async function expectCompleteHead(page: Page, expected: { title: string; description: string; url: string; type: "article" | "website"; documentTitle?: string }) {

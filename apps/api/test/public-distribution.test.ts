@@ -40,6 +40,7 @@ test("Phase 3 distribution only exposes predicate-visible discovery facts", asyn
     { title: "unpublished-hidden-marker", summary: "unpublished-hidden-marker", slug: "unpublished-hidden-marker", markdown: "unpublished-hidden-raw-marker", status: "unpublished", publishedAt: newer, categoryId: hiddenCategory.id },
     { title: "deleted-hidden-marker", summary: "deleted-hidden-marker", slug: "deleted-hidden-marker", markdown: "deleted-hidden-raw-marker", status: "published", publishedAt: newer, deletedAt: newer, categoryId: hiddenCategory.id },
     { title: "null-published-hidden-marker", summary: "null-published-hidden-marker", slug: "null-published-hidden-marker", markdown: "null-published-hidden-raw-marker", status: "published", categoryId: hiddenCategory.id },
+    { title: "future-published-hidden-marker", summary: "future-published-hidden-marker", slug: "future-published-hidden-marker", markdown: "future-published-hidden-raw-marker", status: "published", publishedAt: new Date("2099-01-01T00:00:00.000Z"), categoryId: hiddenCategory.id },
   ]);
   const hiddenArticle = (await db.select({ id: schema.articles.id }).from(schema.articles).where(eq(schema.articles.slug, "draft-hidden-marker")))[0]!;
   await db.insert(schema.articleTags).values({ articleId: hiddenArticle.id, tagId: hiddenTag.id });

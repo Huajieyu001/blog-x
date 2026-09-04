@@ -63,6 +63,7 @@ test("Phase 2 public surfaces share one published-only boundary backed by final 
     { title: "草稿秘密", summary: "draft-secret", slug: "phase-2-draft", markdown: "raw-draft-secret", status: "draft", categoryId: category.id },
     { title: "下线秘密", summary: "unpublished-secret", slug: "phase-2-unpublished", markdown: "raw-unpublished-secret", status: "unpublished", publishedAt: now, categoryId: category.id },
     { title: "删除秘密", summary: "deleted-secret", slug: "phase-2-deleted", markdown: "raw-deleted-secret", status: "published", publishedAt: now, deletedAt: now, categoryId: category.id },
+    { title: "未来公开秘密", summary: "future-public-secret", slug: "phase-2-future", markdown: "future-public-raw-secret", status: "published", publishedAt: new Date("2099-01-01T00:00:00.000Z"), categoryId: category.id },
   ]);
 
   await assert.rejects(db.insert(schema.categories).values({ name: "撞名", slug: category.slug }), hasPgCode("23505"));
@@ -95,9 +96,9 @@ test("Phase 2 public surfaces share one published-only boundary backed by final 
   }
   const publicText = bodies.join("\n");
   assert.match(publicText, /phase-2-visible/);
-  assert.doesNotMatch(publicText, /draft-secret|unpublished-secret|deleted-secret|raw-.*-secret|source\/|derivative\/|about-raw-secret/i);
+  assert.doesNotMatch(publicText, /draft-secret|unpublished-secret|deleted-secret|future-public-secret|raw-.*-secret|source\/|derivative\/|about-raw-secret/i);
 
-  for (const slug of ["phase-2-draft", "phase-2-unpublished", "phase-2-deleted", "phase-2-unknown"]) {
+  for (const slug of ["phase-2-draft", "phase-2-unpublished", "phase-2-deleted", "phase-2-future", "phase-2-unknown"]) {
     const response = await app.inject({ method: "GET", url: `/public/articles/${slug}` });
     assert.equal(response.statusCode, 404);
     assert.deepEqual(response.json(), { error: "not_found" });
