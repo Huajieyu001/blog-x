@@ -83,6 +83,80 @@ test("the bounded due publisher is DB-only, redacted, and changes an exactly-due
   assert.deepEqual(retry.publishedIds, []);
 });
 
+test("the due publisher orders bounded batches, converges concurrent retries, and rolls a whole batch back", async (context) => {
+  assert.deepEqual(parsePublishDueArguments(["--limit=25"]), { ok: true, limit: 25 });
+  assert.deepEqual(parsePublishDueArguments(["--limit=100"]), { ok: true, limit: 100 });
+  assert.deepEqual(parsePublishDueArguments(["--limit=101"]), { ok: false, code: "invalid_arguments" });
+  const hookCandidate = {
+    current: {
+      id: "11111111-1111-4111-8111-111111111111", title: "Hook article", summary: "", coverUrl: "", slug: "hook-article", markdown: "# Hook", publishedAt: null,
+      scheduledAt: new Date("2001-01-01T00:00:00.000Z"), scheduledByAdministratorId: "22222222-2222-4222-8222-222222222222", seoDescription: "", status: "draft",
+      updatedAt: new Date("2000-01-01T00:00:00.000Z"), categoryId: null, tagIds: [], coverMedia: null, legacyMediaReview: "clear" as const,
+    },
+    update: async () => { throw new Error("test update must not run after validation hook failure"); },
+    audit: async () => { throw new Error("test audit must not run after validation hook failure"); },
+  };
+  const hookedPublisher = createScheduledPublisher({
+    transactDue: async (_limit, operation) => operation([hookCandidate] as never, new Date("2002-01-01T00:00:00.000Z")),
+  } as never, {
+    beforeValidation: () => { throw new Error("injected validation failure"); },
+  });
+  await assert.rejects(hookedPublisher.publishDue(1), /injected validation failure/);
+  if (!databaseUrl) {
+    context.skip("LIFECYCLE_TEST_DATABASE_URL must name a disposable migrated PostgreSQL database");
+    return;
+  }
+  const pool = new Pool({ connectionString: databaseUrl });
+  const db = drizzle({ client: pool, schema: { administrators, articles, sessions } });
+  await pool.query("truncate table audit_events, sessions, articles, administrators cascade");
+  context.after(async () => {
+    await pool.query("truncate table audit_events, sessions, articles, administrators cascade");
+    await pool.end();
+  });
+  await seedAdministrator(db, { username: `due-batch-${Date.now()}`, password: "due-batch-password" });
+  const administrator = (await db.select({ id: administrators.id }).from(administrators).limit(1))[0]!;
+  const base = `due-batch-${Date.now()}`;
+  const [early, tiedA, tiedB] = await db.insert(articles).values([
+    { title: "Early", summary: "", slug: `${base}-early`, markdown: "# Early", status: "draft", scheduledAt: new Date("2001-01-01T00:00:00.000Z"), scheduledByAdministratorId: administrator.id },
+    { title: "Tied A", summary: "", slug: `${base}-tied-a`, markdown: "# Tied A", status: "draft", scheduledAt: new Date("2001-01-02T00:00:00.000Z"), scheduledByAdministratorId: administrator.id },
+    { title: "Tied B", summary: "", slug: `${base}-tied-b`, markdown: "# Tied B", status: "draft", scheduledAt: new Date("2001-01-02T00:00:00.000Z"), scheduledByAdministratorId: administrator.id },
+  ]).returning({ id: articles.id, scheduledAt: articles.scheduledAt });
+  const publisher = createScheduledPublisher(createAdminPostRepository(db));
+  const first = await publisher.publishDue(2);
+  const sortedTies = [tiedA!.id, tiedB!.id].sort();
+  assert.deepEqual(first.publishedIds, [early!.id, sortedTies[0]!]);
+  const second = await publisher.publishDue(2);
+  assert.deepEqual(second.publishedIds, [sortedTies[1]!]);
+
+  const [parallelA, parallelB] = await db.insert(articles).values([
+    { title: "Parallel A", summary: "", slug: `${base}-parallel-a`, markdown: "# Parallel A", status: "draft", scheduledAt: new Date("2001-01-03T00:00:00.000Z"), scheduledByAdministratorId: administrator.id },
+    { title: "Parallel B", summary: "", slug: `${base}-parallel-b`, markdown: "# Parallel B", status: "draft", scheduledAt: new Date("2001-01-03T00:00:00.000Z"), scheduledByAdministratorId: administrator.id },
+  ]).returning({ id: articles.id });
+  const [left, right] = await Promise.all([publisher.publishDue(100), publisher.publishDue(100)]);
+  const parallelIds = [...left.publishedIds, ...right.publishedIds].sort();
+  assert.deepEqual(parallelIds, [parallelA!.id, parallelB!.id].sort());
+  const parallelAudits = await pool.query<{ target_id: string; count: number }>(
+    "select target_id, count(*)::int as count from audit_events where event = 'article.scheduled_published' and target_id = any($1) group by target_id order by target_id",
+    [[parallelA!.id, parallelB!.id]],
+  );
+  assert.deepEqual(parallelAudits.rows, [parallelA!.id, parallelB!.id].sort().map((target_id) => ({ target_id, count: 1 })));
+
+  const [rollbackValid, rollbackInvalid] = await db.insert(articles).values([
+    { title: "Rollback valid", summary: "", slug: `${base}-rollback-valid`, markdown: "# Valid", status: "draft", scheduledAt: new Date("2001-01-04T00:00:00.000Z"), scheduledByAdministratorId: administrator.id },
+    { title: " ", summary: "", slug: `${base}-rollback-invalid`, markdown: " ", status: "draft", scheduledAt: new Date("2001-01-04T00:00:00.000Z"), scheduledByAdministratorId: administrator.id },
+  ]).returning({ id: articles.id });
+  const failurePublisher = createScheduledPublisher(createAdminPostRepository(db), {
+    beforeAudit: ({ current }) => {
+      if (current.id === rollbackValid!.id) throw new Error("injected audit failure");
+    },
+  });
+  await assert.rejects(failurePublisher.publishDue(2));
+  const rollbackRows = await db.select().from(articles).where(eq(articles.id, rollbackValid!.id));
+  assert.equal(rollbackRows[0]?.status, "draft");
+  assert.equal(rollbackRows[0]?.scheduledAt?.toISOString(), "2001-01-04T00:00:00.000Z");
+  assert.equal(Number((await pool.query("select count(*)::int as count from audit_events where target_id = any($1)", [[rollbackValid!.id, rollbackInvalid!.id]])).rows[0]?.count), 0);
+});
+
 test("legacy media classification is transactional, idempotent, and lossless", async (context) => {
   if (!databaseUrl) {
     context.skip("LIFECYCLE_TEST_DATABASE_URL must name a disposable migrated PostgreSQL database");
