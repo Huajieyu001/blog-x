@@ -3,7 +3,7 @@ status: complete
 phase: 08-reliable-local-delivery
 source: [08-01-SUMMARY.md, 08-02-SUMMARY.md, 08-03-SUMMARY.md, 08-04-SUMMARY.md, 08-05-SUMMARY.md, 08-06-SUMMARY.md, 08-07-SUMMARY.md, 08-08-SUMMARY.md, 08-09-SUMMARY.md]
 started: 2026-09-04T05:08:12Z
-updated: 2026-09-04T05:45:58Z
+updated: 2026-09-04T06:29:00Z
 ---
 
 ## Current Test
@@ -20,7 +20,7 @@ result: pass
 expected: 运行 `corepack pnpm local:deliver` 后，当前干净 `dev` 修订被安全、可复现地交付到固定 `3100` 环境，命令不会获得云服务器或生产部署能力。
 result: pass
 source: automated
-evidence: `corepack pnpm local:deliver` completed for revision `1f47a8dc29211defa04280606b26f1b2676fa8dc`.
+evidence: `corepack pnpm local:deliver` completed for revision `479b7356409cd7cc0f08e1de1a56beea75ec56da`.
 
 ### 3. 打开固定本地预览
 expected: 在浏览器打开 `http://127.0.0.1:3100`，能够看到由固定 `blogxlocal` 环境提供的 Blog X 页面，并可访问搜索与健康检查入口。
@@ -158,7 +158,7 @@ coverage_id: D3
 expected: 最终机器可读证据绑定当前交付修订，证明固定 `3100` 环境提供最新版本；本地验收成功不改变生产发布 `BLOCKED` 状态。
 result: pass
 source: automated
-evidence: `ops/local-deliveries/1f47a8dc29211defa04280606b26f1b2676fa8dc.json` independently verified with release blocked.
+evidence: `ops/local-deliveries/479b7356409cd7cc0f08e1de1a56beea75ec56da.json` independently verified at delivery with release blocked; descendant verification follows after closeout commit.
 
 ## Summary
 
