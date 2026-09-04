@@ -9,6 +9,10 @@ export const auditEventNameSchema = z.enum([
   "article.unpublished",
   "article.republished",
   "article.deleted",
+  "article.scheduled",
+  "article.rescheduled",
+  "article.schedule_cancelled",
+  "article.scheduled_published",
   "category.created",
   "category.updated",
   "category.deleted",
@@ -23,7 +27,7 @@ export const auditTargetTypeSchema = z.enum(["administrator", "article", "catego
 
 const changedFieldSchema = z.enum([
   "title", "summary", "coverUrl", "slug", "markdown", "publishedAt", "seoDescription",
-  "categoryId", "tagIds", "coverMedia", "name", "status",
+  "categoryId", "tagIds", "coverMedia", "name", "status", "scheduledAt",
 ]);
 const auditStatusSchema = z.enum(["draft", "published", "unpublished", "deleted"]);
 
@@ -31,6 +35,8 @@ export const auditMetadataSchema = z.object({
   changedFields: z.array(changedFieldSchema).max(20).optional(),
   previousStatus: auditStatusSchema.optional(),
   status: auditStatusSchema.optional(),
+  scheduledAt: z.string().datetime({ offset: true }).optional(),
+  previousScheduledAt: z.string().datetime({ offset: true }).optional(),
 }).strict();
 
 export const auditEventInputSchema = z.object({

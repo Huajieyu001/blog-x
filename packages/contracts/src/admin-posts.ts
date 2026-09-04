@@ -3,6 +3,7 @@ import { mediaUsageReferenceSchema } from "./media";
 
 const slugPattern = /^[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*$/u;
 const publishedAtInputSchema = z.union([z.string().datetime({ offset: true }), z.null()]);
+const scheduledAtSchema = z.string().datetime({ offset: true });
 export const adminPostInputSchema = z.object({
   title: z.string().trim().min(1, "请输入标题").max(240, "标题不能超过 240 个字符"),
   summary: z.string().trim().max(1_000, "摘要不能超过 1000 个字符"),
@@ -38,12 +39,25 @@ export const adminPostSchema = adminPostInputSchema.omit({ coverUrl: true }).ext
   status: articleStatusSchema,
   legacyMediaReview: legacyMediaReviewSchema,
   version: z.string().datetime({ offset: true }),
+  // The schedule actor is retained authority for the local due publisher and
+  // deliberately never crosses the authenticated admin response boundary.
+  scheduledAt: scheduledAtSchema.nullable().default(null),
 }).strict();
 
 export const adminPostListSchema = z.array(adminPostSchema);
 export const articleActionSchema = z.enum(["publish", "unpublish", "republish", "delete"]);
 export const lifecycleActionInputSchema = z.object({}).strict().optional().default({});
 export const deletedArticleSchema = z.object({ id: z.uuid(), deleted: z.literal(true) }).strict();
+
+export const scheduleArticleInputSchema = z.object({
+  scheduledAt: scheduledAtSchema,
+}).strict();
+
+export const scheduleConflictResponseSchema = z.object({
+  error: z.literal("schedule_conflict"),
+  status: articleStatusSchema,
+  reason: z.enum(["not_draft", "not_scheduled"]),
+}).strict();
 
 export const invalidTransitionResponseSchema = z.object({
   error: z.literal("invalid_transition"),
@@ -94,3 +108,4 @@ export type ArticleStatus = z.infer<typeof articleStatusSchema>;
 export type LegacyMediaReview = z.infer<typeof legacyMediaReviewSchema>;
 export type PublishedSlugConfirmation = z.infer<typeof publishedSlugConfirmationSchema>;
 export type FieldErrorResponse = z.infer<typeof fieldErrorResponseSchema>;
+export type ScheduleArticleInput = z.infer<typeof scheduleArticleInputSchema>;

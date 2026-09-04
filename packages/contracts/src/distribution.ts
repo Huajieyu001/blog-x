@@ -40,7 +40,21 @@ const portableArticleSchema = z.object({
   coverDecorative: z.boolean(),
   // Older portable v1 exports predate this lossless review disposition.
   legacyMediaReview: legacyMediaReviewSchema.optional(),
-}).strict();
+  // Older version-1 archives have neither field. New writers must emit both
+  // fields explicitly so a pending publication can be restored losslessly.
+  scheduledAt: isoDateTimeSchema.nullable().optional(),
+  scheduledByAdministratorId: z.uuid().nullable().optional(),
+}).strict().superRefine((article, context) => {
+  const hasScheduledAt = Object.hasOwn(article, "scheduledAt");
+  const hasScheduledBy = Object.hasOwn(article, "scheduledByAdministratorId");
+  if (hasScheduledAt !== hasScheduledBy) {
+    context.addIssue({ code: "custom", message: "schedule authority fields must be present together", path: hasScheduledAt ? ["scheduledByAdministratorId"] : ["scheduledAt"] });
+    return;
+  }
+  if (hasScheduledAt && (article.scheduledAt === null) !== (article.scheduledByAdministratorId === null)) {
+    context.addIssue({ code: "custom", message: "schedule authority fields must both be null or both have values", path: ["scheduledAt"] });
+  }
+});
 
 const portableAboutSchema = z.object({
   id: z.uuid(),

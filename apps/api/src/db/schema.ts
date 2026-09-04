@@ -70,6 +70,10 @@ export const articles = pgTable("articles", {
   seoDescription: text("seo_description").notNull().default(""),
   status: text("status").notNull().default("published"),
   publishedAt: timestamp("published_at", { withTimezone: true }),
+  scheduledAt: timestamp("scheduled_at", { withTimezone: true, precision: 3 }),
+  // This intentionally has no foreign key: administrator cleanup must not
+  // silently remove the durable attribution required to publish a schedule.
+  scheduledByAdministratorId: uuid("scheduled_by_administrator_id"),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -83,8 +87,11 @@ export const articles = pgTable("articles", {
   index("articles_public_index").on(table.status, table.publishedAt),
   index("articles_category_public_index").on(table.categoryId, table.status, table.publishedAt),
   index("articles_cover_media_index").on(table.coverMediaId),
+  index("articles_schedule_due_index").on(table.scheduledAt, table.id).where(sql`${table.status} = 'draft' and ${table.deletedAt} is null and ${table.scheduledAt} is not null`),
   check("articles_cover_alt_check", sql`${table.coverMediaId} is null or ${table.coverDecorative} or length(btrim(${table.coverAlt})) > 0`),
   check("articles_legacy_media_review_check", sql`${table.legacyMediaReview} in ('pending', 'clear', 'review_required')`),
+  check("articles_schedule_pair_check", sql`(${table.scheduledAt} is null) = (${table.scheduledByAdministratorId} is null)`),
+  check("articles_schedule_draft_check", sql`${table.scheduledAt} is null or (${table.status} = 'draft' and ${table.deletedAt} is null)`),
 ]);
 
 export const categories = pgTable("categories", {
