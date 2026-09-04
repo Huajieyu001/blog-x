@@ -90,6 +90,72 @@ test("legacy media classification is transactional, idempotent, and lossless", a
   assert.equal(JSON.stringify(secondRows.map((article) => ({ ...article, createdAt: article.createdAt.toISOString(), updatedAt: article.updatedAt.toISOString(), publishedAt: article.publishedAt?.toISOString(), deletedAt: article.deletedAt?.toISOString() }))), beforeSecondRun);
 });
 
+test("scheduled publication schema preserves legacy draft publication timestamps and rejects invalid retained schedule state", async (context) => {
+  if (!databaseUrl) {
+    context.skip("LIFECYCLE_TEST_DATABASE_URL must name a disposable migrated PostgreSQL database");
+    return;
+  }
+
+  const pool = new Pool({ connectionString: databaseUrl });
+  const prefix = `schedule-schema-${Date.now()}`;
+  const administratorId = "00000000-0000-4000-8000-000000000001";
+  const scheduledAt = "2026-12-01T02:15:30.000Z";
+  const legacyPublishedAt = "2030-01-01T00:00:00.000Z";
+  context.after(async () => {
+    await pool.query("delete from articles where slug like $1", [`${prefix}%`]);
+    await pool.end();
+  });
+
+  const columns = await pool.query<{ column_name: string }>(
+    "select column_name from information_schema.columns where table_schema = 'public' and table_name = 'articles' and column_name = any($1) order by column_name",
+    [["scheduled_at", "scheduled_by_administrator_id"]],
+  );
+  assert.deepEqual(columns.rows.map((row) => row.column_name), ["scheduled_at", "scheduled_by_administrator_id"]);
+  const constraints = await pool.query<{ conname: string }>(
+    "select conname from pg_constraint where conrelid = 'articles'::regclass and conname = any($1) order by conname",
+    [["articles_schedule_draft_check", "articles_schedule_pair_check"]],
+  );
+  assert.deepEqual(constraints.rows.map((row) => row.conname), ["articles_schedule_draft_check", "articles_schedule_pair_check"]);
+  const dueIndex = await pool.query<{ indexname: string }>(
+    "select indexname from pg_indexes where schemaname = 'public' and tablename = 'articles' and indexname = 'articles_schedule_due_index'",
+  );
+  assert.equal(dueIndex.rowCount, 1);
+
+  await pool.query(
+    "insert into articles (title, slug, markdown, status, published_at) values ($1, $2, $3, 'draft', $4)",
+    ["Legacy draft", `${prefix}-legacy`, "# Legacy", legacyPublishedAt],
+  );
+  const retained = await pool.query<{ published_at: Date; scheduled_at: Date | null; scheduled_by_administrator_id: string | null }>(
+    "select published_at, scheduled_at, scheduled_by_administrator_id from articles where slug = $1",
+    [`${prefix}-legacy`],
+  );
+  assert.equal(retained.rows[0]?.published_at.toISOString(), legacyPublishedAt);
+  assert.equal(retained.rows[0]?.scheduled_at, null);
+  assert.equal(retained.rows[0]?.scheduled_by_administrator_id, null);
+
+  await assert.rejects(
+    pool.query(
+      "insert into articles (title, slug, markdown, status, scheduled_at) values ($1, $2, $3, 'draft', $4)",
+      ["Partial schedule", `${prefix}-partial`, "# Partial", scheduledAt],
+    ),
+    (error: { code?: string; constraint?: string }) => error.code === "23514" && error.constraint === "articles_schedule_pair_check",
+  );
+  await assert.rejects(
+    pool.query(
+      "insert into articles (title, slug, markdown, status, scheduled_at, scheduled_by_administrator_id) values ($1, $2, $3, 'published', $4, $5)",
+      ["Published schedule", `${prefix}-published`, "# Published", scheduledAt, administratorId],
+    ),
+    (error: { code?: string; constraint?: string }) => error.code === "23514" && error.constraint === "articles_schedule_draft_check",
+  );
+  await assert.rejects(
+    pool.query(
+      "insert into articles (title, slug, markdown, status, deleted_at, scheduled_at, scheduled_by_administrator_id) values ($1, $2, $3, 'draft', now(), $4, $5)",
+      ["Deleted schedule", `${prefix}-deleted`, "# Deleted", scheduledAt, administratorId],
+    ),
+    (error: { code?: string; constraint?: string }) => error.code === "23514" && error.constraint === "articles_schedule_draft_check",
+  );
+});
+
 test("publish, edit, slug confirmation, unpublish, republish, and soft delete are atomic and recoverable", async (context) => {
   if (!databaseUrl) {
     context.skip("LIFECYCLE_TEST_DATABASE_URL must name a disposable migrated PostgreSQL database");

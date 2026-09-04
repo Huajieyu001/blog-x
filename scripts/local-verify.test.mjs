@@ -291,7 +291,7 @@ test("Phase 4 operations and restore selections are explicit", () => {
   });
 });
 
-test("Phase 5 media selection owns eighth-migration and legacy restore evidence", async () => {
+test("Phase 5 media selection keeps legacy restore evidence compatible with the ninth migration", async () => {
   assert.deepEqual(phase5MediaSelection(), {
     databaseSuites: [
       ["ARTICLE_TEST_DATABASE_URL", "apps/api/test/article-draft-preview.test.ts"],
@@ -304,7 +304,7 @@ test("Phase 5 media selection owns eighth-migration and legacy restore evidence"
     browserSuites: ["apps/web/e2e/phase1-publishing.spec.ts", "apps/web/e2e/phase4-restore.spec.ts"],
   });
   const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
-  assert.match(runner, /values\[1\] !== 8/);
+  assert.match(runner, /values\[1\] !== 9/);
   assert.doesNotMatch(runner, /values\[1\] !== 6/);
   assert.match(runner, /--phase5-media/);
   assert.match(runner, /PHASE5_LEGACY_ARTICLE_ID/);
@@ -394,6 +394,11 @@ test("Phase 6 data selection is exact, once-only, and separate from Phase 5 rece
 
 test("Phase 6 interruption and parallel paths keep exact generated authority", async () => {
   const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
+  const schema = runner.slice(runner.indexOf("async function inspectSchema"), runner.indexOf("async function runMigration"));
+  assert.match(schema, /values\[1\] !== 9/);
+  assert.match(schema, /articles_schedule_pair_check/);
+  assert.match(schema, /articles_schedule_draft_check/);
+  assert.match(schema, /articles_schedule_due_index/);
   const interruption = runner.slice(runner.indexOf("async function interruptionCheck"), runner.indexOf("async function migrationRetryPreservation"));
   assert.match(interruption, /\$\{context\.namespace\}_migration_interrupt/);
   assert.match(interruption, /migration lock acquired/);

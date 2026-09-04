@@ -227,9 +227,9 @@ async function schemaVerify(pool: Pool) {
   const result = await pool.query("select tablename from pg_tables where schemaname = 'public' and tablename = any($1)", [["administrators", "sessions", "articles", "categories", "tags", "article_tags", "site_pages", "media", "audit_events"]]);
   if (result.rowCount !== 9) throw new Error("audit schema is not active; run pnpm db:migrate first");
   const ledger = await pool.query("select migration_count from blog_x_schema_ledger where scope = 'phase1'");
-  if (ledger.rowCount !== 1 || Number(ledger.rows[0]?.migration_count) !== 8) throw new Error("audit migration ledger is incomplete; run pnpm db:migrate first");
-  const indices = await pool.query("select indexname from pg_indexes where schemaname = 'public' and indexname = any($1)", [["taxonomy_category_slug_unique", "taxonomy_tag_slug_unique", "article_tags_article_tag_unique", "articles_category_public_index", "site_pages_key_unique", "media_source_key_unique", "media_derivative_key_unique", "articles_cover_media_index", "audit_events_newest_index"]]);
-  if (indices.rowCount !== 9) throw new Error("required indexes are incomplete; run pnpm db:migrate first");
+  if (ledger.rowCount !== 1 || Number(ledger.rows[0]?.migration_count) !== 9) throw new Error("audit migration ledger is incomplete; run pnpm db:migrate first");
+  const indices = await pool.query("select indexname from pg_indexes where schemaname = 'public' and indexname = any($1)", [["taxonomy_category_slug_unique", "taxonomy_tag_slug_unique", "article_tags_article_tag_unique", "articles_category_public_index", "site_pages_key_unique", "media_source_key_unique", "media_derivative_key_unique", "articles_cover_media_index", "audit_events_newest_index", "articles_schedule_due_index"]]);
+  if (indices.rowCount !== 10) throw new Error("required indexes are incomplete; run pnpm db:migrate first");
   const constraints = await pool.query("select conname from pg_constraint where conrelid = 'site_pages'::regclass and conname = any($1)", [["site_pages_key_about_check", "site_pages_status_check"]]);
   if (constraints.rowCount !== 2) throw new Error("site_pages singleton constraints are incomplete; run pnpm db:migrate first");
   const auditConstraints = await pool.query("select conname from pg_constraint where conrelid = 'audit_events'::regclass and conname = any($1)", [["audit_events_event_check", "audit_events_target_check", "audit_events_metadata_check"]]);
@@ -240,6 +240,15 @@ async function schemaVerify(pool: Pool) {
   if (legacyMedia.rowCount !== 1) throw new Error("legacy media review column is incomplete; run pnpm db:migrate first");
   const legacyConstraint = await pool.query("select conname from pg_constraint where conrelid = 'articles'::regclass and conname = 'articles_legacy_media_review_check'");
   if (legacyConstraint.rowCount !== 1) throw new Error("legacy media review constraint is incomplete; run pnpm db:migrate first");
+  const scheduleColumns = await pool.query("select column_name from information_schema.columns where table_schema = 'public' and table_name = 'articles' and column_name = any($1)", [["scheduled_at", "scheduled_by_administrator_id"]]);
+  if (scheduleColumns.rowCount !== 2) throw new Error("scheduled publishing columns are incomplete; run pnpm db:migrate first");
+  const scheduleConstraints = await pool.query("select conname from pg_constraint where conrelid = 'articles'::regclass and conname = any($1)", [["articles_schedule_pair_check", "articles_schedule_draft_check"]]);
+  if (scheduleConstraints.rowCount !== 2) throw new Error("scheduled publishing constraints are incomplete; run pnpm db:migrate first");
+  const auditEventConstraint = await pool.query<{ definition: string }>("select pg_get_constraintdef(oid) as definition from pg_constraint where conrelid = 'audit_events'::regclass and conname = 'audit_events_event_check'");
+  const auditDefinition = auditEventConstraint.rows[0]?.definition ?? "";
+  if (auditEventConstraint.rowCount !== 1 || !["article.scheduled", "article.rescheduled", "article.schedule_cancelled", "article.scheduled_published"].every((event) => auditDefinition.includes(event))) {
+    throw new Error("scheduled audit event constraint is incomplete; run pnpm db:migrate first");
+  }
   const pending = await pool.query("select count(*)::int as count from articles where deleted_at is null and legacy_media_review = 'pending'");
   if (Number(pending.rows[0]?.count) !== 0) throw new Error("retained articles still await legacy media classification; run pnpm db:migrate first");
 }

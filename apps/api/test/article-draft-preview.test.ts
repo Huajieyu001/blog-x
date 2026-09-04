@@ -120,6 +120,7 @@ test("draft metadata round-trips, slugs stay reserved, and preview uses the safe
     tagIds: [],
     status: "draft",
     legacyMediaReview: "clear",
+    scheduledAt: null,
     version: createdBody.version,
   });
 
@@ -133,7 +134,7 @@ test("draft metadata round-trips, slugs stay reserved, and preview uses the safe
   const updated = await app.inject({ method: "PUT", url: `/admin/posts/${created.json().id}`, headers, payload: updatedInput });
   assert.equal(updated.statusCode, 200);
   assert.match(updated.json().version, /^\d{4}-\d{2}-\d{2}T/);
-  assert.deepEqual(updated.json(), { id: created.json().id, ...updatedInput, categoryId: null, tagIds: [], status: "draft", legacyMediaReview: "clear", version: updated.json().version });
+  assert.deepEqual(updated.json(), { id: created.json().id, ...updatedInput, categoryId: null, tagIds: [], status: "draft", legacyMediaReview: "clear", scheduledAt: null, version: updated.json().version });
 
   const reservedSlug = `reserved-${Date.now()}`;
   const reserved = await app.inject({ method: "POST", url: "/admin/posts", headers, payload: { ...original, slug: reservedSlug } });

@@ -1,0 +1,7 @@
+ALTER TABLE "articles" ADD COLUMN "scheduled_at" timestamp (3) with time zone;--> statement-breakpoint
+ALTER TABLE "articles" ADD COLUMN "scheduled_by_administrator_id" uuid;--> statement-breakpoint
+ALTER TABLE "articles" ADD CONSTRAINT "articles_schedule_pair_check" CHECK (("articles"."scheduled_at" is null) = ("articles"."scheduled_by_administrator_id" is null));--> statement-breakpoint
+ALTER TABLE "articles" ADD CONSTRAINT "articles_schedule_draft_check" CHECK ("articles"."scheduled_at" is null or ("articles"."status" = 'draft' and "articles"."deleted_at" is null));--> statement-breakpoint
+CREATE INDEX "articles_schedule_due_index" ON "articles" USING btree ("scheduled_at","id") WHERE "articles"."status" = 'draft' and "articles"."deleted_at" is null and "articles"."scheduled_at" is not null;--> statement-breakpoint
+ALTER TABLE "audit_events" DROP CONSTRAINT IF EXISTS "audit_events_event_check";--> statement-breakpoint
+ALTER TABLE "audit_events" ADD CONSTRAINT "audit_events_event_check" CHECK ("audit_events"."event" in ('auth.login.succeeded', 'auth.logout.succeeded', 'article.created', 'article.updated', 'article.published', 'article.unpublished', 'article.republished', 'article.deleted', 'article.scheduled', 'article.rescheduled', 'article.schedule_cancelled', 'article.scheduled_published', 'category.created', 'category.updated', 'category.deleted', 'tag.created', 'tag.updated', 'tag.deleted', 'about.saved', 'about.published'));

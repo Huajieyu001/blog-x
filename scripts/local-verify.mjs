@@ -741,11 +741,11 @@ async function inspectSchema(context) {
     "select (select count(*) from blog_x_schema_ledger),",
     "(select migration_count from blog_x_schema_ledger where scope = 'phase1'),",
     "(select count(*) from pg_tables where schemaname = 'public' and tablename = any(array['administrators','articles','sessions','categories','tags','article_tags','site_pages','media','audit_events'])),",
-    "(select count(*) from pg_constraint where conname = any(array['site_pages_key_about_check','site_pages_status_check','articles_cover_alt_check','articles_legacy_media_review_check','audit_events_event_check','audit_events_target_check','audit_events_metadata_check'])),",
-    "(select count(*) from pg_indexes where schemaname = 'public' and indexname = any(array['taxonomy_category_slug_unique','taxonomy_tag_slug_unique','article_tags_article_tag_unique','site_pages_key_unique','media_source_key_unique','media_derivative_key_unique','audit_events_newest_index']));",
+    "(select count(*) from pg_constraint where conname = any(array['site_pages_key_about_check','site_pages_status_check','articles_cover_alt_check','articles_legacy_media_review_check','articles_schedule_pair_check','articles_schedule_draft_check','audit_events_event_check','audit_events_target_check','audit_events_metadata_check'])),",
+    "(select count(*) from pg_indexes where schemaname = 'public' and indexname = any(array['taxonomy_category_slug_unique','taxonomy_tag_slug_unique','article_tags_article_tag_unique','site_pages_key_unique','media_source_key_unique','media_derivative_key_unique','audit_events_newest_index','articles_schedule_due_index']));",
   ].join(" ")));
   const values = result.stdout.trim().split("|").map(Number);
-  if (values.length !== 5 || values[0] !== 1 || values[1] !== 8 || values[2] !== 9 || values[3] !== 7 || values[4] !== 7) {
+  if (values.length !== 5 || values[0] !== 1 || values[1] !== 9 || values[2] !== 9 || values[3] !== 9 || values[4] !== 8) {
     throw new Error(`unexpected schema inspection result: ${result.stdout.trim()}`);
   }
 }
@@ -785,13 +785,14 @@ async function interruptionCheck(context) {
 
 async function migrationRetryPreservation(context) {
   const slug = `${context.runId}-migration-retained`;
+  const legacyScheduleSlug = `${context.runId}-migration-legacy-draft`;
   await compose(context, "insert migration retry sentinel", ...psqlArgs(context,
-    `insert into articles (title, slug, markdown, status) values ('Migration retry sentinel', '${slug}', 'retained source', 'draft');`));
+    `insert into articles (title, slug, markdown, status) values ('Migration retry sentinel', '${slug}', 'retained source', 'draft'), ('Legacy schedule sentinel', '${legacyScheduleSlug}', 'retained schedule source', 'draft'); update articles set published_at = timestamptz '2030-01-01T00:00:00.000Z' where slug = '${legacyScheduleSlug}';`));
   await Promise.all([runMigration(context, "preservation retry migration A"), runMigration(context, "preservation retry migration B")]);
   await inspectSchema(context);
   const retained = await compose(context, "confirm migration retry preserved article", ...psqlArgs(context,
-    `select count(*) from articles where slug = '${slug}' and markdown = 'retained source';`));
-  if (retained.stdout.trim() !== "1") throw new Error("migration retry did not preserve the existing article");
+    `select count(*) from articles where slug = '${slug}' and markdown = 'retained source'; select count(*) from articles where slug = '${legacyScheduleSlug}' and published_at = timestamptz '2030-01-01T00:00:00.000Z' and scheduled_at is null and scheduled_by_administrator_id is null;`));
+  if (retained.stdout.trim() !== "1\n1") throw new Error("migration retry did not preserve existing article and legacy draft publication state");
 }
 
 async function assertCleanLogs(context) {
