@@ -1102,6 +1102,7 @@ test("later evidence verification admits only the receipt and finite Phase 08 cl
     ".planning/phases/08-reliable-local-delivery/08-08-SUMMARY.md",
     ".planning/phases/08-reliable-local-delivery/08-09-SUMMARY.md",
     ".planning/phases/08-reliable-local-delivery/08-VERIFICATION.md",
+    ".planning/phases/08-reliable-local-delivery/08-UAT.md",
     ".planning/ROADMAP.md",
     ".planning/STATE.md",
     ".planning/REQUIREMENTS.md",
@@ -1114,6 +1115,8 @@ test("later evidence verification admits only the receipt and finite Phase 08 cl
   for (const path of [
     ".planning/phases/08-reliable-local-delivery/08-REVIEW.md",
     ".planning/phases/08-reliable-local-delivery/08-REVIEW-FIX.md",
+    ".planning/phases/08-reliable-local-delivery/08-UAT.md.bak",
+    ".planning/phases/07-search-and-reading/07-UAT.md",
     ".planning/phases/08-reliable-local-delivery/08-04-PLAN.md",
     ".planning/phases/08-reliable-local-delivery/08-CONTEXT.md",
     ".planning/config.json",
