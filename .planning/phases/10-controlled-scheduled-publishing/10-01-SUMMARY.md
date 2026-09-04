@@ -47,7 +47,7 @@ coverage:
     verification:
       - kind: integration
         ref: apps/api/test/article-lifecycle.test.ts#scheduled publication schema preserves legacy draft publication timestamps
-        status: unknown
+        status: pass
     human_judgment: false
   - id: D3
     description: Protected portable export and backup/restore retain both the pending UTC deadline and scheduling administrator without public DTO expansion.
@@ -55,10 +55,10 @@ coverage:
     verification:
       - kind: integration
         ref: apps/api/test/distribution-export.test.ts#protected export reconstructs retained source state
-        status: unknown
+        status: pass
       - kind: integration
         ref: apps/api/test/backup-restore.test.ts#restored database authority
-        status: unknown
+        status: pass
     human_judgment: false
 duration: 2h 8m
 completed: 2026-09-04
@@ -111,3 +111,7 @@ Plan 10-02 can implement authenticated schedule/reschedule/cancel mutations usin
 
 - Summary and migration file exist on disk.
 - Task commits `908fe87`, `6f1d3a7`, and `fedc6f8` exist in `dev` history.
+
+## Final Phase Gate
+
+The later Phase 10 canonical run resolved the transient dependency handoff and passed all 57 generated integration results, including schema, portable export and isolated restore authority. Formal local delivery then passed 74/74 at reviewed revision `b0556cb37978ec5668dc51e6ecafd7c955237a8e`; see `10-VERIFICATION.md`.

@@ -51,7 +51,7 @@ coverage:
     verification:
       - kind: e2e
         ref: apps/web/e2e/article-lifecycle.spec.ts
-        status: unknown
+        status: pass
     human_judgment: false
   - id: D3
     description: "Invalid or stale schedule actions stay opaque and leave retained article and audit evidence unchanged."
@@ -117,3 +117,7 @@ Plan 10-03 can consume `publicationReadinessFields`, transaction-scoped database
 
 - Task commits `6c551cd`, `5b799e0`, `2d8590c`, and `2484005` exist in `dev` history.
 - Schedule service, native controls, responsive styling, audit rendering, and focused test files exist on disk.
+
+## Final Phase Gate
+
+The corrected lifecycle fixture, unsaved-draft handling and target-date timezone conversion now pass the complete browser lifecycle suite, including JavaScript/no-script round trips and DST-sensitive offsets. Formal local delivery passed 74/74 at reviewed revision `b0556cb37978ec5668dc51e6ecafd7c955237a8e`; see `10-VERIFICATION.md`.

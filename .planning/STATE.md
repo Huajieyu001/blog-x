@@ -4,43 +4,43 @@ milestone: v1.2
 milestone_name: Publishing Quality
 current_phase: 10
 current_phase_name: second of 2 in v1.2
-status: planning
-stopped_at: Phase 09 verified; ready to plan Phase 10
-last_updated: "2026-09-04T13:13:36Z"
-last_activity: 2026-09-04
-last_activity_desc: Phase 09 passed goal-backward verification with revision-bound 68/68 local delivery evidence
+status: complete
+stopped_at: Phase 10 verified; v1.2 Publishing Quality complete
+last_updated: "2026-09-04T19:52:35Z"
+last_activity: 2026-09-05
+last_activity_desc: Phase 10 passed independent review and revision-bound 74/74 local delivery verification
 progress:
   total_phases: 2
-  completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
-  percent: 50
+  completed_phases: 2
+  total_plans: 4
+  completed_plans: 4
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-04)
+See: .planning/PROJECT.md (updated 2026-09-05)
 
 **Core value:** 博主能够可靠地发布和保存 Markdown 内容，访客能够持续、快速地通过博客域名阅读已发布文章。
-**Current focus:** Phase 10 — Controlled Scheduled Publishing
+**Current focus:** v1.2 Publishing Quality complete; next milestone requires product selection
 
 ## Current Position
 
 Phase: 10 of 10 (second of 2 in v1.2)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-09-04 — Phase 9 verified against delivery revision `ab05cd7`
+Plan: 3 of 3 in current phase
+Status: Complete
+Last activity: 2026-09-05 — Phase 10 verified against delivery revision `b0556cb`
 
-Progress: [█████░░░░░] 50%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 50 across v1.0 and v1.1
-- Current milestone plans completed: 1
+- Total plans completed: 54 across v1.0, v1.1 and v1.2
+- Current milestone plans completed: 4
 
 **By Milestone:**
 
@@ -48,12 +48,15 @@ Progress: [█████░░░░░] 50%
 |-----------|-------|--------|
 | v1.0 Local MVP | 26 | Complete |
 | v1.1 Content Discovery | 24 | Complete |
-| v1.2 Publishing Quality | 1/TBD | In progress |
+| v1.2 Publishing Quality | 4 | Complete |
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 09-public-article-structured-data P01 | 6min | 2 tasks | 6 files |
+| Phase 10-controlled-scheduled-publishing P01 | 2h 8m | 3 tasks | 4 primary files |
+| Phase 10-controlled-scheduled-publishing P02 | 1h 35m | 3 tasks | 4 primary files |
+| Phase 10-controlled-scheduled-publishing P03 | 1h 24m | 3 tasks | 4 primary files |
 
 ## Accumulated Context
 
@@ -66,15 +69,17 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [v1.2]: 所有开发与验证仅在本地进行，固定 `3100` 交付链路与 `BLOCKED` 生产决定保持不变。
 - [Phase ?]: [Phase 9]: BlogPosting is limited to four explicit public inputs and an exact seven-field output.
 - [Phase ?]: [Phase 9]: Native JSON-LD serializes once and escapes raw <, U+2028, and U+2029 before script embedding.
+- [Phase 10]: PostgreSQL transaction time, paired retained schedule authority and ordered `FOR UPDATE SKIP LOCKED` rows are the sole due-publication authority.
+- [Phase 10]: Browser scheduling computes the numeric offset for the target date so SSR, JavaScript, no-script and DST round trips preserve one UTC instant.
 
 ### Pending Todos
 
-None for the active milestone.
+None. The completed milestone has no remaining autonomous implementation task.
 
 ### Blockers/Concerns
 
 - 生产调度器激活、服务器连接、TLS 和部署不属于 v1.2，且继续受生产冻结限制。
-- Phase 10 需保持与既有生命周期、审计和公开投影边界一致；生产调度激活继续排除在外。
+- A future milestone needs an owner decision: privacy-preserving analytics, another product feature, or production-readiness work after the server freeze is explicitly lifted.
 
 ## Deferred Items
 
@@ -85,6 +90,6 @@ None for the active milestone.
 
 ## Session Continuity
 
-Last session: 2026-09-04T13:13:36Z
-Stopped at: Phase 09 verified; ready to plan Phase 10
-Resume file: .planning/phases/09-public-article-structured-data/09-VERIFICATION.md
+Last session: 2026-09-04T19:52:35Z
+Stopped at: Phase 10 verified; v1.2 Publishing Quality complete
+Resume file: .planning/phases/10-controlled-scheduled-publishing/10-VERIFICATION.md

@@ -4,7 +4,7 @@
 
 - ✅ **v1.0 Local MVP** — Phases 1–5 (shipped 2026-08-15)
 - ✅ **v1.1 Content Discovery** — Phases 6–8 (shipped 2026-09-04)
-- 🚧 **v1.2 Publishing Quality** — Phases 9–10 (in progress)
+- ✅ **v1.2 Publishing Quality** — Phases 9–10 (shipped 2026-09-05)
 
 ## Phases
 
@@ -28,12 +28,12 @@
 
 </details>
 
-### 🚧 v1.2 Publishing Quality (In Progress)
+### ✅ v1.2 Publishing Quality (Shipped 2026-09-05)
 
 **Milestone Goal:** 让博主可以安全地预约文章发布，并让已公开文章向搜索引擎提供严格、可验证的结构化数据。
 
 - [x] **Phase 9: Public Article Structured Data** - 已发布文章输出安全且与可见内容一致的 `BlogPosting` JSON-LD，其他页面不输出。— completed 2026-09-04
-- [ ] **Phase 10: Controlled Scheduled Publishing** - 管理员可预约、改期和取消发布，本地有界任务在并发与失败下仍安全收敛。
+- [x] **Phase 10: Controlled Scheduled Publishing** - 管理员可预约、改期和取消发布，本地有界任务在并发与失败下仍安全收敛。— completed 2026-09-05
 
 ## Phase Details
 
@@ -67,7 +67,14 @@ Plans:
   4. 预约、改期、取消和到期发布都受既有单管理员认证与审计边界保护；无效时间、非草稿状态或部分失败会失败关闭并产生可观测的非零失败结果。
   5. 管理员与访客可在固定 `http://127.0.0.1:3100` 本地生成环境验证完整闭环，生产调度和发布决定始终保持 `BLOCKED`。
 
-**Plans**: TBD
+**Plans**: 3/3 plans executed
+
+Plans:
+
+- [x] 10-01-PLAN.md — Establish paired schedule authority, database invariants, audit vocabulary and portable recovery.
+- [x] 10-02-PLAN.md — Add authenticated schedule/reschedule/cancel API and responsive progressive admin controls.
+- [x] 10-03-PLAN.md — Publish due drafts through a bounded concurrent-safe command and prove public non-disclosure.
+
 **UI hint**: yes
 
 ## Progress
@@ -77,6 +84,6 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 9. Public Article Structured Data | v1.2 | 1/1 | Complete | 2026-09-04 |
-| 10. Controlled Scheduled Publishing | v1.2 | 0/TBD | Not started | - |
+| 10. Controlled Scheduled Publishing | v1.2 | 3/3 | Complete | 2026-09-05 |
 
 Complete prior milestone plans, requirements and phase records are archived under `.planning/milestones/`.

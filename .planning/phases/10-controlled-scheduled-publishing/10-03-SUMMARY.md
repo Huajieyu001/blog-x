@@ -27,6 +27,35 @@ key-decisions:
   - "publish-due requires exactly one --limit=N argument in the inclusive range 1..100 before it opens a database pool."
   - "The claimed batch is validated in full under ordered FOR UPDATE SKIP LOCKED row locks before any row is made public."
   - "Public projections use PostgreSQL CURRENT_TIMESTAMP rather than an API-host clock."
+requirements-completed: [CONT-06, CONT-07, CONT-08]
+coverage:
+  - id: D1
+    description: "A required bounded DB-only command publishes exactly eligible due drafts once under deterministic, concurrent claims."
+    requirement: CONT-07
+    verification:
+      - kind: integration
+        ref: apps/api/test/article-lifecycle.test.ts#bounded due publisher
+        status: pass
+    human_judgment: false
+  - id: D2
+    description: "Scheduled and future-publication content stays absent from every public surface until the database transaction commits."
+    requirement: CONT-06
+    verification:
+      - kind: integration
+        ref: apps/api/test/phase2-public-visibility.test.ts
+        status: pass
+      - kind: e2e
+        ref: apps/web/e2e/phase3-distribution.spec.ts
+        status: pass
+    human_judgment: false
+  - id: D3
+    description: "Invalid candidates and audit failures produce a nonzero result and roll back the complete selected batch without content disclosure."
+    requirement: CONT-08
+    verification:
+      - kind: integration
+        ref: apps/api/test/article-lifecycle.test.ts#scheduled publisher rollback and output redaction
+        status: pass
+    human_judgment: false
 metrics:
   duration: 1h 24m
   completed: 2026-09-04
@@ -67,9 +96,9 @@ status: complete
    - **Issue:** The PLAN's `pnpm local:verify -- --canonical-integration ...` forwards an extra literal `--`, which the verifier intentionally rejects before test work.
    - **Fix:** Ran the equivalent sealed invocation `pnpm local:verify --canonical-integration --interruption-check --parallel-check`.
 
-### Deferred Verification
+### Resolved Verification Handoff
 
-The canonical run reached the pre-existing Plan 10-02 `apps/web/e2e/article-lifecycle.spec.ts` fixture and failed before Phase 3 browser execution. It waits for the obsolete `发布时间` label after publication and cannot find the no-JS schedule form; both are outside this plan's source ownership and were already unresolved by the prior plan's browser handoff. The run completed generated cleanup and all Plan 10-03-owned API/public suites before that fixture. Independent phase review should address or classify this fixture before the formal local-delivery gate.
+The executor's canonical run reached a pre-existing Plan 10-02 `apps/web/e2e/article-lifecycle.spec.ts` fixture and stopped before Phase 3 browser execution. The orchestrator later repaired that fixture and unsaved-draft handling in quick task `260904-x27`, sealed timezone round trips in `260905-45r`, and hardened restore/schema authority in `260905-4a4`. The final canonical gate passed 57/57 and formal local delivery passed 74/74, closing this handoff without a server or production action.
 
 ## Known Stubs
 
@@ -79,3 +108,7 @@ None.
 
 - `apps/api/src/content/scheduled-publisher.ts` exists and all six task commits are in `dev` history.
 - The generated `apps/web/next-env.d.ts` build mutation was restored; the worktree contains only this summary before its metadata commit.
+
+## Final Phase Gate
+
+The deferred lifecycle fixture was repaired in quick task `260904-x27`, timezone round trips were sealed in `260905-45r`, and restore/schema authority was hardened in `260905-4a4`. The final canonical run passed 57/57 with interruption and parallel cleanup proof, independent deep review found zero issues, and the one formal local delivery passed 74/74 at reviewed revision `b0556cb37978ec5668dc51e6ecafd7c955237a8e`. Its immutable receipt is `ops/local-deliveries/b0556cb37978ec5668dc51e6ecafd7c955237a8e.json`; production remains `BLOCKED`.

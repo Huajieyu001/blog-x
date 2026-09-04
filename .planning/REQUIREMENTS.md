@@ -13,10 +13,10 @@
 
 ### Scheduled Publishing
 
-- [ ] **CONT-05**: 管理员可为草稿设置未来发布时间，并在到期前查看、改期或取消该计划。
-- [ ] **CONT-06**: 已预约但未到期的文章在首页、搜索、分类、标签、归档、RSS、Sitemap 和相关阅读中始终不可见。
-- [ ] **CONT-07**: 受控的本地任务只处理已到期文章，重试或并发执行时保持幂等，并保留首次公开时间和稳定 slug 语义。
-- [ ] **CONT-08**: 预约、改期、取消与到期发布均通过既有单管理员认证/审计边界记录，无效时间、非草稿状态和部分失败必须失败关闭。
+- [x] **CONT-05**: 管理员可为草稿设置未来发布时间，并在到期前查看、改期或取消该计划。
+- [x] **CONT-06**: 已预约但未到期的文章在首页、搜索、分类、标签、归档、RSS、Sitemap 和相关阅读中始终不可见。
+- [x] **CONT-07**: 受控的本地任务只处理已到期文章，重试或并发执行时保持幂等，并保留首次公开时间和稳定 slug 语义。
+- [x] **CONT-08**: 预约、改期、取消与到期发布均通过既有单管理员认证/审计边界记录，无效时间、非草稿状态和部分失败必须失败关闭。
 
 ## Acceptance Constraints
 
@@ -49,16 +49,17 @@
 | SEO-03 | Phase 9 | Complete |
 | SEO-04 | Phase 9 | Complete |
 | SEO-05 | Phase 9 | Complete |
-| CONT-05 | Phase 10 | Pending |
-| CONT-06 | Phase 10 | Pending |
-| CONT-07 | Phase 10 | Pending |
-| CONT-08 | Phase 10 | Pending |
+| CONT-05 | Phase 10 | Complete |
+| CONT-06 | Phase 10 | Complete |
+| CONT-07 | Phase 10 | Complete |
+| CONT-08 | Phase 10 | Complete |
 
 **Coverage:**
 
 - v1.2 requirements: 7 total
 - Mapped to phases: 7
 - Unmapped: 0
+- Completed: 7/7
 
 ---
 *Requirements defined: 2026-09-04 for v1.2 Publishing Quality*
