@@ -9,7 +9,13 @@ import { auditRepository, evaluateRepositoryBoundaries } from "./check-boundarie
 import { createBackupSet } from "./backup/create.mjs";
 import { verifyBackupSet } from "./backup/manifest.mjs";
 import { cleanupGeneratedBackupRoot } from "./backup/paths.mjs";
-import { cleanupGeneratedRestoreRoot, restoreBackupSet } from "./backup/restore.mjs";
+import {
+  cleanupGeneratedRestoreRoot,
+  restoreBackupSet,
+  validateRestoreDatabase,
+  validateRestoreMediaVolume,
+  validateRestoreNamespace,
+} from "./backup/restore.mjs";
 import { runProductionPipeline } from "./backup/production-pipeline.mjs";
 import {
   acquirePhase5ReceiptWriterLock,
@@ -1223,12 +1229,22 @@ async function runPhase4RestoreChecks(context, includePhase5Legacy = false, brow
   const restoreContext = {
     namespace: restoreNamespace, database: `blog_x_restore_${suffix}`, webPort: restorePort,
     publicOrigin: `http://127.0.0.1:${restorePort}`, webOrigin: `http://127.0.0.1:${restorePort}`,
+    internalApiOrigin: context.internalApiOrigin,
     mediaVolume: `${restoreNamespace}_media-data`, logs: context.logs, secrets: context.secrets,
     phase5Recorder: context.phase5Recorder, phase5SuiteIds: context.phase5SuiteIds,
-    composeOverride: context.composeOverride,
   };
   const restoreRoot = resolve(tmpdir(), `blog-x-restore-verify-${randomBytes(6).toString("hex")}`);
+  let result;
+  let primaryFailure;
   try {
+    await runStep(context, "build Web for isolated restore origin", "corepack", ["pnpm", "--filter", "@blog-x/web", "build"], {
+      env: {
+        ...process.env,
+        PUBLIC_ORIGIN: restoreContext.publicOrigin,
+        INTERNAL_API_ORIGIN: restoreContext.internalApiOrigin,
+      },
+    });
+    await createCanonicalRuntimeAuthority(restoreContext);
     process.stdout.write("[local-verify] create source backup for isolated restore\n");
     const backup = await createBackupSet(generatedBackupPolicy(context, backupRoot), { env: composeEnvironment(context) });
     await verifyBackupSet(backup.finalRoot);
@@ -1265,12 +1281,29 @@ async function runPhase4RestoreChecks(context, includePhase5Legacy = false, brow
     const browserCounts = parsePlaywrightResult(browser.combined);
     recordPhase5Command(context, browserSuite, "playwright-line-v1", browser);
     await verifyBackupSet(backup.finalRoot);
-    return { databaseCounts, browserCounts };
+    result = { databaseCounts, browserCounts };
+  } catch (error) {
+    primaryFailure = error;
   } finally {
-    await command("docker-compose", composeArgs(restoreContext, "down", "--remove-orphans", "--volumes"), { env: composeEnvironment(restoreContext), allowFailure: true });
-    await cleanupGeneratedRestoreRoot(restoreRoot);
-    await cleanupGeneratedBackupRoot(backupRoot);
+    const composeCleanup = await Promise.allSettled([
+      convergeRestoreProjectCleanup(restoreContext),
+    ]);
+    const generatedCleanup = await Promise.allSettled([
+      cleanupGeneratedRestoreRoot(restoreRoot),
+      cleanupGeneratedBackupRoot(backupRoot),
+      cleanupCanonicalRuntimeAuthority(restoreContext),
+    ]);
+    const cleanupFailures = [...composeCleanup, ...generatedCleanup]
+      .filter((cleanup) => cleanup.status === "rejected")
+      .map((cleanup) => cleanup.reason);
+    const failures = [...(primaryFailure ? [primaryFailure] : []), ...cleanupFailures];
+    if (failures.length) {
+      throw new AggregateError(failures, primaryFailure
+        ? "isolated restore verification failed and all cleanup outcomes were retained"
+        : "isolated restore cleanup did not converge");
+    }
   }
+  return result;
 }
 
 async function runPhase4ReleaseChecks(context) {
@@ -1498,7 +1531,7 @@ async function runPhase5GeneratedPipeline() {
       writePortableExportV1: async () => JSON.stringify({ format: "blog-x-portable-export", version: 1, exportedAt: new Date().toISOString(), articles: [], categories: [], tags: [], about: null, media: [{ id: mediaId, width: 1, height: 1, mimeType: "image/webp", createdAt: new Date().toISOString() }] }),
       copyApiMedia: async () => [{ id: mediaId, sourceKey: `source/${mediaId}.bin`, derivativeKey: `derivative/${mediaId}.webp`, source, derivative }],
       readAllowlistedInventory: async () => ({
-        migration: { count: 8, fingerprint: inventoryDigest },
+        migration: { count: 9, fingerprint: inventoryDigest },
         images: { api: imageDigest("api"), web: imageDigest("web"), postgres: imageDigest("postgres") },
         configChecksums: [{ path: "compose.yaml", sha256: hashText(await readFile(resolve(root, "compose.yaml"))) }],
         variableNamesPresent: ["DATABASE_URL", "MEDIA_ROOT", "PUBLIC_ORIGIN"],
@@ -1887,6 +1920,45 @@ async function confirmGeneratedProjectAbsent(namespace, options = {}) {
     if (inspected.exitCode === 0) throw new Error(`generated project ${namespace} retained volume ${volume}`);
   }
   confirmedGeneratedNamespaces.add(namespace);
+}
+
+async function confirmRestoreProjectAbsent(context, options = {}) {
+  const namespace = validateRestoreNamespace(context.namespace);
+  validateRestoreDatabase(context.database, namespace);
+  const postgresVolume = `${namespace}_postgres-data`;
+  const mediaVolume = validateRestoreMediaVolume(context.mediaVolume, namespace);
+  const containers = await command("docker", ["ps", "-aq", "--filter", `label=com.docker.compose.project=${namespace}`], options);
+  if (containers.stdout.trim()) throw new Error(`restore project ${namespace} retained a container`);
+  for (const volume of [postgresVolume, mediaVolume]) {
+    const inspected = await command("docker", ["volume", "inspect", volume], { ...options, allowFailure: true });
+    if (inspected.exitCode === 0) throw new Error(`restore project ${namespace} retained volume ${volume}`);
+    if (!/no such volume/i.test(`${inspected.stdout}\n${inspected.stderr}`)) {
+      throw new Error(`restore project ${namespace} volume absence could not be confirmed for ${volume}`);
+    }
+  }
+}
+
+async function convergeRestoreProjectCleanup(context) {
+  const namespace = validateRestoreNamespace(context.namespace);
+  validateRestoreDatabase(context.database, namespace);
+  validateRestoreMediaVolume(context.mediaVolume, namespace);
+  const failures = [];
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const down = await command("docker-compose", composeArgs(context, "down", "--remove-orphans", "--volumes"), {
+      env: composeEnvironment(context), allowFailure: true, allowDuringShutdown: true,
+    });
+    try {
+      await confirmRestoreProjectAbsent(context, { allowDuringShutdown: true });
+      return;
+    } catch (error) {
+      failures.push(new AggregateError([
+        new Error(`restore cleanup attempt ${attempt + 1} down exit ${down.exitCode}`),
+        error,
+      ], `restore cleanup attempt ${attempt + 1} did not confirm absence`));
+      if (attempt === 0) await new Promise((accept) => setTimeout(accept, 200));
+    }
+  }
+  throw new AggregateError(failures, `restore project ${namespace} cleanup did not converge`);
 }
 
 async function convergeGeneratedProjectCleanup(context) {
