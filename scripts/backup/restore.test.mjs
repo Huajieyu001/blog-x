@@ -130,6 +130,12 @@ test("restore runtime override is appended exactly once while legacy restore arg
     return { code: 0, stdout: Buffer.alloc(0), stderr: "" };
   };
   const override = "/private/tmp/blog-x-current-runtime/compose.override.yaml";
+  for (const invalid of ["", "relative/compose.override.yaml"]) {
+    await assert.rejects(restoreBackupSet({ backupRoot: generated.backupRoot, restoreRoot: generated.restoreRoot, ...target() }, {
+      run, composeOverride: invalid,
+    }), /absolute dependency path/);
+  }
+  assert.equal(calls.length, 0);
   const supplied = await restoreBackupSet({ backupRoot: generated.backupRoot, restoreRoot: generated.restoreRoot, ...target() }, {
     run, composeOverride: override,
   });

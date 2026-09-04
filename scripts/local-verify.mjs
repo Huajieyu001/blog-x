@@ -1225,6 +1225,7 @@ async function runPhase4RestoreChecks(context, includePhase5Legacy = false, brow
     publicOrigin: `http://127.0.0.1:${restorePort}`, webOrigin: `http://127.0.0.1:${restorePort}`,
     mediaVolume: `${restoreNamespace}_media-data`, logs: context.logs, secrets: context.secrets,
     phase5Recorder: context.phase5Recorder, phase5SuiteIds: context.phase5SuiteIds,
+    composeOverride: context.composeOverride,
   };
   const restoreRoot = resolve(tmpdir(), `blog-x-restore-verify-${randomBytes(6).toString("hex")}`);
   try {
@@ -1235,7 +1236,7 @@ async function runPhase4RestoreChecks(context, includePhase5Legacy = false, brow
     const restored = await restoreBackupSet({
       backupRoot: backup.finalRoot, restoreRoot, namespace: restoreContext.namespace,
       database: restoreContext.database, mediaVolume: restoreContext.mediaVolume, webOrigin: restoreContext.webOrigin,
-    }, { env: composeEnvironment(restoreContext) });
+    }, { env: composeEnvironment(restoreContext), composeOverride: restoreContext.composeOverride });
     if (restored.message !== `RESTORE READY ${restoreContext.namespace}`) throw new Error("restore did not report its exact generated namespace");
     await waitForHttp(restoreContext.webOrigin);
     const api = await compose(restoreContext, "resolve restored API for authority comparison", "ps", "-q", "api");

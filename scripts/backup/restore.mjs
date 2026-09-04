@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createReadStream } from "node:fs";
 import { lstat, mkdir, readFile, readdir, rm } from "node:fs/promises";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { verifyBackupSet } from "./manifest.mjs";
@@ -89,8 +89,12 @@ function restoreEnvironment(plan, supplied = process.env) {
   };
 }
 
-function composeArgs(plan, ...args) {
-  return ["-p", plan.namespace, "-f", composeFile, ...args];
+function composeArgs(plan, dependencies, ...args) {
+  const override = dependencies.composeOverride;
+  if (override !== undefined && (typeof override !== "string" || !isAbsolute(override))) {
+    throw new Error("restore Compose override must be an absolute dependency path");
+  }
+  return ["-p", plan.namespace, "-f", composeFile, ...(override ? ["-f", override] : []), ...args];
 }
 
 async function defaultInspectTarget(plan, dependencies) {
@@ -98,7 +102,7 @@ async function defaultInspectTarget(plan, dependencies) {
   const env = restoreEnvironment(plan, dependencies.env);
   const rootInfo = await lstat(plan.restoreRoot).catch((error) => error.code === "ENOENT" ? null : Promise.reject(error));
   const rootEntries = rootInfo?.isDirectory() && !rootInfo.isSymbolicLink() ? await readdir(plan.restoreRoot) : [];
-  const project = await run("docker-compose", composeArgs(plan, "ps", "-aq"), { env, allowFailure: true });
+  const project = await run("docker-compose", composeArgs(plan, dependencies, "ps", "-aq"), { env, allowFailure: true });
   const mediaVolume = await run("docker", ["volume", "inspect", plan.mediaVolume], { env, allowFailure: true });
   return {
     namespaceExists: project.code === 0 && project.stdout.toString().trim().length > 0,
@@ -137,10 +141,10 @@ export async function preflightRestore(input, dependencies = {}) {
 async function defaultMutate(plan, dependencies) {
   const run = dependencies.run ?? command;
   const env = restoreEnvironment(plan, dependencies.env);
-  const compose = (...args) => run("docker-compose", composeArgs(plan, ...args), { env });
+  const compose = (...args) => run("docker-compose", composeArgs(plan, dependencies, ...args), { env });
   await mkdir(plan.restoreRoot, { recursive: true, mode: 0o700 });
   await compose("up", "-d", "--wait", "postgres");
-  await run("docker-compose", composeArgs(plan, "exec", "-T", "postgres", "pg_restore", "-U", "blog_x", "-d", plan.database, "--exit-on-error", "--no-owner", "--no-privileges"), {
+  await run("docker-compose", composeArgs(plan, dependencies, "exec", "-T", "postgres", "pg_restore", "-U", "blog_x", "-d", plan.database, "--exit-on-error", "--no-owner", "--no-privileges"), {
     env, inputPath: resolve(plan.backupRoot, "database.dump"),
   });
   const databaseUrl = `postgres://blog_x@postgres:5432/${plan.database}`;
