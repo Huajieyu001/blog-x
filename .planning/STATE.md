@@ -8,7 +8,7 @@ status: complete
 stopped_at: Completed 08-09-PLAN.md
 last_updated: "2026-09-04T05:02:34.854Z"
 last_activity: 2026-09-04
-last_activity_desc: Phase 08 goal normalized to the canonical MVP user story; production release remains BLOCKED
+last_activity_desc: Phase 08 UAT closeout admitted by exact receipt-verification policy; production release remains BLOCKED
 progress:
   total_phases: 3
   completed_phases: 3
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-08-15)
 Phase: 08 (Reliable Local Delivery) — COMPLETE
 Plan: 9 of 9
 Status: Reviewed SHA `538840a825d192710550fcae8fa53f9fa68346ff` delivered and independently verified; DEVX-01..03 complete
-Last activity: 2026-09-04 — Phase 08 API coverage declaration added and verify-pre gate passed; release remains BLOCKED
+Last activity: 2026-09-04 — Phase 08 UAT closeout allowlist fixed and regression-tested; release remains BLOCKED
 
 ## Performance Metrics
 
@@ -204,6 +204,7 @@ Decisions are logged in PROJECT.md Key Decisions table.
 |---|-------------|------|--------|-----------|
 | 260831-hh1 | Add administrator audit trail | 2026-09-01 | 117c328 | [260831-hh1-add-administrator-audit-trail](./quick/260831-hh1-add-administrator-audit-trail/) |
 | 260901-jgl | 补齐 Phase 08 的 API COVERAGE.md 覆盖矩阵，准确记录本阶段没有外部 API 集成并给出 OPT-OUT 理由，使 api-coverage.verify-pre 门禁通过；不得修改运行时代码、服务器配置或连接云服务器。 | 2026-09-01 | af44025 | [260901-jgl-phase-08-api-coverage-md-api-opt-out-api](./quick/260901-jgl-phase-08-api-coverage-md-api-opt-out-api/) |
+| 260904-jio | 修复 Phase 08 交付收据后继复验：精确允许 08-UAT.md 并校正 42/42 测试计数 | 2026-09-04 | 3d310ae | [260904-jio-phase-08-08-uat-md-uat-main](./quick/260904-jio-phase-08-08-uat-md-uat-main/) |
 
 ### Roadmap Evolution
 
