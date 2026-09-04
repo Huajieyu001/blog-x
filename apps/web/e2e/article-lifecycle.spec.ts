@@ -52,15 +52,16 @@ test("draft completes publish, edit, slug confirmation, unpublish, republish, an
 
   await page.getByRole("button", { name: "发布" }).click();
   await expect(page.getByText("状态：已发布")).toBeVisible();
-  const firstPublishedAt = await page.getByLabel("发布时间", { exact: true }).inputValue();
+  const firstPublishedAt = await page.getByLabel("首次发布时间更正", { exact: true }).inputValue();
   expect(firstPublishedAt).not.toBe("");
+  await expect(page.getByLabel("预约发布时间", { exact: true })).toHaveCount(0);
   expect((await context.request.get(`${webOrigin}/api/public/articles/${originalSlug}`)).status()).toBe(200);
 
   await page.getByLabel("标题").fill(editedTitle);
-  await page.getByLabel("发布时间", { exact: true }).fill("2026-01-02T03:04");
+  await page.getByLabel("首次发布时间更正", { exact: true }).fill("2026-01-02T03:04");
   await page.getByRole("button", { name: "保存更改" }).click();
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("更改已保存");
-  await expect(page.getByLabel("发布时间", { exact: true })).toHaveValue(firstPublishedAt);
+  await expect(page.getByLabel("首次发布时间更正", { exact: true })).toHaveValue(firstPublishedAt);
 
   const changedSlug = `${originalSlug}-changed`;
   await page.getByLabel("Slug").fill(changedSlug);
@@ -78,12 +79,12 @@ test("draft completes publish, edit, slug confirmation, unpublish, republish, an
   await page.getByRole("button", { name: "下线" }).click();
   await expect(page.getByText("状态：已下线")).toBeVisible();
   await expect(page.getByRole("button", { name: "重新发布" })).toBeVisible();
-  await expect(page.getByLabel("发布时间", { exact: true })).toHaveValue(firstPublishedAt);
+  await expect(page.getByLabel("首次发布时间更正", { exact: true })).toHaveValue(firstPublishedAt);
   expect((await context.request.get(`${webOrigin}/api/public/articles/${changedSlug}`)).status()).toBe(404);
 
   await page.getByRole("button", { name: "重新发布" }).click();
   await expect(page.getByText("状态：已发布")).toBeVisible();
-  await expect(page.getByLabel("发布时间", { exact: true })).toHaveValue(firstPublishedAt);
+  await expect(page.getByLabel("首次发布时间更正", { exact: true })).toHaveValue(firstPublishedAt);
   expect((await context.request.get(`${webOrigin}/api/public/articles/${changedSlug}`)).status()).toBe(200);
 
   await page.goto(`${webOrigin}/admin`);
@@ -119,26 +120,43 @@ test("draft completes publish, edit, slug confirmation, unpublish, republish, an
 
 test("schedule form remains a no-script, keyboard-operable same-origin control", async ({ browser }) => {
   const noJsContext = await browser.newContext({ javaScriptEnabled: false });
-  const page = await noJsContext.newPage();
-  const login = await noJsContext.request.post(`${webOrigin}/api/auth/login`, {
-    headers: { origin: webOrigin, "content-type": "application/json" },
-    data: { username, password },
-  });
-  expect(login.status()).toBe(200);
-  const slug = `browser-nojs-schedule-${runId}`;
-  const created = await noJsContext.request.post(`${webOrigin}/api/admin/posts`, {
-    headers: { origin: webOrigin, "content-type": "application/json" },
-    data: { title: "No script schedule", summary: "", coverUrl: "", slug, markdown: "# No script", publishedAt: null, seoDescription: "" },
-  });
-  expect(created.status()).toBe(201);
-  const article = await created.json() as { id: string };
-  await page.goto(`${webOrigin}/admin/posts/${article.id}`);
-  const schedule = page.getByRole("form", { name: "预约发布" });
-  await expect(schedule).toBeVisible();
-  await schedule.getByLabel("预约发布时间").fill("2032-02-01T09:30");
-  await schedule.getByLabel("UTC 偏移").fill("+08:00");
-  await schedule.getByRole("button", { name: "设定预约" }).press("Enter");
-  await expect(page).toHaveURL(`${webOrigin}/admin/posts/${article.id}`);
-  await expect(page.getByText("当前预约：2032-02-01T01:30:00.000Z")).toBeVisible();
-  await noJsContext.close();
+  try {
+    const page = await noJsContext.newPage();
+    const login = await noJsContext.request.post(`${webOrigin}/api/auth/login`, {
+      headers: { origin: webOrigin, "content-type": "application/json" },
+      data: { username, password },
+    });
+    expect(login.status()).toBe(200);
+    const slug = `browser-nojs-schedule-${runId}`;
+    const created = await noJsContext.request.post(`${webOrigin}/api/admin/posts`, {
+      headers: { origin: webOrigin, "content-type": "application/json" },
+      data: { title: "No script schedule", summary: "", coverUrl: "", slug, markdown: "# No script", publishedAt: null, seoDescription: "" },
+    });
+    expect(created.status()).toBe(201);
+    const article = await created.json() as { id: string };
+    const detailUrl = `${webOrigin}/admin/posts/${article.id}`;
+    await page.goto(detailUrl);
+
+    const schedule = page.getByRole("form", { name: "预约发布" });
+    await expect(schedule).toBeVisible();
+    const scheduleAction = new URL(await schedule.getAttribute("action") ?? "", webOrigin);
+    expect(scheduleAction.origin).toBe(new URL(webOrigin).origin);
+    expect(scheduleAction.pathname).toBe(`/api/admin/posts/${article.id}/schedule`);
+    await schedule.getByLabel("预约发布时间").fill("2032-02-01T09:30");
+    await schedule.getByLabel("UTC 偏移").fill("+08:00");
+    await schedule.getByRole("button", { name: "设定预约" }).press("Enter");
+    await expect(page).toHaveURL(detailUrl);
+    await expect(page.getByText("当前预约：2032-02-01T01:30:00.000Z")).toBeVisible();
+
+    const cancel = page.getByRole("button", { name: "取消预约" }).locator("..");
+    const cancelAction = new URL(await cancel.getAttribute("action") ?? "", webOrigin);
+    expect(cancelAction.origin).toBe(new URL(webOrigin).origin);
+    expect(cancelAction.pathname).toBe(`/api/admin/posts/${article.id}/schedule/cancel`);
+    await cancel.getByRole("button", { name: "取消预约" }).press("Enter");
+    await expect(page).toHaveURL(detailUrl);
+    await expect(page.getByText("当前预约：")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "设定预约" })).toBeVisible();
+  } finally {
+    await noJsContext.close();
+  }
 });
