@@ -6,9 +6,9 @@ current_phase: 08
 current_phase_name: Reliable Local Delivery
 status: complete
 stopped_at: Completed 08-09-PLAN.md
-last_updated: "2026-09-04T05:02:34.854Z"
+last_updated: "2026-09-04T11:13:14Z"
 last_activity: 2026-09-04
-last_activity_desc: Phase 08 UAT closeout admitted by exact receipt-verification policy; production release remains BLOCKED
+last_activity_desc: Phase 08 delivery revision 479b735 and descendant closeout verified; production release remains BLOCKED
 progress:
   total_phases: 3
   completed_phases: 3
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-08-15)
 
 Phase: 08 (Reliable Local Delivery) — COMPLETE
 Plan: 9 of 9
-Status: Reviewed SHA `538840a825d192710550fcae8fa53f9fa68346ff` delivered and independently verified; DEVX-01..03 complete
-Last activity: 2026-09-04 — Phase 08 UAT closeout allowlist fixed and regression-tested; release remains BLOCKED
+Status: Delivered SHA `479b7356409cd7cc0f08e1de1a56beea75ec56da` independently verified from its descendant closeout; DEVX-01..03 complete
+Last activity: 2026-09-04 — Phase 08 UAT closeout allowlist fixed, redelivered, and independently verified; release remains BLOCKED
 
 ## Performance Metrics
 

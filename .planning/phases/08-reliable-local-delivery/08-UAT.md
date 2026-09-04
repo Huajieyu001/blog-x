@@ -3,7 +3,7 @@ status: complete
 phase: 08-reliable-local-delivery
 source: [08-01-SUMMARY.md, 08-02-SUMMARY.md, 08-03-SUMMARY.md, 08-04-SUMMARY.md, 08-05-SUMMARY.md, 08-06-SUMMARY.md, 08-07-SUMMARY.md, 08-08-SUMMARY.md, 08-09-SUMMARY.md]
 started: 2026-09-04T05:08:12Z
-updated: 2026-09-04T06:29:00Z
+updated: 2026-09-04T11:13:14Z
 ---
 
 ## Current Test
@@ -158,7 +158,7 @@ coverage_id: D3
 expected: 最终机器可读证据绑定当前交付修订，证明固定 `3100` 环境提供最新版本；本地验收成功不改变生产发布 `BLOCKED` 状态。
 result: pass
 source: automated
-evidence: `ops/local-deliveries/479b7356409cd7cc0f08e1de1a56beea75ec56da.json` independently verified at delivery with release blocked; descendant verification follows after closeout commit.
+evidence: `ops/local-deliveries/479b7356409cd7cc0f08e1de1a56beea75ec56da.json` independently verified from the clean descendant closeout HEAD; release remained blocked.
 
 ## Summary
 
