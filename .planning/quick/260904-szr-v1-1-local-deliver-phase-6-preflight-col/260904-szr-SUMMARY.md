@@ -44,11 +44,13 @@ The local-delivery preflight now follows Git-tracked planning evidence whether P
 - GREEN: `node --test --test-name-pattern="protected planning evidence follows tracked archival state|live command policy permits only fixed local argv" scripts/refresh-local.test.mjs` — 2/2 passed.
 - Default local suite: `corepack pnpm test` — 44/44 passed; release state remained `BLOCKED`.
 - `git diff --check -- scripts/refresh-local.test.mjs scripts/refresh-local-runtime-core.mjs` — passed.
+- Independent review found one warning: the fixture did not reproduce the nested `v1.1-phases/.../06-VERIFICATION.md` archive path. The fixture now covers that exact layout and verifies its digest contribution; focused and default suites passed again.
 
 ## Commits
 
 - `da67c64` — `test(quick-260904-szr): expose archived protected-path failure`
 - `c7347ba` — `fix(quick-260904-szr): follow tracked protected evidence`
+- Follow-up — reproduce the real nested Phase 6 archive layout in the regression fixture
 
 ## Deviations from Plan
 

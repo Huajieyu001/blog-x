@@ -609,7 +609,8 @@ test("live command policy permits only fixed local argv", async () => {
 test("protected planning evidence follows tracked archival state", async () => {
   const root = "/virtual-workspace";
   const activeVerification = ".planning/phases/06-public-discovery-data/06-VERIFICATION.md";
-  const archivedPlanning = [".planning/milestones/v1.1-ROADMAP.md", ".planning/milestones/v1.1-REQUIREMENTS.md"];
+  const archivedVerification = ".planning/milestones/v1.1-phases/06-public-discovery-data/06-VERIFICATION.md";
+  const archivedPlanning = [".planning/milestones/v1.1-ROADMAP.md", ".planning/milestones/v1.1-REQUIREMENTS.md", archivedVerification];
   const protectedArgv = ["ls-files", ".planning/milestones", activeVerification];
   const createProtectedFixture = (tracked) => {
     const fs = memoryArtifactFs(root);
@@ -630,10 +631,11 @@ test("protected planning evidence follows tracked archival state", async () => {
   const initial = await archived.source.protected();
   assert.deepEqual(archived.calls, [["git", protectedArgv]]);
   assert.deepEqual(archived.reads, [...archivedPlanning, "ops/phase5-full-gate-receipt.json"].sort().map((path) => `${root}/${path}`));
+  assert.equal(archived.reads.includes(`${root}/${archivedVerification}`), true);
   assert.equal(archived.reads.includes(`${root}/${activeVerification}`), false);
-  assert.equal(initial.count, 3);
+  assert.equal(initial.count, 4);
 
-  archived.fs.entries.get(`${root}/${archivedPlanning[0]}`).bytes = "changed archived planning\n";
+  archived.fs.entries.get(`${root}/${archivedVerification}`).bytes = "changed archived verification\n";
   const changedPlanning = await archived.source.protected();
   assert.notEqual(changedPlanning.sha256, initial.sha256);
   archived.fs.entries.get(`${root}/ops/phase5-full-gate-receipt.json`).bytes = "changed receipt\n";
