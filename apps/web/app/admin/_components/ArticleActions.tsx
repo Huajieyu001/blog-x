@@ -111,7 +111,7 @@ export default function ArticleActions({
     if (disabled || schedulePending) return;
     event.preventDefault();
     setSchedulePending(true);
-    setMessage(post.scheduledAt ? "改期预约中…" : "预约发布中…");
+    setMessage(post.scheduledAt ? "改期预约中…" : "设定预约中…");
     try {
       const form = new FormData(event.currentTarget);
       const body = new URLSearchParams();
@@ -127,7 +127,7 @@ export default function ArticleActions({
         setMessage((bodyJson as { error?: string } | null)?.error === "validation_failed" ? "请检查预约时间与 UTC 偏移" : "预约发布失败，请重试");
         return;
       }
-      changedFromResponse(bodyJson, post.scheduledAt ? "改期预约成功" : "预约发布成功");
+      changedFromResponse(bodyJson, post.scheduledAt ? "改期预约成功" : "已设定预约");
     } catch {
       setMessage("网络异常，请重试");
     } finally {
@@ -170,7 +170,7 @@ export default function ArticleActions({
           <form aria-label="预约发布" className={styles.scheduleForm} action={`/api/admin/posts/${post.id}/schedule`} method="post" onSubmit={(event) => { void schedule(event); }}>
             <label>预约发布时间<input name="scheduledAt" type="datetime-local" required defaultValue={toLocalDateTime(post.scheduledAt)} disabled={disabled || schedulePending} /></label>
             <label>UTC 偏移<input name="timezoneOffset" inputMode="text" pattern="[+-](0[0-9]|1[0-4]):[0-5][0-9]" required value={timezoneOffset} onChange={(event) => setTimezoneOffset(event.target.value)} disabled={disabled || schedulePending} /></label>
-            <button type="submit" disabled={disabled || schedulePending}>{post.scheduledAt ? "改期预约" : "预约发布"}</button>
+            <button type="submit" disabled={disabled || schedulePending}>{post.scheduledAt ? "改期预约" : "设定预约"}</button>
           </form>
           {post.scheduledAt ? (
             <form action={`/api/admin/posts/${post.id}/schedule/cancel`} method="post" onSubmit={(event) => { void cancelSchedule(event); }}>

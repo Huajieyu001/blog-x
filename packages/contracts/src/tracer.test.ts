@@ -132,5 +132,6 @@ test("schedule audit and portable contracts preserve only complete paired author
     { ...manifest.articles[0], scheduledByAdministratorId: administratorId },
     { ...manifest.articles[0], scheduledAt, scheduledByAdministratorId: null },
     { ...manifest.articles[0], scheduledAt: null, scheduledByAdministratorId: administratorId },
+    { ...manifest.articles[0], scheduledAt, scheduledByAdministratorId: undefined },
   ]) assert.equal(portableExportManifestSchema.safeParse({ ...manifest, articles: [article] }).success, false);
 });

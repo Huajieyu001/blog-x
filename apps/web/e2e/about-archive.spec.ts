@@ -8,12 +8,18 @@ async function createPublishedPost(page: Page, input: { title: string; slug: str
   await page.goto(`${webOrigin}/admin/new`);
   await page.getByLabel("标题").fill(input.title);
   await page.getByLabel("Slug").fill(input.slug);
-  await page.getByLabel("发布时间").fill(input.publishedAt);
   await page.getByLabel("Markdown").fill(`# ${input.title}`);
   await page.getByRole("button", { name: "保存草稿" }).click();
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("草稿已保存");
   await page.getByRole("button", { name: "发布" }).click();
   await expect(page.getByText("状态：已发布")).toBeVisible();
+  // Draft metadata is never schedule authority or first-public history. Make
+  // this archive fixture's intentionally historical grouping explicit through
+  // the separately-confirmed published-article correction flow.
+  await page.getByLabel("首次发布时间更正").fill(input.publishedAt);
+  await page.getByLabel("确认将输入值作为发布时间更正").check();
+  await page.getByRole("button", { name: "保存更改" }).click();
+  await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("更改已保存");
 }
 
 test("archive renders a valid native-details or exact empty state", async ({ page }) => {

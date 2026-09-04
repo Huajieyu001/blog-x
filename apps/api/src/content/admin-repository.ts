@@ -140,8 +140,9 @@ export function createAdminPostRepository(db: Database) {
       // PostgreSQL evaluates CURRENT_TIMESTAMP once per transaction. Exposing that
       // exact value keeps schedule policy, versioning, and later due publication
       // independent of the API host clock.
-      const transactionNow = (await tx.execute<{ transactionNow: Date }>(sql`select CURRENT_TIMESTAMP as "transactionNow"`)).rows[0]?.transactionNow;
-      if (!(transactionNow instanceof Date)) throw new Error("transaction timestamp is unavailable");
+      const transactionNowRaw = (await tx.execute<{ transactionNow: Date | string }>(sql`select CURRENT_TIMESTAMP as "transactionNow"`)).rows[0]?.transactionNow;
+      const transactionNow = transactionNowRaw instanceof Date ? transactionNowRaw : new Date(String(transactionNowRaw));
+      if (Number.isNaN(transactionNow.getTime())) throw new Error("transaction timestamp is unavailable");
       const update: RetainedArticleUpdate = async (changes, tagIds) => {
         const updated = (await tx.update(schema.articles).set(changes).where(eq(schema.articles.id, id)).returning(selectedPost))[0];
         if (!updated) throw new Error("retained article update did not return a row");

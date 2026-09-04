@@ -33,8 +33,8 @@ test("draft completes publish, edit, slug confirmation, unpublish, republish, an
 
   await page.getByLabel("预约发布时间").fill("2032-01-01T09:30");
   await page.getByLabel("UTC 偏移").fill("+08:00");
-  await page.getByRole("button", { name: "预约发布" }).click();
-  await expect(page.getByRole("status", { name: "生命周期状态" })).toHaveText("预约发布成功");
+  await page.getByRole("button", { name: "设定预约" }).click();
+  await expect(page.getByRole("status", { name: "生命周期状态" })).toHaveText("已设定预约");
   await expect(page.getByText("当前预约：2032-01-01T01:30:00.000Z")).toBeVisible();
   for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 900 }, { width: 1280, height: 900 }]) {
     await page.setViewportSize(viewport);
@@ -137,7 +137,7 @@ test("schedule form remains a no-script, keyboard-operable same-origin control",
   await expect(schedule).toBeVisible();
   await schedule.getByLabel("预约发布时间").fill("2032-02-01T09:30");
   await schedule.getByLabel("UTC 偏移").fill("+08:00");
-  await schedule.getByRole("button", { name: "预约发布" }).press("Enter");
+  await schedule.getByRole("button", { name: "设定预约" }).press("Enter");
   await expect(page).toHaveURL(`${webOrigin}/admin/posts/${article.id}`);
   await expect(page.getByText("当前预约：2032-02-01T01:30:00.000Z")).toBeVisible();
   await noJsContext.close();

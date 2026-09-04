@@ -45,8 +45,12 @@ const portableArticleSchema = z.object({
   scheduledAt: isoDateTimeSchema.nullable().optional(),
   scheduledByAdministratorId: z.uuid().nullable().optional(),
 }).strict().superRefine((article, context) => {
-  const hasScheduledAt = Object.hasOwn(article, "scheduledAt");
-  const hasScheduledBy = Object.hasOwn(article, "scheduledByAdministratorId");
+  // Zod materializes omitted optional object keys as `undefined` in the
+  // parsed value. Presence must therefore be based on the value, not
+  // Object.hasOwn(), or a malformed one-sided portable schedule can bypass
+  // the paired authority invariant.
+  const hasScheduledAt = article.scheduledAt !== undefined;
+  const hasScheduledBy = article.scheduledByAdministratorId !== undefined;
   if (hasScheduledAt !== hasScheduledBy) {
     context.addIssue({ code: "custom", message: "schedule authority fields must be present together", path: hasScheduledAt ? ["scheduledByAdministratorId"] : ["scheduledAt"] });
     return;

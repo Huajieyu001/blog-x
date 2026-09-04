@@ -24,11 +24,15 @@ export type ArticleServiceResult = { ok: true; post: AdminPost } | { ok: false; 
 export type DeleteServiceResult = { ok: true; deleted: { id: string; deleted: true } } | { ok: false; detail: ArticleServiceError };
 
 function serialize(post: StoredAdminPost): AdminPost {
-  const { updatedAt, coverMedia, ...wirePost } = post;
+  // Durable scheduling attribution is execution authority for the local due
+  // publisher, not an administrator-response field. Keep it out of the
+  // strict wire schema rather than weakening that public management boundary.
+  const { updatedAt, coverMedia, scheduledByAdministratorId: _scheduledByAdministratorId, ...wirePost } = post;
   return adminPostSchema.parse({
     ...wirePost,
     ...(coverMedia ? { coverMedia } : {}),
     publishedAt: post.publishedAt?.toISOString() ?? null,
+    scheduledAt: post.scheduledAt?.toISOString() ?? null,
     version: updatedAt.toISOString(),
   });
 }
