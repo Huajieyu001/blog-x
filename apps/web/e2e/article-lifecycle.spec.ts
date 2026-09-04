@@ -36,6 +36,12 @@ test("draft completes publish, edit, slug confirmation, unpublish, republish, an
   await page.getByRole("button", { name: "预约发布" }).click();
   await expect(page.getByRole("status", { name: "生命周期状态" })).toHaveText("预约发布成功");
   await expect(page.getByText("当前预约：2032-01-01T01:30:00.000Z")).toBeVisible();
+  for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 900 }, { width: 1280, height: 900 }]) {
+    await page.setViewportSize(viewport);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const scheduleButton = await page.getByRole("button", { name: "改期预约" }).boundingBox();
+    expect(scheduleButton?.height).toBeGreaterThanOrEqual(44);
+  }
   await page.getByLabel("预约发布时间").fill("2032-01-02T09:30");
   await page.getByRole("button", { name: "改期预约" }).click();
   await expect(page.getByRole("status", { name: "生命周期状态" })).toHaveText("改期预约成功");
@@ -100,6 +106,9 @@ test("draft completes publish, edit, slug confirmation, unpublish, republish, an
   await expect(audit.getByText("下线文章").first()).toBeVisible();
   await expect(audit.getByText("重新发布文章").first()).toBeVisible();
   await expect(audit.getByText("删除文章").first()).toBeVisible();
+  await expect(audit.getByText("预约发布文章").first()).toBeVisible();
+  await expect(audit.getByText("改期发布文章").first()).toBeVisible();
+  await expect(audit.getByText("取消预约发布").first()).toBeVisible();
   await expect(audit).not.toContainText(originalTitle);
   await expect(audit).not.toContainText(editedTitle);
   await expect(audit).not.toContainText("Original content");

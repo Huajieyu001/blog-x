@@ -36,6 +36,7 @@ function eventDetail(item: AuditEvent) {
   const details: string[] = [`对象：${item.targetType} · ${item.targetId}`];
   if (item.metadata.previousStatus && item.metadata.status) details.push(`状态：${item.metadata.previousStatus} → ${item.metadata.status}`);
   else if (item.metadata.status) details.push(`状态：${item.metadata.status}`);
+  if (item.metadata.scheduledAt) details.push(`预约时间：${item.metadata.scheduledAt}`);
   if (item.metadata.changedFields?.length) details.push(`变更：${item.metadata.changedFields.map((field) => fieldLabels[field] ?? field).join("、")}`);
   return details;
 }

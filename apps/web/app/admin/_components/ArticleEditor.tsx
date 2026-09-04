@@ -523,7 +523,9 @@ export default function ArticleEditor({
         {errorFor("tagIds") && <p className={styles.error}>{errorFor("tagIds")}</p>}
         <div className={styles.metadataGrid}>
           <label>Slug<input value={fields.slug} onChange={(event) => { slugManuallyEdited.current = true; update("slug", event.target.value); }} aria-invalid={Boolean(errorFor("slug"))} /></label>
-          <label>发布时间<input type="datetime-local" value={fields.publishedAt} onChange={(event) => update("publishedAt", event.target.value)} aria-invalid={Boolean(errorFor("publishedAt"))} /></label>
+          {currentPost?.status === "draft" ? <p className={styles.firstPublicationNotice}>首次公开发布时间会在成功发布时由系统记录；预约发布时间请在下方“文章生命周期”中单独设置。</p> : (
+            <label>首次发布时间更正<input type="datetime-local" value={fields.publishedAt} onChange={(event) => update("publishedAt", event.target.value)} aria-invalid={Boolean(errorFor("publishedAt"))} /></label>
+          )}
           <label>SEO 描述<input value={fields.seoDescription} onChange={(event) => update("seoDescription", event.target.value)} aria-invalid={Boolean(errorFor("seoDescription"))} /></label>
         </div>
         {currentPost && currentPost.status !== "draft" && (
