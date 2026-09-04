@@ -10,17 +10,16 @@ Blog X 是一套面向个人长期使用的自托管博客系统。访客可以�
 
 博主能够可靠地发布和保存 Markdown 内容，访客能够持续、快速地通过博客域名阅读已发布文章。
 
-## Latest Completed Milestone: v1.2 Publishing Quality
+## Current Milestone: v1.3 Private Insights
 
-**Status:** Verified and shipped locally on 2026-09-05. The next milestone requires an owner product decision.
-
-**Goal:** 让博主可以安全地预约文章发布，并让已公开文章向搜索引擎提供严格、可验证的结构化数据。
+**Goal:** 在不追踪或识别单个访客的前提下提供可信的内容访问趋势，并把单管理员后台升级为清晰、现代且完整响应式的工作台。
 
 **Target features:**
-- 公开文章结构化数据
-- 可取消、可改期且失败关闭的定时发布
-- 幂等、有界且支持并发的本地发布任务
-- 继续使用固定 `3100` 本地交付与验证链路
+- 不保存 IP、指纹、原始 User-Agent、Cookie 或持久访客标识的页面浏览聚合
+- 仅管理员可见的总览、每日趋势与热门文章统计
+- 统一且美观的后台信息架构、视觉层级、状态反馈和操作控件
+- 覆盖手机、平板与桌面端的后台响应式和可访问性交互
+- 继续使用固定 `3100` 本地交付与验证链路，生产保持 `BLOCKED`
 
 ## Requirements
 
@@ -122,4 +121,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-05 after v1.2 Publishing Quality verification*
+*Last updated: 2026-09-05 when starting v1.3 Private Insights*
