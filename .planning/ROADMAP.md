@@ -46,7 +46,10 @@
   1. 访客打开已发布文章时，页面含有可解析的 Schema.org `BlogPosting` JSON-LD，其标题、摘要、时间与 canonical URL 均与页面可见内容一致。
   2. 访客获得的 JSON-LD 只含来自严格公开投影的字段，不会泄露 Markdown 源文、内部地址、存储路径或管理状态。
   3. 草稿、已下线、已删除、未知文章和非文章页面不输出文章 JSON-LD，含 `</script>` 等输入也无法逃逸受控序列化边界。
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 09-01-PLAN.md — Emit strict article-only BlogPosting JSON-LD and prove parity, privacy, injection containment, and all zero-output routes.
 
 ### Phase 10: Controlled Scheduled Publishing
 
