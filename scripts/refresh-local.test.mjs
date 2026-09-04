@@ -35,6 +35,7 @@ import {
   SAFE_RECOVERY_BY_STAGE,
   assertSeedPrerequisiteFacts,
   classifySeedPrerequisiteFailure,
+  createRawRefreshFactSources,
   formatRefreshFailure,
   formatRefreshStageProgress,
   formatSeedPrewarmInstruction,
@@ -587,6 +588,14 @@ test("concurrent fixed-root claims have exactly one winner and retain the canoni
 });
 
 test("live command policy permits only fixed local argv", async () => {
+  const protectedPlanningArgv = ["ls-files", ".planning/milestones", ".planning/phases/06-public-discovery-data/06-VERIFICATION.md"];
+  assert.doesNotThrow(() => assertAllowedRefreshCommand("git", protectedPlanningArgv));
+  for (const args of [
+    ["ls-files", ".planning/milestones"],
+    ["ls-files", ".planning/phases/06-public-discovery-data/06-VERIFICATION.md", ".planning/milestones"],
+    [...protectedPlanningArgv, "ops/phase5-full-gate-receipt.json"],
+    ["ls-files", ".planning/milestones", ".planning/phases/07-public-reading-discovery/07-VERIFICATION.md"],
+  ]) assert.throws(() => assertAllowedRefreshCommand("git", args), /allowlisted|exact|argv/i);
   assert.doesNotThrow(() => assertAllowedRefreshCommand("docker", ["build", "--network=none", "--pull=false", "--file", "apps/api/Dockerfile.refresh", "--tag", "blog-x-api-local:aaaaaaaaaaaa", "--build-arg", `SEED_IMAGE=${SHA("c")}`, "--build-arg", `SEED_IMAGE_ID=${SHA("c")}`, "--build-arg", `REFRESH_REVISION=${"a".repeat(40)}`, "--build-arg", `LOCKFILE_SHA256=${"b".repeat(64)}`, "--build-arg", "PUBLIC_ORIGIN=http://127.0.0.1:3100", "."]));
   assert.doesNotThrow(() => assertAllowedRefreshCommand("node", ["scripts/local-delivery-acceptance.mjs"]));
   for (const args of [["scripts/local-delivery-acceptance.mjs", "--partial"], ["./scripts/local-delivery-acceptance.mjs"], ["scripts/local-delivery-acceptance.mjs", ""]]) {
@@ -595,6 +604,46 @@ test("live command policy permits only fixed local argv", async () => {
   for (const [command, args] of [["docker-compose", ["-p", "other", "down"]], ["docker", ["build", "--network=host"]], ["ssh", ["root@example"]]]) {
     assert.throws(() => assertAllowedRefreshCommand(command, args), /not allowlisted|allowlisted shape|authority|network/i);
   }
+});
+
+test("protected planning evidence follows tracked archival state", async () => {
+  const root = "/virtual-workspace";
+  const activeVerification = ".planning/phases/06-public-discovery-data/06-VERIFICATION.md";
+  const archivedPlanning = [".planning/milestones/v1.1-ROADMAP.md", ".planning/milestones/v1.1-REQUIREMENTS.md"];
+  const protectedArgv = ["ls-files", ".planning/milestones", activeVerification];
+  const createProtectedFixture = (tracked) => {
+    const fs = memoryArtifactFs(root);
+    fs.entries.delete(`${root}/${activeVerification}`);
+    for (const path of tracked) fs.entries.set(`${root}/${path}`, { kind: "file", bytes: `${path}\n`, uid: TEST_UID, mode: 0o600 });
+    const reads = []; const calls = []; const readFile = fs.readFile.bind(fs);
+    const source = createRawRefreshFactSources({
+      root,
+      fs: { ...fs, async readFile(path) { reads.push(path); return readFile(path); } },
+      state: {},
+      fetch: async () => { throw new Error("unused fake fetch"); },
+      async run(command, args) { calls.push([command, args]); if (command === "git") return { stdout: `${tracked.join("\n")}\n` }; throw new Error(`unexpected command: ${command} ${args.join(" ")}`); },
+    });
+    return { fs, source, reads, calls };
+  };
+
+  const archived = createProtectedFixture(archivedPlanning);
+  const initial = await archived.source.protected();
+  assert.deepEqual(archived.calls, [["git", protectedArgv]]);
+  assert.deepEqual(archived.reads, [...archivedPlanning, "ops/phase5-full-gate-receipt.json"].sort().map((path) => `${root}/${path}`));
+  assert.equal(archived.reads.includes(`${root}/${activeVerification}`), false);
+  assert.equal(initial.count, 3);
+
+  archived.fs.entries.get(`${root}/${archivedPlanning[0]}`).bytes = "changed archived planning\n";
+  const changedPlanning = await archived.source.protected();
+  assert.notEqual(changedPlanning.sha256, initial.sha256);
+  archived.fs.entries.get(`${root}/ops/phase5-full-gate-receipt.json`).bytes = "changed receipt\n";
+  const changedReceipt = await archived.source.protected();
+  assert.notEqual(changedReceipt.sha256, changedPlanning.sha256);
+
+  const active = createProtectedFixture([activeVerification]);
+  const current = await active.source.protected();
+  assert.equal(current.count, 2);
+  assert.deepEqual(active.reads, [activeVerification, "ops/phase5-full-gate-receipt.json"].sort().map((path) => `${root}/${path}`));
 });
 
 const SHA = (letter) => `sha256:${letter.repeat(64)}`;
