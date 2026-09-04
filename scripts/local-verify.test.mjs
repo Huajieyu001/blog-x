@@ -548,6 +548,15 @@ test("Phase 4 restore runner preserves backup evidence through authority and bro
   assert.match(runner, /cleanupGeneratedRestoreRoot/);
 });
 
+test("Phase 4 restore runner reuses the parent canonical runtime override", async () => {
+  const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
+  const restoreRunner = runner.slice(runner.indexOf("async function runPhase4RestoreChecks"), runner.indexOf("async function runPhase4ReleaseChecks"));
+  assert.match(restoreRunner, /const restoreContext = \{[\s\S]*composeOverride: context\.composeOverride/);
+  assert.match(restoreRunner, /\}, \{ env: composeEnvironment\(restoreContext\), composeOverride: restoreContext\.composeOverride \}\)/);
+  assert.match(restoreRunner, /compose\(restoreContext, "resolve restored API for authority comparison"/);
+  assert.match(restoreRunner, /composeArgs\(restoreContext, "down", "--remove-orphans", "--volumes"\)/);
+});
+
 test("Phase 4 full runner is offline-preflighted, exhaustive, and ends in machine-checked BLOCKED state", async () => {
   const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
   assert.match(runner, /preflightOfflinePrerequisites/);

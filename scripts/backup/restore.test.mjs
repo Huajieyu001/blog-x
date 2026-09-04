@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import { createBackupSet } from "./create.mjs";
 import {
@@ -117,6 +117,47 @@ test("restore mutates exactly once only after a complete preflight and cleanup i
   await cleanupGeneratedRestoreRoot(generated.restoreRoot);
   await assert.rejects(stat(generated.restoreRoot), /ENOENT/);
   for (const value of ["/", tmpdir(), process.cwd()]) await assert.rejects(cleanupGeneratedRestoreRoot(value), /restore root/i);
+});
+
+test("restore runtime override is appended exactly once while legacy restore argv stays single-file", async (context) => {
+  const generated = await fixture(context);
+  const calls = [];
+  const apiContainer = "a".repeat(64);
+  const run = async (name, args, options = {}) => {
+    calls.push({ name, args, options });
+    if (name === "docker" && args[0] === "volume") return { code: 1, stdout: Buffer.alloc(0), stderr: "" };
+    if (name === "docker-compose" && args.includes("ps") && args.includes("api")) return { code: 0, stdout: Buffer.from(apiContainer), stderr: "" };
+    return { code: 0, stdout: Buffer.alloc(0), stderr: "" };
+  };
+  const override = "/private/tmp/blog-x-current-runtime/compose.override.yaml";
+  const supplied = await restoreBackupSet({ backupRoot: generated.backupRoot, restoreRoot: generated.restoreRoot, ...target() }, {
+    run, composeOverride: override,
+  });
+  assert.equal(supplied.restored, true);
+  const suppliedCompose = calls.filter((call) => call.name === "docker-compose");
+  const expectedPrefix = ["-p", target().namespace, "-f", resolve(process.cwd(), "compose.yaml"), "-f", override];
+  assert.ok(suppliedCompose.length >= 7);
+  for (const call of suppliedCompose) {
+    assert.deepEqual(call.args.slice(0, expectedPrefix.length), expectedPrefix);
+    assert.equal(call.args.filter((value) => value === override).length, 1);
+  }
+
+  const legacyRoot = join(tmpdir(), `blog-x-restore-verify-${randomBytes(8).toString("hex")}`);
+  context.after(async () => { await rm(legacyRoot, { recursive: true, force: true }); });
+  const legacyCalls = [];
+  await restoreBackupSet({ backupRoot: generated.backupRoot, restoreRoot: legacyRoot, ...target() }, {
+    run: async (name, args, options = {}) => {
+      legacyCalls.push({ name, args, options });
+      if (name === "docker" && args[0] === "volume") return { code: 1, stdout: Buffer.alloc(0), stderr: "" };
+      if (name === "docker-compose" && args.includes("ps") && args.includes("api")) return { code: 0, stdout: Buffer.from(apiContainer), stderr: "" };
+      return { code: 0, stdout: Buffer.alloc(0), stderr: "" };
+    },
+  });
+  const legacyPrefix = ["-p", target().namespace, "-f", resolve(process.cwd(), "compose.yaml")];
+  for (const call of legacyCalls.filter((entry) => entry.name === "docker-compose")) {
+    assert.deepEqual(call.args.slice(0, legacyPrefix.length), legacyPrefix);
+    assert.notEqual(call.args[legacyPrefix.length], "-f");
+  }
 });
 
 test("restore root symlink is rejected without following it", async (context) => {
