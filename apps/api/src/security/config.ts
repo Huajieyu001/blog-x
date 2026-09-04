@@ -1,6 +1,6 @@
 import { isAbsolute } from "node:path";
 
-export type ApiCommand = "serve" | "migrate" | "seed" | "schema:verify" | "portable-export";
+export type ApiCommand = "serve" | "migrate" | "seed" | "schema:verify" | "portable-export" | "publish-due";
 
 export type RateLimitConfig = {
   login: { limit: number; windowMs: number };

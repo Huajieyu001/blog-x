@@ -16,6 +16,7 @@ import { authRoutes } from "./routes/auth.js";
 import { createSessionService } from "./auth/sessions.js";
 import { createAdminPostRepository } from "./content/admin-repository.js";
 import { createArticleService } from "./content/article-service.js";
+import { createScheduledPublisher, publishDueMaximumLimit, type PublishDueResult, ScheduledPublicationError } from "./content/scheduled-publisher.js";
 import { classifyArticleMedia } from "./content/media-reference-policy.js";
 import { adminPostRoutes } from "./routes/admin-posts.js";
 import { createPublicRepository } from "./content/public-repository.js";
@@ -42,6 +43,49 @@ import { appendAuditEvent, createAuditRepository } from "./audit/audit-repositor
 import { adminAuditRoutes } from "./routes/admin-audit.js";
 
 const databaseSchema = { administrators, articles, sessions, categories, tags, articleTags, sitePages, media, auditEvents };
+
+type PublishDueArguments = { ok: true; limit: number } | { ok: false; code: "invalid_arguments" };
+
+type PublishDueFailure = {
+  at: Date;
+  limit?: number;
+  code: "invalid_arguments" | "configuration_failed" | "invalid_candidate" | "transaction_failed";
+};
+
+/** Parsing happens before a pool is created so malformed local commands cannot touch PostgreSQL. */
+export function parsePublishDueArguments(arguments_: string[]): PublishDueArguments {
+  if (arguments_.length !== 1) return { ok: false, code: "invalid_arguments" };
+  const match = /^--limit=(\d+)$/.exec(arguments_[0] ?? "");
+  if (!match) return { ok: false, code: "invalid_arguments" };
+  const limit = Number(match[1]);
+  return Number.isSafeInteger(limit) && limit >= 1 && limit <= publishDueMaximumLimit
+    ? { ok: true, limit }
+    : { ok: false, code: "invalid_arguments" };
+}
+
+export function formatPublishDueSuccess(result: PublishDueResult) {
+  return JSON.stringify({
+    format: "blog-x-publish-due",
+    version: 1,
+    command: "publish-due",
+    at: result.at.toISOString(),
+    limit: result.limit,
+    claimed: result.claimed,
+    published: result.publishedIds.length,
+    publishedIds: result.publishedIds,
+  });
+}
+
+export function formatPublishDueFailure(failure: PublishDueFailure) {
+  return JSON.stringify({
+    format: "blog-x-publish-due",
+    version: 1,
+    command: "publish-due",
+    at: failure.at.toISOString(),
+    ...(failure.limit === undefined ? {} : { limit: failure.limit }),
+    code: failure.code,
+  });
+}
 
 export function createRuntimeResources(config: ApiRuntimeConfig) {
   const pool = new Pool({ connectionString: config.databaseUrl });
@@ -254,6 +298,30 @@ async function schemaVerify(pool: Pool) {
 }
 async function main() {
   const command = process.argv[2];
+  if (command === "publish-due") {
+    const parsed = parsePublishDueArguments(process.argv.slice(3));
+    if (!parsed.ok) {
+      console.error(formatPublishDueFailure({ at: new Date(), code: parsed.code }));
+      process.exitCode = 1;
+      return;
+    }
+    let resources: RuntimeResources | undefined;
+    try {
+      const config = parseApiRuntimeConfig(process.env, "publish-due");
+      resources = createRuntimeResources(config);
+      const result = await createScheduledPublisher(createAdminPostRepository(resources.db)).publishDue(parsed.limit);
+      console.log(formatPublishDueSuccess(result));
+    } catch (error) {
+      const code = error instanceof ScheduledPublicationError && error.code === "invalid_candidate"
+        ? "invalid_candidate"
+        : resources ? "transaction_failed" : "configuration_failed";
+      console.error(formatPublishDueFailure({ at: new Date(), limit: parsed.limit, code }));
+      process.exitCode = 1;
+    } finally {
+      await resources?.pool.end().catch(() => undefined);
+    }
+    return;
+  }
   const configCommand = command === "migrate" || command === "seed" || command === "schema:verify" || command === "portable-export" ? command : "serve";
   const config = parseApiRuntimeConfig(process.env, configCommand);
   const resources = createRuntimeResources(config);

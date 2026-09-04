@@ -1,5 +1,5 @@
-import { legacyMediaReviewSchema, mediaReferenceSchema, type AdminPostInput, type AuditMetadata, type MediaReference } from "@blog-x/contracts";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { legacyMediaReviewSchema, mediaReferenceSchema, type AdminPostInput, type AuditEventName, type AuditMetadata, type MediaReference } from "@blog-x/contracts";
+import { and, asc, desc, eq, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { appendAuditEvent } from "../audit/audit-repository.js";
 import * as schema from "../db/schema.js";
@@ -70,9 +70,15 @@ type RetainedArticleUpdate = (
 ) => Promise<StoredAdminPost>;
 
 type RetainedArticleAudit = (
-  event: "article.updated" | "article.published" | "article.unpublished" | "article.republished" | "article.deleted" | "article.scheduled" | "article.rescheduled" | "article.schedule_cancelled",
+  event: Extract<AuditEventName, `article.${string}`>,
   metadata?: AuditMetadata,
 ) => Promise<void>;
+
+export type DueArticleCandidate = {
+  current: StoredAdminPost;
+  update: RetainedArticleUpdate;
+  audit: RetainedArticleAudit;
+};
 
 function values(input: AdminPostInput) {
   const { tagIds, coverMedia, ...article } = input;
@@ -165,7 +171,58 @@ export function createAdminPostRepository(db: Database) {
     });
   }
 
-  return { createDraft, findRetainedById, listRetained, transactRetained };
+  /**
+   * Claims the first due rows under PostgreSQL locks and leaves those locks held
+   * until the caller has either published every candidate or thrown.  The
+   * caller deliberately receives all candidates before it mutates one so a
+   * malformed later row cannot result in a partial visible batch.
+   */
+  async function transactDue<T>(
+    limit: number,
+    operation: (candidates: DueArticleCandidate[], transactionNow: Date) => Promise<T>,
+  ): Promise<T> {
+    return db.transaction(async (tx) => {
+      const transactionNowRaw = (await tx.execute<{ transactionNow: Date | string }>(sql`select CURRENT_TIMESTAMP as "transactionNow"`)).rows[0]?.transactionNow;
+      const transactionNow = transactionNowRaw instanceof Date ? transactionNowRaw : new Date(String(transactionNowRaw));
+      if (Number.isNaN(transactionNow.getTime())) throw new Error("transaction timestamp is unavailable");
+      const dueRows = await tx.select(selectedPost).from(schema.articles)
+        .where(and(
+          eq(schema.articles.status, "draft"),
+          isNull(schema.articles.deletedAt),
+          isNotNull(schema.articles.scheduledAt),
+          lte(schema.articles.scheduledAt, transactionNow),
+        ))
+        .orderBy(asc(schema.articles.scheduledAt), asc(schema.articles.id))
+        .limit(limit)
+        .for("update", { skipLocked: true });
+      const candidates = await Promise.all(dueRows.map(async (row) => {
+        const current = await hydrate(tx as Database, row as typeof schema.articles.$inferSelect);
+        const update: RetainedArticleUpdate = async (changes, tagIds) => {
+          const updated = (await tx.update(schema.articles).set(changes).where(eq(schema.articles.id, current.id)).returning(selectedPost))[0];
+          if (!updated) throw new Error("due article update did not return a row");
+          if (tagIds) {
+            await tx.delete(schema.articleTags).where(eq(schema.articleTags.articleId, current.id));
+            if (tagIds.length) await tx.insert(schema.articleTags).values(tagIds.map((tagId) => ({ articleId: current.id, tagId })));
+          }
+          return hydrate(tx as Database, updated as typeof schema.articles.$inferSelect, tagIds ?? current.tagIds);
+        };
+        const audit: RetainedArticleAudit = (event, metadata) => {
+          if (!current.scheduledByAdministratorId) throw new Error("due article is missing scheduling authority");
+          return appendAuditEvent(tx, {
+            actorAdministratorId: current.scheduledByAdministratorId,
+            event,
+            targetType: "article",
+            targetId: current.id,
+            ...(metadata ? { metadata } : {}),
+          });
+        };
+        return { current, update, audit };
+      }));
+      return operation(candidates, transactionNow);
+    });
+  }
+
+  return { createDraft, findRetainedById, listRetained, transactRetained, transactDue };
 }
 
 export type AdminPostRepository = ReturnType<typeof createAdminPostRepository>;
