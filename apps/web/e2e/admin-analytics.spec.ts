@@ -50,3 +50,35 @@ test("dashboard keeps its authoring hierarchy and visible static actions", async
   await expect(page.getByRole("link", { name: "新建草稿" }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: /导出 Markdown/ })).toBeVisible();
 });
+
+test("analytics remains keyboard-accessible, bounded, and document-width-safe across responsive viewports", async ({ page }) => {
+  await login(page);
+  for (const width of [390, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`${webOrigin}/admin/analytics?range=400`);
+    await expect(page.getByRole("link", { name: "400 天" })).toHaveAttribute("aria-current", "page");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  }
+  const range = page.getByRole("link", { name: "400 天" });
+  await range.focus();
+  await expect(range).toBeFocused();
+  const targetSize = await range.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return { width: rect.width, height: rect.height };
+  });
+  expect(targetSize.width).toBeGreaterThanOrEqual(44);
+  expect(targetSize.height).toBeGreaterThanOrEqual(44);
+  const scroller = page.getByLabel("每日 PV 趋势图，可横向滚动");
+  await scroller.focus();
+  await expect(scroller).toBeFocused();
+});
+
+test("analytics has no browser-visible internal or third-party requests and respects resolved theme state", async ({ page }) => {
+  const origins = new Set<string>();
+  page.on("request", (request) => origins.add(new URL(request.url()).origin));
+  await login(page);
+  await page.goto(`${webOrigin}/admin/analytics?range=30`);
+  await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
+  await expect(page.locator("main")).toBeVisible();
+  expect([...origins]).toEqual([webOrigin]);
+});
