@@ -73,22 +73,29 @@ test("canonical integration selection owns exact non-Phase-7 inventory once by f
   assert.match(selection.manifestSha256, /^[a-f0-9]{64}$/);
 });
 
-test("Phase 11 data selection seals retention, export, privacy, and restore authority", () => {
+test("Phase 11 data selection seals retention, export, privacy, restore, and browser beacon authority", () => {
   const selection = phase11Selection("data");
   assert.deepEqual(selection.databaseSuites, [
     ["PUBLIC_VISIBILITY_TEST_DATABASE_URL", "apps/api/test/public-visibility.test.ts"],
     ["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"],
   ]);
   assert.equal(selection.restoreSuite, "apps/api/test/backup-restore.test.ts");
+  assert.deepEqual(selection.browserSuites, ["apps/web/e2e/public-reading.spec.ts"]);
+  assert.deepEqual(PACKAGE_TEST_INVENTORY.find((entry) => entry.path === selection.browserSuites[0]), {
+    path: "apps/web/e2e/public-reading.spec.ts", kind: "web-e2e", scope: "integration", fixtureOwner: "main-browser",
+  });
   assert.deepEqual(selection.nodeSuites, ["scripts/local-verify.test.mjs"]);
   const suites = [
     ...selection.databaseSuites.map(([, id]) => ({ id, kind: "database", counts: { tests: 1, passed: 1, failed: 0, cancelled: 0, skipped: 0, todo: 0 } })),
     { id: selection.restoreSuite, kind: "backup-restore", counts: { tests: 1, passed: 1, failed: 0, cancelled: 0, skipped: 0, todo: 0 } },
+    ...selection.browserSuites.map((id) => ({ id, kind: "browser", counts: { tests: 1, passed: 1, failed: 0, cancelled: 0, skipped: 0, todo: 0 } })),
     ...selection.nodeSuites.map((id) => ({ id, kind: "node", counts: { tests: 1, passed: 1, failed: 0, cancelled: 0, skipped: 0, todo: 0 } })),
   ];
   assert.equal(createPhase11DataResult(suites).releaseState, "BLOCKED");
   assert.throws(() => phase11Selection("other"), /Phase 11 selection/i);
   assert.throws(() => createPhase11DataResult(suites.slice(1)), /exact|missing/i);
+  assert.throws(() => createPhase11DataResult(suites.filter((suite) => suite.id !== selection.browserSuites[0])), /exact|missing/i);
+  assert.throws(() => createPhase11DataResult(suites.map((suite) => suite.id === selection.browserSuites[0] ? { ...suite, kind: "main-browser" } : suite)), /exact/i);
 });
 
 test("generated integration result binds exact paths actual counts cleanup and digest", () => {

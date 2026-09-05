@@ -352,14 +352,24 @@ export function phase6Selection(mode) {
 
 export function phase11Selection(mode) {
   if (mode !== "data") throw new Error(`Phase 11 selection is not recognized: ${mode}`);
-  return {
+  const browserSuites = ["apps/web/e2e/public-reading.spec.ts"];
+  const inventoryByPath = new Map(PACKAGE_TEST_INVENTORY.map((entry) => [entry.path, entry]));
+  for (const path of browserSuites) {
+    const entry = inventoryByPath.get(path);
+    if (!entry || entry.kind !== "web-e2e" || entry.scope !== "integration" || entry.fixtureOwner !== "main-browser") {
+      throw new Error(`Phase 11 browser suite ownership is invalid: ${path}`);
+    }
+  }
+  if (new Set(browserSuites).size !== browserSuites.length) throw new Error("Phase 11 browser suite selection contains duplicate paths");
+  return Object.freeze({
     databaseSuites: [
       ["PUBLIC_VISIBILITY_TEST_DATABASE_URL", "apps/api/test/public-visibility.test.ts"],
       ["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"],
     ],
     restoreSuite: "apps/api/test/backup-restore.test.ts",
+    browserSuites: Object.freeze(browserSuites),
     nodeSuites: ["scripts/local-verify.test.mjs"],
-  };
+  });
 }
 
 export function validateTopologyPolicy(value) {
@@ -545,6 +555,7 @@ export function createPhase11DataResult(suiteRecords) {
   const expected = [
     ...selection.databaseSuites.map(([, id]) => ({ id, kind: "database" })),
     { id: selection.restoreSuite, kind: "backup-restore" },
+    ...selection.browserSuites.map((id) => ({ id, kind: "browser" })),
     ...selection.nodeSuites.map((id) => ({ id, kind: "node" })),
   ];
   if (suiteRecords.length !== expected.length) throw new Error("Phase 11 data result exact suite selection is missing, duplicate, or contains extras");
@@ -1435,6 +1446,8 @@ async function runPhase11DataChecks(context) {
   }
   const restore = await runPhase4RestoreChecks(context, false, phase4Selection("restore").browserSuite, { skipNodeSuites: true });
   suites.push({ id: selection.restoreSuite, kind: "backup-restore", counts: restore.databaseCounts });
+  const browser = await runGeneratedMainBrowserFixtureSelection(context, {}, selection.browserSuites);
+  for (const suite of browser.suites) suites.push({ id: suite.path, kind: "browser", counts: suite.counts });
   for (const file of selection.nodeSuites) {
     const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
     suites.push({ id: file, kind: "node", counts: assertSemanticTap(result.combined) });
