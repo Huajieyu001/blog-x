@@ -78,10 +78,10 @@
   3. 未登录访客无法读取统计，管理员统计响应不被缓存，异常和空数据都呈现诚实且可恢复的状态。
   4. 后台首页以有层级的卡片呈现内容工作概况、主要创作入口和访问趋势摘要，而不是平铺同等权重的链接。
 
-**Plans**: 1/3 plans executed
+**Plans**: 2/3 plans executed
 
 - [x] 12-01-PLAN.md — Define strict authenticated no-store analytics contracts and the current-public aggregate read authority.
-- [ ] 12-02-PLAN.md — Build the hierarchical administrator dashboard and complete responsive anonymous-PV analytics page.
+- [x] 12-02-PLAN.md — Build the hierarchical administrator dashboard and complete responsive anonymous-PV analytics page.
 - [ ] 12-03-PLAN.md — Seal exact test ownership, local verification, deep-review reruns, and fixed 3100 delivery evidence.
 
 **UI hint**: yes
@@ -107,7 +107,7 @@
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 11. Privacy-Safe View Authority | v1.3 | 3/3 | Complete    | 2026-09-05 |
-| 12. Administrator Insights | v1.3 | 1/3 | In Progress|  |
+| 12. Administrator Insights | v1.3 | 2/3 | In Progress|  |
 | 13. Responsive Admin Workspace and Local Delivery | v1.3 | 0/TBD | Not started | - |
 
 Complete prior milestone plans, requirements and phase records are archived under `.planning/milestones/`.

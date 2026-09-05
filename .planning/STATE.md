@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Private Insights
 status: executing
-stopped_at: Completed 12-01-PLAN.md
-last_updated: "2026-09-05T11:28:21.761Z"
+stopped_at: Completed 12-02-PLAN.md
+last_updated: "2026-09-05T12:12:51.414Z"
 last_activity: 2026-09-05
 last_activity_desc: Phase null execution started
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
   percent: 33
 current_phase: 12
 current_phase_name: Administrator Insights
@@ -33,7 +33,7 @@ Plan: 1 of ?
 Status: Executing Phase null
 Last activity: 2026-09-05 — Phase null execution started
 
-Progress: [███████░░░] 67%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -58,6 +58,7 @@ Progress: [███████░░░] 67%
 | Phase 11 P02 | 1840 | 3 tasks | 9 files |
 | Phase 11 P03 | 1h 20m | 3 tasks | 16 files |
 | Phase 12-administrator-insights P01 | 8min | 2 tasks | 6 files |
+| Phase 12-administrator-insights P02 | 16min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,8 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase ?]: Public reading sends a nonvisual credential-free same-origin view beacon.
 - [Phase ?]: D-01 uses one publicPredicate-filtered eligible CTE for totals, trend, sources, and top articles.
 - [Phase ?]: Administrator analytics is a bounded 2000ms repeatable-read aggregate-only projection with no schema or dependency change.
+- [Phase 12]: Dashboard content and analytics reads are strict no-store discriminated SSR results with independent failure states.
+- [Phase 12]: Analytics uses ordinary links, semantic HTML/CSS bars, and page-local UI so Phase 13 keeps admin shell ownership.
 
 ### Pending Todos
 
@@ -103,8 +106,8 @@ None. Phase 11 is ready for discussion and planning.
 
 ## Session Continuity
 
-Last session: 2026-09-05T11:28:21.755Z
-Stopped at: Completed 12-01-PLAN.md
+Last session: 2026-09-05T12:12:51.409Z
+Stopped at: Completed 12-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
