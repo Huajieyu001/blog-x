@@ -4,17 +4,17 @@ milestone: v1.3
 milestone_name: Private Insights
 current_phase: 11
 current_phase_name: Privacy-Safe View Authority
-status: executing
-stopped_at: Completed 11-02-PLAN.md
-last_updated: "2026-09-05T03:44:54.939Z"
+status: verifying
+stopped_at: Completed 11-03-PLAN.md
+last_updated: "2026-09-05T04:42:23.387Z"
 last_activity: 2026-09-05
 last_activity_desc: Phase 11 execution started
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 0
+  completed_plans: 3
+  percent: 33
 ---
 
 # Project State
@@ -30,10 +30,10 @@ See: .planning/PROJECT.md (updated 2026-09-05)
 
 Phase: 11 (Privacy-Safe View Authority) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-05 — Phase 11 execution started
 
-Progress: [███████░░░] 67%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -56,6 +56,7 @@ Progress: [███████░░░] 67%
 |------|----------|-------|-------|
 | Phase 11 P01 | 1500 | 3 tasks | 10 files |
 | Phase 11 P02 | 1840 | 3 tasks | 9 files |
+| Phase 11 P03 | 1h 20m | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -70,6 +71,9 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase ?]: Phase 11 anonymous views use one PostgreSQL Shanghai-day upsert and identical empty 204/no-store outcomes for accepted and ignored requests.
 - [Phase ?]: Anonymous public view admission uses exact same-origin validation, fixed coarse source enums, and opaque fail-closed outcomes.
 - [Phase ?]: Anonymous abuse protection uses an isolated bounded socket-keyed limiter instead of administrator mutation guards.
+- [Phase ?]: Retention cleanup uses database-derived Shanghai day with a strict bounded batch.
+- [Phase ?]: Portable Markdown v1 remains content-only while aggregate recovery is checked independently.
+- [Phase ?]: Public reading sends a nonvisual credential-free same-origin view beacon.
 
 ### Pending Todos
 
@@ -96,8 +100,8 @@ None. Phase 11 is ready for discussion and planning.
 
 ## Session Continuity
 
-Last session: 2026-09-05T03:44:54.934Z
-Stopped at: Completed 11-02-PLAN.md
+Last session: 2026-09-05T04:42:23.364Z
+Stopped at: Completed 11-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
