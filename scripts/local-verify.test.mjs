@@ -158,6 +158,18 @@ test("Phase 11 data selection seals retention, export, privacy, restore, browser
   assert.doesNotMatch(phase11Runner, /build workspace|typecheck workspace/);
 });
 
+test("generated canonical Web verifier keeps private static trust while publishing only a loopback edge with bounded redacted diagnostics", async () => {
+  const source = await readFile(new URL("./local-verify.mjs", import.meta.url), "utf8");
+  const authority = source.slice(source.indexOf("async function createCanonicalRuntimeAuthority"), source.indexOf("async function hashRuntimeArtifact"));
+  const apiOverride = authority.slice(authority.indexOf('"  api:"'), authority.indexOf("...(includeWeb ? ["));
+  assert.match(authority, /ports: !override[\s\S]*127\.0\.0\.1:\$\{context\.runtimeWebPort \?\? context\.webPort\}:3100/);
+  assert.match(authority, /networks:[\s\S]*private:[\s\S]*ipv4_address: 172\.30\.0\.3[\s\S]*verifier-edge: \{\}[\s\S]*verifier-edge:[\s\S]*internal: false/);
+  assert.doesNotMatch(apiOverride, /verifier-edge/);
+  assert.match(source, /async function inspectGeneratedWebVerifierEdge[\s\S]*\{\{\.Name\}\} \{\{\.State\}\} \{\{\.Ports\}\}[\s\S]*127\.0\.0\.1:\$\{port\}/);
+  assert.match(source, /async function generatedWebVerifierFailureDiagnostics[\s\S]*composeArgs\(context, "ps"\)[\s\S]*logs", "--no-color", "--tail", "200", "api", "web"[\s\S]*redactText/);
+  assert.match(source, /canonicalIntegration \|\| options\.phase11Data \|\| options\.phase12Data[\s\S]*generatedWebVerifierFailureDiagnostics/);
+});
+
 test("generated integration result binds exact paths actual counts cleanup and digest", () => {
   const selection = canonicalIntegrationSelection();
   const suites = selection.paths.map((path) => ({

@@ -819,6 +819,15 @@ async function createCanonicalRuntimeAuthority(context, { includeWeb = true } = 
       "    volumes:",
       `      - ${JSON.stringify(`${nextRoot}:/workspace/apps/web/.next:ro`)}`,
       `      - ${JSON.stringify(`${resolve(runtimeRoot, "server.mjs")}:/workspace/apps/web/server.mjs:ro`)}`,
+      "    networks:",
+      "      private:",
+      "        ipv4_address: 172.30.0.3",
+      "      verifier-edge: {}",
+    ] : []),
+    ...(includeWeb ? [
+      "networks:",
+      "  verifier-edge:",
+      "    internal: false",
     ] : []),
     "",
   ].join("\n");
@@ -919,6 +928,23 @@ async function runStep(context, label, commandName, args, options = {}) {
 
 async function compose(context, label, ...args) {
   return runStep(context, label, "docker-compose", composeArgs(context, ...args));
+}
+
+async function inspectGeneratedWebVerifierEdge(context) {
+  const port = context.runtimeWebPort ?? context.webPort;
+  const result = await compose(context, "inspect generated Web verifier port", "ps", "--format", "{{.Name}} {{.State}} {{.Ports}}", "web");
+  if (!result.combined.includes(`127.0.0.1:${port}`)) {
+    throw new Error(`generated Web verifier edge did not publish its exact loopback port ${port}`);
+  }
+}
+
+async function generatedWebVerifierFailureDiagnostics(context) {
+  const options = { env: composeEnvironment(context), allowFailure: true, allowDuringShutdown: true };
+  const [status, logs] = await Promise.all([
+    command("docker-compose", composeArgs(context, "ps"), options),
+    command("docker-compose", composeArgs(context, "logs", "--no-color", "--tail", "200", "api", "web"), options),
+  ]);
+  return redactText(`[generated Web verifier status]\n${status.combined}\n[generated Web verifier logs]\n${logs.combined}`, context.secrets);
 }
 
 async function waitForHttp(url, attempts = 100) {
@@ -1984,6 +2010,7 @@ async function runSingle(options) {
     }
     if (!options.interruptionCheck) await migrationRetryPreservation(context);
     await compose(context, "start isolated API and Web", "up", "-d", "--wait", "api", "web");
+    await inspectGeneratedWebVerifierEdge(context);
     await runStep(context, "confirm exact generated media volume", "docker", ["volume", "inspect", context.mediaVolume]);
     await startPhase11Ingress(context);
     await waitForHttp(context.webOrigin);
@@ -2046,11 +2073,9 @@ async function runSingle(options) {
     await assertCleanLogs(context);
     process.stdout.write(`[local-verify] ${namespace} passed\n`);
   } catch (error) {
-    if (options.canonicalIntegration) {
-      const diagnostics = await command("docker-compose", composeArgs(context, "logs", "--no-color", "api", "web"), {
-        env: composeEnvironment(context), allowFailure: true, allowDuringShutdown: true,
-      });
-      throw new Error(`${error instanceof Error ? error.message : String(error)}\n${redactText(diagnostics.combined, context.secrets)}`);
+    if (options.canonicalIntegration || options.phase11Data || options.phase12Data) {
+      const diagnostics = await generatedWebVerifierFailureDiagnostics(context);
+      throw new Error(`${error instanceof Error ? error.message : String(error)}\n${diagnostics}`);
     }
     throw error;
   } finally {
