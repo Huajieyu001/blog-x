@@ -46,8 +46,7 @@ services:
       TRUSTED_PROXY_CIDRS: 172.30.0.3/32
       MEDIA_ROOT: /var/lib/blog-x/media
     networks:
-      private:
-        ipv4_address: 172.30.0.2
+      - private
     volumes:
       - media-data:/var/lib/blog-x/media
     depends_on:
