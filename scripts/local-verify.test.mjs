@@ -291,7 +291,7 @@ test("Phase 4 operations and restore selections are explicit", () => {
   });
 });
 
-test("Phase 5 media selection keeps legacy restore evidence compatible with the ninth migration", async () => {
+test("Phase 5 media selection keeps legacy restore evidence compatible with the current migration authority", async () => {
   assert.deepEqual(phase5MediaSelection(), {
     databaseSuites: [
       ["ARTICLE_TEST_DATABASE_URL", "apps/api/test/article-draft-preview.test.ts"],
@@ -304,7 +304,7 @@ test("Phase 5 media selection keeps legacy restore evidence compatible with the 
     browserSuites: ["apps/web/e2e/phase1-publishing.spec.ts", "apps/web/e2e/phase4-restore.spec.ts"],
   });
   const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
-  assert.match(runner, /values\[1\] !== 9/);
+  assert.match(runner, /values\[1\] !== 10/);
   assert.doesNotMatch(runner, /values\[1\] !== 6/);
   assert.match(runner, /--phase5-media/);
   assert.match(runner, /PHASE5_LEGACY_ARTICLE_ID/);
@@ -395,10 +395,12 @@ test("Phase 6 data selection is exact, once-only, and separate from Phase 5 rece
 test("Phase 6 interruption and parallel paths keep exact generated authority", async () => {
   const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
   const schema = runner.slice(runner.indexOf("async function inspectSchema"), runner.indexOf("async function runMigration"));
-  assert.match(schema, /values\[1\] !== 9/);
+  assert.match(schema, /values\[1\] !== 10/);
   assert.match(schema, /articles_schedule_pair_check/);
   assert.match(schema, /articles_schedule_draft_check/);
   assert.match(schema, /articles_schedule_due_index/);
+  assert.match(schema, /article_daily_views_total_matches_sources_check/);
+  assert.match(schema, /article_daily_views_day_index/);
   const interruption = runner.slice(runner.indexOf("async function interruptionCheck"), runner.indexOf("async function migrationRetryPreservation"));
   assert.match(interruption, /\$\{context\.namespace\}_migration_interrupt/);
   assert.match(interruption, /migration lock acquired/);
@@ -419,45 +421,39 @@ test("Phase 6 interruption and parallel paths keep exact generated authority", a
   assert.doesNotMatch(parallel, /phase5|receipt/i);
 });
 
-test("Phase 10 migration authority is a complete nine-entry Drizzle history", async () => {
+test("Phase 11 migration authority is a complete ten-entry Drizzle history", async () => {
   const drizzleRoot = join(process.cwd(), "apps/api/drizzle");
   const metadataRoot = join(drizzleRoot, "meta");
   const sqlFiles = (await readdir(drizzleRoot)).filter((name) => /^\d{4}_.+\.sql$/.test(name)).sort();
   const metadataFiles = (await readdir(metadataRoot)).sort();
   const journal = JSON.parse(await readFile(join(metadataRoot, "_journal.json"), "utf8"));
-  const migration = await readFile(join(drizzleRoot, "0008_scheduled-publishing.sql"), "utf8");
+  const migration = await readFile(join(drizzleRoot, "0009_article_daily_views.sql"), "utf8");
   const schema = await readFile(join(process.cwd(), "apps/api/src/db/schema.ts"), "utf8");
   const findings = [];
 
-  if (sqlFiles.length !== 9 || sqlFiles[0] !== "0000_phase1_walking_skeleton.sql" || sqlFiles.at(-1) !== "0008_scheduled-publishing.sql") {
-    findings.push(`numbered SQL authority must contain exactly 0000 through 0008; found ${sqlFiles.join(", ")}`);
+  if (sqlFiles.length !== 10 || sqlFiles[0] !== "0000_phase1_walking_skeleton.sql" || sqlFiles.at(-1) !== "0009_article_daily_views.sql") {
+    findings.push(`numbered SQL authority must contain exactly 0000 through 0009; found ${sqlFiles.join(", ")}`);
   }
   const journalTail = journal.entries?.at(-1);
-  if (journal.entries?.length !== 9 || journalTail?.idx !== 8 || journalTail?.tag !== "0008_scheduled-publishing") {
-    findings.push(`journal must end at idx 8 / 0008_scheduled-publishing; found ${JSON.stringify(journalTail)}`);
+  if (journal.entries?.length !== 10 || journalTail?.idx !== 9 || journalTail?.tag !== "0009_article_daily_views") {
+    findings.push(`journal must end at idx 9 / 0009_article_daily_views; found ${JSON.stringify(journalTail)}`);
   }
-  if (!metadataFiles.includes("0008_snapshot.json")) findings.push("generated metadata must include meta/0008_snapshot.json");
+  if (!metadataFiles.includes("0009_snapshot.json")) findings.push("generated metadata must include meta/0009_snapshot.json");
 
-  const snapshot = metadataFiles.includes("0008_snapshot.json")
-    ? await readFile(join(metadataRoot, "0008_snapshot.json"), "utf8")
+  const snapshot = metadataFiles.includes("0009_snapshot.json")
+    ? await readFile(join(metadataRoot, "0009_snapshot.json"), "utf8")
     : "";
   for (const token of [
-    "scheduled_at",
-    "scheduled_by_administrator_id",
-    "articles_schedule_pair_check",
-    "articles_schedule_draft_check",
-    "articles_schedule_due_index",
+    "article_daily_views",
+    "article_daily_views_counters_nonnegative_check",
+    "article_daily_views_total_matches_sources_check",
+    "article_daily_views_day_index",
   ]) {
     if (!migration.includes(token)) findings.push(`tracked migration is missing ${token}`);
     if (!schema.includes(token)) findings.push(`Drizzle schema is missing ${token}`);
     if (snapshot && !snapshot.includes(token)) findings.push(`generated snapshot is missing ${token}`);
   }
-  for (const event of ["article.scheduled", "article.rescheduled", "article.schedule_cancelled", "article.scheduled_published"]) {
-    if (!migration.includes(event)) findings.push(`tracked migration is missing ${event}`);
-    if (!schema.includes(event)) findings.push(`Drizzle schema is missing ${event}`);
-    if (snapshot && !snapshot.includes(event)) findings.push(`generated snapshot is missing ${event}`);
-  }
-  assert.deepEqual(findings, [], "Phase 10 migration authorities must be structurally identical");
+  assert.deepEqual(findings, [], "Phase 11 migration authorities must be structurally identical");
 });
 
 test("Phase 8 machine records require every exact Phase 6 suite to pass with nonzero parser counts", () => {
@@ -614,11 +610,11 @@ test("Phase 4 restore runner owns an origin-bound runtime and absence-confirmed 
   assert.match(restoreRunner, /compose\(restoreContext, "resolve restored API for authority comparison"/);
 });
 
-test("canonical generated production inventory declares current migration count 9", async () => {
+test("canonical generated production inventory declares current migration count 10", async () => {
   const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
   const pipeline = runner.slice(runner.indexOf("async function runPhase5GeneratedPipeline"), runner.indexOf("async function committedImplementationHead"));
-  assert.match(pipeline, /migration:\s*\{\s*count:\s*9,/);
-  assert.doesNotMatch(pipeline, /migration:\s*\{\s*count:\s*8,/);
+  assert.match(pipeline, /migration:\s*\{\s*count:\s*10,/);
+  assert.doesNotMatch(pipeline, /migration:\s*\{\s*count:\s*9,/);
 });
 
 test("Phase 4 full runner is offline-preflighted, exhaustive, and ends in machine-checked BLOCKED state", async () => {

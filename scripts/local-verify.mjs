@@ -746,12 +746,12 @@ async function inspectSchema(context) {
   const result = await compose(context, "inspect migration ledger and schema", ...psqlArgs(context, [
     "select (select count(*) from blog_x_schema_ledger),",
     "(select migration_count from blog_x_schema_ledger where scope = 'phase1'),",
-    "(select count(*) from pg_tables where schemaname = 'public' and tablename = any(array['administrators','articles','sessions','categories','tags','article_tags','site_pages','media','audit_events'])),",
-    "(select count(*) from pg_constraint where conname = any(array['site_pages_key_about_check','site_pages_status_check','articles_cover_alt_check','articles_legacy_media_review_check','articles_schedule_pair_check','articles_schedule_draft_check','audit_events_event_check','audit_events_target_check','audit_events_metadata_check'])),",
-    "(select count(*) from pg_indexes where schemaname = 'public' and indexname = any(array['taxonomy_category_slug_unique','taxonomy_tag_slug_unique','article_tags_article_tag_unique','site_pages_key_unique','media_source_key_unique','media_derivative_key_unique','audit_events_newest_index','articles_schedule_due_index']));",
+    "(select count(*) from pg_tables where schemaname = 'public' and tablename = any(array['administrators','articles','article_daily_views','sessions','categories','tags','article_tags','site_pages','media','audit_events'])),",
+    "(select count(*) from pg_constraint where conname = any(array['site_pages_key_about_check','site_pages_status_check','articles_cover_alt_check','articles_legacy_media_review_check','articles_schedule_pair_check','articles_schedule_draft_check','audit_events_event_check','audit_events_target_check','audit_events_metadata_check','article_daily_views_pkey','article_daily_views_article_id_articles_id_fk','article_daily_views_counters_nonnegative_check','article_daily_views_total_matches_sources_check'])),",
+    "(select count(*) from pg_indexes where schemaname = 'public' and indexname = any(array['taxonomy_category_slug_unique','taxonomy_tag_slug_unique','article_tags_article_tag_unique','site_pages_key_unique','media_source_key_unique','media_derivative_key_unique','audit_events_newest_index','articles_schedule_due_index','article_daily_views_day_index']));",
   ].join(" ")));
   const values = result.stdout.trim().split("|").map(Number);
-  if (values.length !== 5 || values[0] !== 1 || values[1] !== 9 || values[2] !== 9 || values[3] !== 9 || values[4] !== 8) {
+  if (values.length !== 5 || values[0] !== 1 || values[1] !== 10 || values[2] !== 10 || values[3] !== 13 || values[4] !== 9) {
     throw new Error(`unexpected schema inspection result: ${result.stdout.trim()}`);
   }
 }
@@ -1531,7 +1531,7 @@ async function runPhase5GeneratedPipeline() {
       writePortableExportV1: async () => JSON.stringify({ format: "blog-x-portable-export", version: 1, exportedAt: new Date().toISOString(), articles: [], categories: [], tags: [], about: null, media: [{ id: mediaId, width: 1, height: 1, mimeType: "image/webp", createdAt: new Date().toISOString() }] }),
       copyApiMedia: async () => [{ id: mediaId, sourceKey: `source/${mediaId}.bin`, derivativeKey: `derivative/${mediaId}.webp`, source, derivative }],
       readAllowlistedInventory: async () => ({
-        migration: { count: 9, fingerprint: inventoryDigest },
+        migration: { count: 10, fingerprint: inventoryDigest },
         images: { api: imageDigest("api"), web: imageDigest("web"), postgres: imageDigest("postgres") },
         configChecksums: [{ path: "compose.yaml", sha256: hashText(await readFile(resolve(root, "compose.yaml"))) }],
         variableNamesPresent: ["DATABASE_URL", "MEDIA_ROOT", "PUBLIC_ORIGIN"],
