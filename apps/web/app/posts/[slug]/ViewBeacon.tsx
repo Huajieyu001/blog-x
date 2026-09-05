@@ -7,11 +7,11 @@ import { useEffect, useRef } from "react";
  * signal needed to record one anonymous aggregate page open.
  */
 export default function ViewBeacon({ slug }: { slug: string }) {
-  const sent = useRef(false);
+  const sentSlugs = useRef(new Set<string>());
 
   useEffect(() => {
-    if (sent.current) return;
-    sent.current = true;
+    if (sentSlugs.current.has(slug)) return;
+    sentSlugs.current.add(slug);
     const controller = new AbortController();
     let completed = false;
     void fetch(`/api/public/articles/${encodeURIComponent(slug)}/view`, {

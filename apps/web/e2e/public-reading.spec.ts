@@ -11,11 +11,12 @@ const password = requiredRunnerFact("E2E_ADMIN_PASSWORD");
 const runId = requiredRunnerFact("E2E_RUN_ID");
 const webOrigin = requiredRunnerFact("E2E_WEB_ORIGIN");
 
-async function createDraft(page: Page, input: { title: string; summary: string; slug: string; markdown: string }) {
+async function createDraft(page: Page, input: { title: string; summary: string; slug: string; markdown: string; category?: string }) {
   await page.goto(`${webOrigin}/admin/new`);
   await page.getByLabel("标题").fill(input.title);
   await page.getByLabel("摘要").fill(input.summary);
   await page.getByLabel("Slug").fill(input.slug);
+  if (input.category) await page.getByLabel("分类").selectOption({ label: input.category });
   await page.getByLabel("Markdown").fill(input.markdown);
   await page.getByRole("button", { name: "保存草稿" }).click();
   await expect(page).toHaveURL(/\/admin\/posts\/[0-9a-f-]+$/);
@@ -34,6 +35,7 @@ test("published permalink is a safe focused technical reading surface and every 
   const suffix = runId;
   const slugs = {
     published: `technical-reading-${suffix}`,
+    related: `related-reading-${suffix}`,
     draft: `hidden-draft-${suffix}`,
     unpublished: `hidden-unpublished-${suffix}`,
     deleted: `hidden-deleted-${suffix}`,
@@ -60,7 +62,21 @@ test("published permalink is a safe focused technical reading surface and every 
   ].join("\n");
 
   const publishedTitle = `A focused technical article ${runId}`;
-  await createDraft(page, { title: publishedTitle, summary: "A concise introduction to the reading surface.", slug: slugs.published, markdown });
+  const categoryName = `Reading category ${runId}`;
+  const categorySlug = `reading-category-${runId}`;
+  await page.goto(`${webOrigin}/admin/taxonomy`);
+  const categories = page.getByRole("region", { name: "分类管理" });
+  await categories.getByLabel("名称").fill(categoryName);
+  await categories.getByLabel("Slug").fill(categorySlug);
+  await categories.getByRole("button", { name: "创建分类" }).click();
+  await expect(categories.getByRole("status")).toHaveText("分类已创建。");
+
+  await createDraft(page, { title: publishedTitle, summary: "A concise introduction to the reading surface.", slug: slugs.published, markdown, category: categoryName });
+  await page.getByRole("button", { name: "发布" }).click();
+  await expect(page.getByText("状态：已发布")).toBeVisible();
+
+  const relatedTitle = `A related technical article ${runId}`;
+  await createDraft(page, { title: relatedTitle, summary: "A related article for retained route navigation.", slug: slugs.related, markdown: "# Related reading", category: categoryName });
   await page.getByRole("button", { name: "发布" }).click();
   await expect(page.getByText("状态：已发布")).toBeVisible();
 
@@ -74,15 +90,18 @@ test("published permalink is a safe focused technical reading surface and every 
   await page.getByRole("dialog", { name: "确认软删除文章" }).getByRole("button", { name: "确认软删除" }).click();
   await expect(page).toHaveURL(`${webOrigin}/admin`);
 
-  const beaconPath = `/api/public/articles/${encodeURIComponent(slugs.published)}/view`;
-  const beacons: Array<{ method: string; url: string; headers: Record<string, string>; body: string | null }> = [];
+  const beaconPath = (slug: string) => `/api/public/articles/${encodeURIComponent(slug)}/view`;
+  const beaconPaths = new Map(Object.values(slugs).map((slug) => [beaconPath(slug), slug]));
+  const beacons: Array<{ slug: string; method: string; url: string; headers: Record<string, string>; body: string | null }> = [];
   page.on("request", (request) => {
-    if (new URL(request.url()).pathname !== beaconPath) return;
-    beacons.push({ method: request.method(), url: request.url(), headers: request.headers(), body: request.postData() });
+    const slug = beaconPaths.get(new URL(request.url()).pathname);
+    if (!slug) return;
+    beacons.push({ slug, method: request.method(), url: request.url(), headers: request.headers(), body: request.postData() });
   });
 
   await page.setViewportSize({ width: 1280, height: 900 });
-  const firstBeaconResponsePromise = page.waitForResponse((response) => response.url() === `${webOrigin}${beaconPath}` && response.request().method() === "POST");
+  const firstBeaconPath = beaconPath(slugs.published);
+  const firstBeaconResponsePromise = page.waitForResponse((response) => response.url() === `${webOrigin}${firstBeaconPath}` && response.request().method() === "POST");
   const publishedResponse = await page.goto(`${webOrigin}/posts/${slugs.published}`);
   expect(publishedResponse?.status()).toBe(200);
   await expect(page.getByRole("heading", { level: 1, name: publishedTitle })).toBeVisible();
@@ -107,7 +126,7 @@ test("published permalink is a safe focused technical reading surface and every 
   await expect(body.locator("script, style, [data-hostile], [onerror], [onclick]")).toHaveCount(0);
   await expect(body.getByText("Unsafe destination")).not.toHaveAttribute("href", /^(?:javascript|data):/i);
   await expect.poll(() => beacons.length).toBe(1);
-  expect(beacons[0]).toMatchObject({ method: "POST", url: `${webOrigin}${beaconPath}`, body: "{}" });
+  expect(beacons[0]).toMatchObject({ slug: slugs.published, method: "POST", url: `${webOrigin}${firstBeaconPath}`, body: "{}" });
   const firstBeaconResponse = await firstBeaconResponsePromise;
   const firstBeaconHeaders = await firstBeaconResponse.request().allHeaders();
   expect(firstBeaconHeaders.cookie).toBeUndefined();
@@ -118,9 +137,21 @@ test("published permalink is a safe focused technical reading surface and every 
   expect(firstBeaconResponse.headers()["content-length"]).toBeUndefined();
   await expect(page.locator("[data-testid='view-beacon']")).toHaveCount(0);
 
+  const relatedLink = page.getByRole("link", { name: relatedTitle, exact: true });
+  await expect(relatedLink).toHaveAttribute("href", `/posts/${slugs.related}`);
+  const relatedBeaconPath = beaconPath(slugs.related);
+  const relatedBeaconResponsePromise = page.waitForResponse((response) => response.url() === `${webOrigin}${relatedBeaconPath}` && response.request().method() === "POST");
+  await relatedLink.click();
+  await expect(page).toHaveURL(`${webOrigin}/posts/${slugs.related}`);
+  await expect(page.getByRole("heading", { level: 1, name: relatedTitle })).toBeVisible();
+  await expect.poll(() => beacons.filter((beacon) => beacon.slug === slugs.related).length).toBe(1);
+  expect(beacons.filter((beacon) => beacon.slug === slugs.published)).toHaveLength(1);
+  const relatedBeaconResponse = await relatedBeaconResponsePromise;
+  expect(relatedBeaconResponse.status()).toBe(204);
+
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${webOrigin}/posts/${slugs.published}`);
-  await expect.poll(() => beacons.length).toBe(2);
+  await expect.poll(() => beacons.filter((beacon) => beacon.slug === slugs.published).length).toBe(2);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const articleBox = await page.getByRole("article").boundingBox();
   expect(articleBox).not.toBeNull();
@@ -136,6 +167,6 @@ test("published permalink is a safe focused technical reading surface and every 
     await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(0);
     unavailableBodies.push((await page.locator("body").innerText()).replace(/\s+/g, " ").trim());
   }
-  expect(beacons).toHaveLength(2);
+  expect(beacons).toHaveLength(3);
   expect(new Set(unavailableBodies).size).toBe(1);
 });
