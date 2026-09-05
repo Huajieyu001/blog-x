@@ -34,7 +34,7 @@ export default async function PublicArticlePage({ params }: { params: Promise<{ 
     <main className={styles.page}>
       <ViewBeacon slug={article.slug} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd }} />
-      <article className={styles.articleShell}>
+      <article className={styles.articleShell} aria-labelledby="article-title">
         <header className={styles.articleHeader}>
           <p className={styles.eyebrow}>Published note</p>
           {article.category || article.tags.length > 0 ? (
@@ -43,7 +43,7 @@ export default async function PublicArticlePage({ params }: { params: Promise<{ 
               {article.tags.map((tag) => <Link href={`/tags/${encodeURIComponent(tag.slug)}`} key={tag.slug}>#{tag.name}</Link>)}
             </div>
           ) : null}
-          <h1>{article.title}</h1>
+          <h1 id="article-title">{article.title}</h1>
           <p className={`${styles.articleSummary} articleSummary`}>{article.summary}</p>
           <time dateTime={article.publishedAt}>
             {new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeZone: "Asia/Shanghai" }).format(new Date(article.publishedAt))}

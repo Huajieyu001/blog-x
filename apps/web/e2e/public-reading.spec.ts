@@ -111,14 +111,16 @@ test("published permalink is a safe focused technical reading surface and every 
   expect(publishedResponse?.status()).toBe(200);
   await expect(page.getByRole("heading", { level: 1, name: publishedTitle })).toBeVisible();
   await expect(page.getByText("A concise introduction to the reading surface.")).toBeVisible();
-  await expect(page.locator("article time")).toHaveAttribute("datetime", /^\d{4}-\d{2}-\d{2}T/);
+  const primaryArticle = page.getByRole("article", { name: publishedTitle });
+  const primaryPublishedTime = primaryArticle.locator(":scope > header time");
+  await expect(primaryPublishedTime).toHaveAttribute("datetime", /^\d{4}-\d{2}-\d{2}T/);
   const script = page.locator('script[type="application/ld+json"]');
   await expect(script).toHaveCount(1);
   const posting = JSON.parse(await script.textContent() ?? "");
   expect(Object.keys(posting)).toEqual(["@context", "@type", "headline", "description", "datePublished", "mainEntityOfPage", "url"]);
   expect(posting.headline).toBe(publishedTitle);
   expect(posting.description).toBe("A concise introduction to the reading surface.");
-  expect(posting.datePublished).toBe(await page.locator("article time[datetime]").first().getAttribute("datetime"));
+  expect(posting.datePublished).toBe(await primaryPublishedTime.getAttribute("datetime"));
   const canonicalHref = await page.locator('link[rel="canonical"]').getAttribute("href");
   expect(posting.mainEntityOfPage).toBe(canonicalHref);
   expect(posting.url).toBe(canonicalHref);
