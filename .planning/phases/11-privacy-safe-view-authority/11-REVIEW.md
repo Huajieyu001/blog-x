@@ -1,8 +1,8 @@
 ---
 phase: 11-privacy-safe-view-authority
-reviewed: 2026-09-05T04:48:42Z
+reviewed: 2026-09-05T06:31:41Z
 depth: deep
-files_reviewed: 28
+files_reviewed: 34
 files_reviewed_list:
   - apps/api/drizzle/0009_article_daily_views.sql
   - apps/api/drizzle/meta/0009_snapshot.json
@@ -19,9 +19,15 @@ files_reviewed_list:
   - apps/api/test/distribution-export.test.ts
   - apps/api/test/public-view-security.test.ts
   - apps/api/test/public-visibility.test.ts
+  - apps/api/test/security-hardening.test.ts
+  - apps/web/Dockerfile
   - apps/web/app/posts/[slug]/ViewBeacon.tsx
   - apps/web/app/posts/[slug]/page.tsx
   - apps/web/e2e/public-reading.spec.ts
+  - apps/web/package.json
+  - apps/web/server.mjs
+  - apps/web/server.test.mjs
+  - compose.yaml
   - package.json
   - packages/contracts/src/analytics.ts
   - packages/contracts/src/index.ts
@@ -42,59 +48,47 @@ status: issues_found
 
 # Phase 11: Code Review Report
 
-**Reviewed:** 2026-09-05T04:48:42Z
+**Reviewed:** 2026-09-05T06:31:41Z
 **Depth:** deep
-**Files Reviewed:** 28
+**Files Reviewed:** 34
 **Status:** issues_found
 
 ## Summary
 
-The SQL aggregate and its Drizzle metadata are mutually consistent, the upsert is atomic, the public predicate matches the existing public-read predicate, and the portable export correctly excludes the analytics table. The request path, however, does not preserve a client identity across the required same-origin Next rewrite, so its per-IP limiter becomes a site-wide limiter. The browser beacon also has a state-lifetime edge case, and the Phase 11 verification record does not execute the changed browser-beacon journey.
+The aggregate migration, atomic public-only upsert, retention operation, contract boundaries, export exclusion, and opaque endpoint handling are internally consistent. The previous retained-route beacon issue is fixed in the production component and its client-side navigation assertion is present. However, the proposed proxy boundary still reduces all public visitors to the Docker/host proxy address, and the sealed Phase 11 browser run does not bind the Web container to the current build. Development Strict Mode also aborts the only beacon before its second effect is suppressed.
 
 ## Narrative Findings (AI reviewer)
 
 ## Critical Issues
 
-### CR-01: The anonymous-view limiter is global behind the required Web-to-API rewrite
+### CR-01: The trusted Web proxy still turns every public visitor into one limiter key
 
-**File:** `/Users/xanadu/Desktop/ai-coding/blog-x/apps/api/src/routes/public-views.ts:42` (affected setup: `/Users/xanadu/Desktop/ai-coding/blog-x/apps/api/src/app.ts:132-133`)
+**File:** `/Users/xanadu/Desktop/ai-coding/blog-x/apps/web/server.mjs:20`
 
-**Severity:** BLOCKER
+**Issue:** The code discards the ingress-provided address and forwards the Web container's socket peer instead. The only published Web port is host-loopback-bound in `/Users/xanadu/Desktop/ai-coding/blog-x/compose.yaml:75`; traffic reaching the container through that host/Docker hop has the host bridge/reverse-proxy address as `request.socket.remoteAddress`, not the browser address. Fastify trusts the Web container at `compose.yaml:46`, so it then uses this same rewritten `X-Forwarded-For` value as `request.ip` for the anonymous limiter in `/Users/xanadu/Desktop/ai-coding/blog-x/apps/api/src/routes/public-views.ts:42`. All visitors therefore share the 120/minute key, allowing one visitor or normal traffic to silently discard everyone else's views. The unit test models a direct caller with distinct `remoteAddress` values and never exercises the required host-to-Web-to-API topology.
 
-**Issue:** The view route keys its limiter with `request.ip`, while the API explicitly sets `trustProxy: false`. Browser requests are sent to the Web service's `/api/...` rewrite, so the API receives the Web/Next proxy as its socket peer rather than the visitor. Consequently all visitors share one `anonymous-view` key and the hard-coded 120/minute limit. Any visitor (or normal traffic spike) can exhaust it and silently discard every other visitor's view for that minute; the endpoint's intentional 204 opacity makes this data loss invisible. The unit test supplies separate `remoteAddress` values directly to Fastify and therefore does not exercise the deployed topology.
-
-**Fix:** Establish a trustworthy client-address boundary at the controlled edge: strip untrusted forwarding headers there, forward one canonical client address through the Web proxy, and configure Fastify to trust only that proxy/network before deriving the key. Alternatively perform this bounded rate limiting at the trusted edge. Wire the view route to the same configured store/capacity and add an end-to-end test proving two browser clients do not consume one another's quota.
+**Fix:** Put client-address canonicalization at a controlled ingress that can actually observe the browser address (for example, the host reverse proxy), strip externally supplied forwarding headers there, and pass exactly one canonical address over a separately trusted hop. Make the Web/API trust configuration accept that canonical value only from the known ingress path, or move the bounded anonymous-view limiter to that ingress. Add an end-to-end topology test that reaches the published Web port through the real proxy path and proves two browser clients have independent quotas.
 
 ## Warnings
 
-### WR-01: A preserved ViewBeacon instance never records a subsequent slug
+### WR-01: Development Strict Mode aborts the sole beacon and suppresses its replacement
 
-**File:** `/Users/xanadu/Desktop/ai-coding/blog-x/apps/web/app/posts/[slug]/ViewBeacon.tsx:10-14`
+**File:** `/Users/xanadu/Desktop/ai-coding/blog-x/apps/web/app/posts/[slug]/ViewBeacon.tsx:13`
 
-**Severity:** WARNING
+**Issue:** The slug is added to `sentSlugs` before the request completes. React development Strict Mode runs the effect's cleanup and setup sequence while preserving hook state: cleanup at line 25 aborts the pending request, then the next setup returns at line 13 because the slug remains in the set. Thus local development visits record no view. The Playwright journey uses the production runtime, so it cannot expose this lifecycle path.
 
-**Issue:** `sent.current` is a component-lifetime boolean, but the effect depends on `slug`. If Next/React retains this client component while navigating between two values of the same dynamic route, the effect runs for the new slug and returns at line 13. The second article is therefore never counted. The current browser test uses full `page.goto` navigations, which remount the page and hides this transition path.
+**Fix:** Do not abort this intentionally fire-and-forget event, or remove the slug from the set when an aborted request is cleaned up so the replacement Strict Mode effect can send it. Add a client/component test that exercises the Strict Mode effect replay and asserts exactly one completed request.
 
-**Fix:** Make the guard slug-aware (for example, store the last sent slug and send when it changes), or key the beacon by article slug in `page.tsx`:
+### WR-02: The Phase 11 browser selection runs against an arbitrary cached Web image, not the built source
 
-```tsx
-<ViewBeacon key={article.slug} slug={article.slug} />
-```
+**File:** `/Users/xanadu/Desktop/ai-coding/blog-x/scripts/local-verify.mjs:1762`
 
-Add a client-side link navigation test from one published article to another and assert one beacon per slug.
+**Issue:** `--phase11-data` preflights cached `apiImage`/`webImage` and explicitly skips the image-build branch at line 1780. Although `runPhase11DataChecks()` executes `public-reading.spec.ts` (line 1449), starting/recreating `web` at line 1788/918 uses that cached image. Unlike the canonical path, Phase 11 never calls `createCanonicalRuntimeAuthority()` to mount the just-built `.next` output; the only source mounts are API/contracts for database checks at lines 991-994. A previously built image can therefore make the selected Playwright test pass while omitting the current beacon, rewrite, or proxy code.
 
-### WR-02: The sealed Phase 11 gate does not run the changed browser-beacon journey
-
-**File:** `/Users/xanadu/Desktop/ai-coding/blog-x/scripts/local-verify.mjs:1425-1441`
-
-**Severity:** WARNING
-
-**Issue:** `phase11Selection()` selects only two database suites, backup/restore, and the verifier self-test. `runPhase11DataChecks()` consequently never invokes `apps/web/e2e/public-reading.spec.ts`, although that changed spec is the only end-to-end assertion of the browser beacon's origin, credential omission, 204 response, and repeat-navigation behavior. The restore call runs `phase4-restore.spec.ts`, not the public-reading journey. This allows the Phase 11 machine record to pass while the newly added client beacon is absent or no longer reaches the API.
-
-**Fix:** Add `apps/web/e2e/public-reading.spec.ts` to the Phase 11 sealed selection and execute it against the current mounted API and freshly built Web runtime, recording its Playwright counts in `createPhase11DataResult`. Update the selection tests to reject its omission or owner drift.
+**Fix:** Bind the browser fixture to the current Web artifact: either build/tag the Phase 11 API/Web images from the reviewed source before startup, or invoke a verified runtime override that mounts the newly built `.next` output (and current server source) for the Web service. Record/verify the image or artifact digest in the Phase 11 result, and add a verifier test that fails when Phase 11 has no current-Web authority.
 
 ---
 
-_Reviewed: 2026-09-05T04:48:42Z_
+_Reviewed: 2026-09-05T06:31:41Z_
 _Reviewer: the agent (gsd-code-reviewer)_
 _Depth: deep_
