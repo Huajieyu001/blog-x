@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 0
+open_count: 1
 waived_count: 0
 fixed_count: 2
-total_count: 2
-last_updated: 2026-09-05T03:45:05.214Z
+total_count: 3
+last_updated: 2026-09-05T11:27:45.417Z
 ---
 
 # Broken Windows Ledger
@@ -17,6 +17,7 @@ last_updated: 2026-09-05T03:45:05.214Z
 |----|-------|------|------|------|-------------|--------|--------|-------------|-------------|
 | 1 | 11 | unrun-verify | apps/api/test/public-visibility.test.ts |  | Disposable PostgreSQL route and migration checks could not run because local Docker Corepack could not resolve the pinned pnpm archive; no cloud host was contacted. | fixed |  | 2026-09-05T03:07:03.280Z | 2026-09-05T03:45:05.165Z |
 | 2 | 11 | unrun-verify | scripts/refresh-local.mjs |  | Fixed local refresh was not started because Task 3 requires a clean worktree and the orchestrator-owned Phase 11 STATE.md change remained uncommitted; production remains BLOCKED. | fixed |  | 2026-09-05T03:07:13.733Z | 2026-09-05T03:45:05.214Z |
+| 3 | 12 | unrun-verify | apps/api/test/admin-analytics.test.ts |  | Generated disposable PostgreSQL lifecycle verification awaits Plan 12-03 ADMIN_ANALYTICS_TEST_DATABASE_URL | open |  | 2026-09-05T11:27:45.417Z |  |
 
 ````json
 [
@@ -43,6 +44,18 @@ last_updated: 2026-09-05T03:45:05.214Z
     "reason": "",
     "recorded_at": "2026-09-05T03:07:13.733Z",
     "resolved_at": "2026-09-05T03:45:05.214Z"
+  },
+  {
+    "id": 3,
+    "kind": "unrun-verify",
+    "phase": "12",
+    "file": "apps/api/test/admin-analytics.test.ts",
+    "line": null,
+    "description": "Generated disposable PostgreSQL lifecycle verification awaits Plan 12-03 ADMIN_ANALYTICS_TEST_DATABASE_URL",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T11:27:45.417Z",
+    "resolved_at": null
   }
 ]
 ````
