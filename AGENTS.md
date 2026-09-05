@@ -72,6 +72,17 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 - This authorization covers local planning, research, implementation, review, testing, and verification work performed through GSD for Blog X.
 - It does not authorize production or server operations, deployment, credential use, external messages, or work outside this repository; those remain governed by the project constraints and the user's current instructions.
 
+## Blog X Rapid Delivery Profile
+
+- Routine work defaults to `$gsd-quick`; use a full phase workflow only for architecture changes, database migrations, authentication/security boundaries, backup/recovery, or when the user explicitly requests it.
+- Code and a runnable result are the primary deliverables. Do not create research, UI specification, review, verification, receipt, or other planning documents for routine feature and styling work.
+- Keep any required GSD quick artifact concise and local. Do not commit `.planning/` changes unless the user explicitly requests a planning/documentation update.
+- For ordinary UI work, run only the relevant typecheck/build plus a focused browser smoke check. For backend work, run targeted tests for the changed behavior. Reserve full integration, recovery, interruption, parallel, and canonical gates for release preparation or high-risk changes.
+- After every user-visible feature or substantial UI change, refresh the fixed local preview at `http://127.0.0.1:3100` and confirm its health before reporting completion.
+- Complete work in small runnable increments on `dev`, then commit and push each increment. Do not modify `main`.
+- Prefer at most two implementation agents for genuinely independent code areas. Do not spawn research, planning, review, or verification agents for routine work.
+- Production and server constraints above remain unchanged; rapid delivery never authorizes server access or deployment.
+
 <!-- GSD:profile-start -->
 
 ## Developer Profile
