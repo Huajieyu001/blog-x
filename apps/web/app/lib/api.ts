@@ -25,12 +25,15 @@ import {
   type PublicRelatedPostsResponse,
   auditEventListSchema,
   type AuditEventList,
+  adminAnalyticsResponseSchema,
+  type AdminAnalytics,
 } from "@blog-x/contracts";
 
 const internalApiOrigin = process.env.INTERNAL_API_ORIGIN ?? "http://127.0.0.1:3001";
 
 type Parser<T> = { safeParse: (value: unknown) => { success: true; data: T } | { success: false } };
 export type PublicResult<T> = { kind: "ok"; data: T } | { kind: "not_found" } | { kind: "upstream_error" };
+export type AdminResult<T> = { kind: "ok"; data: T } | { kind: "upstream_error" };
 
 async function getPublic<T>(path: string, schema: Parser<T>, allowNotFound = false): Promise<PublicResult<T>> {
   try {
@@ -99,6 +102,39 @@ export async function getAdminPosts(cookieHeader: string): Promise<AdminPost[]> 
     return parsed.success ? parsed.data : [];
   } catch {
     return [];
+  }
+}
+
+export async function getAdminPostsResult(cookieHeader: string): Promise<AdminResult<AdminPost[]>> {
+  try {
+    const response = await fetch(`${internalApiOrigin}/admin/posts`, {
+      cache: "no-store",
+      headers: cookieHeader ? { cookie: cookieHeader } : undefined,
+    });
+    if (!response.ok) return { kind: "upstream_error" };
+    const parsed = adminPostListSchema.safeParse(await response.json());
+    return parsed.success ? { kind: "ok", data: parsed.data } : { kind: "upstream_error" };
+  } catch {
+    return { kind: "upstream_error" };
+  }
+}
+
+export async function getAdminAnalytics(
+  cookieHeader: string,
+  range: AdminAnalytics["range"],
+  limit: number,
+): Promise<AdminResult<AdminAnalytics>> {
+  const query = new URLSearchParams({ range: String(range), limit: String(limit) });
+  try {
+    const response = await fetch(`${internalApiOrigin}/admin/analytics?${query.toString()}`, {
+      cache: "no-store",
+      headers: cookieHeader ? { cookie: cookieHeader } : undefined,
+    });
+    if (!response.ok) return { kind: "upstream_error" };
+    const parsed = adminAnalyticsResponseSchema.safeParse(await response.json());
+    return parsed.success ? { kind: "ok", data: parsed.data } : { kind: "upstream_error" };
+  } catch {
+    return { kind: "upstream_error" };
   }
 }
 
