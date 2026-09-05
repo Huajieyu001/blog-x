@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import ArticleBody from "../../_components/ArticleBody";
 import ArticleToc from "../../_components/ArticleToc";
 import PostCard from "../../_components/PostCard";
+import ViewBeacon from "./ViewBeacon";
 import { getPublicPost, getPublicRelatedPosts } from "../../lib/api";
 import { buildBlogPosting, pageMetadata, serializeJsonLd } from "../../lib/site-metadata";
 import styles from "../../public.module.css";
@@ -31,6 +32,7 @@ export default async function PublicArticlePage({ params }: { params: Promise<{ 
     : [];
   return (
     <main className={styles.page}>
+      <ViewBeacon slug={article.slug} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd }} />
       <article className={styles.articleShell}>
         <header className={styles.articleHeader}>

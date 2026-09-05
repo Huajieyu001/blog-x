@@ -82,6 +82,7 @@ test("published permalink is a safe focused technical reading surface and every 
   });
 
   await page.setViewportSize({ width: 1280, height: 900 });
+  const firstBeaconResponsePromise = page.waitForResponse((response) => response.url() === `${webOrigin}${beaconPath}` && response.request().method() === "POST");
   const publishedResponse = await page.goto(`${webOrigin}/posts/${slugs.published}`);
   expect(publishedResponse?.status()).toBe(200);
   await expect(page.getByRole("heading", { level: 1, name: publishedTitle })).toBeVisible();
@@ -107,13 +108,14 @@ test("published permalink is a safe focused technical reading surface and every 
   await expect(body.getByText("Unsafe destination")).not.toHaveAttribute("href", /^(?:javascript|data):/i);
   await expect.poll(() => beacons.length).toBe(1);
   expect(beacons[0]).toMatchObject({ method: "POST", url: `${webOrigin}${beaconPath}`, body: "{}" });
-  expect(beacons[0]?.headers.cookie).toBeUndefined();
-  expect(beacons[0]?.headers.authorization).toBeUndefined();
-  expect(beacons[0]?.headers.origin).toBe(webOrigin);
-  const firstBeaconResponse = await page.waitForResponse((response) => response.url() === `${webOrigin}${beaconPath}` && response.request().method() === "POST");
+  const firstBeaconResponse = await firstBeaconResponsePromise;
+  const firstBeaconHeaders = await firstBeaconResponse.request().allHeaders();
+  expect(firstBeaconHeaders.cookie).toBeUndefined();
+  expect(firstBeaconHeaders.authorization).toBeUndefined();
+  expect(firstBeaconHeaders.origin).toBe(webOrigin);
   expect(firstBeaconResponse.status()).toBe(204);
   expect(firstBeaconResponse.headers()["cache-control"]).toBe("no-store");
-  expect(await firstBeaconResponse.text()).toBe("");
+  expect(firstBeaconResponse.headers()["content-length"]).toBeUndefined();
   await expect(page.locator("[data-testid='view-beacon']")).toHaveCount(0);
 
   await page.setViewportSize({ width: 390, height: 844 });
