@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -54,6 +55,11 @@ const canonicalGeneratedPaths = PACKAGE_TEST_INVENTORY
   .map((entry) => entry.path)
   .sort();
 
+function phase11RuntimeAuthority() {
+  const canonical = { version: 1, nextSha256: "a".repeat(64), serverSha256: "b".repeat(64) };
+  return { ...canonical, sha256: createHash("sha256").update(JSON.stringify(canonical)).digest("hex") };
+}
+
 test("canonical integration selection owns exact non-Phase-7 inventory once by fixture owner", () => {
   const selection = canonicalIntegrationSelection();
   assert.deepEqual(selection.paths, canonicalGeneratedPaths);
@@ -73,7 +79,7 @@ test("canonical integration selection owns exact non-Phase-7 inventory once by f
   assert.match(selection.manifestSha256, /^[a-f0-9]{64}$/);
 });
 
-test("Phase 11 data selection seals retention, export, privacy, restore, and browser beacon authority", () => {
+test("Phase 11 data selection seals retention, export, privacy, restore, browser beacon, and current runtime authority", async () => {
   const selection = phase11Selection("data");
   assert.deepEqual(selection.databaseSuites, [
     ["PUBLIC_VISIBILITY_TEST_DATABASE_URL", "apps/api/test/public-visibility.test.ts"],
@@ -91,11 +97,25 @@ test("Phase 11 data selection seals retention, export, privacy, restore, and bro
     ...selection.browserSuites.map((id) => ({ id, kind: "browser", counts: { tests: 1, passed: 1, failed: 0, cancelled: 0, skipped: 0, todo: 0 } })),
     ...selection.nodeSuites.map((id) => ({ id, kind: "node", counts: { tests: 1, passed: 1, failed: 0, cancelled: 0, skipped: 0, todo: 0 } })),
   ];
-  assert.equal(createPhase11DataResult(suites).releaseState, "BLOCKED");
+  const authority = phase11RuntimeAuthority();
+  const record = createPhase11DataResult(suites, authority);
+  assert.equal(record.releaseState, "BLOCKED");
+  assert.equal(record.version, 2);
+  assert.deepEqual(record.webRuntimeAuthority, authority);
   assert.throws(() => phase11Selection("other"), /Phase 11 selection/i);
-  assert.throws(() => createPhase11DataResult(suites.slice(1)), /exact|missing/i);
-  assert.throws(() => createPhase11DataResult(suites.filter((suite) => suite.id !== selection.browserSuites[0])), /exact|missing/i);
-  assert.throws(() => createPhase11DataResult(suites.map((suite) => suite.id === selection.browserSuites[0] ? { ...suite, kind: "main-browser" } : suite)), /exact/i);
+  assert.throws(() => createPhase11DataResult(suites.slice(1), authority), /exact|missing/i);
+  assert.throws(() => createPhase11DataResult(suites.filter((suite) => suite.id !== selection.browserSuites[0]), authority), /exact|missing/i);
+  assert.throws(() => createPhase11DataResult(suites.map((suite) => suite.id === selection.browserSuites[0] ? { ...suite, kind: "main-browser" } : suite), authority), /exact/i);
+  assert.throws(() => createPhase11DataResult(suites), /authority|missing/i);
+  assert.throws(() => createPhase11DataResult(suites, { ...authority, extra: true }), /authority|invalid/i);
+  assert.throws(() => createPhase11DataResult(suites, { ...authority, sha256: "c".repeat(64) }), /digest|invalid/i);
+  const source = await readFile(new URL("./local-verify.mjs", import.meta.url), "utf8");
+  const phase11Setup = source.slice(source.indexOf("else if (options.phase11Data && !options.skipBuild)"), source.indexOf("else if (options.canonicalIntegration && !options.skipBuild)"));
+  assert.match(phase11Setup, /build workspace for Phase 11 data[\s\S]*INTERNAL_API_ORIGIN[\s\S]*createCanonicalRuntimeAuthority/);
+  assert.match(source, /hashRuntimeArtifact[\s\S]*symbolic link[\s\S]*readdir[\s\S]*localeCompare/);
+  assert.match(source, /NODE_ENV: production[\s\S]*ports: !override[\s\S]*\.next:ro[\s\S]*server\.mjs:ro/);
+  const phase11Runner = source.slice(source.indexOf("async function runPhase11DataChecks"), source.indexOf("const canonicalDatabaseEnvironment"));
+  assert.doesNotMatch(phase11Runner, /build workspace|typecheck workspace/);
 });
 
 test("generated integration result binds exact paths actual counts cleanup and digest", () => {

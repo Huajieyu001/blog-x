@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { chmod, cp, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { createServer as createHttpServer, request as httpRequest } from "node:http";
 import { createServer } from "node:net";
 import { basename, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -549,7 +550,19 @@ export function createPhase6DataResult(suiteRecords) {
   return { format: PHASE6_DATA_RESULT_FORMAT, version: 1, suites, counts, releaseState: "BLOCKED" };
 }
 
-export function createPhase11DataResult(suiteRecords) {
+function strictWebRuntimeAuthority(authority) {
+  if (!authority || typeof authority !== "object" || Array.isArray(authority)
+    || Object.keys(authority).sort().join(",") !== "nextSha256,serverSha256,sha256,version"
+    || authority.version !== 1
+    || ![authority.nextSha256, authority.serverSha256, authority.sha256].every((value) => typeof value === "string" && /^[a-f0-9]{64}$/.test(value))) {
+    throw new Error("Phase 11 web runtime authority is missing or invalid");
+  }
+  const canonical = { version: 1, nextSha256: authority.nextSha256, serverSha256: authority.serverSha256 };
+  if (hashText(JSON.stringify(canonical)) !== authority.sha256) throw new Error("Phase 11 web runtime authority digest is invalid");
+  return { ...canonical, sha256: authority.sha256 };
+}
+
+export function createPhase11DataResult(suiteRecords, webRuntimeAuthority) {
   if (!Array.isArray(suiteRecords)) throw new Error("Phase 11 data result requires exact suite records");
   const selection = phase11Selection("data");
   const expected = [
@@ -570,7 +583,7 @@ export function createPhase11DataResult(suiteRecords) {
   if (byId.size !== suites.length || expected.some(({ id, kind }) => byId.get(id)?.kind !== kind)) throw new Error("Phase 11 data result suite selection is not exact");
   const counts = sumCounts(suites.map((suite) => suite.counts));
   assertPassOnlyCounts(counts, "Phase 11 data result");
-  return { format: PHASE11_DATA_RESULT_FORMAT, version: 1, suites, counts, releaseState: "BLOCKED" };
+  return { format: PHASE11_DATA_RESULT_FORMAT, version: 2, suites, counts, webRuntimeAuthority: strictWebRuntimeAuthority(webRuntimeAuthority), releaseState: "BLOCKED" };
 }
 
 function parsePhase6DataResultLine(output) {
@@ -718,6 +731,7 @@ function composeEnvironment(context) {
     BLOG_X_POSTGRES_USER: "blog_x",
     BLOG_X_WEB_PORT: String(context.webPort),
     BLOG_X_PUBLIC_ORIGIN: context.publicOrigin,
+    ...(context.ingressAuthSecret ? { BLOG_X_INGRESS_AUTH_SECRET: context.ingressAuthSecret } : {}),
   };
 }
 
@@ -730,7 +744,18 @@ async function createCanonicalRuntimeAuthority(context, { includeWeb = true } = 
   context.canonicalRuntimeRoot = runtimeRoot;
   const nextRoot = resolve(runtimeRoot, ".next");
   const override = resolve(runtimeRoot, "compose.override.yaml");
-  if (includeWeb) await cp(resolve(root, "apps/web/.next"), nextRoot, { recursive: true });
+  if (includeWeb) {
+    const sourceNext = resolve(root, "apps/web/.next");
+    const sourceServer = resolve(root, "apps/web/server.mjs");
+    const serverTarget = resolve(runtimeRoot, "server.mjs");
+    const nextSha256 = await hashRuntimeArtifact(sourceNext);
+    const serverSha256 = await hashRuntimeArtifact(sourceServer);
+    await cp(sourceNext, nextRoot, { recursive: true });
+    await cp(sourceServer, serverTarget);
+    if (nextSha256 !== await hashRuntimeArtifact(nextRoot) || serverSha256 !== await hashRuntimeArtifact(serverTarget)) throw new Error("canonical Web runtime snapshot digest drifted during copy");
+    const canonical = { version: 1, nextSha256, serverSha256 };
+    context.webRuntimeAuthority = strictWebRuntimeAuthority({ ...canonical, sha256: hashText(JSON.stringify(canonical)) });
+  }
   const yaml = [
     "services:",
     "  api:",
@@ -739,13 +764,40 @@ async function createCanonicalRuntimeAuthority(context, { includeWeb = true } = 
     `      - ${JSON.stringify(`${resolve(root, "packages/contracts")}:/workspace/packages/contracts:ro`)}`,
     ...(includeWeb ? [
       "  web:",
+      "    environment:",
+      "      NODE_ENV: production",
+      "    ports: !override",
+      `      - ${JSON.stringify(`127.0.0.1:${context.runtimeWebPort ?? context.webPort}:3100`)}`,
       "    volumes:",
-      `      - ${JSON.stringify(`${nextRoot}:/workspace/apps/web/.next`)}`,
+      `      - ${JSON.stringify(`${nextRoot}:/workspace/apps/web/.next:ro`)}`,
+      `      - ${JSON.stringify(`${resolve(runtimeRoot, "server.mjs")}:/workspace/apps/web/server.mjs:ro`)}`,
     ] : []),
     "",
   ].join("\n");
   await writeFile(override, yaml, { mode: 0o600 });
   context.composeOverride = override;
+}
+
+async function hashRuntimeArtifact(path, relativePath = "") {
+  const entry = await lstat(path);
+  if (entry.isSymbolicLink()) throw new Error(`canonical runtime artifact contains a symbolic link: ${relativePath || "."}`);
+  if (entry.isFile()) return hashText(`file\0${relativePath}\0${hashText(await readFile(path))}\n`);
+  if (!entry.isDirectory()) throw new Error(`canonical runtime artifact contains a non-file: ${relativePath || "."}`);
+  const records = [];
+  async function visit(current, relative) {
+    const currentEntry = await lstat(current);
+    if (currentEntry.isSymbolicLink()) throw new Error(`canonical runtime artifact contains a symbolic link: ${relative || "."}`);
+    if (currentEntry.isFile()) {
+      records.push(`file\0${relative}\0${hashText(await readFile(current))}\n`);
+      return;
+    }
+    if (!currentEntry.isDirectory()) throw new Error(`canonical runtime artifact contains a non-file: ${relative || "."}`);
+    records.push(`dir\0${relative}\n`);
+    const children = await readdir(current, { withFileTypes: true });
+    for (const child of children.sort((left, right) => left.name.localeCompare(right.name))) await visit(resolve(current, child.name), relative ? `${relative}/${child.name}` : child.name);
+  }
+  await visit(path, relativePath);
+  return hashText(records.join(""));
 }
 
 async function cleanupCanonicalRuntimeAuthority(context) {
@@ -759,6 +811,50 @@ async function cleanupCanonicalRuntimeAuthority(context) {
   catch (error) { if (error?.code !== "ENOENT") throw error; }
   context.composeOverride = undefined;
   context.canonicalRuntimeRoot = undefined;
+  context.webRuntimeAuthority = undefined;
+}
+
+async function startPhase11Ingress(context) {
+  if (!context.phase11Data || context.phase11Ingress) return;
+  if (!context.ingressAuthSecret || context.runtimeWebPort === context.webPort) throw new Error("Phase 11 ingress fixture authority is invalid");
+  const scrubbed = new Set(["forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-port", "x-forwarded-proto", "x-real-ip", "x-blog-x-client-ip", "x-blog-x-ingress-auth"]);
+  const ingress = createHttpServer((incoming, outgoing) => {
+    const headers = { ...incoming.headers };
+    for (const name of Object.keys(headers)) if (scrubbed.has(name.toLowerCase())) delete headers[name];
+    const observedAddress = incoming.socket.remoteAddress;
+    const clientAddress = typeof observedAddress === "string" ? observedAddress.replace(/^::ffff:/, "") : undefined;
+    if (!clientAddress) {
+      outgoing.writeHead(400, { "cache-control": "no-store" });
+      outgoing.end();
+      return;
+    }
+    headers["x-blog-x-client-ip"] = clientAddress;
+    headers["x-blog-x-ingress-auth"] = context.ingressAuthSecret;
+    const upstream = httpRequest({ host: "127.0.0.1", port: context.runtimeWebPort, method: incoming.method, path: incoming.url, headers }, (upstreamResponse) => {
+      outgoing.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
+      upstreamResponse.pipe(outgoing);
+    });
+    upstream.once("error", () => {
+      if (!outgoing.headersSent) outgoing.writeHead(502, { "cache-control": "no-store" });
+      outgoing.end();
+    });
+    incoming.pipe(upstream);
+  });
+  await new Promise((accept, reject) => {
+    ingress.once("error", reject);
+    ingress.listen(context.webPort, "127.0.0.1", () => {
+      ingress.removeListener("error", reject);
+      accept();
+    });
+  });
+  context.phase11Ingress = ingress;
+}
+
+async function stopPhase11Ingress(context) {
+  if (!context.phase11Ingress) return;
+  const ingress = context.phase11Ingress;
+  context.phase11Ingress = undefined;
+  await new Promise((accept, reject) => ingress.close((error) => error ? reject(error) : accept()));
 }
 
 async function runStep(context, label, commandName, args, options = {}) {
@@ -1435,10 +1531,7 @@ async function runPhase6DataChecks(context) {
 
 async function runPhase11DataChecks(context) {
   const selection = phase11Selection("data");
-  if (!context.internalRun) {
-    await runStep(context, "typecheck workspace", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
-    await runStep(context, "build workspace", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin } });
-  }
+  if (!context.webRuntimeAuthority) throw new Error("Phase 11 requires current Web runtime authority before data checks");
   await resetAcceptanceData(context, "clear Phase 11 data acceptance fixtures");
   const suites = [];
   for (const [variable, file] of selection.databaseSuites) {
@@ -1456,7 +1549,7 @@ async function runPhase11DataChecks(context) {
   const blocked = await runStep(context, "confirm canonical production release remains BLOCKED", "node",
     ["scripts/release-gate.mjs", "--evidence=ops/release-evidence.blocked.json", "--expect-blocked"], { env: process.env });
   if (!blocked.stdout.startsWith("RELEASE BLOCKED ")) throw new Error("canonical release evidence did not remain explicitly BLOCKED");
-  const record = createPhase11DataResult(suites);
+  const record = createPhase11DataResult(suites, context.webRuntimeAuthority);
   process.stdout.write(`${PHASE11_DATA_RESULT_PREFIX}${JSON.stringify(record)}\n`);
   process.stdout.write("[local-verify] LOCAL PHASE 11 DATA PASS; RELEASE BLOCKED\n");
   return record;
@@ -1720,6 +1813,7 @@ async function runSingle(options) {
   allocatedGeneratedNamespaces.add(namespace);
   const database = validateDatabaseName(`blog_x_${namespace.slice("blogxverify_".length)}`, namespace);
   const webPort = options.webPort ?? await freePort();
+  const runtimeWebPort = options.phase11Data ? await freePort() : webPort;
   const phaseLabel = options.canonicalIntegration ? "integration-" : options.lifecycleOnly ? "lifecycle-" : options.phase11Data ? "phase11-" : options.phase6Data ? "phase6-" : options.phase5Media || options.phase5Full ? "phase5-" : options.phase4Mode ? "phase4-" : options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
   const runId = namespace.replace("blogxverify_", phaseLabel);
   const publicOrigin = validateLoopbackHttpOrigin(`http://127.0.0.1:${webPort}`);
@@ -1727,6 +1821,7 @@ async function runSingle(options) {
     namespace,
     database,
     webPort,
+    runtimeWebPort,
     runId,
     webOrigin: publicOrigin,
     publicOrigin,
@@ -1746,6 +1841,10 @@ async function runSingle(options) {
   };
   allocatedGeneratedAuthorities.set(namespace, context);
   context.secrets.push(context.password, context.databaseUrl);
+  if (options.phase11Data) {
+    context.ingressAuthSecret = randomBytes(32).toString("base64url");
+    context.secrets.push(context.ingressAuthSecret);
+  }
   if (context.publicOrigin === context.internalApiOrigin) throw new Error("public and internal API origins must remain separate");
   const nextEnvironmentBefore = await readFile(resolve(root, "apps/web/next-env.d.ts"), "utf8");
   let phase5Receipt;
@@ -1761,7 +1860,11 @@ async function runSingle(options) {
     }
     else if (options.phase11Data && !options.skipBuild) {
       await preflightOfflinePrerequisites(context);
-      process.stdout.write("[local-verify] use prevalidated verifier dependency images with read-only committed integration sources\n");
+      process.stdout.write("[local-verify] build and seal current Phase 11 Web runtime from offline workspace authority\n");
+      await runStep(context, "typecheck workspace for Phase 11 data", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
+      await runStep(context, "build workspace for Phase 11 data", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin, INTERNAL_API_ORIGIN: context.internalApiOrigin } });
+      await createCanonicalRuntimeAuthority(context);
+      context.phase11Prebuilt = true;
     }
     else if (options.canonicalIntegration && !options.skipBuild) {
       await preflightOfflinePrerequisites(context);
@@ -1787,6 +1890,7 @@ async function runSingle(options) {
     if (!options.interruptionCheck) await migrationRetryPreservation(context);
     await compose(context, "start isolated API and Web", "up", "-d", "--wait", "api", "web");
     await runStep(context, "confirm exact generated media volume", "docker", ["volume", "inspect", context.mediaVolume]);
+    await startPhase11Ingress(context);
     await waitForHttp(context.webOrigin);
     const currentSchemaAuthority = options.phase6Data || options.phase11Data || options.canonicalIntegration;
     await compose(context, "verify active schema", ...(currentSchemaAuthority
@@ -1854,6 +1958,7 @@ async function runSingle(options) {
   } finally {
     const cleanup = await Promise.allSettled([
       (async () => {
+        await stopPhase11Ingress(context);
         await stopManaged(context);
         validateNamespace(context.namespace);
         validateDatabaseName(context.database, context.namespace);
