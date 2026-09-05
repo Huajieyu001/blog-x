@@ -62,10 +62,10 @@ test("view retention deletes only expired Shanghai days in bounded convergent ba
   await pool.query(`
     WITH cutoff AS (SELECT ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date - 399)::date AS retained_from_day)
     INSERT INTO article_daily_views (article_id, day, total_pv, direct_pv)
-    SELECT $1, retained_from_day - 2, 1, 1 FROM cutoff
-    UNION ALL SELECT $2, retained_from_day - 1, 1, 1 FROM cutoff
-    UNION ALL SELECT $1, retained_from_day, 1, 1 FROM cutoff
-    UNION ALL SELECT $2, (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date, 1, 1
+    SELECT $1::uuid, retained_from_day - 2, 1, 1 FROM cutoff
+    UNION ALL SELECT $2::uuid, retained_from_day - 1, 1, 1 FROM cutoff
+    UNION ALL SELECT $1::uuid, retained_from_day, 1, 1 FROM cutoff
+    UNION ALL SELECT $2::uuid, (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date, 1, 1
   `, [firstArticleId, secondArticleId]);
   const repository = createViewAggregationRepository(db);
   const retainedFromDay = (await pool.query<{ retained_from_day: string }>("select ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date - 399)::text as retained_from_day")).rows[0]?.retained_from_day;
@@ -82,8 +82,8 @@ test("view retention deletes only expired Shanghai days in bounded convergent ba
   await pool.query(`
     WITH cutoff AS (SELECT ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date - 399)::date AS retained_from_day)
     INSERT INTO article_daily_views (article_id, day, total_pv, direct_pv)
-    SELECT $1, retained_from_day - 3, 1, 1 FROM cutoff
-    UNION ALL SELECT $2, retained_from_day - 4, 1, 1 FROM cutoff
+    SELECT $1::uuid, retained_from_day - 3, 1, 1 FROM cutoff
+    UNION ALL SELECT $2::uuid, retained_from_day - 4, 1, 1 FROM cutoff
   `, [firstArticleId, secondArticleId]);
   const concurrent = await Promise.all([repository.cleanupExpiredDailyViews(1), repository.cleanupExpiredDailyViews(1)]);
   assert.equal(concurrent.reduce((total, result) => total + result.deleted, 0), 2);

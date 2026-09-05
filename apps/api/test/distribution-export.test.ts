@@ -57,6 +57,16 @@ test("the protected export reconstructs every retained source state without bina
     { articleId: articleRows[0].id, tagId: tagIds[0] },
     { articleId: articleRows[3].id, tagId: tagIds[0] },
   ]);
+  await db.insert(schema.articleDailyViews).values({
+    articleId: articleRows[1].id,
+    day: "1999-01-02",
+    totalPv: 17,
+    directPv: 2,
+    internalPv: 3,
+    searchPv: 4,
+    socialPv: 5,
+    externalPv: 3,
+  });
   await db.insert(schema.sitePages).values({ id: "00000000-0000-4000-8000-000000000050", key: "about", title: "关于导出", markdown: "# About source", status: "draft", version: updatedAt, createdAt, updatedAt });
   const app = await buildApp({ publicOrigin: origin });
   try {
@@ -96,6 +106,7 @@ test("the protected export reconstructs every retained source state without bina
     const manifest = portableExportManifestSchema.parse(JSON.parse(JSON.stringify(exported.json())));
     assert.equal(manifest.format, "blog-x-portable-export");
     assert.equal(manifest.version, 1);
+    assert.equal(portableExportManifestSchema.safeParse(manifest).success, true, "the legacy portable manifest remains v1-compatible");
     assert.equal(manifest.articles.find((item) => item.id === articleRows[0].id)?.markdown, "# 原文\n\n![历史图片](https://images.example.test/historic.png)\n\n<script>alert('never render')</script>\n\n中文 ✅");
     assert.deepEqual(manifest.articles.find((item) => item.id === articleRows[0].id && item.legacyMediaReview === "review_required"), {
       ...articleRows[0],
@@ -147,7 +158,7 @@ test("the protected export reconstructs every retained source state without bina
       about: manifest.about,
     };
     assert.deepEqual(reconstructed, sourceMap, "independent normalized source maps must equal the strict reparsed archive");
-    assert.doesNotMatch(JSON.stringify(manifest), /(?:sourceKey|derivativeKey|source_key|derivative_key|source\/|derivative\/|renderedHtml|base64|blob:|file:|password|session|postgres|127\.0\.0\.1|124\.222|47\.99)/i);
+    assert.doesNotMatch(JSON.stringify(manifest), /(?:article_daily_views|totalPv|directPv|internalPv|searchPv|socialPv|externalPv|1999-01-02|sourceKey|derivativeKey|source_key|derivative_key|source\/|derivative\/|renderedHtml|base64|blob:|file:|password|session|postgres|127\.0\.0\.1|124\.222|47\.99)/i);
     assert.equal(app.hasRoute({ method: "POST", url: "/admin/export" }), true);
     assert.equal(app.hasRoute({ method: "GET", url: "/admin/export" }), false);
     assert.equal(app.hasRoute({ method: "POST", url: "/public/export" }), false);

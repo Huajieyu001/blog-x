@@ -48,6 +48,8 @@ const migratedMainBrowserSpecs = Object.freeze([
 
 export const PHASE6_DATA_RESULT_FORMAT = "blog-x-phase6-data-result";
 const PHASE6_DATA_RESULT_PREFIX = "BLOG X PHASE6 DATA RESULT ";
+export const PHASE11_DATA_RESULT_FORMAT = "blog-x-phase11-data-result";
+const PHASE11_DATA_RESULT_PREFIX = "BLOG X PHASE11 DATA RESULT ";
 export const GENERATED_INTEGRATION_RESULT_FORMAT = "blog-x-generated-integration-result";
 const GENERATED_INTEGRATION_RESULT_PREFIX = "BLOG X GENERATED INTEGRATION RESULT ";
 const GENERATED_INTEGRATION_CLEANUP_PREFIX = "BLOG X GENERATED INTEGRATION CLEANUP ACK ";
@@ -348,6 +350,18 @@ export function phase6Selection(mode) {
   };
 }
 
+export function phase11Selection(mode) {
+  if (mode !== "data") throw new Error(`Phase 11 selection is not recognized: ${mode}`);
+  return {
+    databaseSuites: [
+      ["PUBLIC_VISIBILITY_TEST_DATABASE_URL", "apps/api/test/public-visibility.test.ts"],
+      ["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"],
+    ],
+    restoreSuite: "apps/api/test/backup-restore.test.ts",
+    nodeSuites: ["scripts/local-verify.test.mjs"],
+  };
+}
+
 export function validateTopologyPolicy(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("topology policy must be an object");
   const policy = value;
@@ -523,6 +537,29 @@ export function createPhase6DataResult(suiteRecords) {
   const counts = sumCounts(suites.map((suite) => suite.counts));
   assertPassOnlyCounts(counts, "Phase 6 data result");
   return { format: PHASE6_DATA_RESULT_FORMAT, version: 1, suites, counts, releaseState: "BLOCKED" };
+}
+
+export function createPhase11DataResult(suiteRecords) {
+  if (!Array.isArray(suiteRecords)) throw new Error("Phase 11 data result requires exact suite records");
+  const selection = phase11Selection("data");
+  const expected = [
+    ...selection.databaseSuites.map(([, id]) => ({ id, kind: "database" })),
+    { id: selection.restoreSuite, kind: "backup-restore" },
+    ...selection.nodeSuites.map((id) => ({ id, kind: "node" })),
+  ];
+  if (suiteRecords.length !== expected.length) throw new Error("Phase 11 data result exact suite selection is missing, duplicate, or contains extras");
+  const suites = suiteRecords.map((record) => {
+    if (!record || typeof record !== "object" || Array.isArray(record)
+      || Object.keys(record).sort().join(",") !== "counts,id,kind"
+      || typeof record.id !== "string" || typeof record.kind !== "string") throw new Error("Phase 11 data result suite schema is invalid");
+    assertPassOnlyCounts(record.counts, `Phase 11 suite ${record.id}`);
+    return { id: record.id, kind: record.kind, counts: { ...record.counts } };
+  });
+  const byId = new Map(suites.map((suite) => [suite.id, suite]));
+  if (byId.size !== suites.length || expected.some(({ id, kind }) => byId.get(id)?.kind !== kind)) throw new Error("Phase 11 data result suite selection is not exact");
+  const counts = sumCounts(suites.map((suite) => suite.counts));
+  assertPassOnlyCounts(counts, "Phase 11 data result");
+  return { format: PHASE11_DATA_RESULT_FORMAT, version: 1, suites, counts, releaseState: "BLOCKED" };
 }
 
 function parsePhase6DataResultLine(output) {
@@ -757,7 +794,13 @@ async function inspectSchema(context) {
 }
 
 async function runMigration(context, label) {
-  return compose(context, label, "run", "--rm", "-T", "-e", `DATABASE_URL=${context.databaseUrl}`, "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:migrate");
+  const currentAuthority = context.phase6Data || context.phase11Data || context.canonicalIntegration;
+  return currentAuthority
+    ? compose(context, label, "run", "--rm", "-T",
+      "--volume", `${resolve(root, "apps/api")}:/workspace/apps/api:ro`,
+      "--volume", `${resolve(root, "packages/contracts")}:/workspace/packages/contracts:ro`,
+      "-e", `DATABASE_URL=${context.databaseUrl}`, "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:migrate")
+    : compose(context, label, "run", "--rm", "-T", "-e", `DATABASE_URL=${context.databaseUrl}`, "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:migrate");
 }
 
 async function interruptionCheck(context) {
@@ -933,7 +976,7 @@ async function runDatabaseSuite(context, variable, file) {
     "-e", `DATABASE_URL=${context.databaseUrl}`,
     "-e", `${variable}=${context.databaseUrl}`,
   ];
-  const result = context.phase6Data || context.canonicalIntegration
+  const result = context.phase6Data || context.phase11Data || context.canonicalIntegration
     ? await compose(context, `run ${file}`, "run", "--rm", "-T",
         "--volume", `${resolve(root, "apps/api")}:/workspace/apps/api:ro`,
         "--volume", `${resolve(root, "packages/contracts")}:/workspace/packages/contracts:ro`,
@@ -1178,6 +1221,11 @@ async function seedRestoreFixture(context, includePhase5Legacy = false) {
   const legacyArticleSlug = `${context.runId}-legacy-review-required`;
   const hiddenSlugs = ["draft", "offline", "deleted", "null-publication"].map((state) => `${context.runId}-restore-${state}`);
   const publishedTitle = `恢复演练公开文章 ${context.runId}`;
+  const expectedAnalytics = [
+    { articleId: articleIds[0], day: "2026-08-07", totalPv: 9, directPv: 2, internalPv: 1, searchPv: 3, socialPv: 1, externalPv: 2 },
+    { articleId: articleIds[0], day: "2026-08-08", totalPv: 4, directPv: 0, internalPv: 2, searchPv: 0, socialPv: 1, externalPv: 1 },
+    { articleId: articleIds[1], day: "2026-08-08", totalPv: 5, directPv: 1, internalPv: 0, searchPv: 1, socialPv: 2, externalPv: 1 },
+  ];
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
   const mediaRoot = await mkdtemp(resolve(tmpdir(), "blog-x-media-verify-"));
   try {
@@ -1206,12 +1254,13 @@ async function seedRestoreFixture(context, includePhase5Legacy = false) {
     `insert into articles (id,title,summary,slug,markdown,status,published_at,created_at,updated_at) values ('${articleIds[4]}','恢复空发布时间','null-secret','${hiddenSlugs[3]}','# null-secret','published',null,'${timestamp}','${timestamp}');`,
     ...(includePhase5Legacy ? [`insert into articles (id,title,summary,cover_url,slug,markdown,status,published_at,created_at,updated_at) values ('${legacyArticleId}','遗留媒体复原文章','保留原始遗留媒体数据','https://images.example.test/legacy-cover.png','${legacyArticleSlug}','# 遗留媒体\\n\\n![历史图片](https://images.example.test/legacy-image.png)\\n\\n[外部文档](https://docs.example.test/legacy)','published','${timestamp}','${timestamp}','${timestamp}');`] : []),
     `insert into article_tags (article_id,tag_id) values ('${articleIds[0]}','${tagId}'),('${articleIds[1]}','${tagId}');`,
+    ...expectedAnalytics.map((row) => `insert into article_daily_views (article_id,day,total_pv,direct_pv,internal_pv,search_pv,social_pv,external_pv) values ('${row.articleId}','${row.day}',${row.totalPv},${row.directPv},${row.internalPv},${row.searchPv},${row.socialPv},${row.externalPv});`),
     `insert into site_pages (id,key,title,markdown,status,version,created_at,updated_at) values ('55555555-5555-4555-8555-555555555555','about','恢复后的关于页','# 关于恢复','published','${timestamp}','${timestamp}','${timestamp}');`,
   ].join(" ");
   await compose(context, "seed retained restore authority fixture", ...psqlArgs(context, query));
   await runMigration(context, "classify retained restore media state");
   await inspectSchema(context);
-  return { mediaId, publishedSlug, publishedTitle, hiddenSlugs, ...(includePhase5Legacy ? { legacyArticleId, legacyArticleSlug } : {}) };
+  return { mediaId, publishedSlug, publishedTitle, hiddenSlugs, expectedAnalytics, ...(includePhase5Legacy ? { legacyArticleId, legacyArticleSlug } : {}) };
 }
 
 async function runPhase4RestoreChecks(context, includePhase5Legacy = false, browserSuite = phase4Selection("restore").browserSuite, options = {}) {
@@ -1265,6 +1314,7 @@ async function runPhase4RestoreChecks(context, includePhase5Legacy = false, brow
       "-e", `BACKUP_RESTORE_TEST_DATABASE_URL=postgres://blog_x@postgres:5432/${restoreContext.database}`,
       "-e", "BACKUP_RESTORE_EXPECTED_ROOT=/tmp/blog-x-restore-expected",
       "-e", "MEDIA_ROOT=/var/lib/blog-x/media",
+      "-e", `BACKUP_RESTORE_EXPECTED_ANALYTICS=${JSON.stringify(fixture.expectedAnalytics)}`,
       ...(includePhase5Legacy ? ["-e", `PHASE5_LEGACY_ARTICLE_ID=${fixture.legacyArticleId}`] : []),
     ];
     const authority = await compose(restoreContext, `run ${selection.databaseSuite}`, "exec", "-T",
@@ -1298,8 +1348,9 @@ async function runPhase4RestoreChecks(context, includePhase5Legacy = false, brow
       .map((cleanup) => cleanup.reason);
     const failures = [...(primaryFailure ? [primaryFailure] : []), ...cleanupFailures];
     if (failures.length) {
+      const primaryDetail = primaryFailure instanceof Error ? redactText(primaryFailure.message, context.secrets) : "unknown restore failure";
       throw new AggregateError(failures, primaryFailure
-        ? "isolated restore verification failed and all cleanup outcomes were retained"
+        ? `isolated restore verification failed and all cleanup outcomes were retained: ${primaryDetail}`
         : "isolated restore cleanup did not converge");
     }
   }
@@ -1368,6 +1419,33 @@ async function runPhase6DataChecks(context) {
   const record = createPhase6DataResult(suites);
   process.stdout.write(`${PHASE6_DATA_RESULT_PREFIX}${JSON.stringify(record)}\n`);
   process.stdout.write("[local-verify] LOCAL PHASE 6 DATA PASS; RELEASE BLOCKED\n");
+  return record;
+}
+
+async function runPhase11DataChecks(context) {
+  const selection = phase11Selection("data");
+  if (!context.internalRun) {
+    await runStep(context, "typecheck workspace", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
+    await runStep(context, "build workspace", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin } });
+  }
+  await resetAcceptanceData(context, "clear Phase 11 data acceptance fixtures");
+  const suites = [];
+  for (const [variable, file] of selection.databaseSuites) {
+    suites.push({ id: file, kind: "database", counts: await runDatabaseSuite(context, variable, file) });
+  }
+  const restore = await runPhase4RestoreChecks(context, false, phase4Selection("restore").browserSuite, { skipNodeSuites: true });
+  suites.push({ id: selection.restoreSuite, kind: "backup-restore", counts: restore.databaseCounts });
+  for (const file of selection.nodeSuites) {
+    const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
+    suites.push({ id: file, kind: "node", counts: assertSemanticTap(result.combined) });
+  }
+  await inspectSchema(context);
+  const blocked = await runStep(context, "confirm canonical production release remains BLOCKED", "node",
+    ["scripts/release-gate.mjs", "--evidence=ops/release-evidence.blocked.json", "--expect-blocked"], { env: process.env });
+  if (!blocked.stdout.startsWith("RELEASE BLOCKED ")) throw new Error("canonical release evidence did not remain explicitly BLOCKED");
+  const record = createPhase11DataResult(suites);
+  process.stdout.write(`${PHASE11_DATA_RESULT_PREFIX}${JSON.stringify(record)}\n`);
+  process.stdout.write("[local-verify] LOCAL PHASE 11 DATA PASS; RELEASE BLOCKED\n");
   return record;
 }
 
@@ -1629,7 +1707,7 @@ async function runSingle(options) {
   allocatedGeneratedNamespaces.add(namespace);
   const database = validateDatabaseName(`blog_x_${namespace.slice("blogxverify_".length)}`, namespace);
   const webPort = options.webPort ?? await freePort();
-  const phaseLabel = options.canonicalIntegration ? "integration-" : options.lifecycleOnly ? "lifecycle-" : options.phase6Data ? "phase6-" : options.phase5Media || options.phase5Full ? "phase5-" : options.phase4Mode ? "phase4-" : options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
+  const phaseLabel = options.canonicalIntegration ? "integration-" : options.lifecycleOnly ? "lifecycle-" : options.phase11Data ? "phase11-" : options.phase6Data ? "phase6-" : options.phase5Media || options.phase5Full ? "phase5-" : options.phase4Mode ? "phase4-" : options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
   const runId = namespace.replace("blogxverify_", phaseLabel);
   const publicOrigin = validateLoopbackHttpOrigin(`http://127.0.0.1:${webPort}`);
   const context = {
@@ -1648,6 +1726,7 @@ async function runSingle(options) {
     secrets: [],
     children: [],
     implementationRevision: options.implementationRevision,
+    phase11Data: options.phase11Data,
     phase6Data: options.phase6Data,
     canonicalIntegration: options.canonicalIntegration,
     internalRun: options.internalRun,
@@ -1667,6 +1746,10 @@ async function runSingle(options) {
       await preflightOfflinePrerequisites(context);
       process.stdout.write("[local-verify] use prevalidated verifier dependency images with read-only committed integration sources\n");
     }
+    else if (options.phase11Data && !options.skipBuild) {
+      await preflightOfflinePrerequisites(context);
+      process.stdout.write("[local-verify] use prevalidated verifier dependency images with read-only committed integration sources\n");
+    }
     else if (options.canonicalIntegration && !options.skipBuild) {
       await preflightOfflinePrerequisites(context);
       process.stdout.write("[local-verify] build current canonical Web runtime from offline workspace authority\n");
@@ -1681,7 +1764,7 @@ async function runSingle(options) {
     }
     else if ((options.phase4Mode === "full" || options.phase5Media) && !options.skipBuild) await preflightOfflinePrerequisites(context);
     else if (["operations", "restore"].includes(options.phase4Mode) && !options.skipBuild) await preflightCachedImages(context);
-    if (!options.skipBuild && !options.phase5Full && !options.phase6Data && !options.canonicalIntegration) await compose(context, "build local API and Web images", "build", "api", "web");
+    if (!options.skipBuild && !options.phase5Full && !options.phase6Data && !options.phase11Data && !options.canonicalIntegration) await compose(context, "build local API and Web images", "build", "api", "web");
     await compose(context, "start isolated PostgreSQL", "up", "-d", "--wait", "postgres");
     if (options.interruptionCheck && !options.canonicalIntegration) await interruptionCheck(context);
     else {
@@ -1692,8 +1775,11 @@ async function runSingle(options) {
     await compose(context, "start isolated API and Web", "up", "-d", "--wait", "api", "web");
     await runStep(context, "confirm exact generated media volume", "docker", ["volume", "inspect", context.mediaVolume]);
     await waitForHttp(context.webOrigin);
-    await compose(context, "verify active schema", "exec", "-T", "-e", `DATABASE_URL=${context.databaseUrl}`,
-      "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:schema:verify");
+    const currentSchemaAuthority = options.phase6Data || options.phase11Data || options.canonicalIntegration;
+    await compose(context, "verify active schema", ...(currentSchemaAuthority
+      ? ["run", "--rm", "-T", "--volume", `${resolve(root, "apps/api")}:/workspace/apps/api:ro`, "--volume", `${resolve(root, "packages/contracts")}:/workspace/packages/contracts:ro`, "-e", `DATABASE_URL=${context.databaseUrl}`]
+      : ["exec", "-T", "-e", `DATABASE_URL=${context.databaseUrl}`]),
+    "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:schema:verify");
     await seed(context);
     if (options.lifecycleOnly) {
       const interruption = options.interruptAfterReady ? new Promise((_accept, reject) => {
@@ -1713,6 +1799,9 @@ async function runSingle(options) {
     }
     else if (options.phase6Data) {
       await runPhase6DataChecks(context);
+    }
+    else if (options.phase11Data) {
+      await runPhase11DataChecks(context);
     }
     else if (options.phase4Mode === "security") {
       await runPhase4SecurityChecks(context);
@@ -2038,10 +2127,11 @@ async function main() {
   const phase5Media = flags.has("--phase5-media");
   const phase5Full = flags.has("--phase5-full");
   const phase6Data = flags.has("--phase6-data");
+  const phase11Data = flags.has("--phase11-data");
   const canonicalIntegration = flags.has("--canonical-integration");
   const lifecycleOnly = flags.has("--lifecycle-only");
-  if (phase3Modes.length + phase4Modes.length + Number(phase5Media) + Number(phase5Full) + Number(phase6Data) + Number(canonicalIntegration) + Number(lifecycleOnly) > 1) {
-    throw new Error("choose at most one Phase 3, Phase 4, Phase 5, Phase 6, canonical integration, or lifecycle selection");
+  if (phase3Modes.length + phase4Modes.length + Number(phase5Media) + Number(phase5Full) + Number(phase6Data) + Number(phase11Data) + Number(canonicalIntegration) + Number(lifecycleOnly) > 1) {
+    throw new Error("choose at most one Phase 3, Phase 4, Phase 5, Phase 6, Phase 11, canonical integration, or lifecycle selection");
   }
   const options = {
     namespace: optionValue("namespace"),
@@ -2052,17 +2142,22 @@ async function main() {
     phase5Media,
     phase5Full,
     phase6Data,
+    phase11Data,
     canonicalIntegration,
     lifecycleOnly,
     interruptAfterReady: flags.has("--interrupt-after-ready"),
     internalRun: flags.has("--internal-run"),
-    fullPhase: !phase4Modes.length && !phase5Media && !phase5Full && !phase6Data && !canonicalIntegration && !lifecycleOnly && (flags.has("--full-phase") || flags.has("--phase2-full") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run"))),
+    fullPhase: !phase4Modes.length && !phase5Media && !phase5Full && !phase6Data && !phase11Data && !canonicalIntegration && !lifecycleOnly && (flags.has("--full-phase") || flags.has("--phase2-full") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run"))),
     interruptionCheck: flags.has("--interruption-check"),
     parallelCheck: flags.has("--parallel-check"),
     skipBuild: flags.has("--skip-build"),
   };
 
   if (flags.has("--internal-run") && phase5Full) throw new Error("internal verification children cannot acquire Phase 5 receipt authority");
+  const phase11Arguments = argumentsList.filter((argument) => argument !== "--");
+  if (phase11Data && (phase11Arguments.length !== 1 || !flags.has("--phase11-data") || options.internalRun || options.namespace !== undefined || options.webPort !== undefined || options.skipBuild)) {
+    throw new Error("Phase 11 data accepts only the sealed complete invocation");
+  }
   if (canonicalIntegration) {
     const expected = ["--canonical-integration", "--interruption-check", "--parallel-check"];
     if (argumentsList.length !== expected.length || expected.some((argument) => !flags.has(argument)) || options.internalRun
