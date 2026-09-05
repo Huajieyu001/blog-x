@@ -132,6 +132,7 @@ test("analytics aggregates only currently public articles and restores stored PV
   for (const range of [7, 30, 90, 400] as const) {
     const result = await repository.read({ range, limit: 8 });
     assert.equal(result.daily.length, range);
+    assert.equal(result.daily.every((point) => /^\d{4}-\d{2}-\d{2}$/.test(point.day)), true);
     assert.equal(result.daily.at(-1)?.day, result.toDay);
     assert.equal(result.daily.reduce((sum, point) => sum + point.pv, 0), 6);
   }

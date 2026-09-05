@@ -34,7 +34,7 @@ export function createAdminAnalyticsRepository(db: Database) {
           CROSS JOIN bounds
           WHERE views."day" BETWEEN bounds.from_day AND bounds.to_day AND ${publicPredicate}
         ), daily AS (
-          SELECT days.day::text AS day, COALESCE(SUM(eligible."total_pv"), 0)::text AS pv
+          SELECT days.day::date::text AS day, COALESCE(SUM(eligible."total_pv"), 0)::text AS pv
           FROM bounds
           CROSS JOIN LATERAL generate_series(bounds.from_day, bounds.to_day, interval '1 day') AS days(day)
           LEFT JOIN eligible ON eligible."day" = days.day::date
