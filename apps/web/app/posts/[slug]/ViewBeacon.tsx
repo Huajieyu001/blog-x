@@ -21,6 +21,7 @@ export default function ViewBeacon({ slug }: { slug: string }) {
       body: "{}",
       credentials: "omit",
       cache: "no-store",
+      keepalive: true,
     }).catch(() => undefined);
   }, [slug]);
 

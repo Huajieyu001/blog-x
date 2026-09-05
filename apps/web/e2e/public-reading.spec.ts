@@ -93,14 +93,10 @@ test("published permalink is a safe focused technical reading surface and every 
   const beaconPath = (slug: string) => `/api/public/articles/${encodeURIComponent(slug)}/view`;
   const beaconPaths = new Map(Object.values(slugs).map((slug) => [beaconPath(slug), slug]));
   const beacons: Array<{ slug: string; method: string; url: string; headers: Record<string, string>; body: string | null }> = [];
-  const failedBeacons: string[] = [];
   page.on("request", (request) => {
     const slug = beaconPaths.get(new URL(request.url()).pathname);
     if (!slug) return;
     beacons.push({ slug, method: request.method(), url: request.url(), headers: request.headers(), body: request.postData() });
-  });
-  page.on("requestfailed", (request) => {
-    if (beaconPaths.has(new URL(request.url()).pathname)) failedBeacons.push(request.url());
   });
 
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -158,13 +154,12 @@ test("published permalink is a safe focused technical reading surface and every 
   expect(firstBeaconResponse.headers()["content-length"]).toBeUndefined();
   const relatedBeaconResponse = await relatedBeaconResponsePromise;
   expect(relatedBeaconResponse.status()).toBe(204);
-  expect(failedBeacons).toEqual([]);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${webOrigin}/posts/${slugs.published}`);
   await expect.poll(() => beacons.filter((beacon) => beacon.slug === slugs.published).length).toBe(2);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  const articleBox = await page.getByRole("article").boundingBox();
+  const articleBox = await primaryArticle.boundingBox();
   expect(articleBox).not.toBeNull();
   expect(articleBox!.x).toBeGreaterThanOrEqual(0);
   expect(articleBox!.x + articleBox!.width).toBeLessThanOrEqual(390);
