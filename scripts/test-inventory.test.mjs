@@ -15,11 +15,12 @@ const cloneManifest = () => PACKAGE_TEST_INVENTORY.map((entry) => ({ ...entry })
 test("package test inventory is frozen, exact, complete and disjoint", async () => {
   assert.equal(Object.isFrozen(PACKAGE_TEST_INVENTORY), true);
   assert.equal(PACKAGE_TEST_INVENTORY.every(Object.isFrozen), true);
-  assert.equal(PACKAGE_TEST_INVENTORY.length, 41);
-  assert.equal(DEFAULT_TEST_FILES.length, 11);
-  assert.equal(INTEGRATION_TEST_FILES.length, 30);
-  assert.equal(new Set([...DEFAULT_TEST_FILES, ...INTEGRATION_TEST_FILES]).size, 41);
+  assert.equal(PACKAGE_TEST_INVENTORY.length, 45);
+  assert.equal(DEFAULT_TEST_FILES.length, 13);
+  assert.equal(INTEGRATION_TEST_FILES.length, 32);
+  assert.equal(new Set([...DEFAULT_TEST_FILES, ...INTEGRATION_TEST_FILES]).size, 45);
   assert.deepEqual(DEFAULT_TEST_FILES, [
+    "packages/contracts/src/analytics.test.ts",
     "packages/contracts/src/public-discovery.test.ts",
     "packages/contracts/src/tracer.test.ts",
     "apps/api/test/markdown-renderer.test.ts",
@@ -27,6 +28,7 @@ test("package test inventory is frozen, exact, complete and disjoint", async () 
     "apps/api/test/public-view-security.test.ts",
     "apps/web/app/admin/_components/article-actions-schedule.test.ts",
     "apps/web/app/admin/_components/article-editor-recovery.test.ts",
+    "apps/web/app/lib/admin-analytics.test.ts",
     "apps/web/app/lib/search-discovery.test.ts",
     "apps/web/app/lib/site-metadata.test.ts",
     "apps/web/lib/search-encoding.test.ts",
@@ -34,7 +36,7 @@ test("package test inventory is frozen, exact, complete and disjoint", async () 
   ]);
 
   const result = await assertCompleteTestInventory();
-  assert.deepEqual(result, { total: 41, default: 11, integration: 30 });
+  assert.deepEqual(result, { total: 45, default: 13, integration: 32 });
 });
 
 test("integration inventory has exact runner-owner counts", () => {
@@ -49,10 +51,10 @@ test("integration inventory has exact runner-owner counts", () => {
   ].map((owner) => [owner, PACKAGE_TEST_INVENTORY.filter((entry) => entry.fixtureOwner === owner).length]));
 
   assert.deepEqual(counts, {
-    database: 11,
+    database: 12,
     "backup-restore": 1,
     media: 1,
-    "main-browser": 14,
+    "main-browser": 15,
     "error-browser": 1,
     "restore-browser": 1,
     "phase7-browser": 1,
