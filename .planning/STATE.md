@@ -5,15 +5,15 @@ milestone_name: Private Insights
 current_phase: 11
 current_phase_name: Privacy-Safe View Authority
 status: executing
-stopped_at: Completed 11-01-PLAN.md; local-only verification retry recorded
-last_updated: "2026-09-05T03:08:21.275Z"
+stopped_at: Completed 11-02-PLAN.md
+last_updated: "2026-09-05T03:44:54.939Z"
 last_activity: 2026-09-05
 last_activity_desc: Phase 11 execution started
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-09-05)
 ## Current Position
 
 Phase: 11 (Privacy-Safe View Authority) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-09-05 — Phase 11 execution started
 
-Progress: [███░░░░░░░] 33%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -55,6 +55,7 @@ Progress: [███░░░░░░░] 33%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 11 P01 | 1500 | 3 tasks | 10 files |
+| Phase 11 P02 | 1840 | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -67,6 +68,8 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [v1.3]: 后台使用现有轻量组件与 CSS 模式完成统一响应式工作台，不引入重型 UI 或图表框架。
 - [v1.3]: 所有实现、验证和固定 `3100` 展示交付仅在本地进行，生产继续 `BLOCKED`。
 - [Phase ?]: Phase 11 anonymous views use one PostgreSQL Shanghai-day upsert and identical empty 204/no-store outcomes for accepted and ignored requests.
+- [Phase ?]: Anonymous public view admission uses exact same-origin validation, fixed coarse source enums, and opaque fail-closed outcomes.
+- [Phase ?]: Anonymous abuse protection uses an isolated bounded socket-keyed limiter instead of administrator mutation guards.
 
 ### Pending Todos
 
@@ -93,8 +96,8 @@ None. Phase 11 is ready for discussion and planning.
 
 ## Session Continuity
 
-Last session: 2026-09-05T03:08:21.270Z
-Stopped at: Completed 11-01-PLAN.md; local-only verification retry recorded
+Last session: 2026-09-05T03:44:54.934Z
+Stopped at: Completed 11-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
