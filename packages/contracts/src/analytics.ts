@@ -19,7 +19,7 @@ export const adminAnalyticsQuerySchema = z.object({
   limit: z.string().regex(/^[1-8]$/).transform(Number),
 }).strict();
 
-export const adminAnalyticsResponseSchema = z.object({
+const adminAnalyticsResponseBaseSchema = z.object({
   range: z.union([z.literal(7), z.literal(30), z.literal(90), z.literal(400)]),
   timezone: z.literal("Asia/Shanghai"),
   fromDay: daySchema,
@@ -34,6 +34,41 @@ export const adminAnalyticsResponseSchema = z.object({
     totalPv: nonNegativeSafeIntegerSchema,
   }).strict()),
 }).strict();
+
+function addCalendarDays(day: string, amount: number) {
+  const parsed = new Date(`${day}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== day) return null;
+  parsed.setUTCDate(parsed.getUTCDate() + amount);
+  return parsed.toISOString().slice(0, 10);
+}
+
+export const adminAnalyticsResponseSchema = adminAnalyticsResponseBaseSchema.superRefine((value, context) => {
+  const issue = (path: (string | number)[], message: string) => context.addIssue({ code: "custom", path, message });
+  if (value.daily.length !== value.range) issue(["daily"], "daily series length must equal range");
+  if (value.daily[0]?.day !== value.fromDay) issue(["fromDay"], "fromDay must equal the first daily day");
+  if (value.daily.at(-1)?.day !== value.toDay) issue(["toDay"], "toDay must equal the last daily day");
+  if (addCalendarDays(value.fromDay, value.range - 1) !== value.toDay) issue(["toDay"], "range endpoints are inconsistent");
+  for (let index = 0; index < value.daily.length; index += 1) {
+    const point = value.daily[index]!;
+    const expected = addCalendarDays(value.fromDay, index);
+    if (!expected || point.day !== expected) issue(["daily", index, "day"], "daily days must be consecutive Shanghai calendar days");
+  }
+  if (value.daily.reduce((sum, point) => sum + point.pv, 0) !== value.totalPv) issue(["daily"], "daily PV must equal total PV");
+  if (value.sources.length !== anonymousViewSourceValues.length) issue(["sources"], "all source buckets are required");
+  for (const [index, source] of anonymousViewSourceValues.entries()) {
+    if (value.sources[index]?.source !== source) issue(["sources", index, "source"], "source buckets must be complete and fixed-order");
+  }
+  if (value.sources.reduce((sum, source) => sum + source.totalPv, 0) !== value.totalPv) issue(["sources"], "source PV must equal total PV");
+  if (value.topArticles.length > 8) issue(["topArticles"], "top article cap is eight");
+  for (let index = 0; index < value.topArticles.length; index += 1) {
+    const article = value.topArticles[index]!;
+    if (article.totalPv <= 0) issue(["topArticles", index, "totalPv"], "top articles require positive PV");
+    const previous = value.topArticles[index - 1];
+    if (previous && (previous.totalPv < article.totalPv || (previous.totalPv === article.totalPv && (previous.title > article.title || (previous.title === article.title && previous.articleId > article.articleId))))) {
+      issue(["topArticles", index], "top articles must use deterministic PV, title, and id ordering");
+    }
+  }
+});
 
 export const viewRetentionResultSchema = z.object({
   format: z.literal("blog-x-view-retention"),

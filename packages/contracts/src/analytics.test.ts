@@ -49,6 +49,10 @@ test("analytics response requires exact Shanghai calendar continuity, arithmetic
     { ...valid, sources: valid.sources.slice(1) },
     { ...valid, sources: [...valid.sources.slice(0, 4), { source: "external", totalPv: 1 }] },
     { ...valid, topArticles: [{ ...valid.topArticles[0]!, totalPv: 0 }] },
+    { ...valid, topArticles: [
+      { articleId: "00000000-0000-4000-8000-000000000002", title: "B", status: "published", totalPv: 2 },
+      { articleId: "00000000-0000-4000-8000-000000000001", title: "A", status: "published", totalPv: 3 },
+    ] },
     { ...valid, topArticles: Array.from({ length: 9 }, (_, index) => ({ articleId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`, title: `A${index}`, status: "published", totalPv: 1 })) },
     { ...valid, daily: valid.daily.map((point, index) => index === 0 ? { ...point, pv: Number.MAX_SAFE_INTEGER + 1 } : point) },
     { ...valid, hidden: true },
