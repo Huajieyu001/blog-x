@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { isAbsolute } from "node:path";
 
 export type ApiCommand = "serve" | "migrate" | "seed" | "schema:verify" | "portable-export" | "publish-due" | "cleanup-views";
@@ -16,6 +17,7 @@ export type ApiRuntimeConfig = {
   publicOrigin?: string;
   apiHost: string;
   apiPort: number;
+  trustedProxyAddresses: string[];
   mediaRoot?: string;
   administrator?: { username: string; password: string };
   rateLimits: RateLimitConfig;
@@ -62,6 +64,30 @@ function parseDatabaseUrl(value: string) {
   return value;
 }
 
+function parseTrustedProxyAddresses(environment: Environment) {
+  const raw = environment.TRUSTED_PROXY_CIDRS;
+  if (raw === undefined || raw === "") return ["127.0.0.1/8", "::1/128"];
+  const addresses = raw.split(",").map((value) => value.trim()).filter(Boolean);
+  const valid = (value: string) => {
+    const [address, rawPrefix, ...extra] = value.split("/");
+    if (!address || extra.length || !isIP(address)) return false;
+    const version = isIP(address);
+    const prefix = rawPrefix === undefined ? (version === 4 ? 32 : 128) : Number(rawPrefix);
+    if (!/^\d+$/.test(rawPrefix ?? String(prefix)) || !Number.isSafeInteger(prefix) || prefix < 0 || prefix > (version === 4 ? 32 : 128)) return false;
+    if (version === 4) {
+      const [first, second] = address.split(".").map(Number);
+      return (first === 10 && prefix >= 8)
+        || (first === 127 && prefix >= 8)
+        || (first === 172 && second >= 16 && second <= 31 && prefix >= 12)
+        || (first === 192 && second === 168 && prefix >= 16);
+    }
+    const normalized = address.toLowerCase();
+    return (normalized === "::1" && prefix === 128) || (/^f[cd][0-9a-f:]*$/.test(normalized) && prefix >= 7);
+  };
+  if (!addresses.length || addresses.some((value) => !valid(value))) invalid("TRUSTED_PROXY_CIDRS");
+  return addresses;
+}
+
 function defaultRateLimits(): RateLimitConfig {
   return {
     login: { limit: 5, windowMs: 60_000 },
@@ -100,6 +126,7 @@ export function parseApiRuntimeConfig(environment: Environment, command: ApiComm
     databaseUrl,
     apiHost: "127.0.0.1",
     apiPort: 3001,
+    trustedProxyAddresses: parseTrustedProxyAddresses(environment),
     rateLimits: defaultRateLimits(),
   };
   if (command === "serve") {

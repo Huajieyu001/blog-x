@@ -41,6 +41,8 @@ test("runtime configuration rejects unsafe production input before resources can
   assert.throws(() => parseApiRuntimeConfig({ ...base, PUBLIC_ORIGIN: "http://blog.example" }, "serve"), /PUBLIC_ORIGIN/);
   assert.throws(() => parseApiRuntimeConfig({ ...base, DATABASE_URL: undefined }, "serve"), /DATABASE_URL/);
   assert.throws(() => parseApiRuntimeConfig({ ...base, BLOG_X_LOGIN_LIMIT: "0" }, "serve"), /BLOG_X_LOGIN_LIMIT/);
+  assert.throws(() => parseApiRuntimeConfig({ ...base, TRUSTED_PROXY_CIDRS: "not-an-address" }, "serve"), /TRUSTED_PROXY_CIDRS/);
+  assert.throws(() => parseApiRuntimeConfig({ ...base, TRUSTED_PROXY_CIDRS: "198.51.100.1/32" }, "serve"), /TRUSTED_PROXY_CIDRS/);
   assert.throws(() => parseApiRuntimeConfig(base, "seed"), /ADMIN_USERNAME/);
 });
 
@@ -53,6 +55,7 @@ test("serve configuration defaults to an internal-container-reachable API listen
   }, "serve");
   assert.equal(config.apiHost, "0.0.0.0");
   assert.equal(config.apiPort, 3001);
+  assert.deepEqual(config.trustedProxyAddresses, ["127.0.0.1/8", "::1/128"]);
 });
 
 test("single-process login limiter normalizes keys, recovers exactly at its boundary, and is bounded", () => {

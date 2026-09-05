@@ -13,9 +13,9 @@ class ManualClock implements Clock {
   advance(milliseconds: number) { this.value += milliseconds; }
 }
 
-async function createViewApp({ limit = 2, capacity = 2, clock = new ManualClock(), failRepository = false } = {}) {
+async function createViewApp({ limit = 2, capacity = 2, clock = new ManualClock(), failRepository = false, trustedProxyAddresses = false as false | string[] } = {}) {
   const calls: Array<{ slug: string; source: string }> = [];
-  const app = Fastify({ trustProxy: false, logger: { level: "silent" } });
+  const app = Fastify({ trustProxy: trustedProxyAddresses, logger: { level: "silent" } });
   await app.register(publicViewRoutes, {
     publicOrigin,
     rateStore: new BoundedRateLimitStore(clock, capacity),
@@ -77,22 +77,29 @@ test("anonymous views classify only accepted traffic and keep rejections opaque"
   assert.deepEqual(calls, [{ slug: "privacy-safe", source: "search" }]);
 });
 
-test("anonymous view limiter is per-socket, capacity-bounded, expiry-safe, and never returns a retry hint", async (context) => {
+test("anonymous view limiter separates trusted Web proxy clients, rejects untrusted forwarding data, and never returns a retry hint", async (context) => {
   const clock = new ManualClock();
-  const { app, calls } = await createViewApp({ limit: 2, capacity: 1, clock });
+  const { app, calls } = await createViewApp({ limit: 1, capacity: 4, clock, trustedProxyAddresses: ["127.0.0.1/8"] });
   context.after(() => app.close());
   const headers = { origin: publicOrigin, "content-type": "application/json" };
-  const request = (remoteAddress: string) => app.inject({ method: "POST", url: "/public/articles/limited/view", headers, payload: {}, remoteAddress });
-  const first = await request("198.51.100.1");
-  const second = await request("198.51.100.1");
-  const exhausted = await request("198.51.100.1");
-  const capacity = await request("198.51.100.2");
-  for (const response of [second, exhausted, capacity]) assert.deepEqual(opaque(response), opaque(first));
-  assert.deepEqual(calls, [{ slug: "limited", source: "direct" }, { slug: "limited", source: "direct" }]);
+  const request = (remoteAddress: string, forwardedFor: string) => app.inject({ method: "POST", url: "/public/articles/limited/view", headers: { ...headers, "x-forwarded-for": forwardedFor }, payload: {}, remoteAddress });
+  const firstBrowser = await request("127.0.0.1", "198.51.100.1");
+  const secondBrowser = await request("127.0.0.1", "198.51.100.2");
+  const exhaustedFirstBrowser = await request("127.0.0.1", "198.51.100.1");
+  // A public client cannot use X-Forwarded-For to create a different key:
+  // its socket address remains authoritative outside the configured Web edge.
+  const untrustedFirst = await request("203.0.113.10", "198.51.100.3");
+  const spoofedUntrusted = await request("203.0.113.10", "198.51.100.4");
+  for (const response of [secondBrowser, exhaustedFirstBrowser, untrustedFirst, spoofedUntrusted]) assert.deepEqual(opaque(response), opaque(firstBrowser));
+  assert.deepEqual(calls, [
+    { slug: "limited", source: "direct" },
+    { slug: "limited", source: "direct" },
+    { slug: "limited", source: "direct" },
+  ]);
   clock.advance(60_000);
-  const recovered = await request("198.51.100.2");
-  assert.deepEqual(opaque(recovered), opaque(first));
-  assert.equal(calls.length, 3);
+  const recovered = await request("127.0.0.1", "198.51.100.1");
+  assert.deepEqual(opaque(recovered), opaque(firstBrowser));
+  assert.equal(calls.length, 4);
 });
 
 test("malformed, oversized, failed, and identity-bearing traffic remains opaque and never crosses the repository seam", async (context) => {

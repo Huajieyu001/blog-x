@@ -20,6 +20,9 @@ services:
       retries: 20
     volumes:
       - postgres-data:/var/lib/postgresql
+    networks:
+      private:
+        ipv4_address: 172.30.0.4
 
   api:
     image: ${BLOG_X_API_IMAGE:-blog-x-api-local}
@@ -40,7 +43,11 @@ services:
       PUBLIC_ORIGIN: ${BLOG_X_PUBLIC_ORIGIN:-http://127.0.0.1:3100}
       API_HOST: 0.0.0.0
       API_PORT: 3001
+      TRUSTED_PROXY_CIDRS: 172.30.0.3/32
       MEDIA_ROOT: /var/lib/blog-x/media
+    networks:
+      private:
+        ipv4_address: 172.30.0.2
     volumes:
       - media-data:/var/lib/blog-x/media
     depends_on:
@@ -71,6 +78,9 @@ services:
     environment:
       INTERNAL_API_ORIGIN: http://api:3001
       PUBLIC_ORIGIN: ${BLOG_X_PUBLIC_ORIGIN:-http://127.0.0.1:3100}
+    networks:
+      private:
+        ipv4_address: 172.30.0.3
     depends_on:
       api:
         condition: service_healthy
@@ -85,3 +95,10 @@ services:
 volumes:
   postgres-data:
   media-data:
+
+networks:
+  private:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/29

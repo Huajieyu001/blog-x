@@ -21,4 +21,4 @@ COPY packages/contracts packages/contracts
 RUN corepack pnpm --filter @blog-x/web build
 
 EXPOSE 3100
-CMD ["corepack", "pnpm", "--filter", "@blog-x/web", "exec", "next", "start", "-H", "0.0.0.0", "-p", "3100"]
+CMD ["node", "apps/web/server.mjs"]

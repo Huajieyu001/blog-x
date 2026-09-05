@@ -116,6 +116,7 @@ type BuildAppOptions = {
   mediaRoot?: string;
   resources?: RuntimeResources;
   rateLimits?: RateLimitConfig;
+  trustedProxyAddresses?: string[];
   rateStore?: BoundedRateLimitStore;
   viewAggregationRepository?: ViewAggregationRepository;
 };
@@ -128,9 +129,12 @@ export async function buildApp(options: BuildAppOptions = {}) {
   const publicOrigin = options.publicOrigin ?? process.env.PUBLIC_ORIGIN;
   const secureCookies = process.env.NODE_ENV === "production" || publicOrigin?.startsWith("https://") === true;
   const rateLimits = options.rateLimits ?? parseApiRuntimeConfig(process.env, "migrate").rateLimits;
+  const trustedProxyAddresses = options.trustedProxyAddresses ?? parseApiRuntimeConfig(process.env, "migrate").trustedProxyAddresses;
   const rateStore = options.rateStore ?? new BoundedRateLimitStore(undefined, rateLimits.storeCapacity);
   const app = Fastify({
-    trustProxy: false,
+    // The API has no public host port. Only the controlled Web edge may pass
+    // its socket-observed browser address in X-Forwarded-For.
+    trustProxy: trustedProxyAddresses,
     logger: {
       level: options.logger?.level ?? (process.env.NODE_ENV === "production" ? "info" : "silent"),
       ...options.logger,
@@ -372,6 +376,7 @@ async function main() {
       publicOrigin: config.publicOrigin,
       mediaRoot: config.mediaRoot,
       rateLimits: config.rateLimits,
+      trustedProxyAddresses: config.trustedProxyAddresses,
     });
     closeRuntimeResourcesOnAppClose(app, resources);
     await app.listen({ host: config.apiHost, port: config.apiPort });
