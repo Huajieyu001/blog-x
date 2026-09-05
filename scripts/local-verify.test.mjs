@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -111,6 +112,11 @@ test("Phase 12 data selection seals analytics contracts, generated database/brow
   assert.match(source, /phase12Data && !options\.skipBuild[\s\S]*typecheck workspace for Phase 12 data[\s\S]*build workspace for Phase 12 data[\s\S]*createCanonicalRuntimeAuthority/);
   assert.match(source, /async function runPhase12DataChecks[\s\S]*phase12Selection\("data"\)[\s\S]*runGeneratedMainBrowserFixtureSelection[\s\S]*PHASE12_DATA_RESULT_PREFIX/);
   assert.match(source, /Phase 12 data accepts only the sealed complete invocation/);
+  for (const args of [["--phase12-data=extra"], ["--phase12-data", "--"]]) {
+    const rejected = spawnSync(process.execPath, ["scripts/local-verify.mjs", ...args], { cwd: process.cwd(), encoding: "utf8" });
+    assert.notEqual(rejected.status, 0, args.join(" "));
+    assert.match(`${rejected.stdout}${rejected.stderr}`, /Phase 12 data accepts only the sealed complete invocation/);
+  }
 });
 
 test("Phase 11 data selection seals retention, export, privacy, restore, browser beacon, and current runtime authority", async () => {

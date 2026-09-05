@@ -216,7 +216,7 @@ function validateMainBrowserContext(context) {
   return context;
 }
 
-const mainBrowserOptionalFactNames = new Set(["E2E_EXPIRED_SESSION_TOKEN", "E2E_REVOKED_SESSION_TOKEN"]);
+const mainBrowserOptionalFactNames = new Set(["E2E_ANALYTICS_TITLE", "E2E_EXPIRED_SESSION_TOKEN", "E2E_REVOKED_SESSION_TOKEN"]);
 
 export function createMainBrowserEnvironment(context, scenarioFacts = {}, inheritedEnvironment = process.env) {
   validateMainBrowserContext(context);
@@ -1032,6 +1032,17 @@ async function seedMainBrowserScenario(context, file) {
       `insert into articles (title,summary,slug,markdown,status,published_at,deleted_at) values ('Private draft','hidden','private-draft-${runId}','# hidden','draft',null,null),('Downline post','hidden','downline-${runId}','# hidden','unpublished','2026-07-01T12:00:00.000Z',null),('Deleted post','hidden','deleted-${runId}','# hidden','published','2026-07-01T12:00:00.000Z','2026-07-02T12:00:00.000Z');`,
     ].join(" ");
     await compose(context, "seed generated public-list browser facts", ...psqlArgs(context, query));
+  }
+  if (file === "apps/web/e2e/admin-analytics.spec.ts") {
+    const articleId = "00000000-0000-4000-8000-000000000201";
+    const title = `Analytics ${context.runId}`;
+    const slug = `analytics-${context.runId}`;
+    const query = [
+      `insert into articles (id,title,slug,markdown,status,published_at,deleted_at) values ('${articleId}','${title}','${slug}','# ${title}','published',CURRENT_TIMESTAMP,null);`,
+      `insert into article_daily_views (article_id,day,total_pv,direct_pv,search_pv) values ('${articleId}',((CURRENT_TIMESTAMP at time zone 'Asia/Shanghai')::date - 29),10,7,3);`,
+    ].join(" ");
+    await compose(context, "seed generated administrator analytics browser facts", ...psqlArgs(context, query));
+    return { E2E_ANALYTICS_TITLE: title };
   }
   if (file !== "apps/web/e2e/auth-session.spec.ts") return {};
   const expiredSessionToken = randomBytes(32).toString("base64url");
@@ -2334,6 +2345,9 @@ async function main() {
   const phase6Data = flags.has("--phase6-data");
   const phase11Data = flags.has("--phase11-data");
   const phase12Data = flags.has("--phase12-data");
+  if (argumentsList.some((argument) => argument.startsWith("--phase12-data") && argument !== "--phase12-data")) {
+    throw new Error("Phase 12 data accepts only the sealed complete invocation");
+  }
   const canonicalIntegration = flags.has("--canonical-integration");
   const lifecycleOnly = flags.has("--lifecycle-only");
   if (phase3Modes.length + phase4Modes.length + Number(phase5Media) + Number(phase5Full) + Number(phase6Data) + Number(phase11Data) + Number(phase12Data) + Number(canonicalIntegration) + Number(lifecycleOnly) > 1) {
@@ -2365,8 +2379,7 @@ async function main() {
   if (phase11Data && (phase11Arguments.length !== 1 || !flags.has("--phase11-data") || options.internalRun || options.namespace !== undefined || options.webPort !== undefined || options.skipBuild)) {
     throw new Error("Phase 11 data accepts only the sealed complete invocation");
   }
-  const phase12Arguments = argumentsList.filter((argument) => argument !== "--");
-  if (phase12Data && (phase12Arguments.length !== 1 || !flags.has("--phase12-data") || options.internalRun || options.namespace !== undefined || options.webPort !== undefined || options.skipBuild)) {
+  if (phase12Data && (argumentsList.length !== 1 || !flags.has("--phase12-data") || options.internalRun || options.namespace !== undefined || options.webPort !== undefined || options.skipBuild)) {
     throw new Error("Phase 12 data accepts only the sealed complete invocation");
   }
   if (canonicalIntegration) {

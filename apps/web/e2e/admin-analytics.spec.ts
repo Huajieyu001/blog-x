@@ -9,6 +9,7 @@ function requiredRunnerFact(name: string) {
 const username = requiredRunnerFact("E2E_ADMIN_USERNAME");
 const password = requiredRunnerFact("E2E_ADMIN_PASSWORD");
 const webOrigin = requiredRunnerFact("E2E_WEB_ORIGIN");
+const analyticsTitle = requiredRunnerFact("E2E_ANALYTICS_TITLE");
 
 async function login(page: Page) {
   await page.goto(`${webOrigin}/admin`);
@@ -26,10 +27,16 @@ test("administrator analytics uses same-origin SSR navigation with strict ranges
   await expect(page).toHaveURL(`${webOrigin}/admin/analytics?range=30`);
   await expect(page.getByRole("heading", { name: "访问统计" })).toBeVisible();
   await expect(page.getByText("这里展示的是按 Asia/Shanghai 自然日汇总的匿名页面浏览量（PV）。")).toBeVisible();
+  await expect(page.getByText("10 PV", { exact: true })).toBeVisible();
+  await expect(page.getByText("直接访问")).toBeVisible();
+  await expect(page.getByText("7 PV · 70.0%", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: analyticsTitle })).toBeVisible();
+  await expect(page.getByText("所选时段还没有浏览记录")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "30 天" })).toHaveAttribute("aria-current", "page");
   for (const range of ["7 天", "90 天", "400 天"]) await expect(page.getByRole("link", { name: range })).toBeVisible();
   await page.getByRole("link", { name: "7 天" }).click();
   await expect(page).toHaveURL(`${webOrigin}/admin/analytics?range=7`);
+  await expect(page.getByRole("heading", { name: "所选时段还没有浏览记录" })).toBeVisible();
 });
 
 test("invalid analytics range never reaches an analytics API request and offers exact recovery", async ({ page }) => {
