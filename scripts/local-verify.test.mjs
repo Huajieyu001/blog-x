@@ -12,6 +12,7 @@ import {
   assertPlaywrightJourney,
   canonicalIntegrationSelection,
   createGeneratedIntegrationResult,
+  generatedPrivateNetwork,
   createLifecycleProbeResult,
   createPhase6DataResult,
   createPhase12DataResult,
@@ -166,11 +167,27 @@ test("generated canonical Web verifier keeps private static trust while publishi
   assert.match(authority, /ports: !override[\s\S]*127\.0\.0\.1:\$\{context\.runtimeWebPort \?\? context\.webPort\}:3100/);
   assert.match(source, /if \(options\.lifecycleOnly \|\| options\.phase11Data \|\| options\.phase12Data \|\| options\.canonicalIntegration\) await inspectGeneratedWebVerifierEdge\(context\)/);
   assert.match(source, /options\.lifecycleOnly[\s\S]*createCanonicalRuntimeAuthority\(context, \{ includeWeb: false, publishWeb: true \}\)/);
-  assert.match(authority, /networks:[\s\S]*private:[\s\S]*ipv4_address: 172\.30\.0\.3[\s\S]*verifier-edge: \{\}[\s\S]*verifier-edge:[\s\S]*internal: false/);
+  assert.match(authority, /TRUSTED_PROXY_CIDRS: \$\{privateNetwork\.web\}\/32[\s\S]*postgres:[\s\S]*ipv4_address: \$\{privateNetwork\.postgres\}[\s\S]*private:[\s\S]*ipv4_address: \$\{privateNetwork\.web\}[\s\S]*subnet: \$\{privateNetwork\.subnet\}[\s\S]*verifier-edge:[\s\S]*internal: false[\s\S]*subnet: \$\{privateNetwork\.edgeSubnet\}/);
   assert.doesNotMatch(apiOverride, /verifier-edge/);
   assert.match(source, /async function inspectGeneratedWebVerifierEdge[\s\S]*\{\{\.Name\}\} \{\{\.State\}\} \{\{\.Ports\}\}[\s\S]*127\.0\.0\.1:\$\{port\}/);
   assert.match(source, /async function generatedWebVerifierFailureDiagnostics[\s\S]*composeArgs\(context, "ps"\)[\s\S]*logs", "--no-color", "--tail", "200", "api", "web"[\s\S]*redactText/);
   assert.match(source, /canonicalIntegration \|\| options\.phase11Data \|\| options\.phase12Data[\s\S]*generatedWebVerifierFailureDiagnostics/);
+  assert.match(source, /primaryFailure\?\.result[\s\S]*redactText\(primaryOutput, context\.secrets\)\.slice\(-3_000\)/);
+});
+
+test("generated private networks are port-bound, disjoint, and keep exact service addresses inside their /29", () => {
+  const ports = [1, 1_024, 49_152, 57_312, 65_535];
+  const networks = ports.map(generatedPrivateNetwork);
+  assert.equal(new Set(networks.map((network) => network.subnet)).size, ports.length);
+  assert.equal(new Set(networks.map((network) => network.edgeSubnet)).size, ports.length);
+  for (const network of networks) {
+    const match = /^(172\.\d+\.\d+)\.(\d+)\/29$/.exec(network.subnet);
+    assert.ok(match);
+    const base = Number(match[2]);
+    assert.deepEqual([network.api, network.web, network.postgres], [2, 3, 4].map((offset) => `${match[1]}.${base + offset}`));
+    assert.equal(network.edgeSubnet, network.subnet.replace(/^172\./, "10."));
+  }
+  for (const invalid of [0, 65_536, 1.5, Number.NaN]) assert.throws(() => generatedPrivateNetwork(invalid), /valid Web port/);
 });
 
 test("generated integration result binds exact paths actual counts cleanup and digest", () => {

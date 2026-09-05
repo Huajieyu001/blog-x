@@ -67,7 +67,11 @@ function command(name, args, options = {}) {
     child.on("close", (code) => {
       const result = { code: code ?? 1, stdout: Buffer.concat(stdout), stderr };
       if (result.code === 0 || options.allowFailure) accept(result);
-      else reject(new Error(`${name} restore command failed`));
+      else {
+        const error = new Error(`${name} restore command failed`);
+        error.result = result;
+        reject(error);
+      }
     });
     if (options.inputPath) {
       const input = createReadStream(options.inputPath);

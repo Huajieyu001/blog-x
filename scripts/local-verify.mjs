@@ -500,6 +500,23 @@ export async function cleanupGeneratedMainBrowserRoot(value) {
   await rm(resolved, { recursive: true, force: true });
 }
 
+export function generatedPrivateNetwork(webPort) {
+  if (!Number.isSafeInteger(webPort) || webPort < 1 || webPort > 65_535) throw new Error("generated private network requires a valid Web port");
+  const slot = webPort - 1;
+  const secondOctet = 20 + Math.floor(slot / 8_192);
+  const withinBlock = slot % 8_192;
+  const thirdOctet = Math.floor(withinBlock / 32);
+  const fourthOctet = (withinBlock % 32) * 8;
+  const prefix = `172.${secondOctet}.${thirdOctet}`;
+  return Object.freeze({
+    subnet: `${prefix}.${fourthOctet}/29`,
+    edgeSubnet: `10.${secondOctet}.${thirdOctet}.${fourthOctet}/29`,
+    api: `${prefix}.${fourthOctet + 2}`,
+    web: `${prefix}.${fourthOctet + 3}`,
+    postgres: `${prefix}.${fourthOctet + 4}`,
+  });
+}
+
 export function redactText(text, secrets = []) {
   let redacted = String(text);
   for (const secret of secrets.filter(Boolean).sort((a, b) => b.length - a.length)) {
@@ -789,6 +806,8 @@ function composeArgs(context, ...args) {
 
 async function createCanonicalRuntimeAuthority(context, { includeWeb = true, publishWeb = includeWeb } = {}) {
   if (includeWeb && !publishWeb) throw new Error("canonical Web runtime cannot be mounted without a verifier edge");
+  const privateNetwork = generatedPrivateNetwork(context.webPort);
+  context.privateNetwork = privateNetwork;
   const runtimeRoot = await mkdtemp(resolve(root, "apps/.canonical-runtime-"));
   context.canonicalRuntimeRoot = runtimeRoot;
   const nextRoot = resolve(runtimeRoot, ".next");
@@ -808,9 +827,15 @@ async function createCanonicalRuntimeAuthority(context, { includeWeb = true, pub
   const yaml = [
     "services:",
     "  api:",
+    "    environment:",
+    `      TRUSTED_PROXY_CIDRS: ${privateNetwork.web}/32`,
     "    volumes:",
     `      - ${JSON.stringify(`${resolve(root, "apps/api")}:/workspace/apps/api:ro`)}`,
     `      - ${JSON.stringify(`${resolve(root, "packages/contracts")}:/workspace/packages/contracts:ro`)}`,
+    "  postgres:",
+    "    networks:",
+    "      private:",
+    `        ipv4_address: ${privateNetwork.postgres}`,
     ...(publishWeb ? [
       "  web:",
       "    environment:",
@@ -824,13 +849,20 @@ async function createCanonicalRuntimeAuthority(context, { includeWeb = true, pub
       ] : []),
       "    networks:",
       "      private:",
-      "        ipv4_address: 172.30.0.3",
+      `        ipv4_address: ${privateNetwork.web}`,
       "      verifier-edge: {}",
     ] : []),
+    "networks:",
+    "  private:",
+    "    ipam:",
+    "      config: !override",
+    `        - subnet: ${privateNetwork.subnet}`,
     ...(publishWeb ? [
-      "networks:",
       "  verifier-edge:",
       "    internal: false",
+      "    ipam:",
+      "      config: !override",
+      `        - subnet: ${privateNetwork.edgeSubnet}`,
     ] : []),
     "",
   ].join("\n");
@@ -1543,7 +1575,12 @@ async function runPhase4RestoreChecks(context, includePhase5Legacy = false, brow
       .map((cleanup) => cleanup.reason);
     const failures = [...(primaryFailure ? [primaryFailure] : []), ...cleanupFailures];
     if (failures.length) {
-      const primaryDetail = primaryFailure instanceof Error ? redactText(primaryFailure.message, context.secrets) : "unknown restore failure";
+      const primaryMessage = primaryFailure instanceof Error ? primaryFailure.message : "unknown restore failure";
+      const primaryOutput = primaryFailure?.result
+        ? `${primaryFailure.result.stderr ?? ""}\n${primaryFailure.result.stdout?.toString?.() ?? ""}`
+        : "";
+      const primaryDetail = [redactText(primaryMessage, context.secrets), redactText(primaryOutput, context.secrets).slice(-3_000)]
+        .filter(Boolean).join("\n");
       throw new AggregateError(failures, primaryFailure
         ? `isolated restore verification failed and all cleanup outcomes were retained: ${primaryDetail}`
         : "isolated restore cleanup did not converge");
