@@ -12,6 +12,7 @@ import {
   createGeneratedIntegrationResult,
   createLifecycleProbeResult,
   createPhase6DataResult,
+  createPhase11DataResult,
   createPhase5ResultRecorder,
   parseBoundaryResult,
   parsePlaywrightResult,
@@ -26,6 +27,7 @@ import {
   phase5Selection,
   phase5MediaSelection,
   phase6Selection,
+  phase11Selection,
   redactText,
   semanticTestCommand,
   runGeneratedMainBrowserFixture,
@@ -69,6 +71,24 @@ test("canonical integration selection owns exact non-Phase-7 inventory once by f
   assert.equal(selection.paths.filter((path) => path.startsWith("apps/web/e2e/")).length, 16);
   assert.equal(selection.paths.includes("apps/web/e2e/public-discovery.spec.ts"), false);
   assert.match(selection.manifestSha256, /^[a-f0-9]{64}$/);
+});
+
+test("Phase 11 data selection seals retention, export, privacy, and restore authority", () => {
+  const selection = phase11Selection("data");
+  assert.deepEqual(selection.databaseSuites, [
+    ["PUBLIC_VISIBILITY_TEST_DATABASE_URL", "apps/api/test/public-visibility.test.ts"],
+    ["PHASE3_TEST_DATABASE_URL", "apps/api/test/distribution-export.test.ts"],
+  ]);
+  assert.equal(selection.restoreSuite, "apps/api/test/backup-restore.test.ts");
+  assert.deepEqual(selection.nodeSuites, ["scripts/local-verify.test.mjs"]);
+  const suites = [
+    ...selection.databaseSuites.map(([, id]) => ({ id, kind: "database", counts: { tests: 1, passed: 1, failed: 0, cancelled: 0, skipped: 0, todo: 0 } })),
+    { id: selection.restoreSuite, kind: "backup-restore", counts: { tests: 1, passed: 1, failed: 0, cancelled: 0, skipped: 0, todo: 0 } },
+    ...selection.nodeSuites.map((id) => ({ id, kind: "node", counts: { tests: 1, passed: 1, failed: 0, cancelled: 0, skipped: 0, todo: 0 } })),
+  ];
+  assert.equal(createPhase11DataResult(suites).releaseState, "BLOCKED");
+  assert.throws(() => phase11Selection("other"), /Phase 11 selection/i);
+  assert.throws(() => createPhase11DataResult(suites.slice(1)), /exact|missing/i);
 });
 
 test("generated integration result binds exact paths actual counts cleanup and digest", () => {
