@@ -32,6 +32,7 @@ export const DEFAULT_TEST_CHILDREN = Object.freeze([
     "apps/web/app/lib/search-discovery.test.ts",
     "apps/web/app/lib/site-metadata.test.ts",
     "apps/web/lib/search-encoding.test.ts",
+    "apps/web/server.test.mjs",
   ]),
 ]);
 
@@ -139,7 +140,7 @@ function sumCounts(layers) {
 function assertSealedAuthority() {
   const overridden = Object.keys(process.env).filter((name) => name.startsWith("BLOG_X_DEFAULT_TEST_")).sort();
   if (overridden.length) throw new Error(`default test environment overrides are forbidden: ${overridden.join(",")}`);
-  const selected = DEFAULT_TEST_CHILDREN.flatMap((definition) => definition.argv.filter((value) => value.endsWith(".test.ts")));
+  const selected = DEFAULT_TEST_CHILDREN.flatMap((definition) => definition.argv.filter((value) => /\.test\.(?:ts|mjs)$/.test(value)));
   if (JSON.stringify(selected) !== JSON.stringify(DEFAULT_TEST_FILES)) throw new Error("default test child selection drifted from the exact inventory");
 }
 

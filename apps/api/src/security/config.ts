@@ -64,9 +64,12 @@ function parseDatabaseUrl(value: string) {
   return value;
 }
 
-function parseTrustedProxyAddresses(environment: Environment) {
+function parseTrustedProxyAddresses(environment: Environment, production: boolean) {
   const raw = environment.TRUSTED_PROXY_CIDRS;
-  if (raw === undefined || raw === "") return ["127.0.0.1/8", "::1/128"];
+  if (raw === undefined || raw === "") {
+    if (production) invalid("TRUSTED_PROXY_CIDRS");
+    return ["127.0.0.1/8", "::1/128"];
+  }
   const addresses = raw.split(",").map((value) => value.trim()).filter(Boolean);
   const valid = (value: string) => {
     const [address, rawPrefix, ...extra] = value.split("/");
@@ -76,12 +79,14 @@ function parseTrustedProxyAddresses(environment: Environment) {
     if (!/^\d+$/.test(rawPrefix ?? String(prefix)) || !Number.isSafeInteger(prefix) || prefix < 0 || prefix > (version === 4 ? 32 : 128)) return false;
     if (version === 4) {
       const [first, second] = address.split(".").map(Number);
+      if (production && prefix !== 32) return false;
       return (first === 10 && prefix >= 8)
         || (first === 127 && prefix >= 8)
         || (first === 172 && second >= 16 && second <= 31 && prefix >= 12)
         || (first === 192 && second === 168 && prefix >= 16);
     }
     const normalized = address.toLowerCase();
+    if (production && prefix !== 128) return false;
     return (normalized === "::1" && prefix === 128) || (/^f[cd][0-9a-f:]*$/.test(normalized) && prefix >= 7);
   };
   if (!addresses.length || addresses.some((value) => !valid(value))) invalid("TRUSTED_PROXY_CIDRS");
@@ -126,7 +131,7 @@ export function parseApiRuntimeConfig(environment: Environment, command: ApiComm
     databaseUrl,
     apiHost: "127.0.0.1",
     apiPort: 3001,
-    trustedProxyAddresses: parseTrustedProxyAddresses(environment),
+    trustedProxyAddresses: parseTrustedProxyAddresses(environment, production),
     rateLimits: defaultRateLimits(),
   };
   if (command === "serve") {

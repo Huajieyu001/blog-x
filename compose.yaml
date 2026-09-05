@@ -78,6 +78,7 @@ services:
     environment:
       INTERNAL_API_ORIGIN: http://api:3001
       PUBLIC_ORIGIN: ${BLOG_X_PUBLIC_ORIGIN:-http://127.0.0.1:3100}
+      BLOG_X_INGRESS_AUTH_SECRET: ${BLOG_X_INGRESS_AUTH_SECRET:-}
     networks:
       private:
         ipv4_address: 172.30.0.3

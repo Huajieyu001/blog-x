@@ -36,6 +36,7 @@ test("runtime configuration rejects unsafe production input before resources can
     PUBLIC_ORIGIN: "https://blog.example",
     API_HOST: "127.0.0.1",
     API_PORT: "3001",
+    TRUSTED_PROXY_CIDRS: "172.30.0.3/32",
     MEDIA_ROOT: "/var/lib/blog-x/media",
   };
   assert.throws(() => parseApiRuntimeConfig({ ...base, PUBLIC_ORIGIN: "http://blog.example" }, "serve"), /PUBLIC_ORIGIN/);
@@ -43,6 +44,9 @@ test("runtime configuration rejects unsafe production input before resources can
   assert.throws(() => parseApiRuntimeConfig({ ...base, BLOG_X_LOGIN_LIMIT: "0" }, "serve"), /BLOG_X_LOGIN_LIMIT/);
   assert.throws(() => parseApiRuntimeConfig({ ...base, TRUSTED_PROXY_CIDRS: "not-an-address" }, "serve"), /TRUSTED_PROXY_CIDRS/);
   assert.throws(() => parseApiRuntimeConfig({ ...base, TRUSTED_PROXY_CIDRS: "198.51.100.1/32" }, "serve"), /TRUSTED_PROXY_CIDRS/);
+  assert.throws(() => parseApiRuntimeConfig({ ...base, TRUSTED_PROXY_CIDRS: undefined }, "serve"), /TRUSTED_PROXY_CIDRS/);
+  assert.throws(() => parseApiRuntimeConfig({ ...base, TRUSTED_PROXY_CIDRS: "172.30.0.0/24" }, "serve"), /TRUSTED_PROXY_CIDRS/);
+  assert.deepEqual(parseApiRuntimeConfig({ ...base, TRUSTED_PROXY_CIDRS: "172.30.0.3/32" }, "serve").trustedProxyAddresses, ["172.30.0.3/32"]);
   assert.throws(() => parseApiRuntimeConfig(base, "seed"), /ADMIN_USERNAME/);
 });
 

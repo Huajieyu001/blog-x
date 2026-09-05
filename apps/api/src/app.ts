@@ -132,13 +132,13 @@ export async function buildApp(options: BuildAppOptions = {}) {
   const trustedProxyAddresses = options.trustedProxyAddresses ?? parseApiRuntimeConfig(process.env, "migrate").trustedProxyAddresses;
   const rateStore = options.rateStore ?? new BoundedRateLimitStore(undefined, rateLimits.storeCapacity);
   const app = Fastify({
-    // The API has no public host port. Only the controlled Web edge may pass
-    // its socket-observed browser address in X-Forwarded-For.
+    // The API has no public host port. Only its exact configured Web proxy may
+    // pass the canonical client address supplied by authenticated ingress.
     trustProxy: trustedProxyAddresses,
     logger: {
       level: options.logger?.level ?? (process.env.NODE_ENV === "production" ? "info" : "silent"),
       ...options.logger,
-      redact: ["req.headers.cookie", "req.headers.authorization", "res.headers.set-cookie", "password", "token", "credentials"],
+      redact: ["req.headers.cookie", "req.headers.authorization", "req.headers.x-blog-x-ingress-auth", "req.headers.x-blog-x-client-ip", "res.headers.set-cookie", "password", "token", "credentials"],
     },
   });
   // TypeScript 7's bundler resolution does not model the package's CommonJS

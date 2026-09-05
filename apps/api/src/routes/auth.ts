@@ -44,8 +44,8 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
     if (!requireContentType(request, reply, "application/json")) return;
     const parsed = loginInputSchema.safeParse(request.body);
     if (!parsed.success) return unauthorized(reply);
-    // Fastify's socket-backed request.ip is authoritative because buildApp sets
-    // trustProxy false; forwarded headers cannot alter this limiter key.
+    // The API accepts X-Forwarded-For only from its exact configured Web proxy;
+    // Web has already authenticated and canonicalized it at controlled ingress.
     const decision = options.rateStore.consume(
       createRateLimitKey("login", request.ip, parsed.data.username),
       options.loginRatePolicy,

@@ -16,6 +16,7 @@ const entries = [
   { path: "apps/web/app/lib/search-discovery.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
   { path: "apps/web/app/lib/site-metadata.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
   { path: "apps/web/lib/search-encoding.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
+  { path: "apps/web/server.test.mjs", kind: "web-unit", scope: "default", fixtureOwner: null },
 
   { path: "apps/api/test/article-draft-preview.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
   { path: "apps/api/test/article-lifecycle.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
@@ -113,6 +114,7 @@ async function scanPackageTests() {
     scanTree(resolve(root, "apps/api/test"), (name) => name.endsWith(".test.ts")),
     scanTree(resolve(root, "apps/web/app"), (name) => name.endsWith(".test.ts")),
     scanTree(resolve(root, "apps/web/lib"), (name) => name.endsWith(".test.ts")),
+    scanTree(resolve(root, "apps/web"), (name) => name.endsWith(".test.mjs")),
     scanTree(resolve(root, "apps/web/e2e"), (name) => name.endsWith(".spec.ts")),
   ]);
   return groups.flat().sort();
