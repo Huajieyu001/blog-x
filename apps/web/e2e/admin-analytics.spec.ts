@@ -54,7 +54,7 @@ test("dashboard keeps its authoring hierarchy and visible static actions", async
   await login(page);
   await expect(page.getByRole("heading", { name: "工作台" })).toBeVisible();
   for (const heading of ["内容概况", "继续创作", "最近 30 天访问", "文章管理", "站点维护"]) await expect(page.getByRole("heading", { name: heading })).toBeVisible();
-  await expect(page.getByRole("link", { name: "新建草稿" }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "新建草稿" })).toHaveCount(1);
   await expect(page.getByRole("button", { name: "导出文章 Markdown" })).toBeVisible();
 });
 
