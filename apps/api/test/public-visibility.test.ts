@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { buildApp } from "../src/app.js";
 import { formatCleanupViewsResult, parseCleanupViewsArguments } from "../src/content/view-retention.js";
+import { createViewAggregationRepository } from "../src/content/view-aggregation-repository.js";
 import { seedAdministrator } from "../src/db/seed-admin.js";
 import { administrators, articleDailyViews, articles, auditEvents, sessions } from "../src/db/schema.js";
 
@@ -36,6 +37,57 @@ test("view retention accepts one bounded limit and serializes aggregate-only out
     deleted: 3,
   });
   assert.doesNotMatch(serialized, /article|slug|origin|cookie|session|postgres|password/i);
+});
+
+test("view retention deletes only expired Shanghai days in bounded convergent batches", async (context) => {
+  if (!databaseUrl) {
+    context.skip("PUBLIC_VISIBILITY_TEST_DATABASE_URL must name a disposable migrated PostgreSQL database");
+    return;
+  }
+
+  const pool = new Pool({ connectionString: databaseUrl });
+  const db = drizzle({ client: pool, schema: { articleDailyViews, articles } });
+  await pool.query("truncate table article_daily_views, articles cascade");
+  context.after(async () => {
+    await pool.query("truncate table article_daily_views, articles cascade");
+    await pool.end();
+  });
+
+  const firstArticleId = "00000000-0000-4000-8000-000000000101";
+  const secondArticleId = "00000000-0000-4000-8000-000000000102";
+  await db.insert(articles).values([
+    { id: firstArticleId, title: "Retention first", slug: `retention-first-${Date.now()}`, markdown: "# First" },
+    { id: secondArticleId, title: "Retention second", slug: `retention-second-${Date.now()}`, markdown: "# Second" },
+  ]);
+  await pool.query(`
+    WITH cutoff AS (SELECT ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date - 399)::date AS retained_from_day)
+    INSERT INTO article_daily_views (article_id, day, total_pv, direct_pv)
+    SELECT $1, retained_from_day - 2, 1, 1 FROM cutoff
+    UNION ALL SELECT $2, retained_from_day - 1, 1, 1 FROM cutoff
+    UNION ALL SELECT $1, retained_from_day, 1, 1 FROM cutoff
+    UNION ALL SELECT $2, (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date, 1, 1
+  `, [firstArticleId, secondArticleId]);
+  const repository = createViewAggregationRepository(db);
+  const retainedFromDay = (await pool.query<{ retained_from_day: string }>("select ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date - 399)::text as retained_from_day")).rows[0]?.retained_from_day;
+  assert.ok(retainedFromDay);
+
+  const first = await repository.cleanupExpiredDailyViews(1);
+  assert.deepEqual(first, { retainedFromDay, deleted: 1 });
+  const second = await repository.cleanupExpiredDailyViews(1);
+  assert.deepEqual(second, { retainedFromDay, deleted: 1 });
+  assert.deepEqual(await repository.cleanupExpiredDailyViews(1), { retainedFromDay, deleted: 0 });
+  const retained = await pool.query<{ day: string }>("select day::text as day from article_daily_views order by day, article_id");
+  assert.deepEqual(retained.rows.map((row) => row.day), [retainedFromDay, (await pool.query<{ day: string }>("select (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date::text as day")).rows[0]!.day]);
+
+  await pool.query(`
+    WITH cutoff AS (SELECT ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date - 399)::date AS retained_from_day)
+    INSERT INTO article_daily_views (article_id, day, total_pv, direct_pv)
+    SELECT $1, retained_from_day - 3, 1, 1 FROM cutoff
+    UNION ALL SELECT $2, retained_from_day - 4, 1, 1 FROM cutoff
+  `, [firstArticleId, secondArticleId]);
+  const concurrent = await Promise.all([repository.cleanupExpiredDailyViews(1), repository.cleanupExpiredDailyViews(1)]);
+  assert.equal(concurrent.reduce((total, result) => total + result.deleted, 0), 2);
+  assert.deepEqual(await repository.cleanupExpiredDailyViews(1), { retainedFromDay, deleted: 0 });
 });
 
 test("lifecycle changes are reflected by the next public list request", async (context) => {

@@ -12,7 +12,8 @@
     "db:migrate": "tsx src/app.ts migrate",
     "db:seed": "tsx src/app.ts seed",
     "db:schema:verify": "tsx src/app.ts schema:verify",
-    "publish:due": "tsx src/app.ts publish-due"
+    "publish:due": "tsx src/app.ts publish-due",
+    "cleanup:views": "tsx src/app.ts cleanup-views"
   },
   "dependencies": {
     "@blog-x/contracts": "workspace:*",

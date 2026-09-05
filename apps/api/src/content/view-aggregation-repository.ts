@@ -29,7 +29,34 @@ export function createViewAggregationRepository(db: Database) {
     return (result.rowCount ?? 0) === 1;
   }
 
-  return { recordPublicView };
+  async function cleanupExpiredDailyViews(limit: number) {
+    const result = await db.execute(sql`
+      WITH cutoff AS (
+        SELECT ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date - 399)::date AS retained_from_day
+      ), candidates AS (
+        SELECT views."article_id", views."day"
+        FROM "article_daily_views" AS views
+        CROSS JOIN cutoff
+        WHERE views."day" < cutoff.retained_from_day
+        ORDER BY views."day", views."article_id"
+        LIMIT ${limit}
+        FOR UPDATE SKIP LOCKED
+      ), deleted AS (
+        DELETE FROM "article_daily_views" AS views
+        USING candidates
+        WHERE views."article_id" = candidates."article_id" AND views."day" = candidates."day"
+        RETURNING 1
+      )
+      SELECT
+        (SELECT retained_from_day::text FROM cutoff) AS "retainedFromDay",
+        (SELECT count(*)::int FROM deleted) AS "deleted"
+    `);
+    const row = result.rows[0] as { retainedFromDay?: unknown; deleted?: unknown } | undefined;
+    if (!row || typeof row.retainedFromDay !== "string" || typeof row.deleted !== "number") throw new Error("cleanup result malformed");
+    return { retainedFromDay: row.retainedFromDay, deleted: row.deleted };
+  }
+
+  return { recordPublicView, cleanupExpiredDailyViews };
 }
 
 export type ViewAggregationRepository = ReturnType<typeof createViewAggregationRepository>;

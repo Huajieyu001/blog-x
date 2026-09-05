@@ -42,6 +42,7 @@ import { classifyRetainedLegacyMedia } from "./ops/legacy-media-migration.js";
 import { appendAuditEvent, createAuditRepository } from "./audit/audit-repository.js";
 import { adminAuditRoutes } from "./routes/admin-audit.js";
 import { createViewAggregationRepository, type ViewAggregationRepository } from "./content/view-aggregation-repository.js";
+import { formatCleanupViewsFailure, formatCleanupViewsResult, parseCleanupViewsArguments, runViewRetention } from "./content/view-retention.js";
 import { publicViewRoutes } from "./routes/public-views.js";
 
 const databaseSchema = { administrators, articles, articleDailyViews, sessions, categories, tags, articleTags, sitePages, media, auditEvents };
@@ -307,6 +308,25 @@ async function schemaVerify(pool: Pool) {
 }
 async function main() {
   const command = process.argv[2];
+  if (command === "cleanup-views") {
+    const parsed = parseCleanupViewsArguments(process.argv.slice(3));
+    if (!parsed.ok) {
+      console.error(formatCleanupViewsFailure(parsed.code));
+      process.exitCode = 1;
+      return;
+    }
+    let resources: RuntimeResources | undefined;
+    try {
+      resources = createRuntimeResources(parseApiRuntimeConfig(process.env, "cleanup-views"));
+      console.log(formatCleanupViewsResult(await runViewRetention(createViewAggregationRepository(resources.db), parsed.limit)));
+    } catch {
+      console.error(formatCleanupViewsFailure(resources ? "cleanup_failed" : "configuration_failed"));
+      process.exitCode = 1;
+    } finally {
+      await resources?.pool.end().catch(() => undefined);
+    }
+    return;
+  }
   if (command === "publish-due") {
     const parsed = parsePublishDueArguments(process.argv.slice(3));
     if (!parsed.ok) {
