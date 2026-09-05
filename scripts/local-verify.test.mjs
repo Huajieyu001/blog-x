@@ -13,12 +13,14 @@ import {
   createGeneratedIntegrationResult,
   createLifecycleProbeResult,
   createPhase6DataResult,
+  createPhase12DataResult,
   createPhase11DataResult,
   createPhase5ResultRecorder,
   parseBoundaryResult,
   parsePlaywrightResult,
   parseSemanticTapResult,
   PHASE6_DATA_RESULT_FORMAT,
+  PHASE12_DATA_RESULT_FORMAT,
   cleanupGeneratedMediaRoot,
   cleanupGeneratedMainBrowserRoot,
   createMainBrowserEnvironment,
@@ -29,6 +31,7 @@ import {
   phase5MediaSelection,
   phase6Selection,
   phase11Selection,
+  phase12Selection,
   redactText,
   semanticTestCommand,
   runGeneratedMainBrowserFixture,
@@ -63,20 +66,51 @@ function phase11RuntimeAuthority() {
 test("canonical integration selection owns exact non-Phase-7 inventory once by fixture owner", () => {
   const selection = canonicalIntegrationSelection();
   assert.deepEqual(selection.paths, canonicalGeneratedPaths);
-  assert.equal(selection.paths.length, 29);
+  assert.equal(selection.paths.length, 31);
   assert.equal(new Set(selection.paths).size, selection.paths.length);
   assert.deepEqual(Object.fromEntries(Object.entries(selection.groups).map(([owner, paths]) => [owner, paths.length])), {
-    database: 11,
+    database: 12,
     "backup-restore": 1,
     media: 1,
-    "main-browser": 14,
+    "main-browser": 15,
     "error-browser": 1,
     "restore-browser": 1,
   });
-  assert.equal(selection.paths.filter((path) => path.startsWith("apps/api/")).length, 13);
-  assert.equal(selection.paths.filter((path) => path.startsWith("apps/web/e2e/")).length, 16);
+  assert.equal(selection.paths.filter((path) => path.startsWith("apps/api/")).length, 14);
+  assert.equal(selection.paths.filter((path) => path.startsWith("apps/web/e2e/")).length, 17);
   assert.equal(selection.paths.includes("apps/web/e2e/public-discovery.spec.ts"), false);
   assert.match(selection.manifestSha256, /^[a-f0-9]{64}$/);
+});
+
+test("Phase 12 data selection seals analytics contracts, generated database/browser authority, and current runtime digest", async () => {
+  const selection = phase12Selection("data");
+  assert.deepEqual(selection.databaseSuites, [["ADMIN_ANALYTICS_TEST_DATABASE_URL", "apps/api/test/admin-analytics.test.ts"]]);
+  assert.deepEqual(selection.nodeSuites, [
+    "packages/contracts/src/analytics.test.ts",
+    "apps/web/app/lib/admin-analytics.test.ts",
+    "scripts/local-verify.test.mjs",
+  ]);
+  assert.deepEqual(selection.browserSuites, ["apps/web/e2e/admin-analytics.spec.ts"]);
+  assert.equal(selection.boundarySuite, "scripts/check-boundaries.mjs");
+  const suites = [
+    ...selection.databaseSuites.map(([, id]) => ({ id, kind: "database", counts: { tests: 1, passed: 1, failed: 0, cancelled: 0, skipped: 0, todo: 0 } })),
+    ...selection.nodeSuites.map((id) => ({ id, kind: "node", counts: { tests: 1, passed: 1, failed: 0, cancelled: 0, skipped: 0, todo: 0 } })),
+    ...selection.browserSuites.map((id) => ({ id, kind: "browser", counts: { tests: 1, passed: 1, failed: 0, cancelled: 0, skipped: 0, todo: 0 } })),
+    { id: selection.boundarySuite, kind: "boundary", counts: { tests: 1, passed: 1, failed: 0, cancelled: 0, skipped: 0, todo: 0 } },
+  ];
+  const record = createPhase12DataResult(suites, phase11RuntimeAuthority());
+  assert.equal(record.format, PHASE12_DATA_RESULT_FORMAT);
+  assert.equal(record.releaseState, "BLOCKED");
+  assert.equal(record.version, 1);
+  assert.throws(() => phase12Selection("other"), /Phase 12 selection/i);
+  assert.throws(() => createPhase12DataResult(suites.slice(1), phase11RuntimeAuthority()), /exact|missing/i);
+  assert.throws(() => createPhase12DataResult(suites.map((suite) => suite.id === selection.browserSuites[0] ? { ...suite, kind: "database" } : suite), phase11RuntimeAuthority()), /exact/i);
+  assert.throws(() => createPhase12DataResult(suites), /authority|missing/i);
+
+  const source = await readFile(new URL("./local-verify.mjs", import.meta.url), "utf8");
+  assert.match(source, /phase12Data && !options\.skipBuild[\s\S]*typecheck workspace for Phase 12 data[\s\S]*build workspace for Phase 12 data[\s\S]*createCanonicalRuntimeAuthority/);
+  assert.match(source, /async function runPhase12DataChecks[\s\S]*ADMIN_ANALYTICS_TEST_DATABASE_URL[\s\S]*runGeneratedMainBrowserFixtureSelection[\s\S]*PHASE12_DATA_RESULT_PREFIX/);
+  assert.match(source, /Phase 12 data accepts only the sealed complete invocation/);
 });
 
 test("Phase 11 data selection seals retention, export, privacy, restore, browser beacon, and current runtime authority", async () => {
@@ -135,7 +169,7 @@ test("generated integration result binds exact paths actual counts cleanup and d
   assert.equal(result.version, 1);
   assert.equal(result.releaseState, "BLOCKED");
   assert.deepEqual(result.inventory, selection.paths);
-  assert.deepEqual(result.counts, { tests: 29, passed: 29, failed: 0, cancelled: 0, skipped: 0, todo: 0 });
+  assert.deepEqual(result.counts, { tests: 31, passed: 31, failed: 0, cancelled: 0, skipped: 0, todo: 0 });
   assert.deepEqual(result.cleanup, cleanup);
   assert.equal(result.manifestSha256, selection.manifestSha256);
   assert.match(result.resultSha256, /^[a-f0-9]{64}$/);
