@@ -44,6 +44,8 @@ import { adminAuditRoutes } from "./routes/admin-audit.js";
 import { createViewAggregationRepository, type ViewAggregationRepository } from "./content/view-aggregation-repository.js";
 import { formatCleanupViewsFailure, formatCleanupViewsResult, parseCleanupViewsArguments, runViewRetention } from "./content/view-retention.js";
 import { publicViewRoutes } from "./routes/public-views.js";
+import { createAdminAnalyticsRepository, type AdminAnalyticsRepository } from "./content/admin-analytics-repository.js";
+import { adminAnalyticsRoutes } from "./routes/admin-analytics.js";
 
 const databaseSchema = { administrators, articles, articleDailyViews, sessions, categories, tags, articleTags, sitePages, media, auditEvents };
 
@@ -119,6 +121,7 @@ type BuildAppOptions = {
   trustedProxyAddresses?: string[];
   rateStore?: BoundedRateLimitStore;
   viewAggregationRepository?: ViewAggregationRepository;
+  adminAnalyticsRepository?: AdminAnalyticsRepository;
 };
 
 export async function buildApp(options: BuildAppOptions = {}) {
@@ -174,6 +177,10 @@ export async function buildApp(options: BuildAppOptions = {}) {
   });
   await app.register(adminAuditRoutes, {
     auditRepository: createAuditRepository(db),
+    sessionAuth: app.sessionAuth,
+  });
+  await app.register(adminAnalyticsRoutes, {
+    adminAnalyticsRepository: options.adminAnalyticsRepository ?? createAdminAnalyticsRepository(db),
     sessionAuth: app.sessionAuth,
   });
   await app.register(adminPostRoutes, {
