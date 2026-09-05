@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import cookie from "@fastify/cookie";
 import Fastify, { type FastifyPluginAsync } from "fastify";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+import { createAdminAnalyticsRepository } from "../src/content/admin-analytics-repository.js";
+import * as schema from "../src/db/schema.js";
 import { adminAnalyticsRoutes } from "../src/routes/admin-analytics.js";
+
+const databaseUrl = process.env.ADMIN_ANALYTICS_TEST_DATABASE_URL;
 
 const validAnalytics = {
   range: 30,
@@ -87,4 +93,61 @@ test("analytics hides repository failures behind a non-cacheable unavailable res
   assert.equal(response.statusCode, 503);
   assert.deepEqual(response.json(), { error: "analytics_unavailable" });
   assert.equal(response.headers["cache-control"], "private, no-store, max-age=0");
+});
+
+test("analytics aggregates only currently public articles and restores stored PV when republished", async (context) => {
+  if (!databaseUrl) {
+    context.skip("ADMIN_ANALYTICS_TEST_DATABASE_URL must name a generated disposable migrated PostgreSQL database");
+    return;
+  }
+  const pool = new Pool({ connectionString: databaseUrl });
+  const db = drizzle({ client: pool, schema });
+  const repository = createAdminAnalyticsRepository(db);
+  context.after(async () => {
+    await pool.query("truncate table article_daily_views, articles cascade");
+    await pool.end();
+  });
+  await pool.query("truncate table article_daily_views, articles cascade");
+  const visibleId = "00000000-0000-4000-8000-000000000101";
+  const hiddenIds = ["00000000-0000-4000-8000-000000000102", "00000000-0000-4000-8000-000000000103", "00000000-0000-4000-8000-000000000104", "00000000-0000-4000-8000-000000000105", "00000000-0000-4000-8000-000000000106"];
+  await pool.query(`
+    INSERT INTO articles (id, title, slug, markdown, status, published_at, deleted_at)
+    VALUES
+      ($1, 'Visible', 'analytics-visible', '# visible', 'published', CURRENT_TIMESTAMP, NULL),
+      ($2, 'Draft', 'analytics-draft', '# draft', 'draft', NULL, NULL),
+      ($3, 'Unpublished', 'analytics-unpublished', '# unpublished', 'unpublished', CURRENT_TIMESTAMP, NULL),
+      ($4, 'Deleted', 'analytics-deleted', '# deleted', 'published', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+      ($5, 'No publication', 'analytics-null', '# null', 'published', NULL, NULL),
+      ($6, 'Future', 'analytics-future', '# future', 'published', CURRENT_TIMESTAMP + interval '1 day', NULL)
+  `, [visibleId, ...hiddenIds]);
+  await pool.query(`
+    WITH bounds AS (SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date AS today)
+    INSERT INTO article_daily_views (article_id, day, total_pv, direct_pv, search_pv)
+    SELECT $1::uuid, today, 5, 5, 0 FROM bounds
+    UNION ALL SELECT $1::uuid, today - 2, 1, 0, 1 FROM bounds
+    UNION ALL SELECT $2::uuid, today, 9, 9, 0 FROM bounds
+    UNION ALL SELECT $3::uuid, today, 9, 9, 0 FROM bounds
+    UNION ALL SELECT $4::uuid, today, 9, 9, 0 FROM bounds
+    UNION ALL SELECT $5::uuid, today, 9, 9, 0 FROM bounds
+    UNION ALL SELECT $6::uuid, today, 9, 9, 0 FROM bounds
+  `, [visibleId, ...hiddenIds]);
+
+  const visible = await repository.read({ range: 7, limit: 8 });
+  assert.equal(visible.daily.length, 7);
+  assert.equal(visible.totalPv, 6);
+  assert.deepEqual(visible.sources, [
+    { source: "direct", totalPv: 5 }, { source: "internal", totalPv: 0 }, { source: "search", totalPv: 1 }, { source: "social", totalPv: 0 }, { source: "external", totalPv: 0 },
+  ]);
+  assert.deepEqual(visible.topArticles, [{ articleId: visibleId, title: "Visible", status: "published", totalPv: 6 }]);
+
+  await pool.query("update articles set status = 'unpublished' where id = $1", [visibleId]);
+  const hidden = await repository.read({ range: 7, limit: 8 });
+  assert.equal(hidden.totalPv, 0);
+  assert.equal(hidden.daily.reduce((sum, point) => sum + point.pv, 0), 0);
+  assert.equal(hidden.sources.reduce((sum, source) => sum + source.totalPv, 0), 0);
+  assert.deepEqual(hidden.topArticles, []);
+  assert.equal((await pool.query("select count(*)::int as count from article_daily_views where article_id = $1", [visibleId])).rows[0]?.count, 2);
+
+  await pool.query("update articles set status = 'published' where id = $1", [visibleId]);
+  assert.equal((await repository.read({ range: 7, limit: 8 })).totalPv, 6);
 });
