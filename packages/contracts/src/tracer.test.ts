@@ -9,12 +9,32 @@ import { portableExportManifestSchema } from "./distribution.js";
 import { loginInputSchema } from "./auth.js";
 import { mediaUsageReferenceSchema } from "./media.js";
 import { publishInputSchema, publicArticleDetailSchema, publicArticleListSchema } from "./tracer.js";
+import * as contracts from "./index.js";
+
+type PendingAnalyticsContracts = typeof contracts & {
+  anonymousViewSourceValues?: readonly string[];
+  anonymousViewSourceSchema?: { safeParse(value: unknown): { success: boolean } };
+  anonymousViewSlugParamsSchema?: { safeParse(value: unknown): { success: boolean } };
+  anonymousViewBodySchema?: { safeParse(value: unknown): { success: boolean } };
+};
 
 test("login input requires bounded username and password fields", () => {
   assert.equal(loginInputSchema.safeParse({ username: "admin", password: "secret" }).success, true);
   const invalid = loginInputSchema.safeParse({ username: "", password: "" });
   assert.equal(invalid.success, false);
   if (!invalid.success) assert.deepEqual(invalid.error.issues.map((issue) => issue.path.join(".")), ["username", "password"]);
+});
+
+test("anonymous view contracts accept only fixed sources, strict empty bodies, and public slug grammar", () => {
+  const analytics = contracts as PendingAnalyticsContracts;
+  assert.deepEqual(analytics.anonymousViewSourceValues, ["direct", "internal", "search", "social", "external"]);
+  assert.equal(analytics.anonymousViewSourceSchema?.safeParse("direct").success, true);
+  assert.equal(analytics.anonymousViewSourceSchema?.safeParse("unknown").success, false);
+  assert.equal(analytics.anonymousViewSlugParamsSchema?.safeParse({ slug: "private-insights-2026" }).success, true);
+  assert.equal(analytics.anonymousViewSlugParamsSchema?.safeParse({ slug: "Not A Slug" }).success, false);
+  assert.equal(analytics.anonymousViewSlugParamsSchema?.safeParse({ slug: "x".repeat(181) }).success, false);
+  assert.equal(analytics.anonymousViewBodySchema?.safeParse({}).success, true);
+  assert.equal(analytics.anonymousViewBodySchema?.safeParse({ source: "direct" }).success, false);
 });
 
 test("publish input rejects malformed wire fields", () => {
