@@ -24,6 +24,7 @@ export const DEFAULT_TEST_CHILDREN = Object.freeze([
   child("api", [
     "apps/api/test/markdown-renderer.test.ts",
     "apps/api/test/security-hardening.test.ts",
+    "apps/api/test/public-view-security.test.ts",
   ]),
   child("web", [
     "apps/web/app/admin/_components/article-actions-schedule.test.ts",

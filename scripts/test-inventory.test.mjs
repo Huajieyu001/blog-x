@@ -15,15 +15,16 @@ const cloneManifest = () => PACKAGE_TEST_INVENTORY.map((entry) => ({ ...entry })
 test("package test inventory is frozen, exact, complete and disjoint", async () => {
   assert.equal(Object.isFrozen(PACKAGE_TEST_INVENTORY), true);
   assert.equal(PACKAGE_TEST_INVENTORY.every(Object.isFrozen), true);
-  assert.equal(PACKAGE_TEST_INVENTORY.length, 39);
-  assert.equal(DEFAULT_TEST_FILES.length, 9);
+  assert.equal(PACKAGE_TEST_INVENTORY.length, 40);
+  assert.equal(DEFAULT_TEST_FILES.length, 10);
   assert.equal(INTEGRATION_TEST_FILES.length, 30);
-  assert.equal(new Set([...DEFAULT_TEST_FILES, ...INTEGRATION_TEST_FILES]).size, 39);
+  assert.equal(new Set([...DEFAULT_TEST_FILES, ...INTEGRATION_TEST_FILES]).size, 40);
   assert.deepEqual(DEFAULT_TEST_FILES, [
     "packages/contracts/src/public-discovery.test.ts",
     "packages/contracts/src/tracer.test.ts",
     "apps/api/test/markdown-renderer.test.ts",
     "apps/api/test/security-hardening.test.ts",
+    "apps/api/test/public-view-security.test.ts",
     "apps/web/app/admin/_components/article-actions-schedule.test.ts",
     "apps/web/app/admin/_components/article-editor-recovery.test.ts",
     "apps/web/app/lib/search-discovery.test.ts",
@@ -32,7 +33,7 @@ test("package test inventory is frozen, exact, complete and disjoint", async () 
   ]);
 
   const result = await assertCompleteTestInventory();
-  assert.deepEqual(result, { total: 39, default: 9, integration: 30 });
+  assert.deepEqual(result, { total: 40, default: 10, integration: 30 });
 });
 
 test("integration inventory has exact runner-owner counts", () => {
@@ -104,5 +105,24 @@ test("default and integration ownership cannot be swapped", () => {
   assert.throws(
     () => validatePackageTestInventory(manifest, manifestPaths()),
     /apps\/api\/test\/markdown-renderer\.test\.ts.*integration.*database/,
+  );
+});
+
+test("anonymous view security coverage fails closed on omission, duplication, or owner drift", () => {
+  const path = "apps/api/test/public-view-security.test.ts";
+  assert.throws(
+    () => validatePackageTestInventory(cloneManifest(), manifestPaths().filter((entry) => entry !== path)),
+    /package test inventory is missing on-disk path: apps\/api\/test\/public-view-security\.test\.ts/,
+  );
+  const duplicate = cloneManifest();
+  duplicate.push({ ...duplicate.find((entry) => entry.path === path) });
+  assert.throws(
+    () => validatePackageTestInventory(duplicate, manifestPaths()),
+    /package test inventory has duplicate ownership: apps\/api\/test\/public-view-security\.test\.ts/,
+  );
+  const ownerDrift = cloneManifest().map((entry) => entry.path === path ? { ...entry, scope: "integration", fixtureOwner: "database" } : entry);
+  assert.throws(
+    () => validatePackageTestInventory(ownerDrift, manifestPaths()),
+    /apps\/api\/test\/public-view-security\.test\.ts.*integration.*database/,
   );
 });

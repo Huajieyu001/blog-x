@@ -35,7 +35,7 @@ test("default coordinator freezes exact literal Contracts, API and Web child arg
     },
     {
       id: "api",
-      argv: ["--import", "tsx", "--test", "--test-reporter=tap", "apps/api/test/markdown-renderer.test.ts", "apps/api/test/security-hardening.test.ts"],
+      argv: ["--import", "tsx", "--test", "--test-reporter=tap", "apps/api/test/markdown-renderer.test.ts", "apps/api/test/security-hardening.test.ts", "apps/api/test/public-view-security.test.ts"],
     },
     {
       id: "web",
