@@ -16,6 +16,7 @@ type PendingAnalyticsContracts = typeof contracts & {
   anonymousViewSourceSchema?: { safeParse(value: unknown): { success: boolean } };
   anonymousViewSlugParamsSchema?: { safeParse(value: unknown): { success: boolean } };
   anonymousViewBodySchema?: { safeParse(value: unknown): { success: boolean } };
+  viewRetentionResultSchema?: { safeParse(value: unknown): { success: boolean } };
 };
 
 test("login input requires bounded username and password fields", () => {
@@ -35,6 +36,28 @@ test("anonymous view contracts accept only fixed sources, strict empty bodies, a
   assert.equal(analytics.anonymousViewSlugParamsSchema?.safeParse({ slug: "x".repeat(181) }).success, false);
   assert.equal(analytics.anonymousViewBodySchema?.safeParse({}).success, true);
   assert.equal(analytics.anonymousViewBodySchema?.safeParse({ source: "direct" }).success, false);
+});
+
+test("view retention output has a strict aggregate-only command contract", () => {
+  const analytics = contracts as PendingAnalyticsContracts;
+  const result = {
+    format: "blog-x-view-retention",
+    version: 1,
+    command: "cleanup-views",
+    retainedFromDay: "2025-08-31",
+    limit: 100,
+    deleted: 3,
+  };
+  assert.equal(analytics.viewRetentionResultSchema?.safeParse(result).success, true);
+  for (const invalid of [
+    { ...result, retainedFromDay: "2025-8-31" },
+    { ...result, limit: 0 },
+    { ...result, limit: 10_001 },
+    { ...result, deleted: -1 },
+    { ...result, articleId: "00000000-0000-4000-8000-000000000001" },
+    { ...result, slug: "private-post" },
+    { ...result, origin: "https://example.invalid" },
+  ]) assert.equal(analytics.viewRetentionResultSchema?.safeParse(invalid).success, false);
 });
 
 test("publish input rejects malformed wire fields", () => {

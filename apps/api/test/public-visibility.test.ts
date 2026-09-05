@@ -3,6 +3,7 @@ import test from "node:test";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { buildApp } from "../src/app.js";
+import { formatCleanupViewsResult, parseCleanupViewsArguments } from "../src/content/view-retention.js";
 import { seedAdministrator } from "../src/db/seed-admin.js";
 import { administrators, articleDailyViews, articles, auditEvents, sessions } from "../src/db/schema.js";
 
@@ -14,6 +15,28 @@ function sessionCookie(setCookie: string) {
   assert.ok(match, "login must issue a session cookie");
   return `blog_x_session=${match[1]}`;
 }
+
+test("view retention accepts one bounded limit and serializes aggregate-only output", () => {
+  assert.deepEqual(parseCleanupViewsArguments(["--limit=100"]), { ok: true, limit: 100 });
+  for (const arguments_ of [[], ["--limit=0"], ["--limit=-1"], ["--limit=1.5"], ["--limit=10001"], ["--limit=1", "--limit=2"], ["--article=secret"]]) {
+    assert.deepEqual(parseCleanupViewsArguments(arguments_), { ok: false, code: "invalid_arguments" });
+  }
+  const serialized = formatCleanupViewsResult({
+    command: "cleanup-views",
+    retainedFromDay: "2025-08-31",
+    limit: 100,
+    deleted: 3,
+  });
+  assert.deepEqual(JSON.parse(serialized), {
+    format: "blog-x-view-retention",
+    version: 1,
+    command: "cleanup-views",
+    retainedFromDay: "2025-08-31",
+    limit: 100,
+    deleted: 3,
+  });
+  assert.doesNotMatch(serialized, /article|slug|origin|cookie|session|postgres|password/i);
+});
 
 test("lifecycle changes are reflected by the next public list request", async (context) => {
   if (!databaseUrl) {
