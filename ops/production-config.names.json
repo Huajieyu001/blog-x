@@ -9,7 +9,7 @@
     { "name": "API_HOST", "class": "runtime-bind", "consumers": ["server"] },
     { "name": "API_PORT", "class": "runtime-bind", "consumers": ["server"] },
     { "name": "TRUSTED_PROXY_CIDRS", "class": "network-policy", "consumers": ["server"] },
-    { "name": "BLOG_X_INGRESS_AUTH_SECRET", "class": "secret-runtime", "consumers": ["web-ingress"] },
+    { "name": "BLOG_X_INGRESS_AUTH_SECRET", "class": "secret-runtime", "consumers": ["server"] },
     { "name": "MEDIA_ROOT", "class": "runtime-storage", "consumers": ["server"] },
     { "name": "ADMIN_USERNAME", "class": "seed-secret", "consumers": ["seed"] },
     { "name": "ADMIN_PASSWORD", "class": "seed-secret", "consumers": ["seed"] },
