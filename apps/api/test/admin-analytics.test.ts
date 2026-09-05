@@ -96,10 +96,7 @@ test("analytics hides repository failures behind a non-cacheable unavailable res
 });
 
 test("analytics aggregates only currently public articles and restores stored PV when republished", async (context) => {
-  if (!databaseUrl) {
-    context.skip("ADMIN_ANALYTICS_TEST_DATABASE_URL must name a generated disposable migrated PostgreSQL database");
-    return;
-  }
+  if (!databaseUrl) throw new Error("ADMIN_ANALYTICS_TEST_DATABASE_URL must name a generated disposable migrated PostgreSQL database");
   const pool = new Pool({ connectionString: databaseUrl });
   const db = drizzle({ client: pool, schema });
   const repository = createAdminAnalyticsRepository(db);

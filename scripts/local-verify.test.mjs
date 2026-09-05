@@ -109,7 +109,7 @@ test("Phase 12 data selection seals analytics contracts, generated database/brow
 
   const source = await readFile(new URL("./local-verify.mjs", import.meta.url), "utf8");
   assert.match(source, /phase12Data && !options\.skipBuild[\s\S]*typecheck workspace for Phase 12 data[\s\S]*build workspace for Phase 12 data[\s\S]*createCanonicalRuntimeAuthority/);
-  assert.match(source, /async function runPhase12DataChecks[\s\S]*ADMIN_ANALYTICS_TEST_DATABASE_URL[\s\S]*runGeneratedMainBrowserFixtureSelection[\s\S]*PHASE12_DATA_RESULT_PREFIX/);
+  assert.match(source, /async function runPhase12DataChecks[\s\S]*phase12Selection\("data"\)[\s\S]*runGeneratedMainBrowserFixtureSelection[\s\S]*PHASE12_DATA_RESULT_PREFIX/);
   assert.match(source, /Phase 12 data accepts only the sealed complete invocation/);
 });
 

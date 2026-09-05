@@ -51,6 +51,8 @@ export const PHASE6_DATA_RESULT_FORMAT = "blog-x-phase6-data-result";
 const PHASE6_DATA_RESULT_PREFIX = "BLOG X PHASE6 DATA RESULT ";
 export const PHASE11_DATA_RESULT_FORMAT = "blog-x-phase11-data-result";
 const PHASE11_DATA_RESULT_PREFIX = "BLOG X PHASE11 DATA RESULT ";
+export const PHASE12_DATA_RESULT_FORMAT = "blog-x-phase12-data-result";
+const PHASE12_DATA_RESULT_PREFIX = "BLOG X PHASE12 DATA RESULT ";
 export const GENERATED_INTEGRATION_RESULT_FORMAT = "blog-x-generated-integration-result";
 const GENERATED_INTEGRATION_RESULT_PREFIX = "BLOG X GENERATED INTEGRATION RESULT ";
 const GENERATED_INTEGRATION_CLEANUP_PREFIX = "BLOG X GENERATED INTEGRATION CLEANUP ACK ";
@@ -69,10 +71,10 @@ export function canonicalIntegrationSelection() {
     .sort((left, right) => left.path.localeCompare(right.path));
   const paths = entries.map((entry) => entry.path);
   const groups = frozenGroups(entries);
-  const expectedOwners = { database: 11, "backup-restore": 1, media: 1, "main-browser": 14, "error-browser": 1, "restore-browser": 1 };
-  if (entries.length !== 29 || new Set(paths).size !== entries.length
-    || paths.filter((path) => path.startsWith("apps/api/")).length !== 13
-    || paths.filter((path) => path.startsWith("apps/web/e2e/")).length !== 16
+  const expectedOwners = { database: 12, "backup-restore": 1, media: 1, "main-browser": 15, "error-browser": 1, "restore-browser": 1 };
+  if (entries.length !== 31 || new Set(paths).size !== entries.length
+    || paths.filter((path) => path.startsWith("apps/api/")).length !== 14
+    || paths.filter((path) => path.startsWith("apps/web/e2e/")).length !== 17
     || Object.entries(expectedOwners).some(([owner, count]) => groups[owner]?.length !== count)
     || Object.keys(groups).some((owner) => !Object.hasOwn(expectedOwners, owner))) {
     throw new Error("canonical integration inventory ownership is incomplete or duplicated");
@@ -197,7 +199,7 @@ export function migratedMainBrowserSelection() {
 
 function canonicalMainBrowserSelection() {
   const paths = canonicalIntegrationSelection().groups["main-browser"];
-  if (!paths || paths.length !== 14 || new Set(paths).size !== paths.length) throw new Error("canonical main-browser ownership is invalid");
+  if (!paths || paths.length !== 15 || new Set(paths).size !== paths.length) throw new Error("canonical main-browser ownership is invalid");
   return [...paths];
 }
 
@@ -370,6 +372,28 @@ export function phase11Selection(mode) {
     restoreSuite: "apps/api/test/backup-restore.test.ts",
     browserSuites: Object.freeze(browserSuites),
     nodeSuites: ["scripts/local-verify.test.mjs"],
+  });
+}
+
+export function phase12Selection(mode) {
+  if (mode !== "data") throw new Error(`Phase 12 selection is not recognized: ${mode}`);
+  const browserSuites = ["apps/web/e2e/admin-analytics.spec.ts"];
+  const inventoryByPath = new Map(PACKAGE_TEST_INVENTORY.map((entry) => [entry.path, entry]));
+  for (const path of browserSuites) {
+    const entry = inventoryByPath.get(path);
+    if (!entry || entry.kind !== "web-e2e" || entry.scope !== "integration" || entry.fixtureOwner !== "main-browser") {
+      throw new Error(`Phase 12 browser suite ownership is invalid: ${path}`);
+    }
+  }
+  return Object.freeze({
+    databaseSuites: Object.freeze([["ADMIN_ANALYTICS_TEST_DATABASE_URL", "apps/api/test/admin-analytics.test.ts"]]),
+    nodeSuites: Object.freeze([
+      "packages/contracts/src/analytics.test.ts",
+      "apps/web/app/lib/admin-analytics.test.ts",
+      "scripts/local-verify.test.mjs",
+    ]),
+    browserSuites: Object.freeze(browserSuites),
+    boundarySuite: "scripts/check-boundaries.mjs",
   });
 }
 
@@ -584,6 +608,30 @@ export function createPhase11DataResult(suiteRecords, webRuntimeAuthority) {
   const counts = sumCounts(suites.map((suite) => suite.counts));
   assertPassOnlyCounts(counts, "Phase 11 data result");
   return { format: PHASE11_DATA_RESULT_FORMAT, version: 2, suites, counts, webRuntimeAuthority: strictWebRuntimeAuthority(webRuntimeAuthority), releaseState: "BLOCKED" };
+}
+
+export function createPhase12DataResult(suiteRecords, webRuntimeAuthority) {
+  if (!Array.isArray(suiteRecords)) throw new Error("Phase 12 data result requires exact suite records");
+  const selection = phase12Selection("data");
+  const expected = [
+    ...selection.databaseSuites.map(([, id]) => ({ id, kind: "database" })),
+    ...selection.nodeSuites.map((id) => ({ id, kind: "node" })),
+    ...selection.browserSuites.map((id) => ({ id, kind: "browser" })),
+    { id: selection.boundarySuite, kind: "boundary" },
+  ];
+  if (suiteRecords.length !== expected.length) throw new Error("Phase 12 data result exact suite selection is missing, duplicate, or contains extras");
+  const suites = suiteRecords.map((record) => {
+    if (!record || typeof record !== "object" || Array.isArray(record)
+      || Object.keys(record).sort().join(",") !== "counts,id,kind"
+      || typeof record.id !== "string" || typeof record.kind !== "string") throw new Error("Phase 12 data result suite schema is invalid");
+    assertPassOnlyCounts(record.counts, `Phase 12 suite ${record.id}`);
+    return { id: record.id, kind: record.kind, counts: { ...record.counts } };
+  });
+  const byId = new Map(suites.map((suite) => [suite.id, suite]));
+  if (byId.size !== suites.length || expected.some(({ id, kind }) => byId.get(id)?.kind !== kind)) throw new Error("Phase 12 data result suite selection is not exact");
+  const counts = sumCounts(suites.map((suite) => suite.counts));
+  assertPassOnlyCounts(counts, "Phase 12 data result");
+  return { format: PHASE12_DATA_RESULT_FORMAT, version: 1, suites, counts, webRuntimeAuthority: strictWebRuntimeAuthority(webRuntimeAuthority), releaseState: "BLOCKED" };
 }
 
 function parsePhase6DataResultLine(output) {
@@ -815,7 +863,7 @@ async function cleanupCanonicalRuntimeAuthority(context) {
 }
 
 async function startPhase11Ingress(context) {
-  if (!context.phase11Data || context.phase11Ingress) return;
+  if ((!context.phase11Data && !context.phase12Data) || context.phase11Ingress) return;
   if (!context.ingressAuthSecret || context.runtimeWebPort === context.webPort) throw new Error("Phase 11 ingress fixture authority is invalid");
   const scrubbed = new Set(["forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-port", "x-forwarded-proto", "x-real-ip", "x-blog-x-client-ip", "x-blog-x-ingress-auth"]);
   const ingress = createHttpServer((incoming, outgoing) => {
@@ -901,7 +949,7 @@ async function inspectSchema(context) {
 }
 
 async function runMigration(context, label) {
-  const currentAuthority = context.phase6Data || context.phase11Data || context.canonicalIntegration;
+  const currentAuthority = context.phase6Data || context.phase11Data || context.phase12Data || context.canonicalIntegration;
   return currentAuthority
     ? compose(context, label, "run", "--rm", "-T",
       "--volume", `${resolve(root, "apps/api")}:/workspace/apps/api:ro`,
@@ -1083,7 +1131,7 @@ async function runDatabaseSuite(context, variable, file) {
     "-e", `DATABASE_URL=${context.databaseUrl}`,
     "-e", `${variable}=${context.databaseUrl}`,
   ];
-  const result = context.phase6Data || context.phase11Data || context.canonicalIntegration
+  const result = context.phase6Data || context.phase11Data || context.phase12Data || context.canonicalIntegration
     ? await compose(context, `run ${file}`, "run", "--rm", "-T",
         "--volume", `${resolve(root, "apps/api")}:/workspace/apps/api:ro`,
         "--volume", `${resolve(root, "packages/contracts")}:/workspace/packages/contracts:ro`,
@@ -1555,7 +1603,34 @@ async function runPhase11DataChecks(context) {
   return record;
 }
 
+async function runPhase12DataChecks(context) {
+  const selection = phase12Selection("data");
+  if (!context.webRuntimeAuthority) throw new Error("Phase 12 requires current Web runtime authority before data checks");
+  await resetAcceptanceData(context, "clear Phase 12 analytics acceptance fixtures");
+  const suites = [];
+  for (const [variable, file] of selection.databaseSuites) {
+    suites.push({ id: file, kind: "database", counts: await runDatabaseSuite(context, variable, file) });
+  }
+  for (const file of selection.nodeSuites) {
+    const result = await runStep(context, `run ${file}`, "node", semanticTestCommand(file), { env: process.env });
+    suites.push({ id: file, kind: "node", counts: assertSemanticTap(result.combined) });
+  }
+  const browser = await runGeneratedMainBrowserFixtureSelection(context, {}, selection.browserSuites);
+  for (const suite of browser.suites) suites.push({ id: suite.path, kind: "browser", counts: suite.counts });
+  await inspectSchema(context);
+  const boundary = await runStep(context, `run ${selection.boundarySuite}`, "corepack", ["pnpm", "check:boundaries"], { env: process.env });
+  suites.push({ id: selection.boundarySuite, kind: "boundary", counts: parseBoundaryResult(boundary.combined) });
+  const blocked = await runStep(context, "confirm canonical production release remains BLOCKED", "node",
+    ["scripts/release-gate.mjs", "--evidence=ops/release-evidence.blocked.json", "--expect-blocked"], { env: process.env });
+  if (!blocked.stdout.startsWith("RELEASE BLOCKED ")) throw new Error("canonical release evidence did not remain explicitly BLOCKED");
+  const record = createPhase12DataResult(suites, context.webRuntimeAuthority);
+  process.stdout.write(`${PHASE12_DATA_RESULT_PREFIX}${JSON.stringify(record)}\n`);
+  process.stdout.write("[local-verify] LOCAL PHASE 12 DATA PASS; RELEASE BLOCKED\n");
+  return record;
+}
+
 const canonicalDatabaseEnvironment = Object.freeze({
+  "apps/api/test/admin-analytics.test.ts": "ADMIN_ANALYTICS_TEST_DATABASE_URL",
   "apps/api/test/article-draft-preview.test.ts": "ARTICLE_TEST_DATABASE_URL",
   "apps/api/test/article-lifecycle.test.ts": "LIFECYCLE_TEST_DATABASE_URL",
   "apps/api/test/auth-session.test.ts": "AUTH_TEST_DATABASE_URL",
@@ -1813,8 +1888,8 @@ async function runSingle(options) {
   allocatedGeneratedNamespaces.add(namespace);
   const database = validateDatabaseName(`blog_x_${namespace.slice("blogxverify_".length)}`, namespace);
   const webPort = options.webPort ?? await freePort();
-  const runtimeWebPort = options.phase11Data ? await freePort() : webPort;
-  const phaseLabel = options.canonicalIntegration ? "integration-" : options.lifecycleOnly ? "lifecycle-" : options.phase11Data ? "phase11-" : options.phase6Data ? "phase6-" : options.phase5Media || options.phase5Full ? "phase5-" : options.phase4Mode ? "phase4-" : options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
+  const runtimeWebPort = options.phase11Data || options.phase12Data ? await freePort() : webPort;
+  const phaseLabel = options.canonicalIntegration ? "integration-" : options.lifecycleOnly ? "lifecycle-" : options.phase12Data ? "phase12-" : options.phase11Data ? "phase11-" : options.phase6Data ? "phase6-" : options.phase5Media || options.phase5Full ? "phase5-" : options.phase4Mode ? "phase4-" : options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
   const runId = namespace.replace("blogxverify_", phaseLabel);
   const publicOrigin = validateLoopbackHttpOrigin(`http://127.0.0.1:${webPort}`);
   const context = {
@@ -1835,13 +1910,14 @@ async function runSingle(options) {
     children: [],
     implementationRevision: options.implementationRevision,
     phase11Data: options.phase11Data,
+    phase12Data: options.phase12Data,
     phase6Data: options.phase6Data,
     canonicalIntegration: options.canonicalIntegration,
     internalRun: options.internalRun,
   };
   allocatedGeneratedAuthorities.set(namespace, context);
   context.secrets.push(context.password, context.databaseUrl);
-  if (options.phase11Data) {
+  if (options.phase11Data || options.phase12Data) {
     context.ingressAuthSecret = randomBytes(32).toString("base64url");
     context.secrets.push(context.ingressAuthSecret);
   }
@@ -1857,6 +1933,14 @@ async function runSingle(options) {
     if (options.phase6Data && !options.skipBuild) {
       await preflightOfflinePrerequisites(context);
       process.stdout.write("[local-verify] use prevalidated verifier dependency images with read-only committed integration sources\n");
+    }
+    else if (options.phase12Data && !options.skipBuild) {
+      await preflightOfflinePrerequisites(context);
+      process.stdout.write("[local-verify] build and seal current Phase 12 Web runtime from offline workspace authority\n");
+      await runStep(context, "typecheck workspace for Phase 12 data", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
+      await runStep(context, "build workspace for Phase 12 data", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin, INTERNAL_API_ORIGIN: context.internalApiOrigin } });
+      await createCanonicalRuntimeAuthority(context);
+      context.phase12Prebuilt = true;
     }
     else if (options.phase11Data && !options.skipBuild) {
       await preflightOfflinePrerequisites(context);
@@ -1880,7 +1964,7 @@ async function runSingle(options) {
     }
     else if ((options.phase4Mode === "full" || options.phase5Media) && !options.skipBuild) await preflightOfflinePrerequisites(context);
     else if (["operations", "restore"].includes(options.phase4Mode) && !options.skipBuild) await preflightCachedImages(context);
-    if (!options.skipBuild && !options.phase5Full && !options.phase6Data && !options.phase11Data && !options.canonicalIntegration) await compose(context, "build local API and Web images", "build", "api", "web");
+    if (!options.skipBuild && !options.phase5Full && !options.phase6Data && !options.phase11Data && !options.phase12Data && !options.canonicalIntegration) await compose(context, "build local API and Web images", "build", "api", "web");
     await compose(context, "start isolated PostgreSQL", "up", "-d", "--wait", "postgres");
     if (options.interruptionCheck && !options.canonicalIntegration) await interruptionCheck(context);
     else {
@@ -1892,7 +1976,7 @@ async function runSingle(options) {
     await runStep(context, "confirm exact generated media volume", "docker", ["volume", "inspect", context.mediaVolume]);
     await startPhase11Ingress(context);
     await waitForHttp(context.webOrigin);
-    const currentSchemaAuthority = options.phase6Data || options.phase11Data || options.canonicalIntegration;
+    const currentSchemaAuthority = options.phase6Data || options.phase11Data || options.phase12Data || options.canonicalIntegration;
     await compose(context, "verify active schema", ...(currentSchemaAuthority
       ? ["run", "--rm", "-T", "--volume", `${resolve(root, "apps/api")}:/workspace/apps/api:ro`, "--volume", `${resolve(root, "packages/contracts")}:/workspace/packages/contracts:ro`, "-e", `DATABASE_URL=${context.databaseUrl}`]
       : ["exec", "-T", "-e", `DATABASE_URL=${context.databaseUrl}`]),
@@ -1919,6 +2003,9 @@ async function runSingle(options) {
     }
     else if (options.phase11Data) {
       await runPhase11DataChecks(context);
+    }
+    else if (options.phase12Data) {
+      await runPhase12DataChecks(context);
     }
     else if (options.phase4Mode === "security") {
       await runPhase4SecurityChecks(context);
@@ -2246,10 +2333,11 @@ async function main() {
   const phase5Full = flags.has("--phase5-full");
   const phase6Data = flags.has("--phase6-data");
   const phase11Data = flags.has("--phase11-data");
+  const phase12Data = flags.has("--phase12-data");
   const canonicalIntegration = flags.has("--canonical-integration");
   const lifecycleOnly = flags.has("--lifecycle-only");
-  if (phase3Modes.length + phase4Modes.length + Number(phase5Media) + Number(phase5Full) + Number(phase6Data) + Number(phase11Data) + Number(canonicalIntegration) + Number(lifecycleOnly) > 1) {
-    throw new Error("choose at most one Phase 3, Phase 4, Phase 5, Phase 6, Phase 11, canonical integration, or lifecycle selection");
+  if (phase3Modes.length + phase4Modes.length + Number(phase5Media) + Number(phase5Full) + Number(phase6Data) + Number(phase11Data) + Number(phase12Data) + Number(canonicalIntegration) + Number(lifecycleOnly) > 1) {
+    throw new Error("choose at most one Phase 3, Phase 4, Phase 5, Phase 6, Phase 11, Phase 12, canonical integration, or lifecycle selection");
   }
   const options = {
     namespace: optionValue("namespace"),
@@ -2261,11 +2349,12 @@ async function main() {
     phase5Full,
     phase6Data,
     phase11Data,
+    phase12Data,
     canonicalIntegration,
     lifecycleOnly,
     interruptAfterReady: flags.has("--interrupt-after-ready"),
     internalRun: flags.has("--internal-run"),
-    fullPhase: !phase4Modes.length && !phase5Media && !phase5Full && !phase6Data && !phase11Data && !canonicalIntegration && !lifecycleOnly && (flags.has("--full-phase") || flags.has("--phase2-full") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run"))),
+    fullPhase: !phase4Modes.length && !phase5Media && !phase5Full && !phase6Data && !phase11Data && !phase12Data && !canonicalIntegration && !lifecycleOnly && (flags.has("--full-phase") || flags.has("--phase2-full") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run"))),
     interruptionCheck: flags.has("--interruption-check"),
     parallelCheck: flags.has("--parallel-check"),
     skipBuild: flags.has("--skip-build"),
@@ -2275,6 +2364,10 @@ async function main() {
   const phase11Arguments = argumentsList.filter((argument) => argument !== "--");
   if (phase11Data && (phase11Arguments.length !== 1 || !flags.has("--phase11-data") || options.internalRun || options.namespace !== undefined || options.webPort !== undefined || options.skipBuild)) {
     throw new Error("Phase 11 data accepts only the sealed complete invocation");
+  }
+  const phase12Arguments = argumentsList.filter((argument) => argument !== "--");
+  if (phase12Data && (phase12Arguments.length !== 1 || !flags.has("--phase12-data") || options.internalRun || options.namespace !== undefined || options.webPort !== undefined || options.skipBuild)) {
+    throw new Error("Phase 12 data accepts only the sealed complete invocation");
   }
   if (canonicalIntegration) {
     const expected = ["--canonical-integration", "--interruption-check", "--parallel-check"];
