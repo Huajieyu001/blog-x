@@ -64,6 +64,13 @@
       "when": 1788549919283,
       "tag": "0008_scheduled-publishing",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788577480607,
+      "tag": "0009_article_daily_views",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { boolean, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, date, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 export const administrators = pgTable("administrators", {
@@ -92,6 +92,22 @@ export const articles = pgTable("articles", {
   check("articles_legacy_media_review_check", sql`${table.legacyMediaReview} in ('pending', 'clear', 'review_required')`),
   check("articles_schedule_pair_check", sql`(${table.scheduledAt} is null) = (${table.scheduledByAdministratorId} is null)`),
   check("articles_schedule_draft_check", sql`${table.scheduledAt} is null or (${table.status} = 'draft' and ${table.deletedAt} is null)`),
+]);
+
+export const articleDailyViews = pgTable("article_daily_views", {
+  articleId: uuid("article_id").notNull().references(() => articles.id, { onDelete: "restrict" }),
+  day: date("day").notNull(),
+  totalPv: integer("total_pv").notNull().default(0),
+  directPv: integer("direct_pv").notNull().default(0),
+  internalPv: integer("internal_pv").notNull().default(0),
+  searchPv: integer("search_pv").notNull().default(0),
+  socialPv: integer("social_pv").notNull().default(0),
+  externalPv: integer("external_pv").notNull().default(0),
+}, (table) => [
+  primaryKey({ columns: [table.articleId, table.day], name: "article_daily_views_pkey" }),
+  index("article_daily_views_day_index").on(table.day, table.articleId),
+  check("article_daily_views_counters_nonnegative_check", sql`${table.totalPv} >= 0 and ${table.directPv} >= 0 and ${table.internalPv} >= 0 and ${table.searchPv} >= 0 and ${table.socialPv} >= 0 and ${table.externalPv} >= 0`),
+  check("article_daily_views_total_matches_sources_check", sql`${table.totalPv} = ${table.directPv} + ${table.internalPv} + ${table.searchPv} + ${table.socialPv} + ${table.externalPv}`),
 ]);
 
 export const categories = pgTable("categories", {

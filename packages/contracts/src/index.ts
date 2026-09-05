@@ -8,3 +8,4 @@ export * from "./pages";
 export * from "./media";
 export * from "./distribution";
 export * from "./audit";
+export * from "./analytics";

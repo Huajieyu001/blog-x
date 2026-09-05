@@ -10,7 +10,7 @@ import cookie from "@fastify/cookie";
 import { drizzle } from "drizzle-orm/node-postgres";
 import Fastify, { type FastifyInstance, type FastifyLoggerOptions, type FastifyPluginAsync } from "fastify";
 import { Pool } from "pg";
-import { administrators, articleTags, articles, auditEvents, categories, media, sessions, sitePages, tags } from "./db/schema.js";
+import { administrators, articleDailyViews, articleTags, articles, auditEvents, categories, media, sessions, sitePages, tags } from "./db/schema.js";
 import { seedAdministrator } from "./db/seed-admin.js";
 import { authRoutes } from "./routes/auth.js";
 import { createSessionService } from "./auth/sessions.js";
@@ -41,8 +41,10 @@ import { writePortableExport } from "./ops/portable-export.js";
 import { classifyRetainedLegacyMedia } from "./ops/legacy-media-migration.js";
 import { appendAuditEvent, createAuditRepository } from "./audit/audit-repository.js";
 import { adminAuditRoutes } from "./routes/admin-audit.js";
+import { createViewAggregationRepository, type ViewAggregationRepository } from "./content/view-aggregation-repository.js";
+import { publicViewRoutes } from "./routes/public-views.js";
 
-const databaseSchema = { administrators, articles, sessions, categories, tags, articleTags, sitePages, media, auditEvents };
+const databaseSchema = { administrators, articles, articleDailyViews, sessions, categories, tags, articleTags, sitePages, media, auditEvents };
 
 type PublishDueArguments = { ok: true; limit: number } | { ok: false; code: "invalid_arguments" };
 
@@ -114,6 +116,7 @@ type BuildAppOptions = {
   resources?: RuntimeResources;
   rateLimits?: RateLimitConfig;
   rateStore?: BoundedRateLimitStore;
+  viewAggregationRepository?: ViewAggregationRepository;
 };
 
 export async function buildApp(options: BuildAppOptions = {}) {
@@ -182,6 +185,10 @@ export async function buildApp(options: BuildAppOptions = {}) {
   });
   await app.register(publicPostRoutes, {
     publicRepository: createPublicRepository(db),
+  });
+  await app.register(publicViewRoutes, {
+    publicOrigin,
+    viewAggregationRepository: options.viewAggregationRepository ?? createViewAggregationRepository(db),
   });
   const taxonomyRepository = createTaxonomyRepository(db);
   await app.register(taxonomyRoutes, { taxonomyService: createTaxonomyService(taxonomyRepository), sessionAuth: app.sessionAuth, publicOrigin, mutationGuard });
@@ -268,12 +275,14 @@ async function seed(db: RuntimeResources["db"], administrator: { username: strin
   await seedAdministrator(db, administrator);
 }
 async function schemaVerify(pool: Pool) {
-  const result = await pool.query("select tablename from pg_tables where schemaname = 'public' and tablename = any($1)", [["administrators", "sessions", "articles", "categories", "tags", "article_tags", "site_pages", "media", "audit_events"]]);
-  if (result.rowCount !== 9) throw new Error("audit schema is not active; run pnpm db:migrate first");
+  const result = await pool.query("select tablename from pg_tables where schemaname = 'public' and tablename = any($1)", [["administrators", "sessions", "articles", "article_daily_views", "categories", "tags", "article_tags", "site_pages", "media", "audit_events"]]);
+  if (result.rowCount !== 10) throw new Error("view aggregate schema is not active; run pnpm db:migrate first");
   const ledger = await pool.query("select migration_count from blog_x_schema_ledger where scope = 'phase1'");
-  if (ledger.rowCount !== 1 || Number(ledger.rows[0]?.migration_count) !== 9) throw new Error("audit migration ledger is incomplete; run pnpm db:migrate first");
-  const indices = await pool.query("select indexname from pg_indexes where schemaname = 'public' and indexname = any($1)", [["taxonomy_category_slug_unique", "taxonomy_tag_slug_unique", "article_tags_article_tag_unique", "articles_category_public_index", "site_pages_key_unique", "media_source_key_unique", "media_derivative_key_unique", "articles_cover_media_index", "audit_events_newest_index", "articles_schedule_due_index"]]);
-  if (indices.rowCount !== 10) throw new Error("required indexes are incomplete; run pnpm db:migrate first");
+  if (ledger.rowCount !== 1 || Number(ledger.rows[0]?.migration_count) !== 10) throw new Error("view aggregate migration ledger is incomplete; run pnpm db:migrate first");
+  const indices = await pool.query("select indexname from pg_indexes where schemaname = 'public' and indexname = any($1)", [["taxonomy_category_slug_unique", "taxonomy_tag_slug_unique", "article_tags_article_tag_unique", "articles_category_public_index", "site_pages_key_unique", "media_source_key_unique", "media_derivative_key_unique", "articles_cover_media_index", "audit_events_newest_index", "articles_schedule_due_index", "article_daily_views_day_index"]]);
+  if (indices.rowCount !== 11) throw new Error("required indexes are incomplete; run pnpm db:migrate first");
+  const viewConstraints = await pool.query("select conname from pg_constraint where conrelid = 'article_daily_views'::regclass and conname = any($1)", [["article_daily_views_pkey", "article_daily_views_article_id_articles_id_fk", "article_daily_views_counters_nonnegative_check", "article_daily_views_total_matches_sources_check"]]);
+  if (viewConstraints.rowCount !== 4) throw new Error("view aggregate constraints are incomplete; run pnpm db:migrate first");
   const constraints = await pool.query("select conname from pg_constraint where conrelid = 'site_pages'::regclass and conname = any($1)", [["site_pages_key_about_check", "site_pages_status_check"]]);
   if (constraints.rowCount !== 2) throw new Error("site_pages singleton constraints are incomplete; run pnpm db:migrate first");
   const auditConstraints = await pool.query("select conname from pg_constraint where conrelid = 'audit_events'::regclass and conname = any($1)", [["audit_events_event_check", "audit_events_target_check", "audit_events_metadata_check"]]);
