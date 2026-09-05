@@ -26,7 +26,7 @@ export function createAdminAnalyticsRepository(db: Database) {
         WITH bounds AS (
           SELECT
             (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date AS to_day,
-            ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date - ${range - 1})::date AS from_day
+            ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date - ${range - 1}::integer)::date AS from_day
         ), eligible AS (
           SELECT views."article_id", views."day", views."total_pv", views."direct_pv", views."internal_pv", views."search_pv", views."social_pv", views."external_pv", articles."title"
           FROM "article_daily_views" AS views

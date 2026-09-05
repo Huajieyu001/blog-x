@@ -111,6 +111,7 @@ test("Phase 12 data selection seals analytics contracts, generated database/brow
   const source = await readFile(new URL("./local-verify.mjs", import.meta.url), "utf8");
   assert.match(source, /phase12Data && !options\.skipBuild[\s\S]*typecheck workspace for Phase 12 data[\s\S]*build workspace for Phase 12 data[\s\S]*createCanonicalRuntimeAuthority/);
   assert.match(source, /async function runPhase12DataChecks[\s\S]*phase12Selection\("data"\)[\s\S]*runGeneratedMainBrowserFixtureSelection[\s\S]*PHASE12_DATA_RESULT_PREFIX/);
+  assert.match(source, /const \[commandName, \.\.\.args\] = semanticTestCommand\(file\);[\s\S]*runStep\(context, `run \$\{file\}`, commandName, args/);
   assert.match(source, /Phase 12 data accepts only the sealed complete invocation/);
   for (const args of [["--phase12-data=extra"], ["--phase12-data", "--"]]) {
     const rejected = spawnSync(process.execPath, ["scripts/local-verify.mjs", ...args], { cwd: process.cwd(), encoding: "utf8" });
@@ -163,6 +164,8 @@ test("generated canonical Web verifier keeps private static trust while publishi
   const authority = source.slice(source.indexOf("async function createCanonicalRuntimeAuthority"), source.indexOf("async function hashRuntimeArtifact"));
   const apiOverride = authority.slice(authority.indexOf('"  api:"'), authority.indexOf("...(includeWeb ? ["));
   assert.match(authority, /ports: !override[\s\S]*127\.0\.0\.1:\$\{context\.runtimeWebPort \?\? context\.webPort\}:3100/);
+  assert.match(source, /if \(options\.lifecycleOnly \|\| options\.phase11Data \|\| options\.phase12Data \|\| options\.canonicalIntegration\) await inspectGeneratedWebVerifierEdge\(context\)/);
+  assert.match(source, /options\.lifecycleOnly[\s\S]*createCanonicalRuntimeAuthority\(context, \{ includeWeb: false, publishWeb: true \}\)/);
   assert.match(authority, /networks:[\s\S]*private:[\s\S]*ipv4_address: 172\.30\.0\.3[\s\S]*verifier-edge: \{\}[\s\S]*verifier-edge:[\s\S]*internal: false/);
   assert.doesNotMatch(apiOverride, /verifier-edge/);
   assert.match(source, /async function inspectGeneratedWebVerifierEdge[\s\S]*\{\{\.Name\}\} \{\{\.State\}\} \{\{\.Ports\}\}[\s\S]*127\.0\.0\.1:\$\{port\}/);

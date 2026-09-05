@@ -787,7 +787,8 @@ function composeArgs(context, ...args) {
   return ["-p", context.namespace, "-f", composeFile, ...(context.composeOverride ? ["-f", context.composeOverride] : []), ...args];
 }
 
-async function createCanonicalRuntimeAuthority(context, { includeWeb = true } = {}) {
+async function createCanonicalRuntimeAuthority(context, { includeWeb = true, publishWeb = includeWeb } = {}) {
+  if (includeWeb && !publishWeb) throw new Error("canonical Web runtime cannot be mounted without a verifier edge");
   const runtimeRoot = await mkdtemp(resolve(root, "apps/.canonical-runtime-"));
   context.canonicalRuntimeRoot = runtimeRoot;
   const nextRoot = resolve(runtimeRoot, ".next");
@@ -810,21 +811,23 @@ async function createCanonicalRuntimeAuthority(context, { includeWeb = true } = 
     "    volumes:",
     `      - ${JSON.stringify(`${resolve(root, "apps/api")}:/workspace/apps/api:ro`)}`,
     `      - ${JSON.stringify(`${resolve(root, "packages/contracts")}:/workspace/packages/contracts:ro`)}`,
-    ...(includeWeb ? [
+    ...(publishWeb ? [
       "  web:",
       "    environment:",
       "      NODE_ENV: production",
       "    ports: !override",
       `      - ${JSON.stringify(`127.0.0.1:${context.runtimeWebPort ?? context.webPort}:3100`)}`,
-      "    volumes:",
-      `      - ${JSON.stringify(`${nextRoot}:/workspace/apps/web/.next:ro`)}`,
-      `      - ${JSON.stringify(`${resolve(runtimeRoot, "server.mjs")}:/workspace/apps/web/server.mjs:ro`)}`,
+      ...(includeWeb ? [
+        "    volumes:",
+        `      - ${JSON.stringify(`${nextRoot}:/workspace/apps/web/.next:ro`)}`,
+        `      - ${JSON.stringify(`${resolve(runtimeRoot, "server.mjs")}:/workspace/apps/web/server.mjs:ro`)}`,
+      ] : []),
       "    networks:",
       "      private:",
       "        ipv4_address: 172.30.0.3",
       "      verifier-edge: {}",
     ] : []),
-    ...(includeWeb ? [
+    ...(publishWeb ? [
       "networks:",
       "  verifier-edge:",
       "    internal: false",
@@ -1649,7 +1652,8 @@ async function runPhase12DataChecks(context) {
     suites.push({ id: file, kind: "database", counts: await runDatabaseSuite(context, variable, file) });
   }
   for (const file of selection.nodeSuites) {
-    const result = await runStep(context, `run ${file}`, "node", semanticTestCommand(file), { env: process.env });
+    const [commandName, ...args] = semanticTestCommand(file);
+    const result = await runStep(context, `run ${file}`, commandName, args, { env: process.env });
     suites.push({ id: file, kind: "node", counts: assertSemanticTap(result.combined) });
   }
   const browser = await runGeneratedMainBrowserFixtureSelection(context, {}, selection.browserSuites);
@@ -1966,7 +1970,7 @@ async function runSingle(options) {
   try {
     // Lifecycle children use sealed cached images but must exercise the current
     // migration and schema verifier sources, just like the canonical parent.
-    if (options.lifecycleOnly) await createCanonicalRuntimeAuthority(context, { includeWeb: false });
+    if (options.lifecycleOnly) await createCanonicalRuntimeAuthority(context, { includeWeb: false, publishWeb: true });
     if (options.phase6Data && !options.skipBuild) {
       await preflightOfflinePrerequisites(context);
       process.stdout.write("[local-verify] use prevalidated verifier dependency images with read-only committed integration sources\n");
@@ -2010,7 +2014,7 @@ async function runSingle(options) {
     }
     if (!options.interruptionCheck) await migrationRetryPreservation(context);
     await compose(context, "start isolated API and Web", "up", "-d", "--wait", "api", "web");
-    await inspectGeneratedWebVerifierEdge(context);
+    if (options.lifecycleOnly || options.phase11Data || options.phase12Data || options.canonicalIntegration) await inspectGeneratedWebVerifierEdge(context);
     await runStep(context, "confirm exact generated media volume", "docker", ["volume", "inspect", context.mediaVolume]);
     await startPhase11Ingress(context);
     await waitForHttp(context.webOrigin);

@@ -86,6 +86,8 @@ test("analytics has no browser-visible internal or third-party requests and resp
   await login(page);
   await page.goto(`${webOrigin}/admin/analytics?range=30`);
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
+  await expect(page.getByRole("heading", { name: "访问统计" })).toBeVisible();
+  await expect(page.locator("main")).toHaveCount(1);
   await expect(page.locator("main")).toBeVisible();
   expect([...origins]).toEqual([webOrigin]);
 });
