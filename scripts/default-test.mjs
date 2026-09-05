@@ -18,6 +18,7 @@ const child = (id, files) => Object.freeze({
 
 export const DEFAULT_TEST_CHILDREN = Object.freeze([
   child("contracts", [
+    "packages/contracts/src/analytics.test.ts",
     "packages/contracts/src/public-discovery.test.ts",
     "packages/contracts/src/tracer.test.ts",
   ]),
@@ -29,6 +30,7 @@ export const DEFAULT_TEST_CHILDREN = Object.freeze([
   child("web", [
     "apps/web/app/admin/_components/article-actions-schedule.test.ts",
     "apps/web/app/admin/_components/article-editor-recovery.test.ts",
+    "apps/web/app/lib/admin-analytics.test.ts",
     "apps/web/app/lib/search-discovery.test.ts",
     "apps/web/app/lib/site-metadata.test.ts",
     "apps/web/lib/search-encoding.test.ts",

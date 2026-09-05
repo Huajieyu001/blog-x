@@ -6,6 +6,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const entryKeys = "fixtureOwner,kind,path,scope";
 
 const entries = [
+  { path: "packages/contracts/src/analytics.test.ts", kind: "contracts-unit", scope: "default", fixtureOwner: null },
   { path: "packages/contracts/src/public-discovery.test.ts", kind: "contracts-unit", scope: "default", fixtureOwner: null },
   { path: "packages/contracts/src/tracer.test.ts", kind: "contracts-unit", scope: "default", fixtureOwner: null },
   { path: "apps/api/test/markdown-renderer.test.ts", kind: "api-unit", scope: "default", fixtureOwner: null },
@@ -13,11 +14,13 @@ const entries = [
   { path: "apps/api/test/public-view-security.test.ts", kind: "api-unit", scope: "default", fixtureOwner: null },
   { path: "apps/web/app/admin/_components/article-actions-schedule.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
   { path: "apps/web/app/admin/_components/article-editor-recovery.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
+  { path: "apps/web/app/lib/admin-analytics.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
   { path: "apps/web/app/lib/search-discovery.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
   { path: "apps/web/app/lib/site-metadata.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
   { path: "apps/web/lib/search-encoding.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
   { path: "apps/web/server.test.mjs", kind: "web-unit", scope: "default", fixtureOwner: null },
 
+  { path: "apps/api/test/admin-analytics.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
   { path: "apps/api/test/article-draft-preview.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
   { path: "apps/api/test/article-lifecycle.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
   { path: "apps/api/test/auth-session.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
@@ -33,6 +36,7 @@ const entries = [
   { path: "apps/api/test/taxonomy.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
 
   { path: "apps/web/e2e/about-archive.spec.ts", kind: "web-e2e", scope: "integration", fixtureOwner: "main-browser" },
+  { path: "apps/web/e2e/admin-analytics.spec.ts", kind: "web-e2e", scope: "integration", fixtureOwner: "main-browser" },
   { path: "apps/web/e2e/article-lifecycle.spec.ts", kind: "web-e2e", scope: "integration", fixtureOwner: "main-browser" },
   { path: "apps/web/e2e/article-toc.spec.ts", kind: "web-e2e", scope: "integration", fixtureOwner: "main-browser" },
   { path: "apps/web/e2e/auth-session.spec.ts", kind: "web-e2e", scope: "integration", fixtureOwner: "main-browser" },
