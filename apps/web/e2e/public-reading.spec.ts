@@ -74,6 +74,13 @@ test("published permalink is a safe focused technical reading surface and every 
   await page.getByRole("dialog", { name: "确认软删除文章" }).getByRole("button", { name: "确认软删除" }).click();
   await expect(page).toHaveURL(`${webOrigin}/admin`);
 
+  const beaconPath = `/api/public/articles/${encodeURIComponent(slugs.published)}/view`;
+  const beacons: Array<{ method: string; url: string; headers: Record<string, string>; body: string | null }> = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname !== beaconPath) return;
+    beacons.push({ method: request.method(), url: request.url(), headers: request.headers(), body: request.postData() });
+  });
+
   await page.setViewportSize({ width: 1280, height: 900 });
   const publishedResponse = await page.goto(`${webOrigin}/posts/${slugs.published}`);
   expect(publishedResponse?.status()).toBe(200);
@@ -98,9 +105,20 @@ test("published permalink is a safe focused technical reading surface and every 
   await expect(body.locator("pre.shiki")).toBeVisible();
   await expect(body.locator("script, style, [data-hostile], [onerror], [onclick]")).toHaveCount(0);
   await expect(body.getByText("Unsafe destination")).not.toHaveAttribute("href", /^(?:javascript|data):/i);
+  await expect.poll(() => beacons.length).toBe(1);
+  expect(beacons[0]).toMatchObject({ method: "POST", url: `${webOrigin}${beaconPath}`, body: "{}" });
+  expect(beacons[0]?.headers.cookie).toBeUndefined();
+  expect(beacons[0]?.headers.authorization).toBeUndefined();
+  expect(beacons[0]?.headers.origin).toBe(webOrigin);
+  const firstBeaconResponse = await page.waitForResponse((response) => response.url() === `${webOrigin}${beaconPath}` && response.request().method() === "POST");
+  expect(firstBeaconResponse.status()).toBe(204);
+  expect(firstBeaconResponse.headers()["cache-control"]).toBe("no-store");
+  expect(await firstBeaconResponse.text()).toBe("");
+  await expect(page.locator("[data-testid='view-beacon']")).toHaveCount(0);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${webOrigin}/posts/${slugs.published}`);
+  await expect.poll(() => beacons.length).toBe(2);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const articleBox = await page.getByRole("article").boundingBox();
   expect(articleBox).not.toBeNull();
@@ -116,5 +134,6 @@ test("published permalink is a safe focused technical reading surface and every 
     await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(0);
     unavailableBodies.push((await page.locator("body").innerText()).replace(/\s+/g, " ").trim());
   }
+  expect(beacons).toHaveLength(2);
   expect(new Set(unavailableBodies).size).toBe(1);
 });
