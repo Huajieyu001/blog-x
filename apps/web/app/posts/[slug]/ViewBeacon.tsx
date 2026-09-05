@@ -12,19 +12,16 @@ export default function ViewBeacon({ slug }: { slug: string }) {
   useEffect(() => {
     if (sentSlugs.current.has(slug)) return;
     sentSlugs.current.add(slug);
-    const controller = new AbortController();
-    let completed = false;
+    // This is intentionally fire-and-forget. React development Strict Mode
+    // replays effects; aborting the first request would suppress the replay
+    // because the slug is already retained in the ref-backed set.
     void fetch(`/api/public/articles/${encodeURIComponent(slug)}/view`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: "{}",
       credentials: "omit",
       cache: "no-store",
-      signal: controller.signal,
-    }).catch(() => undefined).finally(() => { completed = true; });
-    return () => {
-      if (!completed) controller.abort();
-    };
+    }).catch(() => undefined);
   }, [slug]);
 
   return null;

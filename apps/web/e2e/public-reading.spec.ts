@@ -93,14 +93,19 @@ test("published permalink is a safe focused technical reading surface and every 
   const beaconPath = (slug: string) => `/api/public/articles/${encodeURIComponent(slug)}/view`;
   const beaconPaths = new Map(Object.values(slugs).map((slug) => [beaconPath(slug), slug]));
   const beacons: Array<{ slug: string; method: string; url: string; headers: Record<string, string>; body: string | null }> = [];
+  const failedBeacons: string[] = [];
   page.on("request", (request) => {
     const slug = beaconPaths.get(new URL(request.url()).pathname);
     if (!slug) return;
     beacons.push({ slug, method: request.method(), url: request.url(), headers: request.headers(), body: request.postData() });
   });
+  page.on("requestfailed", (request) => {
+    if (beaconPaths.has(new URL(request.url()).pathname)) failedBeacons.push(request.url());
+  });
 
   await page.setViewportSize({ width: 1280, height: 900 });
   const firstBeaconPath = beaconPath(slugs.published);
+  const firstBeaconStarted = page.waitForRequest((request) => request.url() === `${webOrigin}${firstBeaconPath}` && request.method() === "POST");
   const firstBeaconResponsePromise = page.waitForResponse((response) => response.url() === `${webOrigin}${firstBeaconPath}` && response.request().method() === "POST");
   const publishedResponse = await page.goto(`${webOrigin}/posts/${slugs.published}`);
   expect(publishedResponse?.status()).toBe(200);
@@ -126,7 +131,21 @@ test("published permalink is a safe focused technical reading surface and every 
   await expect(body.locator("script, style, [data-hostile], [onerror], [onclick]")).toHaveCount(0);
   await expect(body.getByText("Unsafe destination")).not.toHaveAttribute("href", /^(?:javascript|data):/i);
   await expect.poll(() => beacons.length).toBe(1);
+  await firstBeaconStarted;
   expect(beacons[0]).toMatchObject({ slug: slugs.published, method: "POST", url: `${webOrigin}${firstBeaconPath}`, body: "{}" });
+  await expect(page.locator("[data-testid='view-beacon']")).toHaveCount(0);
+
+  const relatedLink = page.getByRole("link", { name: relatedTitle, exact: true });
+  await expect(relatedLink).toHaveAttribute("href", `/posts/${slugs.related}`);
+  const relatedBeaconPath = beaconPath(slugs.related);
+  const relatedBeaconResponsePromise = page.waitForResponse((response) => response.url() === `${webOrigin}${relatedBeaconPath}` && response.request().method() === "POST");
+  // Navigate as soon as the first beacon has begun. The retained slug set
+  // must prevent duplicates without aborting the in-flight anonymous event.
+  await relatedLink.click();
+  await expect(page).toHaveURL(`${webOrigin}/posts/${slugs.related}`);
+  await expect(page.getByRole("heading", { level: 1, name: relatedTitle })).toBeVisible();
+  await expect.poll(() => beacons.filter((beacon) => beacon.slug === slugs.related).length).toBe(1);
+  expect(beacons.filter((beacon) => beacon.slug === slugs.published)).toHaveLength(1);
   const firstBeaconResponse = await firstBeaconResponsePromise;
   const firstBeaconHeaders = await firstBeaconResponse.request().allHeaders();
   expect(firstBeaconHeaders.cookie).toBeUndefined();
@@ -135,19 +154,9 @@ test("published permalink is a safe focused technical reading surface and every 
   expect(firstBeaconResponse.status()).toBe(204);
   expect(firstBeaconResponse.headers()["cache-control"]).toBe("no-store");
   expect(firstBeaconResponse.headers()["content-length"]).toBeUndefined();
-  await expect(page.locator("[data-testid='view-beacon']")).toHaveCount(0);
-
-  const relatedLink = page.getByRole("link", { name: relatedTitle, exact: true });
-  await expect(relatedLink).toHaveAttribute("href", `/posts/${slugs.related}`);
-  const relatedBeaconPath = beaconPath(slugs.related);
-  const relatedBeaconResponsePromise = page.waitForResponse((response) => response.url() === `${webOrigin}${relatedBeaconPath}` && response.request().method() === "POST");
-  await relatedLink.click();
-  await expect(page).toHaveURL(`${webOrigin}/posts/${slugs.related}`);
-  await expect(page.getByRole("heading", { level: 1, name: relatedTitle })).toBeVisible();
-  await expect.poll(() => beacons.filter((beacon) => beacon.slug === slugs.related).length).toBe(1);
-  expect(beacons.filter((beacon) => beacon.slug === slugs.published)).toHaveLength(1);
   const relatedBeaconResponse = await relatedBeaconResponsePromise;
   expect(relatedBeaconResponse.status()).toBe(204);
+  expect(failedBeacons).toEqual([]);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${webOrigin}/posts/${slugs.published}`);
