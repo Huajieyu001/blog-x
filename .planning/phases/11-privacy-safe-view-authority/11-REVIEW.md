@@ -1,8 +1,8 @@
 ---
 phase: 11-privacy-safe-view-authority
-reviewed: 2026-09-05T06:31:41Z
+reviewed: 2026-09-05T08:03:32Z
 depth: deep
-files_reviewed: 34
+files_reviewed: 36
 files_reviewed_list:
   - apps/api/drizzle/0009_article_daily_views.sql
   - apps/api/drizzle/meta/0009_snapshot.json
@@ -13,6 +13,7 @@ files_reviewed_list:
   - apps/api/src/content/view-aggregation-repository.ts
   - apps/api/src/content/view-retention.ts
   - apps/api/src/db/schema.ts
+  - apps/api/src/routes/auth.ts
   - apps/api/src/routes/public-views.ts
   - apps/api/src/security/config.ts
   - apps/api/test/backup-restore.test.ts
@@ -28,6 +29,7 @@ files_reviewed_list:
   - apps/web/server.mjs
   - apps/web/server.test.mjs
   - compose.yaml
+  - ops/production-config.names.json
   - package.json
   - packages/contracts/src/analytics.ts
   - packages/contracts/src/index.ts
@@ -39,56 +41,38 @@ files_reviewed_list:
   - scripts/test-inventory.mjs
   - scripts/test-inventory.test.mjs
 findings:
-  critical: 1
-  warning: 2
+  critical: 0
+  warning: 0
   info: 0
-  total: 3
-status: issues_found
+  total: 0
+status: clean
 ---
 
 # Phase 11: Code Review Report
 
-**Reviewed:** 2026-09-05T06:31:41Z
+**Reviewed:** 2026-09-05T08:03:32Z
 **Depth:** deep
-**Files Reviewed:** 34
-**Status:** issues_found
+**Files Reviewed:** 36
+**Status:** clean
 
 ## Summary
 
-The aggregate migration, atomic public-only upsert, retention operation, contract boundaries, export exclusion, and opaque endpoint handling are internally consistent. The previous retained-route beacon issue is fixed in the production component and its client-side navigation assertion is present. However, the proposed proxy boundary still reduces all public visitors to the Docker/host proxy address, and the sealed Phase 11 browser run does not bind the Web container to the current build. Development Strict Mode also aborts the only beacon before its second effect is suppressed.
+Re-reviewed the complete implementation diff from `3d2cb1b` through the current Phase 11 fixes. The prior ingress identity defect is fixed end-to-end: the Web runtime strips all externally supplied forwarding and private handshake headers, requires an authenticated single canonical address in production, and forwards only that address to an API which trusts only its exact private Web CIDR. The API remains unpublished, public-view traffic is route-silent, and neither the aggregate schema nor the request path persists raw identity data.
+
+The React beacon now deliberately survives development Strict Mode effect replay while its ref-backed set keeps one send per mounted slug; the retained-route browser journey asserts one beacon per slug and no failed request. The Phase 11 gate now typechecks/builds the current Web source before startup, snapshots `.next` and `server.mjs`, mounts both read-only in production mode, and binds the strict SHA-256 runtime authority into its machine result. Tests reject missing, malformed, or cached runtime authority.
+
+Migration/schema authorities, public-only atomic aggregation, Shanghai 400-day bounded cleanup, full-backup restore equality, portable-export exclusion, test inventory ownership, ephemeral secret redaction, and the 2C4G-friendly single-process resource model were also traced across their callers and verification seams. No ship-blocking correctness, security, or maintainability defect was found.
 
 ## Narrative Findings (AI reviewer)
 
-## Critical Issues
+No Critical Issues, Warnings, or Info findings.
 
-### CR-01: The trusted Web proxy still turns every public visitor into one limiter key
+## Residual Operational Verification
 
-**File:** `/Users/xanadu/Desktop/ai-coding/blog-x/apps/web/server.mjs:20`
-
-**Issue:** The code discards the ingress-provided address and forwards the Web container's socket peer instead. The only published Web port is host-loopback-bound in `/Users/xanadu/Desktop/ai-coding/blog-x/compose.yaml:75`; traffic reaching the container through that host/Docker hop has the host bridge/reverse-proxy address as `request.socket.remoteAddress`, not the browser address. Fastify trusts the Web container at `compose.yaml:46`, so it then uses this same rewritten `X-Forwarded-For` value as `request.ip` for the anonymous limiter in `/Users/xanadu/Desktop/ai-coding/blog-x/apps/api/src/routes/public-views.ts:42`. All visitors therefore share the 120/minute key, allowing one visitor or normal traffic to silently discard everyone else's views. The unit test models a direct caller with distinct `remoteAddress` values and never exercises the required host-to-Web-to-API topology.
-
-**Fix:** Put client-address canonicalization at a controlled ingress that can actually observe the browser address (for example, the host reverse proxy), strip externally supplied forwarding headers there, and pass exactly one canonical address over a separately trusted hop. Make the Web/API trust configuration accept that canonical value only from the known ingress path, or move the bounded anonymous-view limiter to that ingress. Add an end-to-end topology test that reaches the published Web port through the real proxy path and proves two browser clients have independent quotas.
-
-## Warnings
-
-### WR-01: Development Strict Mode aborts the sole beacon and suppresses its replacement
-
-**File:** `/Users/xanadu/Desktop/ai-coding/blog-x/apps/web/app/posts/[slug]/ViewBeacon.tsx:13`
-
-**Issue:** The slug is added to `sentSlugs` before the request completes. React development Strict Mode runs the effect's cleanup and setup sequence while preserving hook state: cleanup at line 25 aborts the pending request, then the next setup returns at line 13 because the slug remains in the set. Thus local development visits record no view. The Playwright journey uses the production runtime, so it cannot expose this lifecycle path.
-
-**Fix:** Do not abort this intentionally fire-and-forget event, or remove the slug from the set when an aborted request is cleaned up so the replacement Strict Mode effect can send it. Add a client/component test that exercises the Strict Mode effect replay and asserts exactly one completed request.
-
-### WR-02: The Phase 11 browser selection runs against an arbitrary cached Web image, not the built source
-
-**File:** `/Users/xanadu/Desktop/ai-coding/blog-x/scripts/local-verify.mjs:1762`
-
-**Issue:** `--phase11-data` preflights cached `apiImage`/`webImage` and explicitly skips the image-build branch at line 1780. Although `runPhase11DataChecks()` executes `public-reading.spec.ts` (line 1449), starting/recreating `web` at line 1788/918 uses that cached image. Unlike the canonical path, Phase 11 never calls `createCanonicalRuntimeAuthority()` to mount the just-built `.next` output; the only source mounts are API/contracts for database checks at lines 991-994. A previously built image can therefore make the selected Playwright test pass while omitting the current beacon, rewrite, or proxy code.
-
-**Fix:** Bind the browser fixture to the current Web artifact: either build/tag the Phase 11 API/Web images from the reviewed source before startup, or invoke a verified runtime override that mounts the newly built `.next` output (and current server source) for the Web service. Record/verify the image or artifact digest in the Phase 11 result, and add a verifier test that fails when Phase 11 has no current-Web authority.
+The reviewer ran the focused Web runtime and Phase 11 verifier unit suites (44 pass), the complete default suite (60 pass), and workspace typechecks. A full disposable-Docker Phase 11 gate was not rerun in this review pass; this is not a code finding because its current-source authority, ingress fixture, read-only mounts, result digest, and fail-closed test coverage were directly inspected and are internally consistent. Production deployment remains explicitly `BLOCKED`.
 
 ---
 
-_Reviewed: 2026-09-05T06:31:41Z_
+_Reviewed: 2026-09-05T08:03:32Z_
 _Reviewer: the agent (gsd-code-reviewer)_
 _Depth: deep_
