@@ -25,6 +25,18 @@ const actionLabels: Record<ArticleAction, string> = {
   delete: "删除",
 };
 
+function formatShanghai(instant: string) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(instant));
+}
+
 function browserOffsetAtInstant(instant: string) {
   return -new Date(instant).getTimezoneOffset();
 }
@@ -212,8 +224,24 @@ export default function ArticleActions({
   if (variant === "list") {
     return (
       <article className={styles.postRow} data-testid={`admin-post-${post.slug}`}>
-        <div><a href={`/admin/posts/${post.id}`}>{post.title}</a><p>{post.slug}</p></div>
-        <div>{controls}</div>
+        <header className={styles.postRowHeader}>
+          <span className={styles.postStatus} data-status={post.status}>{statusLabels[post.status]}</span>
+          {post.scheduledAt ? <span className={styles.scheduleBadge}>已预约</span> : null}
+        </header>
+        <h3 className={styles.postRowTitle}><a href={`/admin/posts/${post.id}`}>{post.title}</a></h3>
+        {post.summary ? <p className={styles.postSummary}>{post.summary}</p> : null}
+        <div className={styles.postMeta}>
+          <span title={post.slug}>/{post.slug}</span>
+          <span>更新于 {formatShanghai(post.version)}</span>
+          {post.scheduledAt ? <span>计划于 {formatShanghai(post.scheduledAt)} 发布</span> : null}
+        </div>
+        <footer className={styles.postRowFooter}>
+          <a className={styles.editPostLink} href={`/admin/posts/${post.id}`}>编辑文章</a>
+          <details className={styles.postActions}>
+            <summary>管理操作</summary>
+            <div className={styles.postActionsBody}>{controls}</div>
+          </details>
+        </footer>
       </article>
     );
   }

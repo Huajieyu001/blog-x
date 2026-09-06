@@ -94,6 +94,7 @@ test("draft completes publish, edit, slug confirmation, unpublish, republish, an
   await expect(row).toContainText(editedTitle);
   await expect(row).toContainText("已发布");
   await expect(page.getByRole("button", { name: /永久/ })).toHaveCount(0);
+  await row.getByText("管理操作", { exact: true }).click();
   await row.getByRole("button", { name: "删除" }).click();
   const deleteDialog = page.getByRole("dialog", { name: "确认软删除文章" });
   await expect(deleteDialog).toContainText("源文件和 Slug 将继续保留");
