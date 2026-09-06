@@ -26,6 +26,8 @@ import {
 
 type EditorFields = EditorRecoveryFields;
 
+const articleStatusLabels = { draft: "草稿", published: "已发布", unpublished: "已下线" } as const;
+
 const emptyFields: EditorFields = {
   title: "",
   summary: "",
@@ -477,13 +479,29 @@ export default function ArticleEditor({
 
   const editorDirty = JSON.stringify(fields) !== baselineFields.current || publishedAtCorrection;
   const staleRecovery = Boolean(postId && recoveryBaseVersion && currentPost && recoveryBaseVersion !== currentPost.version);
+  const editorState = editorDirty ? "dirty" : currentPost?.status ?? "new";
+  const editorStateLabel = editorDirty ? "有未保存更改" : currentPost ? articleStatusLabels[currentPost.status] : "尚未保存";
 
   return (
     <>
-    <main className={styles.page}>
+    <main className={`${styles.page} ${styles.editorPage}`}>
       <div className={styles.titleRow}>
-        <div><p className={styles.eyebrow}>Blog X / 内容管理</p><h1>{heading}</h1></div>
-        <button className={styles.primaryButton} type="button" disabled={saving || Boolean(pendingRecovery)} onClick={() => { void save(); }}>{saving ? "保存中…" : (postId ? "保存更改" : "保存草稿")}</button>
+        <div>
+          <p className={styles.eyebrow}>BLOG X / 写作空间</p>
+          <h1>{heading}</h1>
+          <div className={styles.editorTitleMeta}>
+            <span className={styles.editorState} data-state={editorState}>{editorStateLabel}</span>
+            <span>{fields.markdown.length.toLocaleString("zh-CN")} 个正文字符</span>
+          </div>
+        </div>
+        <div className={styles.editorHeaderActions}>
+          <a className={styles.secondaryLink} href="/admin#articles">返回文章管理</a>
+          <button className={styles.primaryButton} type="button" disabled={saving || Boolean(pendingRecovery)} onClick={() => { void save(); }}>{saving ? "保存中…" : (postId ? "保存更改" : "保存草稿")}</button>
+        </div>
+      </div>
+      <div className={styles.editorFeedback}>
+        <p role="status" aria-label="编辑器状态" className={styles.status}>{message}</p>
+        <p role="status" aria-label="恢复副本状态" className={styles.status}>{recoveryMessage}</p>
       </div>
 
       <section className={styles.metadata} aria-label="文章元数据">
@@ -549,7 +567,7 @@ export default function ArticleEditor({
       </div>
       <section className={styles.editor}>
         <div className={`${styles.pane} ${mobilePane === "edit" ? styles.mobileActive : styles.mobileInactive}`} data-testid="editor-source">
-          <div className={styles.paneHeader}>Markdown 源码</div>
+          <div className={styles.paneHeader}><span>Markdown 源码</span><span>{fields.markdown.length.toLocaleString("zh-CN")} 字符</span></div>
           <label className={styles.markdownLabel}>Markdown<textarea ref={markdownRef} value={fields.markdown} onChange={(event) => update("markdown", event.target.value)} spellCheck={false} aria-invalid={Boolean(errorFor("markdown"))} /></label>
           {errorFor("markdown") && <p className={styles.error}>{errorFor("markdown")}</p>}
         </div>
@@ -563,8 +581,6 @@ export default function ArticleEditor({
         if (storage) removeEditorRecoverySnapshot(storage, { kind: "post", id: currentPost.id });
         window.location.assign("/admin");
       }} />}
-      <p role="status" aria-label="编辑器状态" className={styles.status}>{message}</p>
-      <p role="status" aria-label="恢复副本状态" className={styles.status}>{recoveryMessage}</p>
       {staleRecovery && !pendingRecovery && (
         <section className={styles.recoveryNotice} aria-labelledby="stale-recovery-title">
           <div>

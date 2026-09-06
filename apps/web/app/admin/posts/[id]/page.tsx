@@ -16,7 +16,7 @@ export default async function EditDraftPage({ params }: { params: Promise<{ id: 
   if (!post) notFound();
   return (
     <>
-      <ArticleEditor post={post} heading="编辑草稿" categories={categories} tags={tags} />
+      <ArticleEditor post={post} heading="编辑文章" categories={categories} tags={tags} />
       <div className={styles.nativeLifecycleFallback} data-testid="native-lifecycle-fallback">
         <ArticleActions post={post} />
       </div>
