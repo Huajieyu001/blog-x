@@ -47,12 +47,12 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
   const result = await getAdminAuditEvents((await cookies()).toString(), cursor);
 
   return (
-    <section className={styles.management} aria-labelledby="audit-title">
-      <div className={styles.managementTitle}>
-        <h1 id="audit-title">操作日志</h1>
-        <a href="/admin">返回文章管理</a>
-      </div>
-      <p className={styles.auditIntro}>仅记录成功的关键管理操作。日志不会保存密码、登录令牌、文章正文、文件内容或客户端 IP。</p>
+    <main className={styles.workspace} aria-labelledby="audit-title">
+      <header className={styles.workspaceHeader}>
+        <div><p className={styles.eyebrow}>BLOG X / 安全记录</p><h1 id="audit-title">操作日志</h1><p>回顾账号、内容与站点设置的关键变更。</p></div>
+        <a className={styles.secondaryLink} href="/admin">返回工作台</a>
+      </header>
+      <aside className={styles.auditNotice}>仅记录成功的关键管理操作，不保存密码、登录令牌、文章正文、文件内容或客户端 IP。</aside>
       {!result ? <p role="alert">暂时无法读取操作日志，请稍后重试。</p> : null}
       {result && !result.items.length ? <p>还没有操作记录。</p> : null}
       {result?.items.length ? (
@@ -70,6 +70,6 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
         </div>
       ) : null}
       {result?.nextCursor ? <nav className={styles.auditPager} aria-label="操作日志分页"><a href={`/admin/audit?cursor=${encodeURIComponent(result.nextCursor)}`}>查看更早记录</a></nav> : null}
-    </section>
+    </main>
   );
 }

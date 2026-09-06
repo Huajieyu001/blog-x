@@ -1,7 +1,10 @@
 "use client";
 import { useRef, useState } from "react";
 import { taxonomyInputSchema } from "@blog-x/contracts";
+import styles from "../admin.module.css";
+
 type Term = { id: string; name: string; slug: string; articleCount: number };
+
 export default function TaxonomyManager({ kind, initialTerms }: { kind: "categories" | "tags"; initialTerms: Term[] }) {
   const [terms, setTerms] = useState(initialTerms), [editing, setEditing] = useState<Term | null>(null), [status, setStatus] = useState(""), [invalid, setInvalid] = useState(false), [formKey, setFormKey] = useState(0);
   const triggers = useRef(new Map<string, HTMLButtonElement>()), activeId = useRef<string | null>(null);
@@ -9,5 +12,39 @@ export default function TaxonomyManager({ kind, initialTerms }: { kind: "categor
   function restoreFocus() { const id = activeId.current; if (id) triggers.current.get(id)?.focus(); }
   async function save(form: FormData) { const payload = taxonomyInputSchema.safeParse({ name: form.get("name"), slug: form.get("slug") }); if (!payload.success) { setInvalid(true); setStatus("请修正标记的字段。"); return; } const response = await fetch(`/api/admin/${kind}${editing ? `/${editing.id}` : ""}`, { method: editing ? "PUT" : "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify(payload.data) }); if (!response.ok) { setStatus("保存失败，请重试。"); return; } const term = await response.json() as Term; setTerms((all) => editing ? all.map((item) => item.id === term.id ? term : item) : [...all, term]); setStatus(editing ? `${label}已更新。` : `${label}已创建。`); setEditing(null); setInvalid(false); setFormKey((key) => key + 1); restoreFocus(); }
   async function remove(term: Term) { const response = await fetch(`/api/admin/${kind}/${term.id}`, { method: "DELETE", credentials: "same-origin" }); if (response.status === 409) { setStatus("请先移除或重新分配关联文章，才能删除。"); return; } if (!response.ok) { setStatus("保存失败，请重试。"); return; } setTerms((all) => all.filter((item) => item.id !== term.id)); setStatus(`${label}已删除。`); }
-  return <section aria-labelledby={`${kind}-title`}><h2 id={`${kind}-title`}>{label}管理</h2><form key={formKey} action={save}><h3>{editing ? `编辑${label}` : `新建${label}`}</h3><label>名称<input name="name" defaultValue={editing?.name ?? ""} required aria-invalid={invalid || undefined} aria-describedby={invalid ? errorId : undefined} /></label><label>Slug<input name="slug" defaultValue={editing?.slug ?? ""} required aria-invalid={invalid || undefined} aria-describedby={invalid ? errorId : undefined} /></label><button type="submit">{editing ? "保存更改" : `创建${label}`}</button>{editing ? <button type="button" onClick={() => { setEditing(null); setInvalid(false); setFormKey((key) => key + 1); restoreFocus(); }}>取消编辑</button> : null}</form>{invalid ? <p id={errorId}>请修正标记的字段。</p> : null}<p id={statusId} data-testid="taxonomy-status" role="status">{status}</p><ul>{terms.map((term) => <li key={term.id}><strong>{term.name}</strong> <code>{term.slug}</code> · 关联文章 {term.articleCount} 篇 <button ref={(node) => { if (node) triggers.current.set(term.id, node); else triggers.current.delete(term.id); }} data-testid={`taxonomy-edit-${term.id}`} aria-label={`编辑${term.name}`} onClick={() => { activeId.current = term.id; setEditing(term); setInvalid(false); setFormKey((key) => key + 1); }}>编辑</button><button disabled={term.articleCount > 0} aria-describedby={term.articleCount > 0 ? `${kind}-${term.id}-delete-help` : undefined} onClick={() => remove(term)}>删除</button>{term.articleCount > 0 ? <span id={`${kind}-${term.id}-delete-help`}>请先移除或重新分配关联文章，才能删除。</span> : null}</li>)}</ul></section>;
+  return (
+    <section className={styles.taxonomyPanel} aria-labelledby={`${kind}-title`}>
+      <header className={styles.taxonomyPanelHeader}>
+        <div><p className={styles.eyebrow}>{kind}</p><h2 id={`${kind}-title`}>{label}管理</h2></div>
+        <span>{terms.length} 项</span>
+      </header>
+      <form className={styles.taxonomyForm} key={formKey} action={save}>
+        <h3>{editing ? `编辑${label}` : `新建${label}`}</h3>
+        <div className={styles.taxonomyFormFields}>
+          <label>名称<input name="name" defaultValue={editing?.name ?? ""} required aria-invalid={invalid || undefined} aria-describedby={invalid ? errorId : undefined} /></label>
+          <label>Slug<input name="slug" defaultValue={editing?.slug ?? ""} required aria-invalid={invalid || undefined} aria-describedby={invalid ? errorId : undefined} /></label>
+        </div>
+        <div className={styles.taxonomyFormActions}>
+          <button className={styles.compactPrimaryButton} type="submit">{editing ? "保存更改" : `创建${label}`}</button>
+          {editing ? <button type="button" onClick={() => { setEditing(null); setInvalid(false); setFormKey((key) => key + 1); restoreFocus(); }}>取消编辑</button> : null}
+        </div>
+      </form>
+      {invalid ? <p id={errorId} className={styles.error}>请修正标记的字段。</p> : null}
+      <p id={statusId} className={styles.taxonomyStatus} data-testid="taxonomy-status" role="status">{status}</p>
+      {terms.length ? (
+        <ul className={styles.taxonomyList}>
+          {terms.map((term) => (
+            <li key={term.id}>
+              <div className={styles.taxonomyTerm}><strong>{term.name}</strong><code>/{term.slug}</code><span>关联文章 {term.articleCount} 篇</span></div>
+              <div className={styles.taxonomyItemActions}>
+                <button ref={(node) => { if (node) triggers.current.set(term.id, node); else triggers.current.delete(term.id); }} type="button" data-testid={`taxonomy-edit-${term.id}`} aria-label={`编辑${term.name}`} onClick={() => { activeId.current = term.id; setEditing(term); setInvalid(false); setFormKey((key) => key + 1); }}>编辑</button>
+                <button className={styles.textDangerButton} type="button" disabled={term.articleCount > 0} aria-describedby={term.articleCount > 0 ? `${kind}-${term.id}-delete-help` : undefined} onClick={() => { void remove(term); }}>删除</button>
+              </div>
+              {term.articleCount > 0 ? <span className={styles.taxonomyHelp} id={`${kind}-${term.id}-delete-help`}>请先移除或重新分配关联文章，才能删除。</span> : null}
+            </li>
+          ))}
+        </ul>
+      ) : <p className={styles.taxonomyEmpty}>还没有{label}，可从上方创建第一项。</p>}
+    </section>
+  );
 }

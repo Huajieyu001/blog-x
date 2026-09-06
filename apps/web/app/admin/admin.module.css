@@ -117,14 +117,49 @@
 :global(html[data-theme="dark"]) .postStatus[data-status="published"] { border-color: #72a97d; color: #a8ddb0; background: #203529; }
 :global(html[data-theme="dark"]) .postStatus[data-status="draft"] { border-color: #b99a58; color: #e9cf93; background: #3a311e; }
 :global(html[data-theme="dark"]) .postStatus[data-status="unpublished"] { border-color: #918985; color: #d2cbc7; background: #34302e; }
-.auditIntro { margin: -10px 0 22px; color: #6b6962; font: .92rem/1.65 ui-sans-serif, system-ui, sans-serif; }
-.auditList { display: grid; border-top: 1px solid #d8d4ca; }
-.auditRow { display: grid; grid-template-columns: minmax(11rem, 1fr) minmax(14rem, 2fr) minmax(12rem, 1.3fr); gap: 20px; align-items: start; padding: 18px 0; border-bottom: 1px solid #d8d4ca; }
+.auditNotice { margin: 28px 0 8px; border-left: 3px solid var(--accent); padding: 12px 16px; color: var(--muted); background: var(--surface); font: .88rem/1.65 ui-sans-serif, system-ui, sans-serif; }
+.auditList { display: grid; margin-top: 24px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); overflow: hidden; }
+.auditRow { display: grid; grid-template-columns: minmax(11rem, 1fr) minmax(14rem, 2fr) minmax(12rem, 1.3fr); gap: 20px; align-items: start; padding: 18px 20px; border-bottom: 1px solid var(--line); }
+.auditRow:last-child { border-bottom: 0; }
 .auditEvent { margin: 0; font: 650 .95rem/1.4 ui-sans-serif, system-ui, sans-serif; }
 .auditDetail { margin: 5px 0 0; color: #6b6962; font: .82rem/1.55 ui-sans-serif, system-ui, sans-serif; overflow-wrap: anywhere; }
 .auditTime { margin: 0; color: #6b6962; font: .82rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .auditPager { display: flex; justify-content: flex-end; margin-top: 24px; }
 .auditPager a { display: inline-flex; min-height: 44px; align-items: center; border: 1px solid #20201d; border-radius: 999px; padding: 0 18px; color: #20201d; text-decoration: none; }
+
+.secondaryLink { display: inline-flex; min-height: 44px; box-sizing: border-box; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 999px; padding: 0 18px; color: var(--ink); font: 650 .85rem/1 ui-sans-serif, system-ui, sans-serif; text-decoration: none; white-space: nowrap; }
+.taxonomyGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-top: 32px; align-items: start; }
+.taxonomyPanel { min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 22px; background: var(--surface); }
+.taxonomyPanelHeader { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.taxonomyPanelHeader h2 { margin: 4px 0 0; font: 550 1.55rem/1.2 ui-serif, Georgia, "Noto Serif SC", serif; }
+.taxonomyPanelHeader > span { border-radius: 999px; padding: 5px 9px; color: var(--muted); background: var(--paper); font: 650 .72rem/1 ui-monospace, monospace; }
+.taxonomyForm { margin-top: 22px; border-radius: 6px; padding: 16px; background: var(--paper); }
+.taxonomyForm h3 { margin: 0 0 13px; font-size: .9rem; }
+.taxonomyFormFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.taxonomyFormFields label { display: grid; min-width: 0; gap: 6px; color: var(--muted); font: 650 .74rem/1.3 ui-sans-serif, system-ui, sans-serif; }
+.taxonomyFormFields input { box-sizing: border-box; width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 5px; padding: 0 10px; color: var(--ink); background: var(--surface); font-size: .9rem; }
+.taxonomyFormFields input[aria-invalid="true"] { border-color: #a1261d; }
+.taxonomyFormActions, .taxonomyItemActions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.taxonomyFormActions button, .taxonomyItemActions button { min-height: 40px; border: 1px solid var(--line); border-radius: 999px; padding: 0 13px; color: var(--ink); background: var(--surface); font-weight: 650; cursor: pointer; }
+.taxonomyFormActions .compactPrimaryButton { border-color: var(--ink); color: var(--paper); background: var(--ink); }
+.taxonomyStatus { min-height: 1.5em; margin: 12px 0 0; color: var(--accent); font: 650 .82rem/1.5 ui-sans-serif, system-ui, sans-serif; }
+.taxonomyList { display: grid; margin: 8px 0 0; padding: 0; list-style: none; }
+.taxonomyList li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 14px; border-top: 1px solid var(--line); padding: 14px 0; }
+.taxonomyTerm { display: grid; min-width: 0; gap: 3px; }
+.taxonomyTerm strong { overflow-wrap: anywhere; }
+.taxonomyTerm code { color: var(--muted); overflow-wrap: anywhere; font-size: .75rem; }
+.taxonomyTerm span, .taxonomyHelp { color: var(--muted); font-size: .78rem; line-height: 1.5; }
+.taxonomyItemActions { margin: 0; align-self: center; }
+.taxonomyItemActions button { min-height: 36px; padding: 0 11px; }
+.taxonomyItemActions .textDangerButton { color: #a1261d; }
+.taxonomyItemActions button:disabled { cursor: not-allowed; opacity: .45; }
+.taxonomyHelp { grid-column: 1 / -1; }
+.taxonomyEmpty { margin: 20px 0 0; color: var(--muted); }
+.adminEditorPage { max-width: 1120px; }
+.headerDescription { margin: 8px 0 0; color: var(--muted); font: .92rem/1.6 ui-sans-serif, system-ui, sans-serif; }
+.contentStatus { display: inline-flex; gap: 8px; margin: 0 0 18px; border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; color: var(--muted); font: .78rem/1.3 ui-sans-serif, system-ui, sans-serif; }
+.contentStatus strong { color: var(--ink); }
+.editorActions { margin-top: 18px; }
 
 /* Phase 12 keeps its workspace presentation local: the shared admin shell stays Phase 13-owned. */
 .workspace, .analyticsPage { --danger: #a1261d; max-width: 1120px; margin: 0 auto; padding: 48px 28px 64px; color: var(--ink); font-family: ui-sans-serif, system-ui, sans-serif; overflow-wrap: anywhere; }
@@ -179,4 +214,13 @@
   .recoveryNotice, .recoveryActions { display: grid; grid-template-columns: 1fr; }
   .managementTitle { align-items: flex-start; flex-wrap: wrap; gap: 8px 16px; padding-bottom: 16px; }
   .managementTitle h1 { flex-basis: 100%; margin-bottom: 8px; }
+  .taxonomyGrid, .taxonomyFormFields, .taxonomyList li { grid-template-columns: 1fr; }
+  .taxonomyPanel { padding: 16px; }
+  .taxonomyItemActions { justify-self: start; }
+  .titleRow { flex-wrap: wrap; }
+  .titleRow .secondaryLink { width: 100%; }
+}
+
+@media (min-width: 721px) and (max-width: 1180px) {
+  .taxonomyGrid { grid-template-columns: 1fr; }
 }

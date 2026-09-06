@@ -83,12 +83,12 @@ export default function AboutEditor({ initial }: { initial: AdminAbout | null })
   const titleError = errors.title?.join("；");
   const markdownError = errors.markdown?.join("；");
   return (
-    <main className={styles.page}>
+    <main className={`${styles.page} ${styles.adminEditorPage}`}>
       <div className={styles.titleRow}>
-        <div><p className={styles.eyebrow}>Blog X / 内容管理</p><h1>关于页</h1></div>
-        <a href="/about">查看公开关于页</a>
+        <div><p className={styles.eyebrow}>BLOG X / 站点信息</p><h1>关于页</h1><p className={styles.headerDescription}>编辑访客在公开关于页看到的站点介绍。</p></div>
+        <a className={styles.secondaryLink} href="/about">查看公开关于页</a>
       </div>
-      <p>状态：<strong>{published ? "已发布" : "草稿"}</strong></p>
+      <p className={styles.contentStatus}>当前状态 <strong>{published ? "已发布" : "草稿"}</strong></p>
       <section className={styles.metadata} aria-label="关于页元数据">
         <label>
           标题
@@ -126,7 +126,7 @@ export default function AboutEditor({ initial }: { initial: AdminAbout | null })
           </div>
         </div>
       </section>
-      <div className={styles.actionButtons}>
+      <div className={`${styles.actionButtons} ${styles.editorActions}`}>
         <button type="button" onClick={() => { void request(""); }}>保存草稿</button>
         <button type="button" onClick={() => { void request("/preview"); }}>更新预览</button>
         <button type="button" disabled={!version} onClick={() => { void request("/publish"); }}>发布</button>
