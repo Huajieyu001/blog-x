@@ -1,0 +1,81 @@
+.page {
+  display: grid;
+  min-height: 100vh;
+  grid-template-columns: minmax(320px, .85fr) minmax(480px, 1.15fr);
+  color: var(--ink);
+  background: var(--paper);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.introduction {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: clamp(32px, 5vw, 72px);
+  color: #edf4f0;
+  background:
+    radial-gradient(circle at 80% 20%, rgb(145 199 183 / 20%), transparent 28%),
+    linear-gradient(145deg, #192722, #263c34);
+  overflow: hidden;
+}
+
+.introduction::after {
+  position: absolute;
+  right: -15%;
+  bottom: -8%;
+  width: 70%;
+  aspect-ratio: 1;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 50%;
+  box-shadow: 0 0 0 48px rgb(255 255 255 / 3%), 0 0 0 96px rgb(255 255 255 / 2%);
+  content: "";
+}
+
+.brand { position: relative; z-index: 1; width: max-content; color: #fff; font: 650 1.55rem/1 ui-serif, Georgia, serif; letter-spacing: -.04em; text-decoration: none; }
+.eyebrow { margin: 0; color: #9cc5b6; font: 700 .68rem/1.4 ui-monospace, monospace; letter-spacing: .17em; text-transform: uppercase; }
+.introduction h1 { position: relative; z-index: 1; max-width: 8ch; margin: 14px 0 20px; font: 500 clamp(3rem, 6vw, 5.6rem)/.98 ui-serif, Georgia, "Noto Serif SC", serif; letter-spacing: -.06em; }
+.description { position: relative; z-index: 1; max-width: 34rem; margin: 0; color: #bacbc4; font-size: clamp(.95rem, 1.5vw, 1.1rem); line-height: 1.8; }
+.privateNote { position: relative; z-index: 1; display: flex; align-items: center; gap: 9px; margin: 0; color: #aebfb8; font-size: .78rem; }
+.privateNote span { color: #91c7b7; font-size: .58rem; }
+
+.panel { display: grid; min-width: 0; place-items: center; padding: clamp(24px, 7vw, 88px); }
+.card { width: min(100%, 440px); }
+.card header { margin-bottom: 32px; }
+.card header .eyebrow { color: var(--accent); }
+.card h2 { margin: 8px 0 10px; font: 550 clamp(1.8rem, 3vw, 2.5rem)/1.15 ui-serif, Georgia, "Noto Serif SC", serif; letter-spacing: -.035em; }
+.card header > p:last-child { margin: 0; color: var(--muted); line-height: 1.6; }
+.card form { display: grid; gap: 18px; }
+.card label { display: grid; gap: 8px; color: var(--muted); font-size: .78rem; font-weight: 700; letter-spacing: .03em; }
+.card input { box-sizing: border-box; width: 100%; min-height: 50px; border: 1px solid var(--line); border-radius: 7px; padding: 0 14px; color: var(--ink); background: var(--surface); font: 500 1rem/1.4 ui-sans-serif, system-ui, sans-serif; }
+.card input:hover { border-color: color-mix(in srgb, var(--line) 40%, var(--ink)); }
+.card input:focus-visible { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 3px; }
+.card input[aria-invalid="true"] { border-color: #a1261d; }
+.hint, .error { min-height: 2.7em; margin: -4px 0 0; font-size: .78rem; line-height: 1.55; }
+.hint { color: var(--muted); }
+.error { color: #a1261d; font-weight: 650; }
+.card button { min-height: 50px; border: 1px solid var(--ink); border-radius: 7px; color: var(--paper); background: var(--ink); font-size: .9rem; font-weight: 750; cursor: pointer; }
+.card button:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 88%, var(--accent)); }
+.card button:focus-visible, .backLink:focus-visible, .brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.card button:disabled { cursor: wait; opacity: .6; }
+.backLink { display: inline-flex; min-height: 44px; align-items: center; margin-top: 24px; color: var(--muted); font-size: .82rem; font-weight: 650; text-underline-offset: 4px; }
+:global(html[data-theme="dark"]) .error { color: #ffaca5; }
+
+@media (max-width: 820px) {
+  .page { grid-template-columns: 1fr; }
+  .introduction { min-height: 210px; gap: 48px; padding: 28px 24px 32px; }
+  .introduction h1 { max-width: none; margin-bottom: 12px; font-size: clamp(2.4rem, 11vw, 4rem); }
+  .privateNote { display: none; }
+  .panel { place-items: start center; padding: 36px 20px 52px; }
+}
+
+@media (max-width: 420px) {
+  .introduction { min-height: 180px; gap: 34px; padding: 24px 18px 28px; }
+  .panel { padding-right: 16px; padding-left: 16px; }
+  .card header { margin-bottom: 24px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page * { scroll-behavior: auto !important; transition: none !important; }
+}
