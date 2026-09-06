@@ -81,6 +81,7 @@ services:
     networks:
       private:
         ipv4_address: 172.30.0.3
+      edge:
     depends_on:
       api:
         condition: service_healthy
@@ -102,3 +103,4 @@ networks:
     ipam:
       config:
         - subnet: 172.30.0.0/29
+  edge:
