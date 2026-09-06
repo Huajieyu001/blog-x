@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { clearEditorRecoverySnapshots, getEditorRecoveryStorage } from "./_components/article-editor-recovery";
 
-export default function LogoutButton() {
+export default function LogoutButton({ className }: { className?: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
 
@@ -23,5 +23,5 @@ export default function LogoutButton() {
     }
   }
 
-  return <button type="button" onClick={() => void logout()} disabled={pending}>{pending ? "正在退出…" : "退出登录"}</button>;
+  return <button className={className} type="button" onClick={() => void logout()} disabled={pending}>{pending ? "正在退出…" : "退出登录"}</button>;
 }
