@@ -14,12 +14,6 @@ ARG REFRESH_REVISION
 ARG LOCKFILE_SHA256
 ARG SEED_IMAGE_ID
 ARG PUBLIC_ORIGIN=http://127.0.0.1:3100
-LABEL org.opencontainers.image.revision=${REFRESH_REVISION} \
-  io.blog-x.lockfile-sha256=${LOCKFILE_SHA256} \
-  io.blog-x.seed-image-id=${SEED_IMAGE_ID} \
-  io.blog-x.application=api \
-  io.blog-x.public-origin=${PUBLIC_ORIGIN} \
-  io.blog-x.refresh-kind=v1.1-offline-local-delivery
 
 COPY --from=seed-store /pnpm-store /pnpm-store
 COPY --from=seed-store /root/.cache/node/corepack /root/.cache/node/corepack
@@ -34,6 +28,13 @@ COPY packages/contracts/package.json packages/contracts/package.json
 RUN corepack pnpm install --store-dir=/pnpm-store --offline --frozen-lockfile
 COPY apps/api apps/api
 COPY packages/contracts packages/contracts
+
+LABEL org.opencontainers.image.revision=${REFRESH_REVISION} \
+  io.blog-x.lockfile-sha256=${LOCKFILE_SHA256} \
+  io.blog-x.seed-image-id=${SEED_IMAGE_ID} \
+  io.blog-x.application=api \
+  io.blog-x.public-origin=${PUBLIC_ORIGIN} \
+  io.blog-x.refresh-kind=v1.1-offline-local-delivery
 
 EXPOSE 3001
 CMD ["corepack", "pnpm", "--filter", "@blog-x/api", "dev"]

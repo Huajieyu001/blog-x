@@ -445,6 +445,9 @@ test("source contracts require neutral stores, offline frozen installs and sanit
   const webDockerfile = await readFile("apps/web/Dockerfile.refresh", "utf8");
   assert.match(webDockerfile, /ARG INTERNAL_API_ORIGIN=http:\/\/api:3001/);
   assert.match(webDockerfile, /ENV INTERNAL_API_ORIGIN=\$\{INTERNAL_API_ORIGIN\}[\s\S]*RUN corepack pnpm --filter @blog-x\/web build/);
+  assert.ok(webDockerfile.indexOf("LABEL org.opencontainers.image.revision") > webDockerfile.indexOf("RUN corepack pnpm --filter @blog-x/web build"));
+  const apiDockerfile = await readFile("apps/api/Dockerfile.refresh", "utf8");
+  assert.ok(apiDockerfile.indexOf("LABEL org.opencontainers.image.revision") > apiDockerfile.indexOf("COPY packages/contracts packages/contracts"));
   const helper = await readFile("scripts/refresh-seed-store.mjs", "utf8");
   assert.match(helper, /resolve\(cwd, "workspace"\)/);
   const orchestrator = await readFile("scripts/refresh-local.mjs", "utf8");
