@@ -22,6 +22,7 @@ LABEL org.opencontainers.image.revision=${REFRESH_REVISION} \
   io.blog-x.refresh-kind=v1.1-offline-local-delivery
 
 COPY --from=seed-store /pnpm-store /pnpm-store
+COPY --from=seed-store /root/.cache/node/corepack /root/.cache/node/corepack
 
 WORKDIR /refresh-workspace
 RUN corepack enable
