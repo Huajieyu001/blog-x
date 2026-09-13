@@ -112,6 +112,10 @@ export default function ArticleEditor({
   const baselineFields = useRef(JSON.stringify(initialFields(post)));
   const initialRecoveryTarget = useRef<EditorRecoveryTarget>(post ? { kind: "post", id: post.id } : { kind: "new" });
   const markdownRef = useRef<HTMLTextAreaElement>(null);
+  const saveButtonRef = useRef<HTMLButtonElement>(null);
+  const slugDialogRef = useRef<HTMLElement>(null);
+  const cancelSlugButtonRef = useRef<HTMLButtonElement>(null);
+  const confirmSlugButtonRef = useRef<HTMLButtonElement>(null);
   const recoveryButtonRef = useRef<HTMLButtonElement>(null);
   const discardRecoveryButtonRef = useRef<HTMLButtonElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -142,6 +146,30 @@ export default function ArticleEditor({
   useEffect(() => {
     if (pendingRecovery) recoveryButtonRef.current?.focus();
   }, [pendingRecovery]);
+
+  useEffect(() => {
+    if (!pendingSlugConfirmation) return;
+    const backdrop = document.querySelector<HTMLElement>("[data-slug-confirm-backdrop]");
+    if (!backdrop) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const changed = new Map<HTMLElement, { inert: boolean; ariaHidden: string | null }>();
+    for (const sibling of Array.from(backdrop.parentElement?.children ?? [])) {
+      if (sibling === backdrop || !(sibling instanceof HTMLElement)) continue;
+      changed.set(sibling, { inert: sibling.inert, ariaHidden: sibling.getAttribute("aria-hidden") });
+      sibling.inert = true;
+      sibling.setAttribute("aria-hidden", "true");
+    }
+    window.requestAnimationFrame(() => cancelSlugButtonRef.current?.focus());
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      for (const [element, previous] of changed) {
+        element.inert = previous.inert;
+        if (previous.ariaHidden === null) element.removeAttribute("aria-hidden");
+        else element.setAttribute("aria-hidden", previous.ariaHidden);
+      }
+    };
+  }, [pendingSlugConfirmation]);
 
   useEffect(() => {
     if (!pendingRecovery) return;
@@ -333,6 +361,7 @@ export default function ArticleEditor({
       if (!editsContinued) setFields(savedFields);
       if (!editsContinued) setPublishedAtCorrection(false);
       setPendingSlugConfirmation(false);
+      if (confirmSlugChange) window.requestAnimationFrame(() => saveButtonRef.current?.focus());
       setRecoveryBaseVersion(saved.data.version);
       setAllowStaleOverwrite(false);
       setMessage(editsContinued ? "提交时的内容已保存；之后的编辑仍保留" : (wasExisting ? "更改已保存" : "草稿已保存"));
@@ -444,6 +473,33 @@ export default function ArticleEditor({
     }
   }
 
+  function closeSlugConfirmation() {
+    if (saving) return;
+    setPendingSlugConfirmation(false);
+    setMessage("已取消修改公开 Slug");
+    window.requestAnimationFrame(() => saveButtonRef.current?.focus());
+  }
+
+  function handleSlugDialogKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key === "Escape" && !saving) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeSlugConfirmation();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const first = cancelSlugButtonRef.current;
+    const last = confirmSlugButtonRef.current;
+    if (!first || !last) return;
+    if (event.shiftKey && (document.activeElement === first || !event.currentTarget.contains(document.activeElement))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   function errorFor(name: keyof EditorFields) {
     return errors[name]?.join("；");
   }
@@ -496,7 +552,7 @@ export default function ArticleEditor({
         </div>
         <div className={styles.editorHeaderActions}>
           <a className={styles.secondaryLink} href="/admin#articles">返回文章管理</a>
-          <button className={styles.primaryButton} type="button" disabled={saving || Boolean(pendingRecovery)} onClick={() => { void save(); }}>{saving ? "保存中…" : (postId ? "保存更改" : "保存草稿")}</button>
+          <button ref={saveButtonRef} className={styles.primaryButton} type="button" disabled={saving || Boolean(pendingRecovery)} onClick={() => { void save(); }}>{saving ? "保存中…" : (postId ? "保存更改" : "保存草稿")}</button>
         </div>
       </div>
       <div className={styles.editorFeedback}>
@@ -594,15 +650,15 @@ export default function ArticleEditor({
         </section>
       )}
       {pendingSlugConfirmation && currentPost && (
-        <div className={styles.dialogBackdrop}>
-          <section className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby="slug-confirm-title">
+        <div className={styles.dialogBackdrop} data-slug-confirm-backdrop>
+          <section ref={slugDialogRef} className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby="slug-confirm-title" aria-describedby="slug-confirm-description" onKeyDown={handleSlugDialogKeyDown}>
             <h2 id="slug-confirm-title">确认修改公开链接</h2>
             <p>旧 Slug：<code>{currentPost.slug}</code></p>
             <p>新 Slug：<code>{fields.slug}</code></p>
-            <p>此操作会改变已发布文章的公开 URL，现有外部链接可能失效。</p>
+            <p id="slug-confirm-description">此操作会改变已发布文章的公开 URL，现有外部链接可能失效。</p>
             <div className={styles.dialogActions}>
-              <button type="button" onClick={() => setPendingSlugConfirmation(false)}>取消</button>
-              <button className={styles.dangerButton} type="button" onClick={() => { void save(true); }}>确认修改 Slug</button>
+              <button ref={cancelSlugButtonRef} type="button" disabled={saving} onClick={closeSlugConfirmation}>取消</button>
+              <button ref={confirmSlugButtonRef} className={styles.dangerButton} type="button" disabled={saving} onClick={() => { void save(true); }}>{saving ? "保存中…" : "确认修改 Slug"}</button>
             </div>
           </section>
         </div>
