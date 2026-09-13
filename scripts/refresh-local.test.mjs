@@ -432,6 +432,9 @@ test("source contracts require neutral stores, offline frozen installs and sanit
   for (const file of ["apps/api/Dockerfile.refresh", "apps/web/Dockerfile.refresh"]) {
     const dockerfile = await readFile(file, "utf8");
     assert.match(dockerfile, /refresh-seed-store\.mjs/);
+    assert.match(dockerfile, /FROM \$\{SEED_IMAGE\} AS seed-store/);
+    assert.match(dockerfile, /FROM node:24\.15\.0-alpine AS runtime/);
+    assert.match(dockerfile, /COPY --from=seed-store \/pnpm-store \/pnpm-store/);
     assert.match(dockerfile, /--store-dir=\/pnpm-store --offline --frozen-lockfile/);
     assert.match(dockerfile, /\/refresh-workspace/);
     assert.match(dockerfile, /--network=none/);

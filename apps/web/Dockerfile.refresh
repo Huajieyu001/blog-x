@@ -1,6 +1,14 @@
 # The invoking refresh command always builds this target with --network=none --pull=false.
 ARG SEED_IMAGE
-FROM ${SEED_IMAGE}
+FROM ${SEED_IMAGE} AS seed-store
+
+COPY scripts/refresh-seed-store.mjs /usr/local/lib/refresh-seed-store.mjs
+RUN node /usr/local/lib/refresh-seed-store.mjs
+
+# Start each target from a stable runtime instead of inheriting the previous
+# target image. Only the verified offline store crosses the stage boundary, so
+# repeated refreshes do not retain old workspaces in immutable parent layers.
+FROM node:24.15.0-alpine AS runtime
 
 ARG REFRESH_REVISION
 ARG LOCKFILE_SHA256
@@ -13,8 +21,7 @@ LABEL org.opencontainers.image.revision=${REFRESH_REVISION} \
   io.blog-x.public-origin=${PUBLIC_ORIGIN} \
   io.blog-x.refresh-kind=v1.1-offline-local-delivery
 
-COPY scripts/refresh-seed-store.mjs /usr/local/lib/refresh-seed-store.mjs
-RUN node /usr/local/lib/refresh-seed-store.mjs
+COPY --from=seed-store /pnpm-store /pnpm-store
 
 WORKDIR /refresh-workspace
 RUN corepack enable
