@@ -10,9 +10,6 @@ RUN node /usr/local/lib/refresh-seed-store.mjs
 # repeated refreshes do not retain old workspaces in immutable parent layers.
 FROM node:24.15.0-alpine AS runtime
 
-ARG REFRESH_REVISION
-ARG LOCKFILE_SHA256
-ARG SEED_IMAGE_ID
 ARG PUBLIC_ORIGIN=http://127.0.0.1:3100
 ARG INTERNAL_API_ORIGIN=http://api:3001
 
@@ -34,6 +31,9 @@ ENV PUBLIC_ORIGIN=${PUBLIC_ORIGIN}
 ENV INTERNAL_API_ORIGIN=${INTERNAL_API_ORIGIN}
 RUN corepack pnpm --filter @blog-x/web build
 
+ARG REFRESH_REVISION
+ARG LOCKFILE_SHA256
+ARG SEED_IMAGE_ID
 LABEL org.opencontainers.image.revision=${REFRESH_REVISION} \
   io.blog-x.lockfile-sha256=${LOCKFILE_SHA256} \
   io.blog-x.seed-image-id=${SEED_IMAGE_ID} \
