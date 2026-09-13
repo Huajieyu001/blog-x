@@ -8,8 +8,8 @@ import LogoutButton from "./LogoutButton";
 import styles from "./admin-shell.module.css";
 
 const navigation = [
-  { href: "/admin", label: "工作台", active: (path: string) => path === "/admin" },
-  { href: "/admin#articles", label: "文章管理", active: (path: string) => path.startsWith("/admin/posts/") },
+  { href: "/admin", label: "工作台", active: (path: string, hash: string) => path === "/admin" && hash !== "#articles" },
+  { href: "/admin#articles", label: "文章管理", active: (path: string, hash: string) => path.startsWith("/admin/posts/") || (path === "/admin" && hash === "#articles") },
   { href: "/admin/new", label: "新建文章", active: (path: string) => path === "/admin/new" },
   { href: "/admin/analytics", label: "访问统计", active: (path: string) => path.startsWith("/admin/analytics") },
   { href: "/admin/taxonomy", label: "分类与标签", active: (path: string) => path.startsWith("/admin/taxonomy") },
@@ -20,11 +20,19 @@ const navigation = [
 export default function AdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [hash, setHash] = useState("");
   const toggleRef = useRef<HTMLButtonElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   const firstLinkRef = useRef<HTMLAnchorElement>(null);
 
   useEffect(() => { setOpen(false); }, [pathname]);
+
+  useEffect(() => {
+    const synchronizeHash = () => setHash(window.location.hash);
+    synchronizeHash();
+    window.addEventListener("hashchange", synchronizeHash);
+    return () => window.removeEventListener("hashchange", synchronizeHash);
+  }, [pathname]);
 
   useEffect(() => {
     if (!open) return;
@@ -79,8 +87,12 @@ export default function AdminShell({ children }: { children: ReactNode }) {
               key={item.href}
               ref={index === 0 ? firstLinkRef : undefined}
               href={item.href}
-              aria-current={item.active(pathname) ? "page" : undefined}
-              onClick={() => setOpen(false)}
+              aria-current={item.active(pathname, hash) ? "page" : undefined}
+              onClick={() => {
+                setOpen(false);
+                if (item.href === "/admin") setHash("");
+                else if (item.href === "/admin#articles") setHash("#articles");
+              }}
             >
               <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
               {item.label}
