@@ -21,26 +21,54 @@ export default function AdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
   const firstLinkRef = useRef<HTMLAnchorElement>(null);
 
   useEffect(() => { setOpen(false); }, [pathname]);
 
   useEffect(() => {
     if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     window.requestAnimationFrame(() => firstLinkRef.current?.focus());
     const close = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setOpen(false);
-      window.requestAnimationFrame(() => toggleRef.current?.focus());
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOpen(false);
+        window.requestAnimationFrame(() => toggleRef.current?.focus());
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const sidebar = sidebarRef.current;
+      if (!sidebar) return;
+      const focusable = Array.from(sidebar.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )).filter((element) => !element.hidden && element.getAttribute("aria-hidden") !== "true");
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable.at(-1)!;
+      if (!sidebar.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener("keydown", close);
-    return () => document.removeEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("keydown", close);
+      document.body.style.overflow = previousOverflow;
+    };
   }, [open]);
 
   return (
     <div className={styles.shell}>
       <a className={styles.skipLink} href="#admin-content">跳到管理内容</a>
-      <aside id="admin-navigation" className={styles.sidebar} data-open={open ? "true" : "false"} aria-label="后台导航">
+      <aside ref={sidebarRef} id="admin-navigation" className={styles.sidebar} data-open={open ? "true" : "false"} aria-label="后台导航">
         <div className={styles.identity}>
           <Link className={styles.brand} href="/admin">Blog X</Link>
           <span>ADMIN CONSOLE</span>
@@ -82,7 +110,7 @@ export default function AdminShell({ children }: { children: ReactNode }) {
           </button>
         </header>
         {open ? <button className={styles.backdrop} type="button" aria-label="关闭后台导航" onClick={() => { setOpen(false); toggleRef.current?.focus(); }} /> : null}
-        <div id="admin-content" className={styles.content} tabIndex={-1}>{children}</div>
+        <div id="admin-content" className={styles.content} tabIndex={-1} inert={open ? true : undefined} aria-hidden={open ? true : undefined}>{children}</div>
       </div>
     </div>
   );
