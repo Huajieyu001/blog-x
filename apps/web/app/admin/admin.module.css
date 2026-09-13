@@ -194,8 +194,14 @@
 .loadingPanel { margin-top: 32px; }
 .loadingBlocks i, .loadingChart { display: block; border: 1px solid var(--line); border-radius: 6px; background: linear-gradient(105deg, var(--surface) 35%, color-mix(in srgb, var(--surface) 75%, var(--line)) 48%, var(--surface) 61%); background-size: 240% 100%; animation: admin-loading 1.5s ease-in-out infinite; }
 .loadingChart { height: 180px; margin-top: 18px; }
+.loadingList { display: grid; gap: 12px; margin-top: 24px; }
+.loadingList i { display: block; height: 70px; border: 1px solid var(--line); border-radius: 6px; background: linear-gradient(105deg, var(--surface) 35%, color-mix(in srgb, var(--surface) 75%, var(--line)) 48%, var(--surface) 61%); background-size: 240% 100%; animation: admin-loading 1.5s ease-in-out infinite; }
+.adminRouteError { margin-top: 32px; }
+.errorActions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.errorActions button, .errorActions a { display: inline-flex; min-height: 44px; box-sizing: border-box; align-items: center; justify-content: center; border: 1px solid var(--ink); border-radius: 999px; padding: 0 17px; color: var(--ink); background: var(--surface); font: 650 .88rem/1 ui-sans-serif, system-ui, sans-serif; text-decoration: none; cursor: pointer; }
+.errorActions button { color: var(--paper); background: var(--ink); }
 @keyframes admin-loading { from { background-position: 100% 0; } to { background-position: -100% 0; } }
-.workspace a:focus-visible, .analyticsPage a:focus-visible, .maintenanceList button:focus-visible, .postActions summary:focus-visible, .dailyDetails summary:focus-visible, .trendScroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.workspace a:focus-visible, .workspace button:focus-visible, .analyticsPage a:focus-visible, .maintenanceList button:focus-visible, .postActions summary:focus-visible, .dailyDetails summary:focus-visible, .trendScroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 :global(html[data-theme="dark"]) .workspace, :global(html[data-theme="dark"]) .analyticsPage { --danger: #ffaca5; }
 @media (min-width: 721px) and (max-width: 1023px) { .workspace, .analyticsPage { padding-right: 24px; padding-left: 24px; }.overviewCards { grid-template-columns: repeat(2, minmax(0, 1fr)); }.focusPanels, .analyticsSplit { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { .workspace, .analyticsPage { padding: 32px 18px 48px; }.workspaceHeader, .analyticsHeader { align-items: stretch; flex-direction: column; }.primaryLink { width: 100%; box-sizing: border-box; }.workspaceSection, .focusPanels .workspaceSection { margin-top: 32px; }.overviewCards, .focusPanels, .analyticsSplit, .loadingBlocks { grid-template-columns: 1fr; }.maintenanceList li { grid-template-columns: 1fr; gap: 2px; }.rangeNav { grid-template-columns: repeat(2, minmax(0, 1fr)); }.overviewCards article, .focusCard, .analyticsSummary, .dailyTrend, .sourcePanel, .topPanel, .analyticsDisclosure, .zeroPanel, .errorPanel { padding: 16px; } }
