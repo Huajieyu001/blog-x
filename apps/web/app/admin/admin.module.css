@@ -160,6 +160,11 @@
 .taxonomyItemActions button { min-height: 36px; padding: 0 11px; }
 .taxonomyItemActions .textDangerButton { color: #a1261d; }
 .taxonomyItemActions button:disabled { cursor: not-allowed; opacity: .45; }
+.taxonomyDeleteConfirm { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 7px; align-self: center; }
+.taxonomyDeleteConfirm span { flex-basis: 100%; color: var(--danger); font-size: .78rem; font-weight: 700; text-align: right; }
+.taxonomyDeleteConfirm button { min-height: 40px; border: 1px solid var(--line); border-radius: 999px; padding: 0 12px; color: var(--ink); background: var(--surface); font-weight: 650; cursor: pointer; }
+.taxonomyDeleteConfirm .textDangerButton { border-color: var(--danger); color: var(--danger); }
+.taxonomyDeleteConfirm button:disabled { cursor: wait; opacity: .55; }
 .taxonomyHelp { grid-column: 1 / -1; }
 .taxonomyEmpty { margin: 20px 0 0; color: var(--muted); }
 .adminEditorPage { max-width: 1120px; }
