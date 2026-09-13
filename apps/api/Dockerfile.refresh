@@ -23,6 +23,7 @@ LABEL org.opencontainers.image.revision=${REFRESH_REVISION} \
 
 COPY --from=seed-store /pnpm-store /pnpm-store
 COPY --from=seed-store /root/.cache/node/corepack /root/.cache/node/corepack
+COPY --from=seed-store /root/.cache/pnpm /root/.cache/pnpm
 
 WORKDIR /refresh-workspace
 RUN corepack enable

@@ -436,6 +436,7 @@ test("source contracts require neutral stores, offline frozen installs and sanit
     assert.match(dockerfile, /FROM node:24\.15\.0-alpine AS runtime/);
     assert.match(dockerfile, /COPY --from=seed-store \/pnpm-store \/pnpm-store/);
     assert.match(dockerfile, /COPY --from=seed-store \/root\/\.cache\/node\/corepack \/root\/\.cache\/node\/corepack/);
+    assert.match(dockerfile, /COPY --from=seed-store \/root\/\.cache\/pnpm \/root\/\.cache\/pnpm/);
     assert.match(dockerfile, /--store-dir=\/pnpm-store --offline --frozen-lockfile/);
     assert.match(dockerfile, /\/refresh-workspace/);
     assert.match(dockerfile, /--network=none/);
