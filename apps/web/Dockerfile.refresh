@@ -14,6 +14,7 @@ ARG REFRESH_REVISION
 ARG LOCKFILE_SHA256
 ARG SEED_IMAGE_ID
 ARG PUBLIC_ORIGIN=http://127.0.0.1:3100
+ARG INTERNAL_API_ORIGIN=http://api:3001
 LABEL org.opencontainers.image.revision=${REFRESH_REVISION} \
   io.blog-x.lockfile-sha256=${LOCKFILE_SHA256} \
   io.blog-x.seed-image-id=${SEED_IMAGE_ID} \
@@ -36,6 +37,7 @@ COPY apps/web apps/web
 COPY packages/contracts packages/contracts
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PUBLIC_ORIGIN=${PUBLIC_ORIGIN}
+ENV INTERNAL_API_ORIGIN=${INTERNAL_API_ORIGIN}
 RUN corepack pnpm --filter @blog-x/web build
 
 EXPOSE 3100
