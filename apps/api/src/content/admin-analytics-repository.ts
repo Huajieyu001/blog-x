@@ -1,4 +1,4 @@
-import { adminAnalyticsResponseSchema, anonymousViewSourceValues, type AdminAnalytics } from "@blog-x/contracts";
+import { adminAnalyticsResponseSchema, type AdminAnalytics } from "@blog-x/contracts";
 import { sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { publicPredicate } from "./public-repository.js";
@@ -104,5 +104,3 @@ export function createAdminAnalyticsRepository(db: Database) {
 }
 
 export type AdminAnalyticsRepository = ReturnType<typeof createAdminAnalyticsRepository>;
-
-export const adminAnalyticsSourceOrder = anonymousViewSourceValues;
