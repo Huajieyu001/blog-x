@@ -34,6 +34,7 @@ const internalApiOrigin = process.env.INTERNAL_API_ORIGIN ?? "http://127.0.0.1:3
 type Parser<T> = { safeParse: (value: unknown) => { success: true; data: T } | { success: false } };
 export type PublicResult<T> = { kind: "ok"; data: T } | { kind: "not_found" } | { kind: "upstream_error" };
 export type AdminResult<T> = { kind: "ok"; data: T } | { kind: "upstream_error" };
+export type AdminOptionalResult<T> = AdminResult<T> | { kind: "not_found" };
 
 async function getPublic<T>(path: string, schema: Parser<T>, allowNotFound = false): Promise<PublicResult<T>> {
   try {
@@ -64,13 +65,19 @@ export async function getSessionStatus(cookieHeader: string): Promise<SessionSta
   }
 }
 
-export async function getAdminAbout(cookieHeader: string): Promise<AdminAbout | null> {
+export async function getAdminAboutResult(cookieHeader: string): Promise<AdminOptionalResult<AdminAbout>> {
   try {
     const response = await fetch(`${internalApiOrigin}/admin/about`, { cache: "no-store", headers: cookieHeader ? { cookie: cookieHeader } : undefined });
-    if (!response.ok) return null;
+    if (response.status === 404) return { kind: "not_found" };
+    if (!response.ok) return { kind: "upstream_error" };
     const parsed = adminAboutSchema.safeParse(await response.json());
-    return parsed.success ? parsed.data : null;
-  } catch { return null; }
+    return parsed.success ? { kind: "ok", data: parsed.data } : { kind: "upstream_error" };
+  } catch { return { kind: "upstream_error" }; }
+}
+
+export async function getAdminAbout(cookieHeader: string): Promise<AdminAbout | null> {
+  const result = await getAdminAboutResult(cookieHeader);
+  return result.kind === "ok" ? result.data : null;
 }
 
 export function getPublicAbout() { return getPublic("/public/about", publicAboutSchema, true); }
@@ -138,7 +145,7 @@ export async function getAdminAnalytics(
   }
 }
 
-export async function getAdminAuditEvents(cookieHeader: string, cursor?: string): Promise<AuditEventList | null> {
+export async function getAdminAuditEventsResult(cookieHeader: string, cursor?: string): Promise<AdminResult<AuditEventList>> {
   try {
     const search = new URLSearchParams({ limit: "25" });
     if (cursor) search.set("cursor", cursor);
@@ -146,12 +153,17 @@ export async function getAdminAuditEvents(cookieHeader: string, cursor?: string)
       cache: "no-store",
       headers: cookieHeader ? { cookie: cookieHeader } : undefined,
     });
-    if (!response.ok) return null;
+    if (!response.ok) return { kind: "upstream_error" };
     const parsed = auditEventListSchema.safeParse(await response.json());
-    return parsed.success ? parsed.data : null;
+    return parsed.success ? { kind: "ok", data: parsed.data } : { kind: "upstream_error" };
   } catch {
-    return null;
+    return { kind: "upstream_error" };
   }
+}
+
+export async function getAdminAuditEvents(cookieHeader: string, cursor?: string): Promise<AuditEventList | null> {
+  const result = await getAdminAuditEventsResult(cookieHeader, cursor);
+  return result.kind === "ok" ? result.data : null;
 }
 
 export async function getAdminTaxonomyResult(

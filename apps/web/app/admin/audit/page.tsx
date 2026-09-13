@@ -1,6 +1,6 @@
 import type { AuditEvent, AuditEventName } from "@blog-x/contracts";
 import { cookies } from "next/headers";
-import { getAdminAuditEvents } from "../../lib/api";
+import { getAdminAuditEventsResult } from "../../lib/api";
 import styles from "../admin.module.css";
 
 const eventLabels: Record<AuditEventName, string> = {
@@ -44,7 +44,8 @@ function eventDetail(item: AuditEvent) {
 export default async function AuditPage({ searchParams }: { searchParams: Promise<{ cursor?: string | string[] }> }) {
   const rawCursor = (await searchParams).cursor;
   const cursor = typeof rawCursor === "string" ? rawCursor : undefined;
-  const result = await getAdminAuditEvents((await cookies()).toString(), cursor);
+  const result = await getAdminAuditEventsResult((await cookies()).toString(), cursor);
+  const events = result.kind === "ok" ? result.data : null;
 
   return (
     <main className={styles.workspace} aria-labelledby="audit-title">
@@ -53,11 +54,11 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
         <a className={styles.secondaryLink} href="/admin">返回工作台</a>
       </header>
       <aside className={styles.auditNotice}>仅记录成功的关键管理操作，不保存密码、登录令牌、文章正文、文件内容或客户端 IP。</aside>
-      {!result ? <p role="alert">暂时无法读取操作日志，请稍后重试。</p> : null}
-      {result && !result.items.length ? <p>还没有操作记录。</p> : null}
-      {result?.items.length ? (
+      {result.kind === "upstream_error" ? <section className={`${styles.errorPanel} ${styles.adminRouteError}`} role="alert"><h2>暂时无法读取操作日志</h2><p>日志没有改变，请检查连接后重试。</p><a href="/admin/audit">重新加载操作日志</a></section> : null}
+      {events && !events.items.length ? <section className={styles.emptyPanel}><h2>还没有操作记录</h2><p>登录、内容发布和站点设置变更会安全地显示在这里。</p></section> : null}
+      {events?.items.length ? (
         <div className={styles.auditList} aria-label="管理员操作记录">
-          {result.items.map((item) => (
+          {events.items.map((item) => (
             <article className={styles.auditRow} key={item.id}>
               <div>
                 <p className={styles.auditEvent}>{eventLabels[item.event]}</p>
@@ -69,7 +70,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
           ))}
         </div>
       ) : null}
-      {result?.nextCursor ? <nav className={styles.auditPager} aria-label="操作日志分页"><a href={`/admin/audit?cursor=${encodeURIComponent(result.nextCursor)}`}>查看更早记录</a></nav> : null}
+      {events?.nextCursor ? <nav className={styles.auditPager} aria-label="操作日志分页"><a href={`/admin/audit?cursor=${encodeURIComponent(events.nextCursor)}`}>查看更早记录</a></nav> : null}
     </main>
   );
 }
