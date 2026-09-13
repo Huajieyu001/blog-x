@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getAdminAnalytics, getAdminPostsResult } from "./api.js";
+import { getAdminAnalytics, getAdminPostsResult, getAdminTaxonomy, getAdminTaxonomyResult } from "./api.js";
 
 const post = {
   id: "00000000-0000-4000-8000-000000000001",
@@ -76,4 +76,23 @@ test("admin helpers distinguish non-2xx, network, malformed JSON, and invalid co
   assert.deepEqual(await getAdminAnalytics("cookie", 30, 1), { kind: "upstream_error" });
   assert.deepEqual(await getAdminAnalytics("cookie", 30, 1), { kind: "upstream_error" });
   assert.deepEqual(await getAdminPostsResult("cookie"), { kind: "ok", data: [] });
+});
+
+test("taxonomy result distinguishes genuine empty data from upstream failures while editor fallback stays compatible", async (context) => {
+  const outcomes: Array<Response | Error> = [
+    new Response(JSON.stringify({ items: [] }), { status: 200 }),
+    new Response("{}", { status: 503 }),
+    new Response(JSON.stringify({ items: "invalid" }), { status: 200 }),
+    new Error("network unavailable"),
+  ];
+  context.after(installFetch(async () => {
+    const next = outcomes.shift();
+    if (next instanceof Error) throw next;
+    return next!;
+  }));
+
+  assert.deepEqual(await getAdminTaxonomyResult("categories", "cookie"), { kind: "ok", data: [] });
+  assert.deepEqual(await getAdminTaxonomyResult("categories", "cookie"), { kind: "upstream_error" });
+  assert.deepEqual(await getAdminTaxonomyResult("tags", "cookie"), { kind: "upstream_error" });
+  assert.deepEqual(await getAdminTaxonomy("tags", "cookie"), []);
 });

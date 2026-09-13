@@ -154,21 +154,26 @@ export async function getAdminAuditEvents(cookieHeader: string, cursor?: string)
   }
 }
 
-export async function getAdminTaxonomy(
+export async function getAdminTaxonomyResult(
   kind: "categories" | "tags",
   cookieHeader: string,
-): Promise<TaxonomyTerm[]> {
+): Promise<AdminResult<TaxonomyTerm[]>> {
   try {
     const response = await fetch(`${internalApiOrigin}/admin/${kind}`, {
       cache: "no-store",
       headers: cookieHeader ? { cookie: cookieHeader } : undefined,
     });
-    if (!response.ok) return [];
+    if (!response.ok) return { kind: "upstream_error" };
     const parsed = taxonomyListSchema.safeParse(await response.json());
-    return parsed.success ? parsed.data.items : [];
+    return parsed.success ? { kind: "ok", data: parsed.data.items } : { kind: "upstream_error" };
   } catch {
-    return [];
+    return { kind: "upstream_error" };
   }
+}
+
+export async function getAdminTaxonomy(kind: "categories" | "tags", cookieHeader: string): Promise<TaxonomyTerm[]> {
+  const result = await getAdminTaxonomyResult(kind, cookieHeader);
+  return result.kind === "ok" ? result.data : [];
 }
 
 export function getPublicPosts(page: number): Promise<PublicResult<PublicPostListResponse>> {

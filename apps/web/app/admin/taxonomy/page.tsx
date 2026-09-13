@@ -1,22 +1,14 @@
 import { cookies } from "next/headers";
+import { getAdminTaxonomyResult } from "../../lib/api";
 import TaxonomyManager from "../_components/TaxonomyManager";
 import styles from "../admin.module.css";
 
-const api = process.env.INTERNAL_API_ORIGIN ?? "http://127.0.0.1:3001";
-
-async function terms(kind: "categories" | "tags", cookie: string) {
-  try {
-    const response = await fetch(`${api}/admin/${kind}`, { cache: "no-store", headers: { cookie } });
-    if (!response.ok) return [];
-    return ((await response.json()) as { items: Array<{ id: string; name: string; slug: string; articleCount: number }> }).items;
-  } catch {
-    return [];
-  }
-}
-
 export default async function TaxonomyPage() {
   const cookie = (await cookies()).toString();
-  const [categories, tags] = await Promise.all([terms("categories", cookie), terms("tags", cookie)]);
+  const [categories, tags] = await Promise.all([
+    getAdminTaxonomyResult("categories", cookie),
+    getAdminTaxonomyResult("tags", cookie),
+  ]);
   return (
     <main className={styles.workspace}>
       <header className={styles.workspaceHeader}>
@@ -24,9 +16,20 @@ export default async function TaxonomyPage() {
         <a className={styles.secondaryLink} href="/admin#articles">返回文章管理</a>
       </header>
       <div className={styles.taxonomyGrid}>
-        <TaxonomyManager kind="categories" initialTerms={categories} />
-        <TaxonomyManager kind="tags" initialTerms={tags} />
+        {categories.kind === "ok" ? <TaxonomyManager kind="categories" initialTerms={categories.data} /> : <TaxonomyFailure label="分类" />}
+        {tags.kind === "ok" ? <TaxonomyManager kind="tags" initialTerms={tags.data} /> : <TaxonomyFailure label="标签" />}
       </div>
     </main>
+  );
+}
+
+function TaxonomyFailure({ label }: { label: "分类" | "标签" }) {
+  return (
+    <section className={`${styles.taxonomyPanel} ${styles.errorPanel}`} role="alert">
+      <p className={styles.eyebrow}>{label === "分类" ? "categories" : "tags"}</p>
+      <h2>{label}暂时不可用</h2>
+      <p>现有{label}没有改变，请检查连接后重新加载。</p>
+      <a href="/admin/taxonomy">重新加载{label}</a>
+    </section>
   );
 }
