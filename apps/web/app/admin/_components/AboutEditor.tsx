@@ -10,6 +10,14 @@ import { useState } from "react";
 import ArticleBody from "../../_components/ArticleBody";
 import styles from "../admin.module.css";
 
+type AboutAction = "save" | "preview" | "publish";
+
+const actionCopy: Record<AboutAction, { pending: string; failed: string; invalid: string }> = {
+  save: { pending: "正在保存…", failed: "草稿保存失败，请重试。", invalid: "服务器返回了无法识别的草稿，请重试。" },
+  preview: { pending: "正在生成预览…", failed: "预览生成失败，请重试。", invalid: "服务器返回了无法识别的预览，请重试。" },
+  publish: { pending: "正在发布…", failed: "关于页发布失败，请重试。", invalid: "服务器返回了无法识别的发布结果，请重试。" },
+};
+
 function fieldErrors(error: { issues: Array<{ path: PropertyKey[]; message: string }> }) {
   const fields: Record<string, string[]> = {};
   for (const issue of error.issues) {
@@ -27,6 +35,7 @@ export default function AboutEditor({ initial }: { initial: AdminAbout | null })
   const [message, setMessage] = useState("");
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [pane, setPane] = useState<"edit" | "preview">("edit");
+  const [pending, setPending] = useState<AboutAction | null>(null);
 
   function clearError(name: "title" | "markdown") {
     setErrors((current) => {
@@ -38,12 +47,17 @@ export default function AboutEditor({ initial }: { initial: AdminAbout | null })
   }
 
   async function request(path: "" | "/preview" | "/publish") {
+    if (pending) return;
+    const action: AboutAction = path === "/preview" ? "preview" : path === "/publish" ? "publish" : "save";
     const parsed = aboutInputSchema.safeParse({ title, markdown, version });
     if (!parsed.success) {
       setErrors(fieldErrors(parsed.error));
       setMessage("请修正标记的字段。");
       return;
     }
+
+    setPending(action);
+    setMessage(actionCopy[action].pending);
     try {
       const response = await fetch(`/api/admin/about${path}`, {
         method: "POST",
@@ -52,13 +66,15 @@ export default function AboutEditor({ initial }: { initial: AdminAbout | null })
         body: JSON.stringify(path === "/publish" ? { version } : parsed.data),
       });
       if (!response.ok) {
-        setMessage(response.status === 409 ? "内容已更新，请刷新后重试。" : "保存失败，请重试。");
+        setMessage(response.status === 409
+          ? "内容已在其他位置更新，请刷新页面后再提交。"
+          : actionCopy[action].failed);
         return;
       }
       if (path === "/preview") {
-        const preview = aboutPreviewSchema.safeParse(await response.json());
+        const preview = aboutPreviewSchema.safeParse(await response.json().catch(() => null));
         if (!preview.success) {
-          setMessage("保存失败，请重试。");
+          setMessage(actionCopy.preview.invalid);
           return;
         }
         setPreviewHtml(preview.data.html);
@@ -66,9 +82,9 @@ export default function AboutEditor({ initial }: { initial: AdminAbout | null })
         setPane("preview");
         return;
       }
-      const page = adminAboutSchema.safeParse(await response.json());
+      const page = adminAboutSchema.safeParse(await response.json().catch(() => null));
       if (!page.success) {
-        setMessage("保存失败，请重试。");
+        setMessage(actionCopy[action].invalid);
         return;
       }
       setErrors({});
@@ -76,14 +92,16 @@ export default function AboutEditor({ initial }: { initial: AdminAbout | null })
       setPublished(page.data.status === "published");
       setMessage(path === "/publish" ? "关于页已发布。" : "草稿已保存。");
     } catch {
-      setMessage("保存失败，请重试。");
+      setMessage(actionCopy[action].failed);
+    } finally {
+      setPending(null);
     }
   }
 
   const titleError = errors.title?.join("；");
   const markdownError = errors.markdown?.join("；");
   return (
-    <main className={`${styles.page} ${styles.adminEditorPage}`}>
+    <main className={`${styles.page} ${styles.adminEditorPage}`} aria-busy={Boolean(pending)}>
       <div className={styles.titleRow}>
         <div><p className={styles.eyebrow}>BLOG X / 站点信息</p><h1>关于页</h1><p className={styles.headerDescription}>编辑访客在公开关于页看到的站点介绍。</p></div>
         <a className={styles.secondaryLink} href="/about">查看公开关于页</a>
@@ -94,6 +112,7 @@ export default function AboutEditor({ initial }: { initial: AdminAbout | null })
           标题
           <input
             value={title}
+            disabled={Boolean(pending)}
             onChange={(event) => { setTitle(event.target.value); clearError("title"); }}
             aria-invalid={Boolean(titleError)}
             aria-describedby={titleError ? "about-title-error" : undefined}
@@ -102,8 +121,8 @@ export default function AboutEditor({ initial }: { initial: AdminAbout | null })
         {titleError ? <p id="about-title-error" className={styles.error}>{titleError}</p> : null}
       </section>
       <div className={styles.mobileTabs} aria-label="关于页编辑器视图">
-        <button type="button" aria-pressed={pane === "edit"} onClick={() => setPane("edit")}>编辑</button>
-        <button type="button" aria-pressed={pane === "preview"} onClick={() => setPane("preview")}>预览</button>
+        <button type="button" disabled={Boolean(pending)} aria-pressed={pane === "edit"} onClick={() => setPane("edit")}>编辑</button>
+        <button type="button" disabled={Boolean(pending)} aria-pressed={pane === "preview"} onClick={() => setPane("preview")}>预览</button>
       </div>
       <section className={styles.editor}>
         <div className={`${styles.pane} ${pane === "preview" ? styles.mobileInactive : styles.mobileActive}`} data-testid="about-editor-source">
@@ -112,6 +131,7 @@ export default function AboutEditor({ initial }: { initial: AdminAbout | null })
             Markdown
             <textarea
               value={markdown}
+              disabled={Boolean(pending)}
               onChange={(event) => { setMarkdown(event.target.value); clearError("markdown"); }}
               aria-invalid={Boolean(markdownError)}
               aria-describedby={markdownError ? "about-markdown-error" : undefined}
@@ -127,9 +147,15 @@ export default function AboutEditor({ initial }: { initial: AdminAbout | null })
         </div>
       </section>
       <div className={`${styles.actionButtons} ${styles.editorActions}`}>
-        <button type="button" onClick={() => { void request(""); }}>保存草稿</button>
-        <button type="button" onClick={() => { void request("/preview"); }}>更新预览</button>
-        <button type="button" disabled={!version} onClick={() => { void request("/publish"); }}>发布</button>
+        <button type="button" disabled={Boolean(pending)} onClick={() => { void request(""); }}>
+          {pending === "save" ? "正在保存…" : "保存草稿"}
+        </button>
+        <button type="button" disabled={Boolean(pending)} onClick={() => { void request("/preview"); }}>
+          {pending === "preview" ? "正在生成…" : "更新预览"}
+        </button>
+        <button type="button" disabled={Boolean(pending) || !version} onClick={() => { void request("/publish"); }}>
+          {pending === "publish" ? "正在发布…" : "发布"}
+        </button>
       </div>
       <p className={styles.status} role="status" aria-label="关于页编辑状态">{message}</p>
     </main>
