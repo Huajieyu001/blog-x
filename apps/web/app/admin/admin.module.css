@@ -10,7 +10,7 @@
 .titleRow { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
 .titleRow h1 { margin: 4px 0 0; font-size: clamp(2rem, 4vw, 3.6rem); font-weight: 500; letter-spacing: -.04em; }
 .eyebrow { margin: 0; color: var(--muted); font: 600 .72rem/1.4 ui-monospace, monospace; letter-spacing: .16em; text-transform: uppercase; }
-.primaryButton { border: 1px solid var(--ink); border-radius: 999px; padding: 11px 20px; color: var(--paper); background: var(--ink); cursor: pointer; }
+.primaryButton { min-height: 44px; border: 1px solid var(--ink); border-radius: 999px; padding: 9px 20px; color: var(--paper); background: var(--ink); cursor: pointer; }
 .editorPage { max-width: 1280px; }
 .editorTitleMeta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 12px; color: var(--muted); font: .75rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .editorState { display: inline-flex; min-height: 27px; align-items: center; border: 1px solid var(--line); border-radius: 999px; padding: 0 9px; }
@@ -87,7 +87,7 @@
 .scheduleForm button, .scheduleControls > form > button { min-height: 44px; border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; color: var(--ink); background: var(--surface); cursor: pointer; }
 .scheduleForm button:disabled, .scheduleControls > form > button:disabled { cursor: not-allowed; opacity: .55; }
 .actionButtons { display: flex; flex-wrap: wrap; gap: 8px; }
-.actionButtons button { border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; color: var(--ink); background: var(--surface); cursor: pointer; }
+.actionButtons button { min-height: 44px; border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; color: var(--ink); background: var(--surface); cursor: pointer; }
 .actionButtons button:disabled, .primaryButton:disabled { cursor: not-allowed; opacity: .55; }
 .actionButtons .dangerButton, .dangerButton { border-color: #a1261d; color: #a1261d; }
 .actionStatus { min-width: 9em; margin: 0; color: var(--muted); font: .82rem/1.4 ui-sans-serif, system-ui, sans-serif; }
@@ -96,7 +96,7 @@
 .dialog h2 { margin-top: 0; }
 .dialog code { overflow-wrap: anywhere; }
 .dialogActions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
-.dialogActions button { border: 1px solid var(--line); border-radius: 999px; padding: 9px 15px; color: var(--ink); background: var(--surface); cursor: pointer; }
+.dialogActions button { min-height: 44px; border: 1px solid var(--line); border-radius: 999px; padding: 9px 15px; color: var(--ink); background: var(--surface); cursor: pointer; }
 .dialogActions button:disabled { cursor: wait; opacity: .58; }
 .management { max-width: 1100px; margin: 28px auto; padding: 0 24px; }
 .managementTitle { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #d8d4ca; }
@@ -148,7 +148,7 @@
 .taxonomyFormFields input { box-sizing: border-box; width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 5px; padding: 0 10px; color: var(--ink); background: var(--surface); font-size: .9rem; }
 .taxonomyFormFields input[aria-invalid="true"] { border-color: #a1261d; }
 .taxonomyFormActions, .taxonomyItemActions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.taxonomyFormActions button, .taxonomyItemActions button { min-height: 40px; border: 1px solid var(--line); border-radius: 999px; padding: 0 13px; color: var(--ink); background: var(--surface); font-weight: 650; cursor: pointer; }
+.taxonomyFormActions button, .taxonomyItemActions button { min-height: 44px; border: 1px solid var(--line); border-radius: 999px; padding: 0 13px; color: var(--ink); background: var(--surface); font-weight: 650; cursor: pointer; }
 .taxonomyFormActions .compactPrimaryButton { border-color: var(--ink); color: var(--paper); background: var(--ink); }
 .taxonomyStatus { min-height: 1.5em; margin: 12px 0 0; color: var(--accent); font: 650 .82rem/1.5 ui-sans-serif, system-ui, sans-serif; }
 .taxonomyList { display: grid; margin: 8px 0 0; padding: 0; list-style: none; }
@@ -158,12 +158,12 @@
 .taxonomyTerm code { color: var(--muted); overflow-wrap: anywhere; font-size: .75rem; }
 .taxonomyTerm span, .taxonomyHelp { color: var(--muted); font-size: .78rem; line-height: 1.5; }
 .taxonomyItemActions { margin: 0; align-self: center; }
-.taxonomyItemActions button { min-height: 36px; padding: 0 11px; }
+.taxonomyItemActions button { min-height: 44px; padding: 0 12px; }
 .taxonomyItemActions .textDangerButton { color: #a1261d; }
 .taxonomyItemActions button:disabled { cursor: not-allowed; opacity: .45; }
 .taxonomyDeleteConfirm { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 7px; align-self: center; }
 .taxonomyDeleteConfirm span { flex-basis: 100%; color: var(--danger); font-size: .78rem; font-weight: 700; text-align: right; }
-.taxonomyDeleteConfirm button { min-height: 40px; border: 1px solid var(--line); border-radius: 999px; padding: 0 12px; color: var(--ink); background: var(--surface); font-weight: 650; cursor: pointer; }
+.taxonomyDeleteConfirm button { min-height: 44px; border: 1px solid var(--line); border-radius: 999px; padding: 0 12px; color: var(--ink); background: var(--surface); font-weight: 650; cursor: pointer; }
 .taxonomyDeleteConfirm .textDangerButton { border-color: var(--danger); color: var(--danger); }
 .taxonomyDeleteConfirm button:disabled { cursor: wait; opacity: .55; }
 .taxonomyHelp { grid-column: 1 / -1; }
@@ -209,6 +209,7 @@
 .errorActions button { color: var(--paper); background: var(--ink); }
 @keyframes admin-loading { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 .workspace a:focus-visible, .workspace button:focus-visible, .analyticsPage a:focus-visible, .maintenanceList button:focus-visible, .postActions summary:focus-visible, .dailyDetails summary:focus-visible, .trendScroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.page a:focus-visible, .page button:focus-visible, .page input:focus-visible, .page textarea:focus-visible, .page select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 :global(html[data-theme="dark"]) .workspace, :global(html[data-theme="dark"]) .analyticsPage { --danger: #ffaca5; }
 @media (min-width: 721px) and (max-width: 1023px) { .workspace, .analyticsPage { padding-right: 24px; padding-left: 24px; }.overviewCards { grid-template-columns: repeat(2, minmax(0, 1fr)); }.focusPanels, .analyticsSplit { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { .workspace, .analyticsPage { padding: 32px 18px 48px; }.workspaceHeader, .analyticsHeader { align-items: stretch; flex-direction: column; }.primaryLink { width: 100%; box-sizing: border-box; }.workspaceSection, .focusPanels .workspaceSection { margin-top: 32px; }.overviewCards, .focusPanels, .analyticsSplit, .loadingBlocks { grid-template-columns: 1fr; }.maintenanceList li { grid-template-columns: 1fr; gap: 2px; }.rangeNav { grid-template-columns: repeat(2, minmax(0, 1fr)); }.overviewCards article, .focusCard, .analyticsSummary, .dailyTrend, .sourcePanel, .topPanel, .analyticsDisclosure, .zeroPanel, .errorPanel, .emptyPanel { padding: 16px; } }
@@ -226,8 +227,8 @@
   .taxonomyFields { grid-template-columns: 1fr; }
   .mediaPanel { grid-template-columns: 1fr; }
   .mobileTabs { display: grid; grid-template-columns: 1fr 1fr; margin-top: 24px; border: 1px solid var(--line); }
-  .mobileTabs button { border: 0; padding: 10px; background: #fff; }
-  .mobileTabs button[aria-pressed="true"] { color: #fff; background: var(--ink); }
+  .mobileTabs button { min-height: 44px; border: 0; padding: 10px; color: var(--ink); background: var(--surface); }
+  .mobileTabs button[aria-pressed="true"] { color: var(--paper); background: var(--ink); }
   .editor { display: block; min-height: 480px; margin-top: 0; }
   .pane + .pane { border-left: 0; }
   .mobileInactive { display: none; }

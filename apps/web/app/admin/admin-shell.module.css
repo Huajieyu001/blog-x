@@ -63,7 +63,7 @@
 .theme fieldset { display: grid; gap: 4px; }
 .theme fieldset legend { float: none; margin: 0; color: #9db0a8; line-height: 1.4; }
 .theme fieldset div { flex-wrap: wrap; }
-.theme fieldset span { min-height: 36px; padding: 0 6px; color: #c8d3ce; }
+.theme fieldset span { min-height: 44px; padding: 0 8px; color: #c8d3ce; }
 .siteLink { display: flex; min-height: 44px; align-items: center; justify-content: space-between; color: #c8d3ce; font-size: .82rem; text-decoration: none; }
 .logoutButton { min-height: 44px; border: 1px solid rgb(255 255 255 / 25%); border-radius: 7px; color: #f2f5f3; background: transparent; font-weight: 650; cursor: pointer; }
 .logoutButton:disabled { cursor: wait; opacity: .65; }
