@@ -1,7 +1,7 @@
 "use client";
 
 import { adminPostSchema, deletedArticleSchema, type AdminPost, type ArticleAction } from "@blog-x/contracts";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   CHINA_TIMEZONE_OFFSET_MINUTES,
   formatTimezoneOffset,
@@ -64,8 +64,12 @@ export default function ArticleActions({
   const [message, setMessage] = useState("");
   const [pendingDelete, setPendingDelete] = useState(false);
   const [deleted, setDeleted] = useState(false);
+  const [actionPending, setActionPending] = useState<ArticleAction | null>(null);
   const [schedulePending, setSchedulePending] = useState(false);
   const [scheduleForm, setScheduleForm] = useState<ScheduleFormState>(() => scheduleFormStateAtOffset(initialPost.scheduledAt, CHINA_TIMEZONE_OFFSET_MINUTES));
+  const deleteTriggerRef = useRef<HTMLButtonElement>(null);
+  const deleteDialogRef = useRef<HTMLElement>(null);
+  const cancelDeleteRef = useRef<HTMLButtonElement>(null);
 
   function scheduleFormForBrowser(nextPost: AdminPost, fallbackOffsetMinutes = CHINA_TIMEZONE_OFFSET_MINUTES) {
     if (nextPost.scheduledAt) return scheduleFormStateAtOffset(nextPost.scheduledAt, browserOffsetAtInstant(nextPost.scheduledAt));
@@ -82,8 +86,49 @@ export default function ArticleActions({
     setScheduleForm(scheduleFormForBrowser(initialPost, browserOffsetAtLocalDateTime(scheduleForm.scheduledAt, CHINA_TIMEZONE_OFFSET_MINUTES)));
   }, [initialPost]);
 
+  useEffect(() => {
+    if (!pendingDelete) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.requestAnimationFrame(() => cancelDeleteRef.current?.focus());
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !actionPending) {
+        event.preventDefault();
+        setPendingDelete(false);
+        window.requestAnimationFrame(() => deleteTriggerRef.current?.focus());
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const buttons = Array.from(deleteDialogRef.current?.querySelectorAll<HTMLButtonElement>("button:not([disabled])") ?? []);
+      if (!buttons.length) return;
+      const first = buttons[0];
+      const last = buttons.at(-1)!;
+      if (!deleteDialogRef.current?.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("keydown", handleKey);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [pendingDelete, actionPending]);
+
+  function closeDeleteDialog() {
+    setPendingDelete(false);
+    window.requestAnimationFrame(() => deleteTriggerRef.current?.focus());
+  }
+
   async function perform(action: ArticleAction) {
-    if (disabled) return;
+    if (disabled || actionPending || schedulePending) return;
+    setActionPending(action);
     setMessage(`${actionLabels[action]}中…`);
     try {
       const response = await fetch(`/api/admin/posts/${post.id}/${action}`, {
@@ -113,6 +158,8 @@ export default function ArticleActions({
       onChanged?.(parsed.data);
     } catch {
       setMessage("网络异常，请重试");
+    } finally {
+      setActionPending(null);
     }
   }
 
@@ -125,7 +172,7 @@ export default function ArticleActions({
   }
 
   async function schedule(event: FormEvent<HTMLFormElement>) {
-    if (disabled || schedulePending) return;
+    if (disabled || schedulePending || actionPending) return;
     event.preventDefault();
     setSchedulePending(true);
     setMessage(post.scheduledAt ? "改期预约中…" : "设定预约中…");
@@ -153,7 +200,7 @@ export default function ArticleActions({
   }
 
   async function cancelSchedule(event: FormEvent<HTMLFormElement>) {
-    if (disabled || schedulePending) return;
+    if (disabled || schedulePending || actionPending) return;
     event.preventDefault();
     setSchedulePending(true);
     setMessage("取消预约中…");
@@ -178,6 +225,7 @@ export default function ArticleActions({
   }
 
   if (deleted) return null;
+  const mutationBusy = disabled || schedulePending || Boolean(actionPending);
   const controls = (
     <>
       <p className={styles.lifecycleState}>状态：{statusLabels[post.status]}</p>
@@ -189,31 +237,31 @@ export default function ArticleActions({
               const scheduledAt = event.target.value;
               const offsetMinutes = browserOffsetAtLocalDateTime(scheduledAt, CHINA_TIMEZONE_OFFSET_MINUTES);
               setScheduleForm({ scheduledAt, timezoneOffset: formatTimezoneOffset(offsetMinutes) });
-            }} disabled={disabled || schedulePending} /></label>
-            <label>UTC 偏移<input name="timezoneOffset" inputMode="text" pattern="[+-](0[0-9]|1[0-4]):[0-5][0-9]" required value={scheduleForm.timezoneOffset} onChange={(event) => setScheduleForm((current) => ({ ...current, timezoneOffset: event.target.value }))} disabled={disabled || schedulePending} /></label>
-            <button type="submit" disabled={disabled || schedulePending}>{post.scheduledAt ? "改期预约" : "设定预约"}</button>
+            }} disabled={mutationBusy} /></label>
+            <label>UTC 偏移<input name="timezoneOffset" inputMode="text" pattern="[+-](0[0-9]|1[0-4]):[0-5][0-9]" required value={scheduleForm.timezoneOffset} onChange={(event) => setScheduleForm((current) => ({ ...current, timezoneOffset: event.target.value }))} disabled={mutationBusy} /></label>
+            <button type="submit" disabled={mutationBusy}>{schedulePending ? "预约处理中…" : post.scheduledAt ? "改期预约" : "设定预约"}</button>
           </form>
           {post.scheduledAt ? (
             <form action={`/api/admin/posts/${post.id}/schedule/cancel`} method="post" onSubmit={(event) => { void cancelSchedule(event); }}>
-              <button type="submit" disabled={disabled || schedulePending}>取消预约</button>
+              <button type="submit" disabled={mutationBusy}>取消预约</button>
             </form>
           ) : null}
         </div>
       )}
       <div className={styles.actionButtons}>
         {validActions(post).map((action) => action === "delete"
-          ? <button className={styles.dangerButton} type="button" key={action} disabled={disabled} onClick={() => setPendingDelete(true)}>{actionLabels[action]}</button>
-          : <button type="button" key={action} disabled={disabled} onClick={() => { void perform(action); }}>{actionLabels[action]}</button>)}
+          ? <button ref={deleteTriggerRef} className={styles.dangerButton} type="button" key={action} disabled={mutationBusy} onClick={() => setPendingDelete(true)}>{actionLabels[action]}</button>
+          : <button type="button" key={action} disabled={mutationBusy} onClick={() => { void perform(action); }}>{actionPending === action ? `${actionLabels[action]}中…` : actionLabels[action]}</button>)}
       </div>
       <p role="status" aria-label="生命周期状态" className={styles.actionStatus}>{message || (disabled ? "请先保存更改或处理恢复副本" : "")}</p>
       {pendingDelete && (
         <div className={styles.dialogBackdrop}>
-          <section className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby={`delete-title-${post.id}`}>
+          <section ref={deleteDialogRef} className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby={`delete-title-${post.id}`} aria-describedby={`delete-description-${post.id}`}>
             <h2 id={`delete-title-${post.id}`}>确认软删除文章</h2>
-            <p>文章会立即从普通管理与公开访问中移除，但源文件和 Slug 将继续保留，可在后续恢复流程中使用。</p>
+            <p id={`delete-description-${post.id}`}>文章会立即从普通管理与公开访问中移除，但源文件和 Slug 将继续保留，可在后续恢复流程中使用。</p>
             <div className={styles.dialogActions}>
-              <button type="button" onClick={() => setPendingDelete(false)}>取消</button>
-              <button className={styles.dangerButton} type="button" disabled={disabled} onClick={() => { void perform("delete"); }}>确认软删除</button>
+              <button ref={cancelDeleteRef} type="button" disabled={Boolean(actionPending)} onClick={closeDeleteDialog}>取消</button>
+              <button className={styles.dangerButton} type="button" disabled={mutationBusy} onClick={() => { void perform("delete"); }}>{actionPending === "delete" ? "删除中…" : "确认软删除"}</button>
             </div>
           </section>
         </div>
