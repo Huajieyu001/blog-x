@@ -67,6 +67,8 @@
 .siteLink { display: flex; min-height: 44px; align-items: center; justify-content: space-between; color: #c8d3ce; font-size: .82rem; text-decoration: none; }
 .logoutButton { min-height: 44px; border: 1px solid rgb(255 255 255 / 25%); border-radius: 7px; color: #f2f5f3; background: transparent; font-weight: 650; cursor: pointer; }
 .logoutButton:disabled { cursor: wait; opacity: .65; }
+.logoutGroup { display: grid; gap: 7px; }
+.logoutError { margin: 0; color: #ffd0cb; font-size: .75rem; line-height: 1.5; }
 .navigation a:focus-visible, .brand:focus-visible, .siteLink:focus-visible, .logoutButton:focus-visible, .menuButton:focus-visible { outline: 2px solid #c9e7dc; outline-offset: 3px; }
 
 .mainColumn, .content { min-width: 0; }
