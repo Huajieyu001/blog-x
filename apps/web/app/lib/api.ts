@@ -75,26 +75,22 @@ export async function getAdminAboutResult(cookieHeader: string): Promise<AdminOp
   } catch { return { kind: "upstream_error" }; }
 }
 
-export async function getAdminAbout(cookieHeader: string): Promise<AdminAbout | null> {
-  const result = await getAdminAboutResult(cookieHeader);
-  return result.kind === "ok" ? result.data : null;
-}
-
 export function getPublicAbout() { return getPublic("/public/about", publicAboutSchema, true); }
 
 export function getArchives() { return getPublic("/public/archives", archiveSchema); }
 
-export async function getAdminPost(id: string, cookieHeader: string): Promise<AdminPost | null> {
+export async function getAdminPostResult(id: string, cookieHeader: string): Promise<AdminOptionalResult<AdminPost>> {
   try {
     const response = await fetch(`${internalApiOrigin}/admin/posts/${encodeURIComponent(id)}`, {
       cache: "no-store",
       headers: cookieHeader ? { cookie: cookieHeader } : undefined,
     });
-    if (!response.ok) return null;
+    if (response.status === 404) return { kind: "not_found" };
+    if (!response.ok) return { kind: "upstream_error" };
     const parsed = adminPostSchema.safeParse(await response.json());
-    return parsed.success ? parsed.data : null;
+    return parsed.success ? { kind: "ok", data: parsed.data } : { kind: "upstream_error" };
   } catch {
-    return null;
+    return { kind: "upstream_error" };
   }
 }
 
@@ -161,11 +157,6 @@ export async function getAdminAuditEventsResult(cookieHeader: string, cursor?: s
   }
 }
 
-export async function getAdminAuditEvents(cookieHeader: string, cursor?: string): Promise<AuditEventList | null> {
-  const result = await getAdminAuditEventsResult(cookieHeader, cursor);
-  return result.kind === "ok" ? result.data : null;
-}
-
 export async function getAdminTaxonomyResult(
   kind: "categories" | "tags",
   cookieHeader: string,
@@ -181,11 +172,6 @@ export async function getAdminTaxonomyResult(
   } catch {
     return { kind: "upstream_error" };
   }
-}
-
-export async function getAdminTaxonomy(kind: "categories" | "tags", cookieHeader: string): Promise<TaxonomyTerm[]> {
-  const result = await getAdminTaxonomyResult(kind, cookieHeader);
-  return result.kind === "ok" ? result.data : [];
 }
 
 export function getPublicPosts(page: number): Promise<PublicResult<PublicPostListResponse>> {
