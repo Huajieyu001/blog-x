@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { getAdminAnalytics, getAdminPostsResult } from "../lib/api";
 import { AnalyticsFailure, DailyTrend } from "./_components/AdminAnalytics";
-import ArticleActions from "./_components/ArticleActions";
+import AdminPostList from "./_components/AdminPostList";
 import styles from "./admin.module.css";
 
 function formatShanghai(instant: string) {
@@ -26,7 +26,7 @@ export default async function AdminPage() {
       <section className={styles.workspaceSection} aria-labelledby="continue-title"><h2 id="continue-title">继续创作</h2>{content.kind === "upstream_error" ? <ContentFailure title="暂时无法读取创作进度" /> : latestDraft ? <article className={styles.focusCard}><h3><a href={`/admin/posts/${latestDraft.id}`}>继续编辑「{latestDraft.title}」</a></h3><p>上次保存：{formatShanghai(latestDraft.version)}</p>{latestDraft.scheduledAt ? <p>计划于 {formatShanghai(latestDraft.scheduledAt)} 发布</p> : null}<a href="/admin/new">新建另一篇草稿</a></article> : <article className={styles.focusCard}><h3>还没有待写草稿</h3><p>从一个标题开始，先把想法保存下来。</p><a href="/admin/new">开始第一篇草稿</a></article>}</section>
       <section className={styles.workspaceSection} id="recent-analytics" aria-labelledby="recent-analytics-title"><h2 id="recent-analytics-title">最近 30 天访问</h2>{analytics.kind === "upstream_error" ? <AnalyticsFailure range={30} dashboard /> : <article className={styles.analyticsSummary}><p className={styles.analyticsMetric}><strong>{analytics.data.totalPv.toLocaleString("zh-CN")}</strong> <span>PV</span></p><p>匿名页面浏览量</p><DailyTrend analytics={analytics.data} compact />{analytics.data.topArticles[0] ? <p>阅读最多：{analytics.data.topArticles[0].title} · {analytics.data.topArticles[0].totalPv.toLocaleString("zh-CN")} PV</p> : null}<a href="/admin/analytics?range=30">查看完整统计 →</a><p className={styles.finePrint}>仅表示匿名、尽力而为的浏览趋势，不是独立访客数。</p></article>}</section>
     </div>
-    <section id="articles" className={styles.workspaceSection} aria-labelledby="posts-title"><h2 id="posts-title">文章管理{content.kind === "ok" ? ` · ${posts.length} 篇` : ""}</h2>{content.kind === "upstream_error" ? <ContentFailure title="暂时无法读取文章列表" /> : <div className={styles.postList}>{posts.length ? posts.map((post) => <ArticleActions key={post.id} post={post} variant="list" />) : <p>还没有文章。新建第一篇草稿，开始记录。 <a href="/admin/new">创建第一篇草稿</a></p>}</div>}</section>
+    <section id="articles" className={styles.workspaceSection} aria-labelledby="posts-title"><h2 id="posts-title">文章管理{content.kind === "ok" ? ` · ${posts.length} 篇` : ""}</h2>{content.kind === "upstream_error" ? <ContentFailure title="暂时无法读取文章列表" /> : <AdminPostList posts={posts} />}</section>
     <section className={styles.workspaceSection} aria-labelledby="maintenance-title"><h2 id="maintenance-title">站点维护</h2><ul className={styles.maintenanceList}><li><a href="/admin/taxonomy">分类与标签</a><span>整理文章的分类与标签。</span></li><li><a href="/admin/about">关于页</a><span>维护站点介绍。</span></li><li><a href="/admin/audit">操作日志</a><span>查看关键管理操作。</span></li><li><form action="/api/admin/export" method="post"><button type="submit">导出文章 Markdown</button></form><span>导出可迁移的内容副本；访问统计不包含在内。</span></li></ul></section>
   </main>;
 }
