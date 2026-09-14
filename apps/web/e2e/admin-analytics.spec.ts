@@ -109,7 +109,7 @@ test("analytics remains keyboard-accessible, bounded, and document-width-safe ac
   await expect(scroller).toBeFocused();
 });
 
-test("analytics has no browser-visible internal or third-party requests and respects resolved theme state", async ({ page }) => {
+test("administrator shell is private, responsive, compact, and theme-aware", async ({ page }) => {
   const origins = new Set<string>();
   page.on("request", (request) => origins.add(new URL(request.url()).origin));
   await login(page);
@@ -119,4 +119,104 @@ test("analytics has no browser-visible internal or third-party requests and resp
   await expect(page.locator("main")).toHaveCount(1);
   await expect(page.locator("main")).toBeVisible();
   expect([...origins]).toEqual([webOrigin]);
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+
+  const navigation = page.getByRole("complementary", { name: "后台导航" });
+  const destinations = [
+    ["/admin", "工作台"],
+    ["/admin#articles", "文章管理"],
+    ["/admin/new", "新建文章"],
+    ["/admin/analytics?range=30", "访问统计"],
+    ["/admin/taxonomy", "分类与标签"],
+    ["/admin/about", "关于页"],
+    ["/admin/audit", "操作日志"],
+  ] as const;
+
+  for (const [path, currentLabel] of destinations) {
+    await page.goto(`${webOrigin}${path}`);
+    await expect(navigation.getByRole("link", { name: currentLabel })).toHaveAttribute("aria-current", "page");
+    await expect.poll(async () => navigation.getByRole("link").evaluateAll((links) => links.filter((link) => link.getAttribute("aria-current") === "page").length)).toBe(1);
+  }
+  await expect(page.getByRole("button", { name: "退出登录" })).toBeVisible();
+
+  await page.goto(`${webOrigin}/admin/analytics?range=30`);
+  const detailPath = await page.getByRole("link", { name: analyticsTitle }).getAttribute("href");
+  expect(detailPath).toMatch(/^\/admin\/posts\//);
+  await page.goto(`${webOrigin}${detailPath}`);
+  await expect(navigation.getByRole("link", { name: "文章管理" })).toHaveAttribute("aria-current", "page");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${webOrigin}/admin`);
+  const menu = page.getByRole("button", { name: "打开后台导航" });
+  const content = page.locator("#admin-content");
+  await menu.click();
+  await expect(navigation.getByRole("link", { name: "工作台" })).toBeFocused();
+  await expect(content).toHaveAttribute("inert", "");
+  await page.keyboard.press("Shift+Tab");
+  expect(await navigation.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeFocused();
+
+  await menu.click();
+  await page.getByRole("link", { name: "文章管理" }).click();
+  await expect(page).toHaveURL(`${webOrigin}/admin#articles`);
+  await expect(content).toBeFocused();
+  await expect(navigation.getByRole("link", { name: "文章管理" })).toHaveAttribute("aria-current", "page");
+
+  await menu.click();
+  await expect(page.getByRole("button", { name: "关闭后台导航" }).last()).toBeVisible();
+  await page.mouse.click(370, 400);
+  await expect(menu).toBeFocused();
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+
+  const row = page.getByTestId(/admin-post-/).first();
+  await expect(row).toBeVisible();
+  await expect(row.getByRole("heading")).toBeVisible();
+  await expect(row.getByText(/^更新于 /)).toBeVisible();
+  await expect(row.getByRole("link", { name: "编辑文章" })).toBeVisible();
+  await expect(row.getByRole("button", { name: "删除" })).toHaveCount(0);
+  await row.getByText("管理操作", { exact: true }).click();
+  await expect(row.getByRole("button", { name: "删除" })).toBeVisible();
+  await row.getByRole("button", { name: "删除" }).click();
+  const confirmation = page.getByRole("dialog", { name: "确认软删除文章" });
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole("button", { name: "取消" }).click();
+  await expect(confirmation).toHaveCount(0);
+
+  const routes = [
+    ["/admin/taxonomy", "分类与标签", "返回文章管理"],
+    ["/admin/about", "关于页", "查看公开关于页"],
+    ["/admin/audit", "操作日志", "返回工作台"],
+    ["/admin/analytics?range=30", "访问统计", "30 天"],
+  ] as const;
+  for (const width of [390, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const [path, heading, controlName] of routes) {
+      await page.goto(`${webOrigin}${path}`);
+      await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+      const control = page.getByRole("link", { name: controlName }).first();
+      const target = await control.boundingBox();
+      expect(target?.height).toBeGreaterThanOrEqual(44);
+      expect(target?.width).toBeGreaterThanOrEqual(44);
+    }
+  }
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${webOrigin}/admin/about`);
+  const publicAbout = page.getByRole("link", { name: "查看公开关于页" });
+  await publicAbout.focus();
+  await expect(publicAbout).toBeFocused();
+  expect(await publicAbout.evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe("none");
+
+  const theme = page.getByRole("radiogroup", { name: "切换主题" });
+  await page.getByLabel("浅色", { exact: true }).check();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.getByLabel("深色", { exact: true }).check();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await theme.getByLabel("跟随系统", { exact: true }).check();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });

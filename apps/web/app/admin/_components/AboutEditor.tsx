@@ -126,11 +126,11 @@ export default function AboutEditor({ initial }: { initial: AdminAbout | null })
   const titleError = errors.title?.join("；");
   const markdownError = errors.markdown?.join("；");
   return (
-    <main className={`${styles.page} ${styles.adminEditorPage}`} aria-busy={Boolean(pending)}>
-      <div className={styles.titleRow}>
+    <main className={`${styles.workspace} ${styles.adminEditorPage}`} aria-busy={Boolean(pending)}>
+      <header className={styles.workspaceHeader}>
         <div><p className={styles.eyebrow}>BLOG X / 站点信息</p><h1>关于页</h1><p className={styles.headerDescription}>编辑访客在公开关于页看到的站点介绍。</p></div>
         <a className={styles.secondaryLink} href="/about">查看公开关于页</a>
-      </div>
+      </header>
       <p className={styles.contentStatus}>
         当前状态 <strong>{published ? "已发布" : "草稿"}</strong>
         <span aria-hidden="true">·</span>

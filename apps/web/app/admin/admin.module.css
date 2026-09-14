@@ -182,6 +182,7 @@
 .taxonomyHelp { grid-column: 1 / -1; }
 .taxonomyEmpty { margin: 20px 0 0; color: var(--muted); }
 .adminEditorPage { max-width: 1120px; }
+.adminEditorPage .contentStatus { margin-top: 22px; }
 .headerDescription { margin: 8px 0 0; color: var(--muted); font: .92rem/1.6 ui-sans-serif, system-ui, sans-serif; }
 .contentStatus { display: inline-flex; gap: 8px; margin: 0 0 18px; border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; color: var(--muted); font: .78rem/1.3 ui-sans-serif, system-ui, sans-serif; }
 .contentStatus strong { color: var(--ink); }
@@ -221,7 +222,7 @@
 .errorActions button, .errorActions a { display: inline-flex; min-height: 44px; box-sizing: border-box; align-items: center; justify-content: center; border: 1px solid var(--ink); border-radius: 999px; padding: 0 17px; color: var(--ink); background: var(--surface); font: 650 .88rem/1 ui-sans-serif, system-ui, sans-serif; text-decoration: none; cursor: pointer; }
 .errorActions button { color: var(--paper); background: var(--ink); }
 @keyframes admin-loading { from { background-position: 100% 0; } to { background-position: -100% 0; } }
-.workspace a:focus-visible, .workspace button:focus-visible, .workspace input:focus-visible, .analyticsPage a:focus-visible, .maintenanceList button:focus-visible, .postActions summary:focus-visible, .dailyDetails summary:focus-visible, .trendScroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.workspace a:focus-visible, .workspace button:focus-visible, .workspace input:focus-visible, .workspace textarea:focus-visible, .workspace select:focus-visible, .analyticsPage a:focus-visible, .maintenanceList button:focus-visible, .postActions summary:focus-visible, .dailyDetails summary:focus-visible, .trendScroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .page a:focus-visible, .page button:focus-visible, .page input:focus-visible, .page textarea:focus-visible, .page select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 :global(html[data-theme="dark"]) .workspace, :global(html[data-theme="dark"]) .analyticsPage { --danger: #ffaca5; }
 @media (min-width: 721px) and (max-width: 1023px) { .workspace, .analyticsPage { padding-right: 24px; padding-left: 24px; }.overviewCards { grid-template-columns: repeat(2, minmax(0, 1fr)); }.focusPanels, .analyticsSplit { grid-template-columns: 1fr; } }

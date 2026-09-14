@@ -24,6 +24,7 @@ export default function AdminShell({ children }: { children: ReactNode }) {
   const toggleRef = useRef<HTMLButtonElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   const firstLinkRef = useRef<HTMLAnchorElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setOpen(false); }, [pathname]);
 
@@ -38,7 +39,10 @@ export default function AdminShell({ children }: { children: ReactNode }) {
     if (!open) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    window.requestAnimationFrame(() => firstLinkRef.current?.focus());
+    let focusFrame: number | undefined;
+    const drawerFrame = window.requestAnimationFrame(() => {
+      focusFrame = window.requestAnimationFrame(() => firstLinkRef.current?.focus());
+    });
     const close = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -68,6 +72,8 @@ export default function AdminShell({ children }: { children: ReactNode }) {
     };
     document.addEventListener("keydown", close);
     return () => {
+      window.cancelAnimationFrame(drawerFrame);
+      if (focusFrame !== undefined) window.cancelAnimationFrame(focusFrame);
       document.removeEventListener("keydown", close);
       document.body.style.overflow = previousOverflow;
     };
@@ -89,9 +95,11 @@ export default function AdminShell({ children }: { children: ReactNode }) {
               href={item.href}
               aria-current={item.active(pathname, hash) ? "page" : undefined}
               onClick={() => {
+                const moveFocusToContent = open;
                 setOpen(false);
                 if (item.href === "/admin") setHash("");
                 else if (item.href === "/admin#articles") setHash("#articles");
+                if (moveFocusToContent) window.requestAnimationFrame(() => contentRef.current?.focus());
               }}
             >
               <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
@@ -122,7 +130,7 @@ export default function AdminShell({ children }: { children: ReactNode }) {
           </button>
         </header>
         {open ? <button className={styles.backdrop} type="button" aria-label="关闭后台导航" onClick={() => { setOpen(false); toggleRef.current?.focus(); }} /> : null}
-        <div id="admin-content" className={styles.content} tabIndex={-1} inert={open ? true : undefined} aria-hidden={open ? true : undefined}>{children}</div>
+        <div ref={contentRef} id="admin-content" className={styles.content} tabIndex={-1} inert={open ? true : undefined} aria-hidden={open ? true : undefined}>{children}</div>
       </div>
     </div>
   );
