@@ -137,11 +137,15 @@
 .auditList { display: grid; margin-top: 24px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); overflow: hidden; }
 .auditRow { display: grid; grid-template-columns: minmax(11rem, 1fr) minmax(14rem, 2fr) minmax(12rem, 1.3fr); gap: 20px; align-items: start; padding: 18px 20px; border-bottom: 1px solid var(--line); }
 .auditRow:last-child { border-bottom: 0; }
-.auditEvent { margin: 0; font: 650 .95rem/1.4 ui-sans-serif, system-ui, sans-serif; }
-.auditDetail { margin: 5px 0 0; color: #6b6962; font: .82rem/1.55 ui-sans-serif, system-ui, sans-serif; overflow-wrap: anywhere; }
-.auditTime { margin: 0; color: #6b6962; font: .82rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.auditEvent { margin: 0; color: var(--ink); font: 650 .95rem/1.4 ui-sans-serif, system-ui, sans-serif; }
+.auditTarget { margin: 6px 0 0; color: var(--muted); font: 650 .76rem/1.45 ui-sans-serif, system-ui, sans-serif; }
+.auditDetail { margin: 5px 0 0; color: var(--muted); font: .84rem/1.55 ui-sans-serif, system-ui, sans-serif; overflow-wrap: anywhere; }
+.auditIdentifier { margin: 8px 0 0; color: var(--muted); font: .7rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.auditIdentifier code { color: inherit; font: inherit; }
+.auditTime { display: grid; gap: 5px; margin: 0; color: var(--muted); font: .78rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.auditTime span { color: var(--ink); font: 650 .7rem/1.4 ui-sans-serif, system-ui, sans-serif; letter-spacing: .06em; }
 .auditPager { display: flex; justify-content: flex-end; margin-top: 24px; }
-.auditPager a { display: inline-flex; min-height: 44px; align-items: center; border: 1px solid #20201d; border-radius: 999px; padding: 0 18px; color: #20201d; text-decoration: none; }
+.auditPager a { display: inline-flex; min-height: 44px; align-items: center; border: 1px solid var(--ink); border-radius: 999px; padding: 0 18px; color: var(--ink); text-decoration: none; }
 
 .secondaryLink { display: inline-flex; min-height: 44px; box-sizing: border-box; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 999px; padding: 0 18px; color: var(--ink); font: 650 .85rem/1 ui-sans-serif, system-ui, sans-serif; text-decoration: none; white-space: nowrap; }
 .taxonomyGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-top: 32px; align-items: start; }

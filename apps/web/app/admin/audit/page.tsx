@@ -29,14 +29,54 @@ const eventLabels: Record<AuditEventName, string> = {
 const fieldLabels: Record<string, string> = {
   title: "标题", summary: "摘要", coverUrl: "旧封面地址", slug: "Slug", markdown: "正文",
   publishedAt: "发布时间", seoDescription: "SEO 描述", categoryId: "分类", tagIds: "标签",
-  coverMedia: "封面媒体", name: "名称", status: "状态",
+  coverMedia: "封面媒体", name: "名称", status: "状态", scheduledAt: "预约时间",
 };
 
+const targetLabels: Record<AuditEvent["targetType"], string> = {
+  administrator: "管理员账号",
+  article: "文章",
+  category: "分类",
+  tag: "标签",
+  about: "关于页",
+};
+
+type AuditStatus = NonNullable<AuditEvent["metadata"]["status"]>;
+const statusLabels: Record<AuditStatus, string> = {
+  draft: "草稿",
+  published: "已发布",
+  unpublished: "已下线",
+  deleted: "已删除",
+};
+
+const shanghaiDateTime = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+
+function formatShanghaiDateTime(value: string) {
+  return `${shanghaiDateTime.format(new Date(value))}（上海时间）`;
+}
+
 function eventDetail(item: AuditEvent) {
-  const details: string[] = [`对象：${item.targetType} · ${item.targetId}`];
-  if (item.metadata.previousStatus && item.metadata.status) details.push(`状态：${item.metadata.previousStatus} → ${item.metadata.status}`);
-  else if (item.metadata.status) details.push(`状态：${item.metadata.status}`);
-  if (item.metadata.scheduledAt) details.push(`预约时间：${item.metadata.scheduledAt}`);
+  const details: string[] = [];
+  if (item.metadata.previousStatus && item.metadata.status) {
+    details.push(`状态：${statusLabels[item.metadata.previousStatus]} → ${statusLabels[item.metadata.status]}`);
+  } else if (item.metadata.status) {
+    details.push(`状态：${statusLabels[item.metadata.status]}`);
+  }
+  if (item.metadata.previousScheduledAt && item.metadata.scheduledAt) {
+    details.push(`预约时间：${formatShanghaiDateTime(item.metadata.previousScheduledAt)} → ${formatShanghaiDateTime(item.metadata.scheduledAt)}`);
+  } else if (item.metadata.scheduledAt) {
+    details.push(`预约时间：${formatShanghaiDateTime(item.metadata.scheduledAt)}`);
+  } else if (item.metadata.previousScheduledAt) {
+    details.push(`原预约时间：${formatShanghaiDateTime(item.metadata.previousScheduledAt)}`);
+  }
   if (item.metadata.changedFields?.length) details.push(`变更：${item.metadata.changedFields.map((field) => fieldLabels[field] ?? field).join("、")}`);
   return details;
 }
@@ -62,10 +102,17 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
             <article className={styles.auditRow} key={item.id}>
               <div>
                 <p className={styles.auditEvent}>{eventLabels[item.event]}</p>
-                <p className={styles.auditDetail}>管理员：{item.actorAdministratorId}</p>
+                <p className={styles.auditTarget}>操作对象：{targetLabels[item.targetType]}</p>
               </div>
-              <div>{eventDetail(item).map((detail) => <p className={styles.auditDetail} key={detail}>{detail}</p>)}</div>
-              <time className={styles.auditTime} dateTime={item.occurredAt}>{new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", dateStyle: "medium", timeStyle: "medium" }).format(new Date(item.occurredAt))}</time>
+              <div>
+                {eventDetail(item).map((detail) => <p className={styles.auditDetail} key={detail}>{detail}</p>)}
+                <p className={styles.auditIdentifier}>执行者 ID：<code>{item.actorAdministratorId}</code></p>
+                <p className={styles.auditIdentifier}>对象 ID：<code>{item.targetId}</code></p>
+              </div>
+              <time className={styles.auditTime} dateTime={item.occurredAt}>
+                <span>操作时间</span>
+                {formatShanghaiDateTime(item.occurredAt)}
+              </time>
             </article>
           ))}
         </div>
