@@ -112,10 +112,12 @@ test("Phase 12 data selection seals analytics contracts, generated database/brow
   const source = await readFile(new URL("./local-verify.mjs", import.meta.url), "utf8");
   assert.match(source, /phase12Data && !options\.skipBuild[\s\S]*typecheck workspace for Phase 12 data[\s\S]*build workspace for Phase 12 data[\s\S]*createCanonicalRuntimeAuthority/);
   assert.match(source, /async function runPhase12DataChecks[\s\S]*phase12Selection\("data"\)[\s\S]*runGeneratedMainBrowserFixtureSelection[\s\S]*PHASE12_DATA_RESULT_PREFIX/);
-  assert.match(source, /function phase12FailureFixtureProcess[\s\S]*analytics-failure[\s\S]*content-failure/);
-  assert.match(source, /async function startPhase12FailureFixtures[\s\S]*PHASE12_FAILURE_FIXTURE_PORT[\s\S]*failureFixtureOrigin[\s\S]*failureWebOrigin/);
+  assert.match(source, /function phase12FailureFixtureProcess[\s\S]*analytics-failure[\s\S]*content-failure[\s\S]*about-failure[\s\S]*categories-failure[\s\S]*tags-failure[\s\S]*audit-failure/);
+  assert.match(source, /function phase12FailureFixtureProcess[\s\S]*\/admin\/about[\s\S]*\/admin\/categories[\s\S]*\/admin\/tags[\s\S]*\/admin\/audit-events/);
+  assert.match(source, /async function startPhase12FailureFixtures[\s\S]*!context\.phase12Data && !context\.canonicalIntegration[\s\S]*failureFixtureOrigin[\s\S]*failureWebOrigin[\s\S]*PHASE12_FAILURE_FIXTURE_PORT/);
   assert.match(source, /waitForHttp\(`\$\{context\.failureWebOrigin\}\/login`\)/);
   assert.match(source, /async function runPhase12DataChecks[\s\S]*startPhase12FailureFixtures\(context\)[\s\S]*finally[\s\S]*stopManaged\(context\)/);
+  assert.match(source, /async function runCanonicalIntegrationChecks[\s\S]*startPhase12FailureFixtures\(context\)[\s\S]*try[\s\S]*runCanonicalMainBrowserFixture\(context\)[\s\S]*finally[\s\S]*stopManaged\(context\)/);
   assert.match(source, /const \[commandName, \.\.\.args\] = semanticTestCommand\(file\);[\s\S]*runStep\(context, `run \$\{file\}`, commandName, args/);
   assert.match(source, /Phase 12 data accepts only the sealed complete invocation/);
   for (const args of [["--phase12-data=extra"], ["--phase12-data", "--"]]) {

@@ -1259,6 +1259,14 @@ function phase12FailureFixtureProcess() {
   const { createServer } = require("node:http");
   const port = Number(process.env.PHASE12_FAILURE_FIXTURE_PORT);
   const sources = ["direct", "internal", "search", "social", "external"];
+  const scenarios = new Set([
+    "analytics-failure",
+    "content-failure",
+    "about-failure",
+    "categories-failure",
+    "tags-failure",
+    "audit-failure",
+  ]);
   let scenario = "analytics-failure";
   const send = (response, status, body) => {
     response.writeHead(status, { "cache-control": "no-store", "content-type": "application/json; charset=utf-8" });
@@ -1287,14 +1295,18 @@ function phase12FailureFixtureProcess() {
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://fixture.invalid");
     if (url.pathname === "/health") return send(response, 200, { ok: true });
-    const control = /^\/control\/(analytics-failure|content-failure)$/.exec(url.pathname);
-    if (request.method === "POST" && control) {
+    const control = /^\/control\/([a-z-]+)$/.exec(url.pathname);
+    if (request.method === "POST" && control && scenarios.has(control[1])) {
       scenario = control[1];
       response.writeHead(204, { "cache-control": "no-store" });
       return response.end();
     }
     if (url.pathname === "/auth/session") return send(response, 200, { authenticated: true });
     if (url.pathname === "/admin/posts") return scenario === "content-failure" ? send(response, 503, { error: "unavailable" }) : send(response, 200, []);
+    if (url.pathname === "/admin/about") return scenario === "about-failure" ? send(response, 503, { error: "unavailable" }) : send(response, 404, { error: "not_found" });
+    if (url.pathname === "/admin/categories") return scenario === "categories-failure" ? send(response, 503, { error: "unavailable" }) : send(response, 200, { items: [] });
+    if (url.pathname === "/admin/tags") return scenario === "tags-failure" ? send(response, 503, { error: "unavailable" }) : send(response, 200, { items: [] });
+    if (url.pathname === "/admin/audit-events") return scenario === "audit-failure" ? send(response, 503, { error: "unavailable" }) : send(response, 200, { items: [] });
     if (url.pathname === "/admin/analytics") {
       if (scenario === "analytics-failure") return send(response, 503, { error: "analytics_unavailable" });
       const range = Number(url.searchParams.get("range"));
@@ -1309,7 +1321,7 @@ function phase12FailureFixtureProcess() {
 }
 
 async function startPhase12FailureFixtures(context) {
-  if (!context.phase12Data) throw new Error("Phase 12 failure fixtures require sealed Phase 12 authority");
+  if (!context.phase12Data && !context.canonicalIntegration) throw new Error("Phase 12 failure fixtures require sealed Phase 12 or canonical integration authority");
   const fixturePort = await freePort();
   const failureWebPort = await freePort();
   context.failureFixtureOrigin = validateLoopbackHttpOrigin(`http://127.0.0.1:${fixturePort}`);
@@ -1838,7 +1850,13 @@ async function runCanonicalIntegrationChecks(context) {
   await resetGeneratedAcceptanceMedia(context);
   suites.push({ path: mediaPath, fixtureOwner: "media", counts: await runDatabaseSuite(context, "AUTH_TEST_DATABASE_URL", mediaPath) });
 
-  const mainBrowser = await runCanonicalMainBrowserFixture(context);
+  await startPhase12FailureFixtures(context);
+  let mainBrowser;
+  try {
+    mainBrowser = await runCanonicalMainBrowserFixture(context);
+  } finally {
+    await stopManaged(context);
+  }
   for (const suite of mainBrowser.suites) suites.push({ path: suite.path, fixtureOwner: "main-browser", counts: suite.counts });
 
   suites.push({

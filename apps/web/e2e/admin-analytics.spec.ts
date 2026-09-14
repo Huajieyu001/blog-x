@@ -78,6 +78,33 @@ test("dashboard keeps content and analytics failures independent", async ({ page
   await expect(page.getByText("所选时段还没有浏览记录")).toBeVisible();
 });
 
+test("secondary administrator failures stay bounded, recoverable, and redacted", async ({ page, request }) => {
+  await expect((await request.post(`${failureFixtureOrigin}/control/about-failure`)).status()).toBe(204);
+  await page.goto(`${failureWebOrigin}/admin/about`);
+  await expect(page.getByRole("heading", { name: "关于页", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "暂时无法读取关于页" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "重新加载关于页" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /保存|发布/ })).toHaveCount(0);
+
+  await expect((await request.post(`${failureFixtureOrigin}/control/categories-failure`)).status()).toBe(204);
+  await page.goto(`${failureWebOrigin}/admin/taxonomy`);
+  await expect(page.getByRole("heading", { name: "分类暂时不可用" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "标签暂时不可用" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "重新加载分类" })).toBeVisible();
+
+  await expect((await request.post(`${failureFixtureOrigin}/control/tags-failure`)).status()).toBe(204);
+  await page.goto(`${failureWebOrigin}/admin/taxonomy`);
+  await expect(page.getByRole("heading", { name: "标签暂时不可用" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "分类暂时不可用" })).toHaveCount(0);
+
+  await expect((await request.post(`${failureFixtureOrigin}/control/audit-failure`)).status()).toBe(204);
+  await page.goto(`${failureWebOrigin}/admin/audit`);
+  await expect(page.getByRole("heading", { name: "操作日志", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "暂时无法读取操作日志" })).toBeVisible();
+  await expect(page.getByText(/执行者 ID：|对象 ID：/)).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "重新加载操作日志" })).toBeVisible();
+});
+
 test("expired analytics session redirects to login without exposing statistics", async ({ page, context }) => {
   await context.addCookies([{ name: "blog_x_session", value: expiredSessionToken, url: webOrigin, httpOnly: true, sameSite: "Lax" }]);
   await page.goto(`${webOrigin}/admin/analytics?range=30`);
