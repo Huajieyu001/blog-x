@@ -95,7 +95,9 @@ test("Phase 1 completes the local author-to-reader publishing journey through vi
     buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"),
   });
   await page.getByRole("button", { name: "上传图片", exact: true }).click();
-  await expect(page.getByText("图片已上传，可插入文章。")).toBeFocused();
+  const uploadStatus = page.locator("#media-upload-status");
+  await expect(uploadStatus).toHaveText("图片已上传，可插入文章或设为封面。");
+  await expect(uploadStatus).toBeFocused();
   await page.getByTestId("media-alt-text").fill("Architecture diagram");
   await page.getByRole("button", { name: "插入 Markdown" }).click();
   const mediaPath = (await source.inputValue()).match(/\((\/media\/[0-9a-f-]{36})\)/)?.[1];
