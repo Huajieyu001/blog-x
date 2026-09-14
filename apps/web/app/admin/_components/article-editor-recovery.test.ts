@@ -13,7 +13,7 @@ import {
 } from "./article-editor-recovery";
 
 const postId = "11111111-1111-4111-8111-111111111111";
-const now = Date.parse("2026-08-30T12:00:00.000Z");
+const now = Date.now();
 const fields: EditorRecoveryFields = {
   title: "未完成标题",
   summary: "",
