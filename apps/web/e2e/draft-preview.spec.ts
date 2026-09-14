@@ -28,7 +28,7 @@ test("administrator saves, recovers, and responsively previews a complete Markdo
   const recovery = page.getByTestId("editor-recovery-notice");
   await expect(recovery.getByRole("heading", { name: "发现未保存的内容" })).toBeVisible();
   await expect(page.locator("main button").filter({ hasText: "保存草稿" })).toBeDisabled();
-  await expect(page.locator("header").filter({ hasText: "退出登录" })).toHaveAttribute("inert", "");
+  await expect(page.locator("#admin-content > main")).toHaveAttribute("inert", "");
   await expect(page.getByRole("button", { name: "退出登录" })).toHaveCount(0);
   await expect(recovery.getByRole("button", { name: "恢复内容" })).toBeFocused();
   await page.keyboard.press("Tab");
