@@ -205,6 +205,7 @@ test("no-script lifecycle fallback retains a native same-origin schedule form", 
     expect(html).toMatch(new RegExp(`<noscript[^>]*>[\\s\\S]*?${schedulePath}[\\s\\S]*?预约发布[\\s\\S]*?scheduledAt[\\s\\S]*?timezoneOffset[\\s\\S]*?设定预约`));
 
     const scheduleResponse = await noJsContext.request.post(`${webOrigin}${schedulePath}`, {
+      headers: { origin: webOrigin },
       form: { scheduledAt: "2032-02-01T09:30", timezoneOffset: "+08:00" },
       maxRedirects: 0,
     });
@@ -214,6 +215,7 @@ test("no-script lifecycle fallback retains a native same-origin schedule form", 
     expect(scheduledPost.status()).toBe(200);
     expect((await scheduledPost.json() as { scheduledAt: string | null }).scheduledAt).toBe("2032-02-01T01:30:00.000Z");
     const unchangedResponse = await noJsContext.request.post(`${webOrigin}${schedulePath}`, {
+      headers: { origin: webOrigin },
       form: { scheduledAt: "2032-02-01T09:30", timezoneOffset: "+08:00" },
       maxRedirects: 0,
     });
@@ -223,7 +225,10 @@ test("no-script lifecycle fallback retains a native same-origin schedule form", 
     expect(unchangedPost.status()).toBe(200);
     expect((await unchangedPost.json() as { scheduledAt: string | null }).scheduledAt).toBe("2032-02-01T01:30:00.000Z");
     const cancelPath = `${schedulePath}/cancel`;
-    const cancelResponse = await noJsContext.request.post(`${webOrigin}${cancelPath}`, { maxRedirects: 0 });
+    const cancelResponse = await noJsContext.request.post(`${webOrigin}${cancelPath}`, {
+      headers: { origin: webOrigin },
+      maxRedirects: 0,
+    });
     expect(cancelResponse.status()).toBe(302);
     expect(cancelResponse.headers()["location"]).toBe(`/admin/posts/${article.id}`);
     const cancelledPost = await noJsContext.request.get(`${webOrigin}/api/admin/posts/${article.id}`);
