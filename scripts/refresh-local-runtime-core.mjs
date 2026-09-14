@@ -389,8 +389,10 @@ function exact(command, args, expected) { return command === expected[0] && same
 function buildArgsMatch(args) {
   if (args.length !== 18 || args[0] !== "build" || args[1] !== "--network=none" || args[2] !== "--pull=false" || args[3] !== "--file" || !/^apps\/(api|web)\/Dockerfile\.refresh$/.test(args[4]) || args[5] !== "--tag") return false;
   const app = args[4].split("/")[1];
+  const seedImage = args[8]?.slice("SEED_IMAGE=".length);
+  const seedImageId = args[10]?.slice("SEED_IMAGE_ID=".length);
   const revision = args[12]?.slice("REFRESH_REVISION=".length);
-  return args[6] === `blog-x-${app}-local:${revision?.slice(0, 12)}` && args[7] === "--build-arg" && args[8].startsWith("SEED_IMAGE=") && validRef(args[8].slice("SEED_IMAGE=".length)) && args[9] === "--build-arg" && /^SEED_IMAGE_ID=sha256:[a-f0-9]{64}$/.test(args[10]) && args[11] === "--build-arg" && validRevision(revision) && args[13] === "--build-arg" && /^LOCKFILE_SHA256=[a-f0-9]{64}$/.test(args[14]) && args[15] === "--build-arg" && args[16] === `PUBLIC_ORIGIN=${ORIGIN}` && args[17] === ".";
+  return args[6] === `blog-x-${app}-local:${revision?.slice(0, 12)}` && args[7] === "--build-arg" && args[8].startsWith("SEED_IMAGE=") && validImageId(seedImage) && args[9] === "--build-arg" && validImageId(seedImageId) && seedImage === seedImageId && args[11] === "--build-arg" && validRevision(revision) && args[13] === "--build-arg" && /^LOCKFILE_SHA256=[a-f0-9]{64}$/.test(args[14]) && args[15] === "--build-arg" && args[16] === `PUBLIC_ORIGIN=${ORIGIN}` && args[17] === ".";
 }
 function validRef(ref) { return validImageId(ref) || /^blog-x-(api|web)-local(?::[a-f0-9]{12})?$/.test(ref); }
 function validOneoff(value) { return /^blogxlocal-api-refresh-[a-f0-9]{12}$/.test(value); }
@@ -558,7 +560,7 @@ export function createRawRefreshFactSources({ run, fetch, root = process.cwd(), 
 }
 
 function buildCommand(target, plan) {
-  return ["build", "--network=none", "--pull=false", "--file", target.dockerfile, "--tag", target.tag, "--build-arg", `SEED_IMAGE=${target.seedReference}`, "--build-arg", `SEED_IMAGE_ID=${target.seedId}`, "--build-arg", `REFRESH_REVISION=${plan.revision}`, "--build-arg", `LOCKFILE_SHA256=${plan.lockSha256}`, "--build-arg", `PUBLIC_ORIGIN=${ORIGIN}`, "."];
+  return ["build", "--network=none", "--pull=false", "--file", target.dockerfile, "--tag", target.tag, "--build-arg", `SEED_IMAGE=${target.seedId}`, "--build-arg", `SEED_IMAGE_ID=${target.seedId}`, "--build-arg", `REFRESH_REVISION=${plan.revision}`, "--build-arg", `LOCKFILE_SHA256=${plan.lockSha256}`, "--build-arg", `PUBLIC_ORIGIN=${ORIGIN}`, "."];
 }
 function imageByService(facts, service) { return facts.containers.find((item) => item.Config?.Labels?.["com.docker.compose.service"] === service); }
 function validateTarget(image, target) {
@@ -648,7 +650,7 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
     for (const target of plan.targets) {
       let image;
       try {
-        image = (await inspectImages([target.seedReference]))[0];
+        image = (await inspectImages([target.seedId]))[0];
       } catch (error) {
         throw typedSeedPrerequisiteError("missing", error);
       }

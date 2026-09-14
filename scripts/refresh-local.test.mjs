@@ -896,7 +896,13 @@ test("command policy is exact-token and rejects extra, reordered, alternate auth
   const revision = "a".repeat(40);
   const valid = ["docker", ["build", "--network=none", "--pull=false", "--file", "apps/api/Dockerfile.refresh", "--tag", `blog-x-api-local:${revision.slice(0, 12)}`, "--build-arg", `SEED_IMAGE=${SHA("c")}`, "--build-arg", `SEED_IMAGE_ID=${SHA("c")}`, "--build-arg", `REFRESH_REVISION=${revision}`, "--build-arg", `LOCKFILE_SHA256=${"b".repeat(64)}`, "--build-arg", "PUBLIC_ORIGIN=http://127.0.0.1:3100", "."]];
   assert.doesNotThrow(() => assertAllowedRefreshCommand(...valid));
-  for (const args of [[...valid[1], "extra"], ["build", "--pull=false", "--network=none", ...valid[1].slice(3)], valid[1].map((value) => value === "PUBLIC_ORIGIN=http://127.0.0.1:3100" ? "PUBLIC_ORIGIN=http://0.0.0.0:3100" : value)]) {
+  for (const args of [
+    [...valid[1], "extra"],
+    ["build", "--pull=false", "--network=none", ...valid[1].slice(3)],
+    valid[1].map((value) => value === "PUBLIC_ORIGIN=http://127.0.0.1:3100" ? "PUBLIC_ORIGIN=http://0.0.0.0:3100" : value),
+    valid[1].map((value) => value === `SEED_IMAGE=${SHA("c")}` ? "SEED_IMAGE=blog-x-api-local" : value),
+    valid[1].map((value) => value === `SEED_IMAGE_ID=${SHA("c")}` ? `SEED_IMAGE_ID=${SHA("d")}` : value),
+  ]) {
     assert.throws(() => assertAllowedRefreshCommand("docker", args), /allowlisted|exact|argv/i);
   }
   const range = `${"a".repeat(40)}..${"c".repeat(40)}`;
@@ -998,9 +1004,10 @@ function targetImage(app, id, revision, lock, seedId) {
   return { Id: id, Config: { Image: `blog-x-${app}-local:${revision.slice(0, 12)}`, WorkingDir: "/refresh-workspace", Cmd: ["corepack", "pnpm", "--filter", `@blog-x/${app}`, "start"], Labels: { "org.opencontainers.image.revision": revision, "io.blog-x.lockfile-sha256": lock, "io.blog-x.seed-image-id": seedId, "io.blog-x.application": app, "io.blog-x.public-origin": "http://127.0.0.1:3100", "io.blog-x.refresh-kind": "v1.1-offline-local-delivery" } } };
 }
 
-function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, rollbackCutoverFault = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, withdrawalFault, seedPrerequisite, acceptanceStdout = acceptanceOutput, acceptanceFailureClass, acceptanceFailureSecret = "", verificationChangedPaths, verificationTouchedPaths = verificationChangedPaths, identity = { uid: TEST_UID }, revision = TEST_REVISION, artifactFs, oldImages = { api: SHA("a"), web: SHA("b") }, targetIds = { api: SHA("e"), web: SHA("f") }, migrationUpgrade = false } = {}) {
+function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, rollbackCutoverFault = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, withdrawalFault, seedPrerequisite, moveSeedTagsAfterPreflight = false, acceptanceStdout = acceptanceOutput, acceptanceFailureClass, acceptanceFailureSecret = "", verificationChangedPaths, verificationTouchedPaths = verificationChangedPaths, identity = { uid: TEST_UID }, revision = TEST_REVISION, artifactFs, oldImages = { api: SHA("a"), web: SHA("b") }, targetIds = { api: SHA("e"), web: SHA("f") }, migrationUpgrade = false } = {}) {
   const lock = createHash("sha256").update("raw-lock\n").digest("hex");
   const old = structuredClone(oldImages);
+  const movedSeeds = { api: SHA("c"), web: SHA("d") };
   const evidencePath = deliveryAuthorityForRevision(revision).evidencePath;
   const changedPaths = verificationChangedPaths ?? [evidencePath];
   const touchedPaths = verificationTouchedPaths ?? changedPaths;
@@ -1015,9 +1022,11 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
     if (command === "docker" && args[0] === "image" && args[1] === "inspect") {
       const ref = args[2];
       const seed = (application, id) => ({ Id: seedPrerequisite === "stale" ? SHA(application === "api" ? "c" : "d") : id, Config: { WorkingDir: seedPrerequisite === "incompatible" ? "/workspace" : "/refresh-workspace", Labels: { "io.blog-x.application": application, "io.blog-x.lockfile-sha256": seedPrerequisite === "lock-drifted" ? "0".repeat(64) : lock, "io.blog-x.public-origin": "http://127.0.0.1:3100", "io.blog-x.refresh-kind": "phase6-offline" } } });
-      if (seedPrerequisite === "missing" && ["blog-x-api-local", "blog-x-web-local"].includes(ref)) throw new Error("seed image unavailable: private registry reference");
-      if (ref === "blog-x-api-local" || ref === old.api) return { stdout: JSON.stringify([seed("api", old.api)]) };
-      if (ref === "blog-x-web-local" || ref === old.web) return { stdout: JSON.stringify([seed("web", old.web)]) };
+      if (seedPrerequisite === "missing" && ["blog-x-api-local", "blog-x-web-local", old.api, old.web].includes(ref)) throw new Error("seed image unavailable: private registry reference");
+      if (ref === "blog-x-api-local") return { stdout: JSON.stringify([seed("api", moveSeedTagsAfterPreflight && snapshot >= 1 ? movedSeeds.api : old.api)]) };
+      if (ref === "blog-x-web-local") return { stdout: JSON.stringify([seed("web", moveSeedTagsAfterPreflight && snapshot >= 1 ? movedSeeds.web : old.web)]) };
+      if (ref === old.api) return { stdout: JSON.stringify([seed("api", old.api)]) };
+      if (ref === old.web) return { stdout: JSON.stringify([seed("web", old.web)]) };
       if (ref === plan.targets[0].tag) return { stdout: JSON.stringify([targets.api]) };
       if (ref === plan.targets[1].tag) return { stdout: JSON.stringify([targets.web]) };
       if (ref === targetIds.api) return { stdout: JSON.stringify([targets.api]) };
@@ -1410,6 +1419,28 @@ test("seed prerequisites classify only trusted validation failures before every 
   const nonSeed = liveFixture({ stageFaults: ["build-api"] }); const nonSeedOutput = [];
   await assert.rejects(nonSeed.runtime.runCli({ output: { write(value) { nonSeedOutput.push(value); } } }), /build-api/);
   assert.match(nonSeedOutput.join(""), /LOCAL DELIVERY FAILED\nSTAGE build-api\nRECOVERY /);
+});
+
+test("seed prerequisites keep immutable preflight IDs when readable local tags move", async () => {
+  const fixture = liveFixture({ moveSeedTagsAfterPreflight: true });
+  await runLocalRefresh({ adapter: fixture.adapter, plan: fixture.plan });
+  const evidence = JSON.parse(await fixture.evidenceFs.readFile(`/virtual-workspace/${deliveryAuthorityForRevision(fixture.revision).evidencePath}`, "utf8"));
+  const seedInspections = fixture.calls.filter((call) => call.command === "docker" && call.args[0] === "image" && call.args[1] === "inspect");
+  const builds = fixture.calls.filter((call) => call.command === "docker" && call.args[0] === "build");
+
+  assert.deepEqual(evidence.seeds, {
+    api: { reference: "blog-x-api-local", inspectedId: fixture.old.api },
+    web: { reference: "blog-x-web-local", inspectedId: fixture.old.web },
+  });
+  assert.deepEqual(seedInspections.filter((call) => [fixture.old.api, fixture.old.web].includes(call.args[2])).map((call) => call.args[2]).sort(), [fixture.old.api, fixture.old.web].sort());
+  assert.equal(seedInspections.some((call) => ["blog-x-api-local", "blog-x-web-local"].includes(call.args[2])), false);
+  assert.equal(builds.length, 2);
+  for (const build of builds) {
+    const seedImage = build.args[8].slice("SEED_IMAGE=".length);
+    const seedImageId = build.args[10].slice("SEED_IMAGE_ID=".length);
+    assert.equal(seedImage, seedImageId);
+    assert.ok([fixture.old.api, fixture.old.web].includes(seedImage));
+  }
 });
 
 test("post-cutover fact failure rolls back API/Web by immutable IDs and suppresses evidence", async () => {
