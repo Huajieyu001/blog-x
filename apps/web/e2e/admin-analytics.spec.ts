@@ -10,6 +10,9 @@ const username = requiredRunnerFact("E2E_ADMIN_USERNAME");
 const password = requiredRunnerFact("E2E_ADMIN_PASSWORD");
 const webOrigin = requiredRunnerFact("E2E_WEB_ORIGIN");
 const analyticsTitle = requiredRunnerFact("E2E_ANALYTICS_TITLE");
+const failureWebOrigin = requiredRunnerFact("E2E_FAILURE_WEB_ORIGIN");
+const failureFixtureOrigin = requiredRunnerFact("E2E_FAILURE_FIXTURE_ORIGIN");
+const expiredSessionToken = requiredRunnerFact("E2E_EXPIRED_SESSION_TOKEN");
 
 async function login(page: Page) {
   await page.goto(`${webOrigin}/admin`);
@@ -56,6 +59,32 @@ test("dashboard keeps its authoring hierarchy and visible static actions", async
   for (const heading of ["内容概况", "继续创作", "最近 30 天访问", "文章管理", "站点维护"]) await expect(page.getByRole("heading", { name: heading })).toBeVisible();
   await expect(page.getByRole("link", { name: "新建草稿" })).toHaveCount(1);
   await expect(page.getByRole("button", { name: "导出文章 Markdown" })).toBeVisible();
+});
+
+test("dashboard keeps content and analytics failures independent", async ({ page, request }) => {
+  await expect((await request.post(`${failureFixtureOrigin}/control/analytics-failure`)).status()).toBe(204);
+  await page.goto(`${failureWebOrigin}/admin`);
+  await expect(page.getByRole("heading", { name: "工作台" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "访问趋势暂时不可用" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "内容概况暂时不可用" })).toHaveCount(0);
+  await expect(page.getByText("还没有文章。新建第一篇草稿，开始记录。")).toBeVisible();
+
+  await expect((await request.post(`${failureFixtureOrigin}/control/content-failure`)).status()).toBe(204);
+  await page.goto(`${failureWebOrigin}/admin`);
+  await expect(page.getByRole("heading", { name: "内容概况暂时不可用" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "暂时无法读取创作进度" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "暂时无法读取文章列表" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "访问趋势暂时不可用" })).toHaveCount(0);
+  await expect(page.getByText("所选时段还没有浏览记录")).toBeVisible();
+});
+
+test("expired analytics session redirects to login without exposing statistics", async ({ page, context }) => {
+  await context.addCookies([{ name: "blog_x_session", value: expiredSessionToken, url: webOrigin, httpOnly: true, sameSite: "Lax" }]);
+  await page.goto(`${webOrigin}/admin/analytics?range=30`);
+  await expect(page).toHaveURL(`${webOrigin}/login`);
+  await expect(page.getByRole("heading", { name: "管理员登录" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "访问统计" })).toHaveCount(0);
+  await expect(page.getByText("10 PV", { exact: true })).toHaveCount(0);
 });
 
 test("analytics remains keyboard-accessible, bounded, and document-width-safe across responsive viewports", async ({ page }) => {

@@ -216,7 +216,14 @@ function validateMainBrowserContext(context) {
   return context;
 }
 
-const mainBrowserOptionalFactNames = new Set(["E2E_ANALYTICS_TITLE", "E2E_EXPIRED_SESSION_TOKEN", "E2E_REVOKED_SESSION_TOKEN"]);
+const mainBrowserOptionalFactNames = new Set([
+  "E2E_ANALYTICS_TITLE",
+  "E2E_FAILURE_FIXTURE_ORIGIN",
+  "E2E_FAILURE_WEB_ORIGIN",
+  "E2E_EXPIRED_SESSION_TOKEN",
+  "E2E_REVOKED_SESSION_TOKEN",
+]);
+const mainBrowserOriginFactNames = new Set(["E2E_FAILURE_FIXTURE_ORIGIN", "E2E_FAILURE_WEB_ORIGIN"]);
 
 export function createMainBrowserEnvironment(context, scenarioFacts = {}, inheritedEnvironment = process.env) {
   validateMainBrowserContext(context);
@@ -224,6 +231,10 @@ export function createMainBrowserEnvironment(context, scenarioFacts = {}, inheri
   for (const [name, value] of Object.entries(scenarioFacts)) {
     if (!mainBrowserOptionalFactNames.has(name) || typeof value !== "string" || !value) {
       throw new Error(`main-browser scenario fact is invalid: ${name}`);
+    }
+    if (mainBrowserOriginFactNames.has(name)) {
+      const origin = validateLoopbackHttpOrigin(value);
+      if (new URL(origin).port === "3100") throw new Error(`main-browser scenario origin cannot claim canonical port: ${name}`);
     }
   }
   const environment = Object.fromEntries(Object.entries(inheritedEnvironment ?? {}).filter(([name, value]) =>
@@ -1098,12 +1109,21 @@ async function seedMainBrowserScenario(context, file) {
     const articleId = "00000000-0000-4000-8000-000000000201";
     const title = `Analytics ${context.runId}`;
     const slug = `analytics-${context.runId}`;
+    const expiredSessionToken = randomBytes(32).toString("base64url");
+    context.secrets.push(expiredSessionToken);
     const query = [
       `insert into articles (id,title,slug,markdown,status,published_at,deleted_at) values ('${articleId}','${title}','${slug}','# ${title}','published',CURRENT_TIMESTAMP,null);`,
       `insert into article_daily_views (article_id,day,total_pv,direct_pv,search_pv) values ('${articleId}',((CURRENT_TIMESTAMP at time zone 'Asia/Shanghai')::date - 29),10,7,3);`,
+      "insert into sessions (administrator_id,token_digest,expires_at,revoked_at)",
+      `select id,'${hashText(expiredSessionToken)}',now()-interval '1 minute',null from administrators where username='${context.username}';`,
     ].join(" ");
     await compose(context, "seed generated administrator analytics browser facts", ...psqlArgs(context, query));
-    return { E2E_ANALYTICS_TITLE: title };
+    return {
+      E2E_ANALYTICS_TITLE: title,
+      E2E_FAILURE_FIXTURE_ORIGIN: context.failureFixtureOrigin,
+      E2E_FAILURE_WEB_ORIGIN: context.failureWebOrigin,
+      E2E_EXPIRED_SESSION_TOKEN: expiredSessionToken,
+    };
   }
   if (file !== "apps/web/e2e/auth-session.spec.ts") return {};
   const expiredSessionToken = randomBytes(32).toString("base64url");
@@ -1233,6 +1253,79 @@ async function stopManaged(context) {
     const timer = setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); }, 3_000);
     timer.unref();
   })));
+}
+
+function phase12FailureFixtureProcess() {
+  const { createServer } = require("node:http");
+  const port = Number(process.env.PHASE12_FAILURE_FIXTURE_PORT);
+  const sources = ["direct", "internal", "search", "social", "external"];
+  let scenario = "analytics-failure";
+  const send = (response, status, body) => {
+    response.writeHead(status, { "cache-control": "no-store", "content-type": "application/json; charset=utf-8" });
+    response.end(JSON.stringify(body));
+  };
+  const zeroAnalytics = (range) => {
+    const to = new Date(Date.UTC(2026, 8, 14));
+    const from = new Date(to);
+    from.setUTCDate(from.getUTCDate() - range + 1);
+    const day = (value) => value.toISOString().slice(0, 10);
+    return {
+      range,
+      timezone: "Asia/Shanghai",
+      fromDay: day(from),
+      toDay: day(to),
+      totalPv: 0,
+      daily: Array.from({ length: range }, (_, index) => {
+        const value = new Date(from);
+        value.setUTCDate(value.getUTCDate() + index);
+        return { day: day(value), pv: 0 };
+      }),
+      sources: sources.map((source) => ({ source, totalPv: 0 })),
+      topArticles: [],
+    };
+  };
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? "/", "http://fixture.invalid");
+    if (url.pathname === "/health") return send(response, 200, { ok: true });
+    const control = /^\/control\/(analytics-failure|content-failure)$/.exec(url.pathname);
+    if (request.method === "POST" && control) {
+      scenario = control[1];
+      response.writeHead(204, { "cache-control": "no-store" });
+      return response.end();
+    }
+    if (url.pathname === "/auth/session") return send(response, 200, { authenticated: true });
+    if (url.pathname === "/admin/posts") return scenario === "content-failure" ? send(response, 503, { error: "unavailable" }) : send(response, 200, []);
+    if (url.pathname === "/admin/analytics") {
+      if (scenario === "analytics-failure") return send(response, 503, { error: "analytics_unavailable" });
+      const range = Number(url.searchParams.get("range"));
+      return [7, 30, 90, 400].includes(range) ? send(response, 200, zeroAnalytics(range)) : send(response, 400, { error: "invalid_range" });
+    }
+    return send(response, 404, { error: "not_found" });
+  });
+  const close = () => server.close(() => process.exit(0));
+  process.once("SIGTERM", close);
+  process.once("SIGINT", close);
+  server.listen(port, "127.0.0.1");
+}
+
+async function startPhase12FailureFixtures(context) {
+  if (!context.phase12Data) throw new Error("Phase 12 failure fixtures require sealed Phase 12 authority");
+  const fixturePort = await freePort();
+  const failureWebPort = await freePort();
+  context.failureFixtureOrigin = validateLoopbackHttpOrigin(`http://127.0.0.1:${fixturePort}`);
+  context.failureWebOrigin = validateLoopbackHttpOrigin(`http://127.0.0.1:${failureWebPort}`);
+  if (new Set([context.failureFixtureOrigin, context.failureWebOrigin, context.webOrigin]).size !== 3) {
+    throw new Error("Phase 12 failure fixture origins must be isolated");
+  }
+
+  startManaged(context, "start generated Phase 12 failure API fixture", process.execPath,
+    ["-e", `(${phase12FailureFixtureProcess.toString()})();`],
+    { ...process.env, PHASE12_FAILURE_FIXTURE_PORT: String(fixturePort) });
+  await waitForHttp(`${context.failureFixtureOrigin}/health`);
+  startManaged(context, "start generated Phase 12 failure Web", process.execPath,
+    ["apps/web/node_modules/next/dist/bin/next", "start", "apps/web", "-H", "127.0.0.1", "-p", String(failureWebPort)],
+    { ...process.env, INTERNAL_API_ORIGIN: context.failureFixtureOrigin, PUBLIC_ORIGIN: context.failureWebOrigin });
+  await waitForHttp(`${context.failureWebOrigin}/login`);
 }
 
 async function runFailureRecoveryJourney(context) {
@@ -1693,7 +1786,13 @@ async function runPhase12DataChecks(context) {
     const result = await runStep(context, `run ${file}`, commandName, args, { env: process.env });
     suites.push({ id: file, kind: "node", counts: assertSemanticTap(result.combined) });
   }
-  const browser = await runGeneratedMainBrowserFixtureSelection(context, {}, selection.browserSuites);
+  await startPhase12FailureFixtures(context);
+  let browser;
+  try {
+    browser = await runGeneratedMainBrowserFixtureSelection(context, {}, selection.browserSuites);
+  } finally {
+    await stopManaged(context);
+  }
   for (const suite of browser.suites) suites.push({ id: suite.path, kind: "browser", counts: suite.counts });
   await inspectSchema(context);
   const boundary = await runStep(context, `run ${selection.boundarySuite}`, "corepack", ["pnpm", "check:boundaries"], { env: process.env });

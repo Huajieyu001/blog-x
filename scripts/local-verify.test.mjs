@@ -112,6 +112,10 @@ test("Phase 12 data selection seals analytics contracts, generated database/brow
   const source = await readFile(new URL("./local-verify.mjs", import.meta.url), "utf8");
   assert.match(source, /phase12Data && !options\.skipBuild[\s\S]*typecheck workspace for Phase 12 data[\s\S]*build workspace for Phase 12 data[\s\S]*createCanonicalRuntimeAuthority/);
   assert.match(source, /async function runPhase12DataChecks[\s\S]*phase12Selection\("data"\)[\s\S]*runGeneratedMainBrowserFixtureSelection[\s\S]*PHASE12_DATA_RESULT_PREFIX/);
+  assert.match(source, /function phase12FailureFixtureProcess[\s\S]*analytics-failure[\s\S]*content-failure/);
+  assert.match(source, /async function startPhase12FailureFixtures[\s\S]*PHASE12_FAILURE_FIXTURE_PORT[\s\S]*failureFixtureOrigin[\s\S]*failureWebOrigin/);
+  assert.match(source, /waitForHttp\(`\$\{context\.failureWebOrigin\}\/login`\)/);
+  assert.match(source, /async function runPhase12DataChecks[\s\S]*startPhase12FailureFixtures\(context\)[\s\S]*finally[\s\S]*stopManaged\(context\)/);
   assert.match(source, /const \[commandName, \.\.\.args\] = semanticTestCommand\(file\);[\s\S]*runStep\(context, `run \$\{file\}`, commandName, args/);
   assert.match(source, /Phase 12 data accepts only the sealed complete invocation/);
   for (const args of [["--phase12-data=extra"], ["--phase12-data", "--"]]) {
@@ -274,6 +278,8 @@ test("main-browser environment exposes only generated facts and rejects canonica
     password: "generated-password",
   };
   const environment = createMainBrowserEnvironment(context, {
+    E2E_FAILURE_FIXTURE_ORIGIN: "http://127.0.0.1:43125",
+    E2E_FAILURE_WEB_ORIGIN: "http://127.0.0.1:43126",
     E2E_EXPIRED_SESSION_TOKEN: "expired-token",
     E2E_REVOKED_SESSION_TOKEN: "revoked-token",
   }, {
@@ -287,6 +293,8 @@ test("main-browser environment exposes only generated facts and rejects canonica
   assert.equal(environment.E2E_RUN_ID, context.runId);
   assert.equal(environment.E2E_ADMIN_USERNAME, context.username);
   assert.equal(environment.E2E_ADMIN_PASSWORD, context.password);
+  assert.equal(environment.E2E_FAILURE_FIXTURE_ORIGIN, "http://127.0.0.1:43125");
+  assert.equal(environment.E2E_FAILURE_WEB_ORIGIN, "http://127.0.0.1:43126");
   assert.equal(environment.E2E_EXPIRED_SESSION_TOKEN, "expired-token");
   assert.equal(environment.E2E_REVOKED_SESSION_TOKEN, "revoked-token");
   assert.equal(environment.PATH, process.env.PATH ?? "");
@@ -294,6 +302,8 @@ test("main-browser environment exposes only generated facts and rejects canonica
   assert.throws(() => createMainBrowserEnvironment({ ...context, webOrigin: "http://127.0.0.1:3100" }, {}, {}), /canonical|3100/i);
   assert.throws(() => createMainBrowserEnvironment({ ...context, namespace: "blogxlocal" }, {}, {}), /namespace/i);
   assert.throws(() => createMainBrowserEnvironment(context, { E2E_UNKNOWN_FACT: "no" }, {}), /fact/i);
+  assert.throws(() => createMainBrowserEnvironment(context, { E2E_FAILURE_FIXTURE_ORIGIN: "https://example.com" }, {}), /loopback/i);
+  assert.throws(() => createMainBrowserEnvironment(context, { E2E_FAILURE_WEB_ORIGIN: "http://127.0.0.1:3100" }, {}), /canonical|3100/i);
 });
 
 test("generated main-browser fixture schedules exact specs and cleans its paths once on success and failure", async () => {

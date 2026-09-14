@@ -19,7 +19,7 @@ export default async function AdminAnalyticsPage({ searchParams }: { searchParam
   const range = resolveRange(await searchParams);
   if (!range) return <main className={styles.workspace}>
     <header className={styles.workspaceHeader}><div><p className={styles.eyebrow}>BLOG X / 访问统计</p><h1>时间范围无效</h1><p>当前链接没有包含受支持的统计时间范围。</p></div><a className={styles.secondaryLink} href="/admin">返回工作台</a></header>
-    <section className={`${styles.errorPanel} ${styles.workspaceSection}`} role="alert"><h2>请选择有效的时间范围</h2><p>可查看最近 7、30、90 或 400 天的匿名 PV 趋势。</p><p><a href="/admin/analytics?range=30">查看最近 30 天</a></p></section>
+    <section className={`${styles.errorPanel} ${styles.workspaceSection}`} role="alert"><h2>请选择有效的时间范围</h2><p>请选择 7、30、90 或 400 天。</p><p><a href="/admin/analytics?range=30">查看 30 天</a></p></section>
   </main>;
   const result = await getAdminAnalytics((await cookies()).toString(), range, 8);
   return <main className={styles.workspace}>
