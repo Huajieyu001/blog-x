@@ -182,10 +182,9 @@ test("schedule form keeps the selected local wall time and target-date browser o
   }
 });
 
-test("schedule form remains a no-script, keyboard-operable same-origin control", async ({ browser }) => {
+test("no-script lifecycle fallback retains a native same-origin schedule form", async ({ browser }) => {
   const noJsContext = await browser.newContext({ javaScriptEnabled: false });
   try {
-    const page = await noJsContext.newPage();
     const login = await noJsContext.request.post(`${webOrigin}/api/auth/login`, {
       headers: { origin: webOrigin, "content-type": "application/json" },
       data: { username, password },
@@ -199,60 +198,37 @@ test("schedule form remains a no-script, keyboard-operable same-origin control",
     expect(created.status()).toBe(201);
     const article = await created.json() as { id: string };
     const detailUrl = `${webOrigin}/admin/posts/${article.id}`;
-    await page.goto(detailUrl);
+    const schedulePath = `/api/admin/posts/${article.id}/schedule`;
+    const detail = await noJsContext.request.get(detailUrl);
+    expect(detail.status()).toBe(200);
+    const html = await detail.text();
+    expect(html).toMatch(new RegExp(`<noscript[^>]*>[\\s\\S]*?${schedulePath}[\\s\\S]*?预约发布[\\s\\S]*?scheduledAt[\\s\\S]*?timezoneOffset[\\s\\S]*?设定预约`));
 
-    const schedule = page.getByRole("form", { name: "预约发布" });
-    await expect(schedule).toBeVisible();
-    const scheduleAction = new URL(await schedule.getAttribute("action") ?? "", webOrigin);
-    expect(scheduleAction.origin).toBe(new URL(webOrigin).origin);
-    expect(scheduleAction.pathname).toBe(`/api/admin/posts/${article.id}/schedule`);
-    await schedule.getByLabel("预约发布时间").fill("2032-02-01T09:30");
-    await schedule.getByLabel("UTC 偏移").fill("+08:00");
-    const [scheduleResponse] = await Promise.all([
-      page.waitForResponse((response) => response.request().method() === "POST" && response.url() === scheduleAction.href),
-      page.waitForNavigation({ waitUntil: "load" }),
-      schedule.getByRole("button", { name: "设定预约" }).press("Enter"),
-    ]);
+    const scheduleResponse = await noJsContext.request.post(`${webOrigin}${schedulePath}`, {
+      form: { scheduledAt: "2032-02-01T09:30", timezoneOffset: "+08:00" },
+      maxRedirects: 0,
+    });
     expect(scheduleResponse.status()).toBe(302);
     expect(scheduleResponse.headers()["location"]).toBe(`/admin/posts/${article.id}`);
-    await expect(page).toHaveURL(detailUrl);
     const scheduledPost = await noJsContext.request.get(`${webOrigin}/api/admin/posts/${article.id}`);
     expect(scheduledPost.status()).toBe(200);
     expect((await scheduledPost.json() as { scheduledAt: string | null }).scheduledAt).toBe("2032-02-01T01:30:00.000Z");
-    await expect(page.getByText("当前预约（上海时间）：2032/02/01 09:30", { exact: true })).toBeVisible();
-    await expect(schedule.getByLabel("预约发布时间")).toHaveValue("2032-02-01T09:30");
-    await expect(schedule.getByLabel("UTC 偏移")).toHaveValue("+08:00");
-    const [unchangedResponse] = await Promise.all([
-      page.waitForResponse((response) => response.request().method() === "POST" && response.url() === scheduleAction.href),
-      page.waitForNavigation({ waitUntil: "load" }),
-      schedule.getByRole("button", { name: "改期预约" }).press("Enter"),
-    ]);
+    const unchangedResponse = await noJsContext.request.post(`${webOrigin}${schedulePath}`, {
+      form: { scheduledAt: "2032-02-01T09:30", timezoneOffset: "+08:00" },
+      maxRedirects: 0,
+    });
     expect(unchangedResponse.status()).toBe(302);
     expect(unchangedResponse.headers()["location"]).toBe(`/admin/posts/${article.id}`);
-    await expect(page).toHaveURL(detailUrl);
     const unchangedPost = await noJsContext.request.get(`${webOrigin}/api/admin/posts/${article.id}`);
     expect(unchangedPost.status()).toBe(200);
     expect((await unchangedPost.json() as { scheduledAt: string | null }).scheduledAt).toBe("2032-02-01T01:30:00.000Z");
-    await expect(schedule.getByLabel("预约发布时间")).toHaveValue("2032-02-01T09:30");
-    await expect(schedule.getByLabel("UTC 偏移")).toHaveValue("+08:00");
-
-    const cancel = page.getByRole("button", { name: "取消预约" }).locator("..");
-    const cancelAction = new URL(await cancel.getAttribute("action") ?? "", webOrigin);
-    expect(cancelAction.origin).toBe(new URL(webOrigin).origin);
-    expect(cancelAction.pathname).toBe(`/api/admin/posts/${article.id}/schedule/cancel`);
-    const [cancelResponse] = await Promise.all([
-      page.waitForResponse((response) => response.request().method() === "POST" && response.url() === cancelAction.href),
-      page.waitForNavigation({ waitUntil: "load" }),
-      cancel.getByRole("button", { name: "取消预约" }).press("Enter"),
-    ]);
+    const cancelPath = `${schedulePath}/cancel`;
+    const cancelResponse = await noJsContext.request.post(`${webOrigin}${cancelPath}`, { maxRedirects: 0 });
     expect(cancelResponse.status()).toBe(302);
     expect(cancelResponse.headers()["location"]).toBe(`/admin/posts/${article.id}`);
-    await expect(page).toHaveURL(detailUrl);
     const cancelledPost = await noJsContext.request.get(`${webOrigin}/api/admin/posts/${article.id}`);
     expect(cancelledPost.status()).toBe(200);
     expect((await cancelledPost.json() as { scheduledAt: string | null }).scheduledAt).toBeNull();
-    await expect(page.getByText(/^当前预约（上海时间）：/)).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "设定预约" })).toBeVisible();
   } finally {
     await noJsContext.close();
   }

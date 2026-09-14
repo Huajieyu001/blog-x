@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import AdminLoadFailure from "../../_components/AdminLoadFailure";
 import ArticleEditor from "../../_components/ArticleEditor";
+import ArticleActions from "../../_components/ArticleActions";
 import { getAdminPostResult, getAdminTaxonomyResult } from "../../../lib/api";
 
 export default async function EditDraftPage({ params }: { params: Promise<{ id: string }> }) {
@@ -16,5 +17,14 @@ export default async function EditDraftPage({ params }: { params: Promise<{ id: 
   if (post.kind === "upstream_error" || categories.kind === "upstream_error" || tags.kind === "upstream_error") {
     return <AdminLoadFailure eyebrow="BLOG X / 编辑文章" title="编辑文章" description="修改正文、元数据和发布状态。" message="文章、分类或标签暂时无法读取。" retryHref={`/admin/posts/${encodeURIComponent(id)}`} />;
   }
-  return <ArticleEditor post={post.data} heading="编辑文章" categories={categories.data} tags={tags.data} />;
+  return (
+    <>
+      <ArticleEditor post={post.data} heading="编辑文章" categories={categories.data} tags={tags.data} />
+      <noscript>
+        <div data-testid="native-lifecycle-fallback">
+          <ArticleActions post={post.data} />
+        </div>
+      </noscript>
+    </>
+  );
 }
