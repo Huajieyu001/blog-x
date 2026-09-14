@@ -63,7 +63,9 @@ test("administrator uploads validated same-origin media, inserts alt semantics, 
   const fileInput = page.getByLabel("上传图片（JPEG、PNG 或 WebP，最大 5 MiB）");
   await fileInput.setInputFiles({ name: "wide-source.png", mimeType: "image/png", buffer: png(120, 40) });
   await page.getByRole("button", { name: "上传图片", exact: true }).click();
-  await expect(page.getByText("图片已上传，可插入文章。")).toBeFocused();
+  const uploadStatus = page.locator("#media-upload-status");
+  await expect(uploadStatus).toHaveText("图片已上传，可插入文章或设为封面。");
+  await expect(uploadStatus).toBeFocused();
   await page.getByRole("button", { name: "插入 Markdown" }).click();
   await expect(page.getByText("请填写图片替代文本，或明确标记为装饰图片。")).toBeVisible();
   await expect(source).not.toHaveValue(/\/media\//);
@@ -79,14 +81,15 @@ test("administrator uploads validated same-origin media, inserts alt semantics, 
   const retained = await source.inputValue();
   await fileInput.setInputFiles({ name: "hostile.svg", mimeType: "image/svg+xml", buffer: Buffer.from("<svg onload='alert(1)'/>") });
   await page.getByRole("button", { name: "上传图片", exact: true }).click();
-  await expect(page.getByText("图片未上传：请选择不超过 5 MiB 的 JPEG、PNG 或 WebP 图片。")).toBeVisible();
+  await expect(uploadStatus).toHaveText("图片未上传：文件格式或大小不符合要求，请重新选择。");
   await expect(source).toHaveValue(retained);
 
   await fileInput.setInputFiles({ name: "decoration.png", mimeType: "image/png", buffer: png(24, 24) });
   await page.getByLabel("这是装饰图片").check();
   await expect(page.getByTestId("media-alt-text")).toBeDisabled();
   await page.getByRole("button", { name: "上传图片", exact: true }).click();
-  await expect(page.getByText("图片已上传，可插入文章。")).toBeFocused();
+  await expect(uploadStatus).toHaveText("图片已上传，可插入文章或设为封面。");
+  await expect(uploadStatus).toBeFocused();
   await page.getByRole("button", { name: "插入 Markdown" }).click();
   await expect(source).toHaveValue(/!\[\]\(\/media\/[0-9a-f-]{36}\)/);
 
