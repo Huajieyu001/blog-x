@@ -114,7 +114,9 @@ test("Phase 2 is one responsive local author-to-reader experience", async ({ pag
   await fileInput.setInputFiles({ name: "wide-phase2.png", mimeType: "image/png", buffer: png(160, 48) });
   await page.getByTestId("media-alt-text").fill("Phase 2 宽幅架构示意图");
   await page.getByRole("button", { name: "上传图片", exact: true }).click();
-  await expect(page.getByText("图片已上传，可插入文章。")).toBeFocused();
+  const uploadStatus = page.locator("#media-upload-status");
+  await expect(uploadStatus).toHaveText("图片已上传，可插入文章或设为封面。");
+  await expect(uploadStatus).toBeFocused();
   await page.getByRole("button", { name: "插入 Markdown" }).click();
   await page.getByRole("button", { name: "设为封面" }).click();
   const source = await page.getByLabel("Markdown").inputValue();
