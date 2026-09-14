@@ -80,7 +80,7 @@ test("administrator uploads validated same-origin media, inserts alt semantics, 
 
   const retained = await source.inputValue();
   await fileInput.setInputFiles({ name: "hostile.svg", mimeType: "image/svg+xml", buffer: Buffer.from("<svg onload='alert(1)'/>") });
-  await expect(uploadStatus).toHaveText("图片未上传：文件格式或大小不符合要求，请重新选择。");
+  await expect(uploadStatus).toHaveText("图片未选择：仅支持 JPEG、PNG 或 WebP 格式。");
   await expect(page.getByRole("button", { name: "上传图片", exact: true })).toBeDisabled();
   await expect(source).toHaveValue(retained);
 
