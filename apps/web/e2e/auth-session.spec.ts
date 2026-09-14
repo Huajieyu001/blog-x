@@ -27,7 +27,7 @@ test("login, refresh, expiry, logout, and revoked-token reuse stay server-author
 
   const wrongResponse = await login(page, `${password}-wrong`);
   expect(wrongResponse.status()).toBe(401);
-  await expect(page.locator('[role="alert"]')).toHaveText("用户名或密码错误。");
+  await expect(page.locator('#login-error[role="alert"]')).toHaveText("用户名或密码错误。");
 
   const validResponse = await login(page, password);
   expect(validResponse.status()).toBe(200);
