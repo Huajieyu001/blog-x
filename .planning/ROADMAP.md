@@ -42,7 +42,7 @@
 **Milestone Goal:** 在不追踪或识别单个访客的前提下提供可信的内容访问趋势，并把单管理员后台升级为清晰、现代且完整响应式的工作台。
 
 - [x] **Phase 11: Privacy-Safe View Authority** — 匿名、原子且有界地聚合已发布文章浏览量，并纳入保留与恢复边界。 (completed 2026-09-05)
-- [ ] **Phase 12: Administrator Insights** — 让管理员通过轻量总览和统计页理解内容表现。
+- [x] **Phase 12: Administrator Insights** — 让管理员通过轻量总览和统计页理解内容表现。 (completed 2026-09-14)
 - [ ] **Phase 13: Responsive Admin Workspace and Local Delivery** — 统一后台工作流体验，并以完整本地回归和固定展示交付收口。
 
 ## Phase Details
@@ -107,7 +107,7 @@
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 11. Privacy-Safe View Authority | v1.3 | 3/3 | Complete    | 2026-09-05 |
-| 12. Administrator Insights | v1.3 | 3/3 | In Progress|  |
+| 12. Administrator Insights | v1.3 | 3/3 | Complete    | 2026-09-14 |
 | 13. Responsive Admin Workspace and Local Delivery | v1.3 | 0/TBD | Not started | - |
 
 Complete prior milestone plans, requirements and phase records are archived under `.planning/milestones/`.
