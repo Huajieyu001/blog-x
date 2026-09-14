@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -16,6 +16,7 @@ import {
   createRefreshPlan,
   inspectTargetFilesystem,
   recordedRefreshSeedId,
+  probeOfflineBuilds,
   runLocalRefresh,
   stableRefreshSeedTag,
   runRefreshCli,
@@ -61,6 +62,98 @@ const TEST_REVISION = "a".repeat(40);
 const TEST_EVIDENCE_PATH = deliveryAuthorityForRevision(TEST_REVISION).evidencePath;
 const TEST_UID = process.getuid?.();
 if (!Number.isSafeInteger(TEST_UID) || TEST_UID < 0) throw new Error("refresh tests require a valid Unix uid");
+
+const PROBE_LOCK_DRIFT = "bc0d27ec8b44b3d384ddba296814ed73edb418240514a790a859d81f4527578";
+
+function probeImage({ id, application, lockSha256 }) {
+  return {
+    Id: id,
+    Config: {
+      WorkingDir: "/refresh-workspace",
+      Cmd: ["corepack", "pnpm"],
+      Labels: {
+        "io.blog-x.application": application,
+        "io.blog-x.lockfile-sha256": lockSha256,
+        "io.blog-x.public-origin": "http://127.0.0.1:3100",
+      },
+    },
+  };
+}
+
+async function probeDockerFixture(t, { apiLockSha256, webLockSha256 = apiLockSha256 } = {}) {
+  const directory = await mkdtemp(join(tmpdir(), "blog-x-probe-docker-"));
+  const executable = join(directory, "docker");
+  const log = `${executable}.log`;
+  const apiId = SHA("a");
+  const webId = SHA("b");
+  const api = probeImage({ id: apiId, application: "api", lockSha256: apiLockSha256 });
+  const web = probeImage({ id: webId, application: "web", lockSha256: webLockSha256 });
+  const script = `#!/usr/bin/env node
+import { appendFileSync, readFileSync } from "node:fs";
+const args = process.argv.slice(2);
+const log = \`${executable}.log\`;
+appendFileSync(log, args.map((value) => Buffer.from(value).toString("base64")).join(" ") + "\\n");
+const image = ${JSON.stringify({ api, web })};
+const decode = (line) => line.split(" ").map((value) => Buffer.from(value, "base64").toString());
+const build = () => readFileSync(log, "utf8").trim().split("\\n").filter(Boolean).map(decode).reverse().find((entry) => entry[0] === "build");
+const buildValue = (name) => build().find((entry) => entry === \`\${name}=\` || entry.startsWith(\`\${name}=\`))?.slice(name.length + 1);
+if (args[0] === "image" && args[1] === "inspect") {
+  const reference = args[2];
+  if (reference === "seed-api") process.stdout.write(JSON.stringify([image.api]));
+  else if (reference === "seed-web") process.stdout.write(JSON.stringify([image.web]));
+  else {
+    const application = reference.includes("-api:") ? "api" : "web";
+    const seedId = buildValue("SEED_IMAGE_ID");
+    const revision = buildValue("REFRESH_REVISION");
+    const lockSha256 = buildValue("LOCKFILE_SHA256");
+    process.stdout.write(JSON.stringify([{ ...image[application], Id: \`sha256:\${application === "api" ? "c".repeat(64) : "d".repeat(64)}\`, Config: { WorkingDir: "/refresh-workspace", Cmd: ["corepack", "pnpm"], Labels: { "org.opencontainers.image.revision": revision, "io.blog-x.lockfile-sha256": lockSha256, "io.blog-x.seed-image-id": seedId, "io.blog-x.application": application, "io.blog-x.public-origin": "http://127.0.0.1:3100", "io.blog-x.refresh-kind": "v1.1-offline-local-delivery" } } }]));
+  }
+} else if (args[0] === "run" && args.includes("corepack")) process.stdout.write("/pnpm-store/v10\\n");
+`;
+  await writeFile(executable, script);
+  await chmod(executable, 0o755);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${directory}:${originalPath}`;
+  t.after(async () => {
+    process.env.PATH = originalPath;
+    await rm(directory, { recursive: true, force: true });
+  });
+  return { apiId, webId, log };
+}
+
+async function probeDockerCalls(log) {
+  return (await readFile(log, "utf8")).trim().split("\n").filter(Boolean).map((line) => line.split(" ").map((value) => Buffer.from(value, "base64").toString()));
+}
+
+test("offline probe rejects a drifted seed before build or cleanup", async (t) => {
+  const fixture = await probeDockerFixture(t, { apiLockSha256: PROBE_LOCK_DRIFT });
+  await assert.rejects(
+    probeOfflineBuilds({ apiSeedImage: "seed-api", webSeedImage: "seed-web" }),
+    (error) => classifySeedPrerequisiteFailure(error) === "lock-drifted",
+  );
+  const calls = await probeDockerCalls(fixture.log);
+  assert.deepEqual(calls, [["image", "inspect", "seed-api"]]);
+});
+
+test("offline probe builds from one immutable ID for both seed arguments", async (t) => {
+  const lockSha256 = createHash("sha256").update(await readFile("pnpm-lock.yaml")).digest("hex");
+  const fixture = await probeDockerFixture(t, { apiLockSha256: lockSha256 });
+  const result = await probeOfflineBuilds({ apiSeedImage: "seed-api", webSeedImage: "seed-web" });
+  const calls = await probeDockerCalls(fixture.log);
+  const builds = calls.filter((args) => args[0] === "build");
+  assert.equal(builds.length, 2);
+  for (const args of builds) {
+    const seedImage = args.find((entry) => entry.startsWith("SEED_IMAGE=")).slice("SEED_IMAGE=".length);
+    const seedImageId = args.find((entry) => entry.startsWith("SEED_IMAGE_ID=")).slice("SEED_IMAGE_ID=".length);
+    assert.equal(seedImage, seedImageId);
+    assert.ok([fixture.apiId, fixture.webId].includes(seedImage));
+  }
+  assert.equal(result.api.imageId, SHA("c"));
+  assert.equal(result.web.imageId, SHA("d"));
+  assert.equal(calls.filter((args) => args[0] === "run" && args.includes("corepack")).length, 2);
+  assert.equal(calls.filter((args) => args[0] === "run" && args.includes("sh")).length, 2);
+  assert.deepEqual(calls.filter((args) => args.join(" ").startsWith("image rm ")).map((args) => args[2]).sort(), [result.api.tag, result.web.tag].sort());
+});
 
 test("refresh images retain a stable recorded seed only for valid offline refresh ancestry", () => {
   const currentId = `sha256:${"a".repeat(64)}`;

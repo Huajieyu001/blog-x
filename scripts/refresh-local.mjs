@@ -16,6 +16,7 @@ import {
   formatRefreshStageProgress,
   deliveryAuthorityForRevision,
   runRefreshCliBoundary,
+  assertSeedPrerequisiteFacts,
 } from "./refresh-local-runtime-core.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -231,8 +232,15 @@ async function probeOne(application, seedImage, revision, lockSha256) {
   const unique = randomBytes(8).toString("hex");
   const tag = `blog-x-refresh-probe-${application}:${unique}`;
   const seed = await resolveProbeSeed(application, seedImage);
+  assertSeedPrerequisiteFacts({
+    application,
+    expectedId: seed.image.Id,
+    image: seed.image,
+    lockfileSha256: lockSha256,
+  });
+  const immutableSeedId = seed.image.Id;
   const args = ["build", "--network=none", "--pull=false", "--file", `apps/${application}/Dockerfile.refresh`, "--tag", tag,
-    "--build-arg", `SEED_IMAGE=${seed.reference}`, "--build-arg", `SEED_IMAGE_ID=${seed.image.Id}`, "--build-arg", `REFRESH_REVISION=${revision}`, "--build-arg", `LOCKFILE_SHA256=${lockSha256}`, "--build-arg", `PUBLIC_ORIGIN=${FIXED_REFRESH.origin}`, "."];
+    "--build-arg", `SEED_IMAGE=${immutableSeedId}`, "--build-arg", `SEED_IMAGE_ID=${immutableSeedId}`, "--build-arg", `REFRESH_REVISION=${revision}`, "--build-arg", `LOCKFILE_SHA256=${lockSha256}`, "--build-arg", `PUBLIC_ORIGIN=${FIXED_REFRESH.origin}`, "."];
   try {
     await run("docker", args);
     const image = await inspectImage(tag);
