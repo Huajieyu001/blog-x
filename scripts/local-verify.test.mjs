@@ -166,6 +166,12 @@ test("Phase 11 data selection seals retention, export, privacy, restore, browser
   assert.doesNotMatch(phase11Runner, /build workspace|typecheck workspace/);
 });
 
+test("canonical main-browser seeding includes the About draft required by its administrator journey", async () => {
+  const source = await readFile(new URL("./local-verify.mjs", import.meta.url), "utf8");
+  const seeding = source.slice(source.indexOf("async function seedMainBrowserScenario"), source.indexOf("async function runMainBrowserSpec"));
+  assert.match(seeding, /apps\/web\/e2e\/about-archive\.spec\.ts[\s\S]*seed generated About draft browser facts[\s\S]*insert into site_pages[\s\S]*'about'[\s\S]*'draft'/);
+});
+
 test("generated canonical Web verifier keeps private static trust while publishing only a loopback edge with bounded redacted diagnostics", async () => {
   const source = await readFile(new URL("./local-verify.mjs", import.meta.url), "utf8");
   const authority = source.slice(source.indexOf("async function createCanonicalRuntimeAuthority"), source.indexOf("async function hashRuntimeArtifact"));

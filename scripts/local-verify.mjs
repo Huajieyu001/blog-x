@@ -1096,6 +1096,10 @@ async function resetAcceptanceData(context, label) {
 
 async function seedMainBrowserScenario(context, file) {
   await resetAcceptanceData(context, `reset generated main-browser data for ${file}`);
+  if (file === "apps/web/e2e/about-archive.spec.ts") {
+    await compose(context, "seed generated About draft browser facts", ...psqlArgs(context,
+      "insert into site_pages (key,title,markdown,status) values ('about','关于页草稿','','draft');"));
+  }
   if (file === "apps/web/e2e/public-list.spec.ts") {
     const runId = context.runId;
     const query = [
