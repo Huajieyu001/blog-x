@@ -37,7 +37,7 @@ test("draft completes publish, edit, slug confirmation, unpublish, republish, an
   await scheduleForm.getByLabel("UTC 偏移").fill("+08:00");
   await page.getByRole("button", { name: "设定预约" }).click();
   await expect(page.getByRole("status", { name: "生命周期状态" })).toHaveText("已设定预约");
-  await expect(page.getByText("当前预约：2032-01-01T01:30:00.000Z")).toBeVisible();
+  await expect(page.getByText("当前预约（上海时间）：2032/01/01 09:30", { exact: true })).toBeVisible();
   for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 900 }, { width: 1280, height: 900 }]) {
     await page.setViewportSize(viewport);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -47,10 +47,10 @@ test("draft completes publish, edit, slug confirmation, unpublish, republish, an
   await scheduleForm.getByLabel("预约发布时间").fill("2032-01-02T09:30");
   await page.getByRole("button", { name: "改期预约" }).click();
   await expect(page.getByRole("status", { name: "生命周期状态" })).toHaveText("改期预约成功");
-  await expect(page.getByText("当前预约：2032-01-02T01:30:00.000Z")).toBeVisible();
+  await expect(page.getByText("当前预约（上海时间）：2032/01/02 09:30", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "取消预约" }).click();
   await expect(page.getByRole("status", { name: "生命周期状态" })).toHaveText("已取消预约发布");
-  await expect(page.getByText("当前预约：")).toHaveCount(0);
+  await expect(page.getByText(/^当前预约（上海时间）：/)).toHaveCount(0);
 
   await page.getByRole("button", { name: "发布" }).click();
   await expect(page.getByText("状态：已发布")).toBeVisible();
@@ -220,7 +220,7 @@ test("schedule form remains a no-script, keyboard-operable same-origin control",
     const scheduledPost = await noJsContext.request.get(`${webOrigin}/api/admin/posts/${article.id}`);
     expect(scheduledPost.status()).toBe(200);
     expect((await scheduledPost.json() as { scheduledAt: string | null }).scheduledAt).toBe("2032-02-01T01:30:00.000Z");
-    await expect(page.getByText("当前预约：2032-02-01T01:30:00.000Z")).toBeVisible();
+    await expect(page.getByText("当前预约（上海时间）：2032/02/01 09:30", { exact: true })).toBeVisible();
     await expect(schedule.getByLabel("预约发布时间")).toHaveValue("2032-02-01T09:30");
     await expect(schedule.getByLabel("UTC 偏移")).toHaveValue("+08:00");
     const [unchangedResponse] = await Promise.all([
@@ -252,7 +252,7 @@ test("schedule form remains a no-script, keyboard-operable same-origin control",
     const cancelledPost = await noJsContext.request.get(`${webOrigin}/api/admin/posts/${article.id}`);
     expect(cancelledPost.status()).toBe(200);
     expect((await cancelledPost.json() as { scheduledAt: string | null }).scheduledAt).toBeNull();
-    await expect(page.getByText("当前预约：")).toHaveCount(0);
+    await expect(page.getByText(/^当前预约（上海时间）：/)).toHaveCount(0);
     await expect(page.getByRole("button", { name: "设定预约" })).toBeVisible();
   } finally {
     await noJsContext.close();

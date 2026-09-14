@@ -21,9 +21,11 @@ export default async function EditDraftPage({ params }: { params: Promise<{ id: 
   return (
     <>
       <ArticleEditor post={post.data} heading="编辑文章" categories={categories.data} tags={tags.data} />
-      <div className={styles.nativeLifecycleFallback} data-testid="native-lifecycle-fallback">
-        <ArticleActions post={post.data} />
-      </div>
+      <noscript>
+        <div data-testid="native-lifecycle-fallback">
+          <ArticleActions post={post.data} />
+        </div>
+      </noscript>
     </>
   );
 }
