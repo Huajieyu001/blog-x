@@ -14,6 +14,7 @@ import {
   publicSearchResponseSchema,
   publicSearchUnavailableResponseSchema,
 } from "./public-discovery.js";
+import { publicPostListItemSchema } from "./public-posts.js";
 
 const card = {
   title: "公开文章",
@@ -24,6 +25,23 @@ const card = {
   category: null,
   tags: [{ name: "TypeScript", slug: "typescript" }],
 };
+
+const cardCover = {
+  id: "00000000-0000-4000-8000-000000000001",
+  url: "/media/00000000-0000-4000-8000-000000000001",
+  width: 1200,
+  height: 630,
+  mimeType: "image/webp" as const,
+  alt: "公开文章封面",
+  decorative: false,
+};
+
+test("public cards accept an optional nullable purposeful cover", () => {
+  assert.deepEqual(publicPostListItemSchema.parse(card), card);
+  assert.equal(publicPostListItemSchema.safeParse({ ...card, cover: null }).success, true);
+  assert.equal(publicPostListItemSchema.safeParse({ ...card, cover: cardCover }).success, true);
+  assert.equal(publicPostListItemSchema.safeParse({ ...card, cover: { ...cardCover, alt: "" } }).success, false);
+});
 
 test("discovery limits are fixed and low-resource", () => {
   assert.equal(publicSearchPageSize, 10);

@@ -17,8 +17,11 @@ type PostCardProps = {
 
 export default function PostCard({ post, position = 1, variant = "default" }: PostCardProps) {
   const compact = variant === "compact";
+  const articleClass = compact
+    ? `${styles.compactPostCard} ${post.cover ? styles.compactPostCardWithCover : ""}`
+    : `${styles.postCard} ${post.cover ? styles.postCardWithCover : ""}`;
   return (
-    <article className={compact ? styles.compactPostCard : styles.postCard} data-testid="post-card">
+    <article className={articleClass} data-testid="post-card">
       {!compact ? <p className={styles.index} aria-hidden="true">{String(position).padStart(2, "0")}</p> : null}
       <div className={styles.cardBody}>
         <div className={styles.cardMeta}>
@@ -35,6 +38,23 @@ export default function PostCard({ post, position = 1, variant = "default" }: Po
           阅读文章 <span aria-hidden="true">→</span>
         </Link>
       </div>
+      {post.cover ? (
+        <Link
+          className={styles.cardCover}
+          href={`/posts/${encodeURIComponent(post.slug)}`}
+          aria-hidden="true"
+          tabIndex={-1}
+        >
+          <img
+            src={post.cover.url}
+            width={post.cover.width}
+            height={post.cover.height}
+            alt=""
+            loading="lazy"
+            decoding="async"
+          />
+        </Link>
+      ) : null}
     </article>
   );
 }

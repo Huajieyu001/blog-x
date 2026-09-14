@@ -31,6 +31,9 @@ export const publicListSelection = {
   publishedAt: schema.articles.publishedAt,
   status: schema.articles.status,
   categoryId: schema.articles.categoryId,
+  coverMediaId: schema.articles.coverMediaId,
+  coverAlt: schema.articles.coverAlt,
+  coverDecorative: schema.articles.coverDecorative,
 };
 
 const publicDetailSelection = {
@@ -52,6 +55,9 @@ type PublicCardRow = {
   categoryId: string | null;
   categoryName: string | null;
   categorySlug: string | null;
+  coverMediaId: string | null;
+  coverAlt: string;
+  coverDecorative: boolean;
 };
 
 export class SearchUnavailableError extends Error {
@@ -69,42 +75,63 @@ function isStatementCancellation(error: unknown): error is { code: "57014" } {
   return typeof error === "object" && error !== null && "code" in error && error.code === "57014";
 }
 
-export function createPublicRepository(db: Database) {
-  async function hydratePublicCards(tx: Pick<Database, "select">, rows: PublicCardRow[]) {
-    const tagsByArticle = new Map<string, Array<{ name: string; slug: string }>>();
-    if (rows.length > 0) {
-      const tagRows = await tx.select({
-        articleId: schema.articleTags.articleId,
-        id: schema.tags.id,
-        name: schema.tags.name,
-        slug: schema.tags.slug,
-      }).from(schema.articleTags)
-        .innerJoin(schema.tags, eq(schema.articleTags.tagId, schema.tags.id))
-        .where(inArray(schema.articleTags.articleId, rows.map((row) => row.id)))
-        .orderBy(schema.articleTags.articleId, schema.tags.name, schema.tags.id);
-      for (const tag of tagRows) {
-        const articleTags = tagsByArticle.get(tag.articleId) ?? [];
-        articleTags.push({ name: tag.name, slug: tag.slug });
-        tagsByArticle.set(tag.articleId, articleTags);
-      }
+export async function hydratePublicCards(tx: Pick<Database, "select">, rows: PublicCardRow[]) {
+  const tagsByArticle = new Map<string, Array<{ name: string; slug: string }>>();
+  const mediaById = new Map<string, { id: string; width: number; height: number; mimeType: string }>();
+  if (rows.length > 0) {
+    const tagRows = await tx.select({
+      articleId: schema.articleTags.articleId,
+      id: schema.tags.id,
+      name: schema.tags.name,
+      slug: schema.tags.slug,
+    }).from(schema.articleTags)
+      .innerJoin(schema.tags, eq(schema.articleTags.tagId, schema.tags.id))
+      .where(inArray(schema.articleTags.articleId, rows.map((row) => row.id)))
+      .orderBy(schema.articleTags.articleId, schema.tags.name, schema.tags.id);
+    for (const tag of tagRows) {
+      const articleTags = tagsByArticle.get(tag.articleId) ?? [];
+      articleTags.push({ name: tag.name, slug: tag.slug });
+      tagsByArticle.set(tag.articleId, articleTags);
     }
 
-    return rows.map((row) => {
-      if (!row.publishedAt || row.status !== "published") throw new Error("public predicate returned a non-public article");
-      return {
-        title: row.title,
-        summary: row.summary,
-        slug: row.slug,
-        status: "published" as const,
-        publishedAt: row.publishedAt.toISOString(),
-        category: row.categoryId && row.categoryName && row.categorySlug
-          ? { name: row.categoryName, slug: row.categorySlug }
-          : null,
-        tags: tagsByArticle.get(row.id) ?? [],
-      };
-    });
+    const mediaIds = [...new Set(rows.flatMap((row) => row.coverMediaId ? [row.coverMediaId] : []))];
+    if (mediaIds.length > 0) {
+      const mediaRows = await tx.select({
+        id: schema.media.id,
+        width: schema.media.width,
+        height: schema.media.height,
+        mimeType: schema.media.derivativeMimeType,
+      }).from(schema.media).where(inArray(schema.media.id, mediaIds));
+      for (const media of mediaRows) mediaById.set(media.id, media);
+    }
   }
 
+  return rows.map((row) => {
+    if (!row.publishedAt || row.status !== "published") throw new Error("public predicate returned a non-public article");
+    const cover = row.coverMediaId ? mediaById.get(row.coverMediaId) : undefined;
+    return {
+      title: row.title,
+      summary: row.summary,
+      slug: row.slug,
+      status: "published" as const,
+      publishedAt: row.publishedAt.toISOString(),
+      category: row.categoryId && row.categoryName && row.categorySlug
+        ? { name: row.categoryName, slug: row.categorySlug }
+        : null,
+      tags: tagsByArticle.get(row.id) ?? [],
+      ...(cover ? {
+        cover: {
+          ...cover,
+          url: `/media/${cover.id}`,
+          alt: row.coverAlt,
+          decorative: row.coverDecorative,
+        },
+      } : {}),
+    };
+  });
+}
+
+export function createPublicRepository(db: Database) {
   async function listPage(page: number) {
     return db.transaction(async (tx) => {
       const totals = await tx.select({ totalItems: count() }).from(schema.articles).where(publicPredicate);
@@ -263,6 +290,9 @@ export function createPublicRepository(db: Database) {
           schema.articles.publishedAt,
           schema.articles.status,
           schema.articles.categoryId,
+          schema.articles.coverMediaId,
+          schema.articles.coverAlt,
+          schema.articles.coverDecorative,
           schema.categories.id,
           schema.categories.name,
           schema.categories.slug,

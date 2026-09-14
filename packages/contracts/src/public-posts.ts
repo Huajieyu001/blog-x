@@ -24,6 +24,7 @@ export const publicPostListItemSchema = z.object({
   status: z.literal("published"),
   category: publicTaxonomyTermSchema.pick({ name: true, slug: true }).nullable().optional(),
   tags: z.array(publicTaxonomyTermSchema.pick({ name: true, slug: true })),
+  cover: mediaUsageReferenceSchema.nullable().optional(),
 }).strict();
 
 export const publicPostListResponseSchema = z.object({

@@ -12,7 +12,8 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import Fastify from "fastify";
 import { Pool } from "pg";
 import { buildApp } from "../src/app.js";
-import { createPublicRepository, SearchUnavailableError, type PublicRepository } from "../src/content/public-repository.js";
+import { createPublicRepository, hydratePublicCards, SearchUnavailableError, type PublicRepository } from "../src/content/public-repository.js";
+import { createTaxonomyRepository } from "../src/content/taxonomy-repository.js";
 import * as schema from "../src/db/schema.js";
 import { publicPostRoutes } from "../src/routes/public-posts.js";
 
@@ -168,6 +169,115 @@ test("only PostgreSQL cancellation is typed as search unavailable", async () => 
   const unrelated = Object.assign(new Error("connection failed"), { code: "08006" });
   const broken = createPublicRepository({ transaction: async () => { throw unrelated; } } as never);
   await assert.rejects(() => broken.searchPage("query", 1), (error: unknown) => error === unrelated);
+});
+
+test("card hydration batches media and omits cover when the referenced media is unavailable", async () => {
+  const mediaId = "55000000-0000-4000-8000-000000000001";
+  let tagQueries = 0;
+  let mediaQueries = 0;
+  const tx = {
+    select(fields: Record<string, unknown>) {
+      if ("articleId" in fields) {
+        tagQueries += 1;
+        return {
+          from: () => ({
+            innerJoin: () => ({
+              where: () => ({ orderBy: async () => [] }),
+            }),
+          }),
+        };
+      }
+      mediaQueries += 1;
+      return {
+        from: () => ({
+          where: async () => [{ id: mediaId, width: 1200, height: 630, mimeType: "image/webp" }],
+        }),
+      };
+    },
+  } as never;
+  const common = {
+    title: "Card",
+    summary: "Summary",
+    publishedAt: new Date("2026-08-15T12:00:00.000Z"),
+    status: "published",
+    categoryId: null,
+    categoryName: null,
+    categorySlug: null,
+  };
+  const cards = await hydratePublicCards(tx, [
+    { ...common, id: "55000000-0000-4000-8000-000000000002", slug: "purposeful", coverMediaId: mediaId, coverAlt: "每篇文章自己的说明", coverDecorative: false },
+    { ...common, id: "55000000-0000-4000-8000-000000000003", slug: "decorative", coverMediaId: mediaId, coverAlt: "", coverDecorative: true },
+    { ...common, id: "55000000-0000-4000-8000-000000000004", slug: "missing-media", coverMediaId: "55000000-0000-4000-8000-000000000099", coverAlt: "不会公开", coverDecorative: false },
+  ]);
+
+  assert.equal(tagQueries, 1);
+  assert.equal(mediaQueries, 1, "all unique cover ids are resolved by one media query");
+  assert.deepEqual(cards[0]?.cover, { id: mediaId, url: `/media/${mediaId}`, width: 1200, height: 630, mimeType: "image/webp", alt: "每篇文章自己的说明", decorative: false });
+  assert.deepEqual(cards[1]?.cover, { id: mediaId, url: `/media/${mediaId}`, width: 1200, height: 630, mimeType: "image/webp", alt: "", decorative: true });
+  assert.equal("cover" in cards[2]!, false);
+});
+
+test("public cards project article cover usage across list, search, taxonomy, and related results", async (context) => {
+  if (!databaseUrl) {
+    context.skip("PUBLIC_DISCOVERY_TEST_DATABASE_URL must name a disposable migrated PostgreSQL database");
+    return;
+  }
+  const pool = new Pool({ connectionString: databaseUrl });
+  const db = drizzle({ client: pool, schema });
+  const publicRepository = createPublicRepository(db);
+  const taxonomyRepository = createTaxonomyRepository(db);
+  context.after(async () => {
+    await pool.query("truncate table article_tags, articles, categories, tags, media cascade");
+    await pool.end();
+  });
+  await pool.query("truncate table article_tags, articles, categories, tags, media cascade");
+
+  const mediaId = "54000000-0000-4000-8000-000000000001";
+  const categoryId = "54000000-0000-4000-8000-000000000002";
+  await db.insert(schema.media).values({
+    id: mediaId,
+    sourceKey: "public-card-cover-source",
+    derivativeKey: "public-card-cover-derivative",
+    sourceMimeType: "image/png",
+    derivativeMimeType: "image/webp",
+    sourceBytes: 128,
+    derivativeBytes: 96,
+    width: 1200,
+    height: 630,
+  });
+  await db.insert(schema.categories).values({ id: categoryId, name: "封面投影", slug: "cover-projection" });
+  await db.insert(schema.articles).values([
+    article({ id: "54000000-0000-4000-8000-000000000003", slug: "cover-source", title: "Cover source", categoryId }),
+    article({
+      id: "54000000-0000-4000-8000-000000000004",
+      slug: "cover-candidate",
+      title: "Cover projection candidate",
+      categoryId,
+      coverMediaId: mediaId,
+      coverAlt: "卡片封面替代文本",
+      coverDecorative: false,
+    }),
+  ]);
+
+  const expectedCover = {
+    id: mediaId,
+    url: `/media/${mediaId}`,
+    width: 1200,
+    height: 630,
+    mimeType: "image/webp",
+    alt: "卡片封面替代文本",
+    decorative: false,
+  };
+  const assertCover = (items: Array<{ slug: string; cover?: unknown }>) => {
+    assert.deepEqual(items.find((item) => item.slug === "cover-candidate")?.cover, expectedCover);
+  };
+
+  const list = await publicRepository.listPage(1);
+  assertCover(list.items);
+  assert.equal("cover" in list.items.find((item) => item.slug === "cover-source")!, false, "coverless cards retain the legacy response shape");
+  assertCover((await publicRepository.searchPage("projection candidate", 1)).items);
+  assertCover((await taxonomyRepository.publicArticles("categories", "cover-projection", 1))!.posts.items);
+  assertCover((await publicRepository.relatedBySlug("cover-source"))!.items);
 });
 
 test("related posts require public overlap and use deterministic category/tag/time/UUID ranking", async (context) => {
