@@ -6,7 +6,7 @@ import {
   adminAboutSchema,
   type AdminAbout,
 } from "@blog-x/contracts";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ArticleBody from "../../_components/ArticleBody";
 import styles from "../admin.module.css";
 
@@ -18,6 +18,10 @@ const actionCopy: Record<AboutAction, { pending: string; failed: string; invalid
   publish: { pending: "正在发布…", failed: "关于页发布失败，请重试。", invalid: "服务器返回了无法识别的发布结果，请重试。" },
 };
 
+function aboutSnapshot(title: string, markdown: string) {
+  return JSON.stringify([title, markdown]);
+}
+
 function fieldErrors(error: { issues: Array<{ path: PropertyKey[]; message: string }> }) {
   const fields: Record<string, string[]> = {};
   for (const issue of error.issues) {
@@ -27,8 +31,11 @@ function fieldErrors(error: { issues: Array<{ path: PropertyKey[]; message: stri
 }
 
 export default function AboutEditor({ initial }: { initial: AdminAbout | null }) {
-  const [title, setTitle] = useState(initial?.title ?? "关于我");
-  const [markdown, setMarkdown] = useState(initial?.markdown ?? "");
+  const initialTitle = initial?.title ?? "关于我";
+  const initialMarkdown = initial?.markdown ?? "";
+  const [title, setTitle] = useState(initialTitle);
+  const [markdown, setMarkdown] = useState(initialMarkdown);
+  const [savedSnapshot, setSavedSnapshot] = useState(() => aboutSnapshot(initialTitle, initialMarkdown));
   const [version, setVersion] = useState<string | null>(initial?.version ?? null);
   const [published, setPublished] = useState(initial?.status === "published");
   const [previewHtml, setPreviewHtml] = useState("");
@@ -36,6 +43,17 @@ export default function AboutEditor({ initial }: { initial: AdminAbout | null })
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [pane, setPane] = useState<"edit" | "preview">("edit");
   const [pending, setPending] = useState<AboutAction | null>(null);
+  const dirty = aboutSnapshot(title, markdown) !== savedSnapshot;
+
+  useEffect(() => {
+    if (!dirty) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [dirty]);
 
   function clearError(name: "title" | "markdown") {
     setErrors((current) => {
@@ -49,6 +67,10 @@ export default function AboutEditor({ initial }: { initial: AdminAbout | null })
   async function request(path: "" | "/preview" | "/publish") {
     if (pending) return;
     const action: AboutAction = path === "/preview" ? "preview" : path === "/publish" ? "publish" : "save";
+    if (action === "publish" && dirty) {
+      setMessage("当前有未保存更改，请先保存草稿再发布。");
+      return;
+    }
     const parsed = aboutInputSchema.safeParse({ title, markdown, version });
     if (!parsed.success) {
       setErrors(fieldErrors(parsed.error));
@@ -88,6 +110,9 @@ export default function AboutEditor({ initial }: { initial: AdminAbout | null })
         return;
       }
       setErrors({});
+      setTitle(page.data.title);
+      setMarkdown(page.data.markdown);
+      setSavedSnapshot(aboutSnapshot(page.data.title, page.data.markdown));
       setVersion(page.data.version);
       setPublished(page.data.status === "published");
       setMessage(path === "/publish" ? "关于页已发布。" : "草稿已保存。");
@@ -106,7 +131,11 @@ export default function AboutEditor({ initial }: { initial: AdminAbout | null })
         <div><p className={styles.eyebrow}>BLOG X / 站点信息</p><h1>关于页</h1><p className={styles.headerDescription}>编辑访客在公开关于页看到的站点介绍。</p></div>
         <a className={styles.secondaryLink} href="/about">查看公开关于页</a>
       </div>
-      <p className={styles.contentStatus}>当前状态 <strong>{published ? "已发布" : "草稿"}</strong></p>
+      <p className={styles.contentStatus}>
+        当前状态 <strong>{published ? "已发布" : "草稿"}</strong>
+        <span aria-hidden="true">·</span>
+        <strong>{dirty ? "有未保存更改" : version ? "内容已保存" : "尚未创建"}</strong>
+      </p>
       <section className={styles.metadata} aria-label="关于页元数据">
         <label>
           标题
@@ -153,7 +182,7 @@ export default function AboutEditor({ initial }: { initial: AdminAbout | null })
         <button type="button" disabled={Boolean(pending)} onClick={() => { void request("/preview"); }}>
           {pending === "preview" ? "正在生成…" : "更新预览"}
         </button>
-        <button type="button" disabled={Boolean(pending) || !version} onClick={() => { void request("/publish"); }}>
+        <button type="button" disabled={Boolean(pending) || !version || dirty} title={dirty ? "请先保存当前更改" : undefined} onClick={() => { void request("/publish"); }}>
           {pending === "publish" ? "正在发布…" : "发布"}
         </button>
       </div>
