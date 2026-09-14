@@ -15,7 +15,9 @@ import {
   assessDockerBuildCapacity,
   createRefreshPlan,
   inspectTargetFilesystem,
+  recordedRefreshSeedId,
   runLocalRefresh,
+  stableRefreshSeedTag,
   runRefreshCli,
 } from "./refresh-local.mjs";
 import {
@@ -59,6 +61,26 @@ const TEST_REVISION = "a".repeat(40);
 const TEST_EVIDENCE_PATH = deliveryAuthorityForRevision(TEST_REVISION).evidencePath;
 const TEST_UID = process.getuid?.();
 if (!Number.isSafeInteger(TEST_UID) || TEST_UID < 0) throw new Error("refresh tests require a valid Unix uid");
+
+test("refresh images retain a stable recorded seed only for valid offline refresh ancestry", () => {
+  const currentId = `sha256:${"a".repeat(64)}`;
+  const recordedId = `sha256:${"b".repeat(64)}`;
+  const image = {
+    Id: currentId,
+    Config: { Labels: {
+      "io.blog-x.refresh-kind": "v1.1-offline-local-delivery",
+      "io.blog-x.seed-image-id": recordedId,
+    } },
+  };
+  assert.equal(recordedRefreshSeedId(image), recordedId);
+  assert.equal(recordedRefreshSeedId({ ...image, Config: { Labels: { ...image.Config.Labels, "io.blog-x.refresh-kind": "legacy" } } }), null);
+  assert.equal(recordedRefreshSeedId({ ...image, Config: { Labels: { ...image.Config.Labels, "io.blog-x.seed-image-id": currentId } } }), null);
+  assert.equal(recordedRefreshSeedId({ ...image, Config: { Labels: { ...image.Config.Labels, "io.blog-x.seed-image-id": "blog-x-web-local:latest" } } }), null);
+  assert.equal(recordedRefreshSeedId(null), null);
+  assert.equal(stableRefreshSeedTag("web", { RepoTags: ["blog-x-web-local:latest", "blog-x-web-local:abc1234"] }), "blog-x-web-local:abc1234");
+  assert.equal(stableRefreshSeedTag("api", { RepoTags: ["blog-x-web-local:abc1234", "blog-x-api-local:latest"] }), null);
+  assert.equal(stableRefreshSeedTag("api", { RepoTags: null }), null);
+});
 
 async function fixtureStore(t) {
   const root = await mkdtemp(join(tmpdir(), "blog-x-refresh-seed-"));

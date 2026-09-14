@@ -174,6 +174,36 @@ async function inspectImage(reference) {
   return image;
 }
 
+export function recordedRefreshSeedId(image) {
+  const imageId = image?.Id;
+  const labels = image?.Config?.Labels;
+  const recorded = labels?.["io.blog-x.seed-image-id"];
+  if (!/^sha256:[a-f0-9]{64}$/.test(imageId ?? "")) return null;
+  if (labels?.["io.blog-x.refresh-kind"] !== LOCAL_DELIVERY_REFRESH_KIND) return null;
+  if (!/^sha256:[a-f0-9]{64}$/.test(recorded ?? "") || recorded === imageId) return null;
+  return recorded;
+}
+
+export function stableRefreshSeedTag(application, image) {
+  const pattern = new RegExp(`^blog-x-${application}-local:[a-f0-9]{7,40}$`);
+  return Array.isArray(image?.RepoTags) ? image.RepoTags.find((tag) => pattern.test(tag)) ?? null : null;
+}
+
+async function resolveProbeSeed(application, requestedReference) {
+  const requested = await inspectImage(requestedReference);
+  const recordedId = recordedRefreshSeedId(requested);
+  if (!recordedId) return { reference: requestedReference, image: requested };
+  try {
+    const recorded = await inspectImage(recordedId);
+    const reference = stableRefreshSeedTag(application, recorded);
+    if (reference) return { reference, image: recorded };
+  } catch {
+    // The recorded seed may have been removed independently. The current image
+    // remains a complete offline seed, so refresh can safely continue from it.
+  }
+  return { reference: requestedReference, image: requested };
+}
+
 async function checkLocalDockerCapacity() {
   const containerRows = JSON.parse((await run("docker", ["inspect", "blogxlocal-api-1", "blogxlocal-web-1"])).stdout);
   if (!Array.isArray(containerRows) || containerRows.length !== 2) fail("canonical local containers are unavailable for capacity preflight");
@@ -200,15 +230,15 @@ async function checkLocalDockerCapacity() {
 async function probeOne(application, seedImage, revision, lockSha256) {
   const unique = randomBytes(8).toString("hex");
   const tag = `blog-x-refresh-probe-${application}:${unique}`;
-  const seed = await inspectImage(seedImage);
+  const seed = await resolveProbeSeed(application, seedImage);
   const args = ["build", "--network=none", "--pull=false", "--file", `apps/${application}/Dockerfile.refresh`, "--tag", tag,
-    "--build-arg", `SEED_IMAGE=${seedImage}`, "--build-arg", `SEED_IMAGE_ID=${seed.Id}`, "--build-arg", `REFRESH_REVISION=${revision}`, "--build-arg", `LOCKFILE_SHA256=${lockSha256}`, "--build-arg", `PUBLIC_ORIGIN=${FIXED_REFRESH.origin}`, "."];
+    "--build-arg", `SEED_IMAGE=${seed.reference}`, "--build-arg", `SEED_IMAGE_ID=${seed.image.Id}`, "--build-arg", `REFRESH_REVISION=${revision}`, "--build-arg", `LOCKFILE_SHA256=${lockSha256}`, "--build-arg", `PUBLIC_ORIGIN=${FIXED_REFRESH.origin}`, "."];
   try {
     await run("docker", args);
     const image = await inspectImage(tag);
     const config = image.Config ?? {};
     const labels = config.Labels ?? {};
-    for (const [key, value] of Object.entries({ "org.opencontainers.image.revision": revision, "io.blog-x.lockfile-sha256": lockSha256, "io.blog-x.seed-image-id": seed.Id, "io.blog-x.application": application, "io.blog-x.public-origin": FIXED_REFRESH.origin, "io.blog-x.refresh-kind": LOCAL_DELIVERY_REFRESH_KIND })) {
+    for (const [key, value] of Object.entries({ "org.opencontainers.image.revision": revision, "io.blog-x.lockfile-sha256": lockSha256, "io.blog-x.seed-image-id": seed.image.Id, "io.blog-x.application": application, "io.blog-x.public-origin": FIXED_REFRESH.origin, "io.blog-x.refresh-kind": LOCAL_DELIVERY_REFRESH_KIND })) {
       if (labels[key] !== value) fail(`${application} probe label ${key} is not exact`);
     }
     const store = (await run("docker", ["run", "--rm", "--network=none", "--entrypoint", "corepack", tag, "pnpm", "--store-dir=/pnpm-store", "store", "path"])).stdout.trim();
