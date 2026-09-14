@@ -81,6 +81,7 @@
 .lifecycleState { min-width: 8em; margin: 0; font-weight: 600; }
 .scheduleControls { display: grid; min-width: 0; gap: 8px; }
 .scheduledAt { margin: 0; color: var(--muted); font: .82rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.scheduleHint { margin: 0; color: var(--muted); font: .74rem/1.5 ui-sans-serif, system-ui, sans-serif; }
 .scheduleForm { display: grid; grid-template-columns: minmax(0, 1fr) minmax(7.5rem, .45fr) auto; align-items: end; gap: 8px; }
 .scheduleForm label { display: grid; min-width: 0; gap: 5px; color: var(--muted); font: 600 .72rem/1.3 ui-sans-serif, system-ui, sans-serif; letter-spacing: .04em; }
 .scheduleForm input { box-sizing: border-box; width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 3px; padding: 9px 10px; color: var(--ink); background: var(--surface); font: 400 .92rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }

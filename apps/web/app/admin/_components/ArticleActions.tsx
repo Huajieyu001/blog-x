@@ -226,21 +226,23 @@ export default function ArticleActions({
 
   if (deleted) return null;
   const mutationBusy = disabled || schedulePending || Boolean(actionPending);
+  const scheduleHintId = `schedule-timezone-${post.id}`;
   const controls = (
     <>
       <p className={styles.lifecycleState}>状态：{statusLabels[post.status]}</p>
       {post.status === "draft" && (
         <div className={styles.scheduleControls}>
-          {post.scheduledAt ? <p className={styles.scheduledAt}>当前预约：{post.scheduledAt}</p> : null}
+          {post.scheduledAt ? <p className={styles.scheduledAt}>当前预约（上海时间）：{formatShanghai(post.scheduledAt)}</p> : null}
           <form aria-label="预约发布" className={styles.scheduleForm} action={`/api/admin/posts/${post.id}/schedule`} method="post" onSubmit={(event) => { void schedule(event); }}>
-            <label>预约发布时间<input name="scheduledAt" type="datetime-local" required value={scheduleForm.scheduledAt} onChange={(event) => {
+            <label>预约发布时间<input name="scheduledAt" type="datetime-local" required aria-describedby={scheduleHintId} value={scheduleForm.scheduledAt} onChange={(event) => {
               const scheduledAt = event.target.value;
               const offsetMinutes = browserOffsetAtLocalDateTime(scheduledAt, CHINA_TIMEZONE_OFFSET_MINUTES);
               setScheduleForm({ scheduledAt, timezoneOffset: formatTimezoneOffset(offsetMinutes) });
             }} disabled={mutationBusy} /></label>
-            <label>UTC 偏移<input name="timezoneOffset" inputMode="text" pattern="[+-](0[0-9]|1[0-4]):[0-5][0-9]" required value={scheduleForm.timezoneOffset} onChange={(event) => setScheduleForm((current) => ({ ...current, timezoneOffset: event.target.value }))} disabled={mutationBusy} /></label>
+            <label>UTC 偏移<input name="timezoneOffset" inputMode="text" pattern="[+-](0[0-9]|1[0-4]):[0-5][0-9]" required aria-describedby={scheduleHintId} value={scheduleForm.timezoneOffset} onChange={(event) => setScheduleForm((current) => ({ ...current, timezoneOffset: event.target.value }))} disabled={mutationBusy} /></label>
             <button type="submit" disabled={mutationBusy}>{schedulePending ? "预约处理中…" : post.scheduledAt ? "改期预约" : "设定预约"}</button>
           </form>
+          <p id={scheduleHintId} className={styles.scheduleHint}>输入框按当前设备时区解释，UTC 偏移会随所选时间自动更新。</p>
           {post.scheduledAt ? (
             <form action={`/api/admin/posts/${post.id}/schedule/cancel`} method="post" onSubmit={(event) => { void cancelSchedule(event); }}>
               <button type="submit" disabled={mutationBusy}>取消预约</button>
