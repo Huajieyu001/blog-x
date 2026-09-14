@@ -55,7 +55,8 @@ test("administrator drafts, safely previews, publishes About, and exposes chrono
   await expect(page).toHaveURL(`${webOrigin}/admin`);
 
   await page.goto(`${webOrigin}/admin/about`);
-  await expect(page.getByText("状态：草稿")).toBeVisible();
+  const aboutStatus = page.locator("p").filter({ hasText: /^当前状态/ });
+  await expect(aboutStatus).toContainText("草稿");
   const title = `关于 Blog X ${runId}`;
   const markdown = "# 安全的关于页\n\n<script>window.aboutLeak = true</script>\n\n```ts\nconst safe = true;\n```";
   await page.getByLabel("标题").fill(title);
@@ -74,7 +75,7 @@ test("administrator drafts, safely previews, publishes About, and exposes chrono
   await page.goto(`${webOrigin}/admin/about`);
   await page.getByRole("button", { name: "发布" }).click();
   await expect(page.getByRole("status", { name: "关于页编辑状态" })).toHaveText("关于页已发布。");
-  await expect(page.getByText("状态：已发布")).toBeVisible();
+  await expect(aboutStatus).toContainText("已发布");
   await page.getByRole("link", { name: "查看公开关于页" }).click();
   await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
   const publicBody = page.getByTestId("article-body");
