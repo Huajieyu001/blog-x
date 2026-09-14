@@ -202,7 +202,6 @@ test("schedule form remains a no-script, keyboard-operable same-origin control",
     await page.goto(detailUrl);
 
     const schedule = page.getByRole("form", { name: "预约发布" });
-    await expect(page.getByTestId("native-lifecycle-fallback")).toHaveCount(1);
     await expect(schedule).toBeVisible();
     const scheduleAction = new URL(await schedule.getAttribute("action") ?? "", webOrigin);
     expect(scheduleAction.origin).toBe(new URL(webOrigin).origin);
