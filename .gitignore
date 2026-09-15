@@ -26,6 +26,7 @@ uploads/
 
 # Large recovery archives are retained locally, not in Git
 /backups/*.tar.gz
+/backups/hexo-migration/
 
 # OS/editor files
 .DS_Store

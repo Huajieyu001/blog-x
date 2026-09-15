@@ -23,7 +23,9 @@
     "db:schema:verify": "corepack pnpm --filter @blog-x/api db:schema:verify",
     "cleanup:views": "corepack pnpm --filter @blog-x/api cleanup:views",
     "test:e2e": "corepack pnpm --filter @blog-x/web test:e2e",
-    "test:e2e:auth": "corepack pnpm --filter @blog-x/web test:e2e:auth"
+    "test:e2e:auth": "corepack pnpm --filter @blog-x/web test:e2e:auth",
+    "backup:hexo": "node scripts/backup/hexo-content.mjs",
+    "test:backup:hexo": "node --test scripts/backup/hexo-content.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
