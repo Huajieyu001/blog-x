@@ -74,6 +74,15 @@ test("dashboard keeps its authoring hierarchy and visible static actions", async
   await expect(page.getByRole("button", { name: /已发布/ })).toHaveAttribute("aria-pressed", "true");
   await page.goto(`${webOrigin}/admin?status=published&status=draft#articles`);
   await expect(page.getByRole("button", { name: /全部/ })).toHaveAttribute("aria-pressed", "true");
+  const articleSort = page.getByLabel("文章排序");
+  await articleSort.selectOption("title");
+  await expect(page).toHaveURL(`${webOrigin}/admin?sort=title#articles`);
+  await expect(articleSort).toHaveValue("title");
+  await page.reload();
+  await expect(page.getByLabel("文章排序")).toHaveValue("title");
+  await expect(page.getByRole("link", { name: /已发布.*查看文章/ })).toHaveAttribute("href", "/admin?status=published&sort=title#articles");
+  await page.goto(`${webOrigin}/admin?sort=oldest&sort=title#articles`);
+  await expect(page.getByLabel("文章排序")).toHaveValue("recent");
 });
 
 test("dashboard keeps content and analytics failures independent", async ({ page, request }) => {
