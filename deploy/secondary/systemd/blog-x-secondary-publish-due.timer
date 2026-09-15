@@ -1,0 +1,10 @@
+[Unit]
+Description=Minute Blog X scheduled publishing check
+
+[Timer]
+OnCalendar=*:*:00
+Persistent=true
+Unit=blog-x-secondary-publish-due.service
+
+[Install]
+WantedBy=timers.target

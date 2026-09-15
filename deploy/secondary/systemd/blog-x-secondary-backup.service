@@ -1,0 +1,18 @@
+[Unit]
+Description=Blog X secondary same-host backup (not off-host disaster recovery)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+WorkingDirectory=/opt/blog-x
+ExecStart=/opt/blog-x/deploy/secondary/backup-local.sh
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/var/backups/blog-x /var/lib/blog-x /run/docker.sock

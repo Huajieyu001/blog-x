@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Blog X secondary local backup
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=15m
+Unit=blog-x-secondary-backup.service
+
+[Install]
+WantedBy=timers.target

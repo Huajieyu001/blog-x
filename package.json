@@ -25,7 +25,8 @@
     "test:e2e": "corepack pnpm --filter @blog-x/web test:e2e",
     "test:e2e:auth": "corepack pnpm --filter @blog-x/web test:e2e:auth",
     "backup:hexo": "node scripts/backup/hexo-content.mjs",
-    "test:backup:hexo": "node --test scripts/backup/hexo-content.test.mjs"
+    "test:backup:hexo": "node --test scripts/backup/hexo-content.test.mjs",
+    "test:deploy:secondary": "node --test deploy/secondary/secondary.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
