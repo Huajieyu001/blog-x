@@ -30,7 +30,7 @@ test("administrator analytics uses same-origin SSR navigation with strict ranges
   await expect(page).toHaveURL(`${webOrigin}/admin/analytics?range=30`);
   await expect(page.getByRole("heading", { name: "访问统计" })).toBeVisible();
   await expect(page.getByText("这里展示的是按 Asia/Shanghai 自然日汇总的匿名页面浏览量（PV）。")).toBeVisible();
-  await expect(page.getByText("10 PV", { exact: true })).toBeVisible();
+  await expect(page.getByRole("figure", { name: "每日趋势" }).getByText("10 PV", { exact: true })).toBeVisible();
   await expect(page.getByText("直接访问")).toBeVisible();
   await expect(page.getByText("7 PV · 70.0%", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: analyticsTitle })).toBeVisible();
