@@ -30,7 +30,7 @@ compose=(docker compose --project-name "$PROJECT" --env-file "$ENV_FILE" --file 
 "${compose[@]}" exec -T api tar -C /var/lib/blog-x/media -czf - . > "$stage/media.tar.gz"
 printf '{"format":"blog-x-secondary-local-backup","version":1,"scope":"same-host-not-off-host-disaster-recovery","createdAt":"%s","revision":"%s","files":["database.dump","media.tar.gz"]}\n' "$(date -u +%FT%TZ)" "$revision" > "$stage/metadata.json"
 (cd "$stage" && sha256sum database.dump media.tar.gz metadata.json > SHA256SUMS && sha256sum -c SHA256SUMS)
-pg_restore -l "$stage/database.dump" >/dev/null
+"${compose[@]}" exec -T postgres pg_restore -l < "$stage/database.dump" >/dev/null
 tar -tzf "$stage/media.tar.gz" >/dev/null
 mv -- "$stage" "$final"
 trap - EXIT

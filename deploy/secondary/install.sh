@@ -44,5 +44,4 @@ install -m 0644 "$(dirname "$0")/systemd/blog-x-secondary-backup.timer" /etc/sys
 install -m 0644 "$(dirname "$0")/systemd/blog-x-secondary-publish-due.service" /etc/systemd/system/blog-x-secondary-publish-due.service
 install -m 0644 "$(dirname "$0")/systemd/blog-x-secondary-publish-due.timer" /etc/systemd/system/blog-x-secondary-publish-due.timer
 systemctl daemon-reload
-systemctl enable --now blog-x-secondary-backup.timer blog-x-secondary-publish-due.timer
-printf '%s\n' 'Blog X secondary prerequisites ready; runtime secrets are stored in /etc/blog-x/secondary.env.'
+printf '%s\n' 'Blog X secondary prerequisites ready; deploy after the runtime health check to enable timers.'

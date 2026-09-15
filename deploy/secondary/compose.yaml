@@ -30,7 +30,6 @@ services:
     build:
       context: ../..
       dockerfile: apps/api/Dockerfile
-      network: none
     image: blog-x-api-secondary:${BLOG_X_REVISION}
     restart: unless-stopped
     logging:

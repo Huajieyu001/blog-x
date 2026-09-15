@@ -15,6 +15,7 @@ test("secondary compose keeps PostgreSQL private and API loopback-only", async (
   assert.match(compose, /restart: unless-stopped/);
   assert.match(compose, /mem_limit: 1200m/);
   assert.match(compose, /mem_limit: 1400m/);
+  assert.doesNotMatch(compose, /network:\s*none/);
 });
 
 test("install and deployment scripts use fixed safe authorities without secret output or administrator seeding", async () => {
@@ -24,13 +25,18 @@ test("install and deployment scripts use fixed safe authorities without secret o
   assert.doesNotMatch(install, /dist-upgrade|full-upgrade|echo .*password/i);
   assert.match(install, /chmod 0600 "\$ENV_FILE"/);
   assert.match(install, /openssl rand -hex 32/);
+  assert.doesNotMatch(install, /enable --now blog-x-secondary-backup\.timer/);
   assert.match(deploy, /readonly ENV_FILE=\/etc\/blog-x\/secondary\.env/);
   assert.match(deploy, /db:migrate/);
   assert.match(deploy, /db:schema:verify/);
   assert.doesNotMatch(deploy, /db:seed|0\.0\.0\.0:3001/);
+  assert.match(deploy, /systemctl enable --now blog-x-secondary-backup\.timer blog-x-secondary-publish-due\.timer/);
+  assert.ok(deploy.indexOf("systemctl enable --now") > deploy.indexOf('port api 3001'));
   assert.match(backup, /same-host-not-off-host-disaster-recovery/);
   assert.match(backup, /pg_dump/);
   assert.match(backup, /sha256sum -c SHA256SUMS/);
+  assert.match(backup, /exec -T postgres pg_restore -l < "\$stage\/database\.dump"/);
+  assert.doesNotMatch(backup, /\npg_restore -l/);
   assert.match(publish, /publish:due/);
 });
 

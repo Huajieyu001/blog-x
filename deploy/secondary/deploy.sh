@@ -42,4 +42,5 @@ if docker ps --format '{{.Ports}}' | grep -Eq '(^|[, ])(0\.0\.0\.0|\[::\]):5432'
   printf '%s\n' 'PostgreSQL must not publish a host port' >&2
   exit 1
 fi
+systemctl enable --now blog-x-secondary-backup.timer blog-x-secondary-publish-due.timer
 printf 'Blog X secondary deployment healthy at revision %s\n' "$revision"
