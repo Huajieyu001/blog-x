@@ -54,7 +54,7 @@ test("install and deployment scripts use fixed safe authorities without secret o
   assert.match(backup, /sha256sum -c SHA256SUMS/);
   assert.match(backup, /exec -T postgres pg_restore -l < "\$stage\/database\.dump"/);
   assert.doesNotMatch(backup, /\npg_restore -l/);
-  assert.match(publish, /publish:due/);
+  assert.match(publish, /publish:due -- --limit=100/);
 });
 
 test("systemd jobs call fixed local scripts and leave failures visible in the journal", async () => {
