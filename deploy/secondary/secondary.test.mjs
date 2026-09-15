@@ -16,6 +16,8 @@ test("secondary compose keeps PostgreSQL private and API loopback-only", async (
   assert.match(compose, /mem_limit: 1200m/);
   assert.match(compose, /mem_limit: 1400m/);
   assert.doesNotMatch(compose, /network:\s*none/);
+  assert.match(compose, /command: \["corepack", "pnpm", "--filter", "@blog-x\/api", "dev"\]/);
+  assert.doesNotMatch(compose, /node apps\/api\/dist\/app\.js|@blog-x\/contracts.*dist/);
 });
 
 test("API image installs only the API workspace closure, never the Web dependency graph", async () => {

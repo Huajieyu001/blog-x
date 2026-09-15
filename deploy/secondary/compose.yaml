@@ -45,7 +45,7 @@ services:
       API_PORT: "3001"
       TRUSTED_PROXY_CIDRS: 127.0.0.1/32
       MEDIA_ROOT: /var/lib/blog-x/media
-    command: ["sh", "-ec", "corepack pnpm --filter @blog-x/api build && exec node apps/api/dist/app.js"]
+    command: ["corepack", "pnpm", "--filter", "@blog-x/api", "dev"]
     ports:
       - "127.0.0.1:3001:3001"
     volumes:
