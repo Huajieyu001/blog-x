@@ -54,7 +54,9 @@ test("install and deployment scripts use fixed safe authorities without secret o
   assert.match(backup, /sha256sum -c SHA256SUMS/);
   assert.match(backup, /exec -T postgres pg_restore -l < "\$stage\/database\.dump"/);
   assert.doesNotMatch(backup, /\npg_restore -l/);
-  assert.match(publish, /publish:due -- --limit=100/);
+  const publishCommand = publish.split("\n").find((line) => line.startsWith("docker compose"));
+  assert.equal(publishCommand?.split(/\s+/).slice(-2).join(" "), "publish:due --limit=100");
+  assert.equal(publishCommand?.includes("publish:due -- --limit="), false);
 });
 
 test("systemd jobs call fixed local scripts and leave failures visible in the journal", async () => {
