@@ -18,6 +18,15 @@ test("secondary compose keeps PostgreSQL private and API loopback-only", async (
   assert.doesNotMatch(compose, /network:\s*none/);
 });
 
+test("API image installs only the API workspace closure, never the Web dependency graph", async () => {
+  const dockerfile = await read("../../apps/api/Dockerfile");
+  assert.match(dockerfile, /COPY apps\/api\/package\.json apps\/api\/package\.json/);
+  assert.match(dockerfile, /COPY packages\/contracts\/package\.json packages\/contracts\/package\.json/);
+  assert.match(dockerfile, /pnpm --filter @blog-x\/api\.\.\. install --frozen-lockfile/);
+  assert.doesNotMatch(dockerfile, /apps\/web\/package\.json/);
+  assert.doesNotMatch(dockerfile, /pnpm install --frozen-lockfile/);
+});
+
 test("install and deployment scripts use fixed safe authorities without secret output or administrator seeding", async () => {
   const [install, deploy, backup, publish] = await Promise.all(["./install.sh", "./deploy.sh", "./backup-local.sh", "./publish-due.sh"].map(read));
   assert.match(install, /Ubuntu 24\.04/);
