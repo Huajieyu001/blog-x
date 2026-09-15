@@ -1,5 +1,22 @@
 # Project Milestones: Blog X
 
+## v1.3 Private Insights (Shipped: 2026-09-15)
+
+**Delivered:** 隐私友好的匿名 PV 趋势、清晰完整的响应式单管理员工作台，以及绑定固定 `3100` 预览的本地交付证据；生产继续保持 `BLOCKED`。
+
+**Phases completed:** 3 phases, 8 plans, 11 tasks
+
+**Key accomplishments:**
+
+- 仅保存按文章、上海自然日和粗粒度来源聚合的匿名 PV，不保存可识别访客信息。
+- 为管理员提供受认证、不可缓存的 7/30/90/400 天趋势、热门文章和来源统计。
+- 统一文章、统计、分类标签、关于和审计页面的响应式后台工作台。
+- 以 91/91 本地验收和修订绑定收据更新固定 `3100` 预览，生产保持 `BLOCKED`。
+
+**What's next:** 下一里程碑待定；继续以本地可运行结果为优先，不操作冻结中的生产服务器。
+
+---
+
 ## v1.2 Publishing Quality (Shipped: 2026-09-05)
 
 **Delivered:** 与可见公开内容一致的安全 `BlogPosting` 结构化数据，以及可预约、改期、取消、并发安全并在到期前严格保密的受控定时发布闭环；生产继续保持 `BLOCKED`。

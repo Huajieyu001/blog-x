@@ -131,6 +131,34 @@
 
 ---
 
+## Milestone: v1.3 — Private Insights
+
+**Shipped:** 2026-09-15
+**Phases:** 3 | **Plans:** 8 | **Tasks:** 11
+
+### What Was Built
+
+- 匿名、按日聚合且可恢复的 PV 统计，以及受认证的管理员趋势页面。
+- 统一的响应式后台导航、内容摘要、状态反馈和可访问性交互。
+- 绑定源码修订的固定 `3100` 本地交付，91/91 验收通过且生产保持 `BLOCKED`。
+
+### What Worked
+
+- 轻量 SSR、语义 HTML 与现有 CSS 在不增加重型依赖的情况下完成了统计和后台升级。
+- 生成环境、完整清单和一次性刷新收据把代码、测试和用户可见预览绑定到同一修订。
+
+### What Was Inefficient
+
+- 历史浏览器测试的文案和焦点定位漂移造成多轮串行 canonical 重跑。
+- GSD 文档与发布门禁成本一度高于博客功能本身，后续应继续采用代码优先的快速交付配置。
+
+### Key Lessons
+
+1. 稳定 E2E 应优先定位语义状态节点，避免依赖易变化的完整文案。
+2. 常规博客功能使用 targeted tests 与浏览器 smoke；完整 canonical 留给里程碑收口。
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -140,6 +168,7 @@
 | v1.0 | 5 | 26 | 从功能验收演进到真实执行收据，并新增大步骤后本地展示更新规则 |
 | v1.1 | 3 | 24 | 引入不可变修订收据、集成测试单 owner 与后继提交复验 |
 | v1.2 | 2 | 4 | 将数据库时间、目标日期时区、并发发布和恢复运行时收敛为单一可验证权威 |
+| v1.3 | 3 | 8 | 采用代码优先快速交付，并将匿名统计、后台响应式和固定预览绑定为一个可见增量 |
 
 ### Cumulative Quality
 
@@ -148,6 +177,7 @@
 | v1.0 | 503/503 | 30 actual result records | BLOCKED |
 | v1.1 | 66/66 final acceptance | immutable per-revision receipt | BLOCKED |
 | v1.2 | 74/74 final acceptance | reviewed-revision immutable receipt | BLOCKED |
+| v1.3 | 91/91 local delivery acceptance | revision-bound local delivery receipt | BLOCKED |
 
 ### Top Lessons (Verified Across Milestones)
 

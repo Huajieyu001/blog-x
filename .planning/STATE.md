@@ -2,45 +2,43 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Private Insights
-current_phase: 13
-current_phase_name: Responsive Admin Workspace and Local Delivery
-status: completed
-stopped_at: Phase 13 complete; verified local revision 8c749204
-last_updated: "2026-09-14T18:08:10.172Z"
+status: Awaiting next milestone
+stopped_at: Phase 13 complete; fixed local preview verified
+last_updated: "2026-09-15T01:57:24.573Z"
 last_activity: 2026-09-15
-last_activity_desc: Phase 13 complete
+last_activity_desc: Milestone v1.3 completed and archived
 progress:
   total_phases: 3
   completed_phases: 3
   total_plans: 8
   completed_plans: 8
   percent: 100
+current_phase: 13
+current_phase_name: Responsive Admin Workspace and Local Delivery
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-05)
+See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** 博主能够可靠地发布和保存 Markdown 内容，访客能够持续、快速地通过博客域名阅读已发布文章。
-**Current focus:** Phase 13 — Responsive Admin Workspace and Local Delivery
+**Current focus:** Planning the next local-only milestone
 
 ## Current Position
 
-Phase: 13 — Responsive Admin Workspace and Local Delivery
-Plan: 2 of 2
-Status: All phases complete
-Last activity: 2026-09-15 — Phase 13 complete
-
-Progress: [██████████] 100%
+Phase: Milestone v1.3 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-09-15 — Milestone v1.3 completed and archived
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 54 across v1.0, v1.1 and v1.2
-- Current milestone plans completed: 7
+- Total plans completed: 62 across v1.0–v1.3
+- Current milestone plans completed: 8
 
 **By Milestone:**
 
@@ -86,7 +84,7 @@ Decisions are logged in PROJECT.md Key Decisions table.
 
 ### Pending Todos
 
-None. v1.3 is ready for milestone closeout.
+None. v1.3 is archived; next milestone scope is not selected.
 
 ### Blockers/Concerns
 
@@ -109,10 +107,10 @@ None. v1.3 is ready for milestone closeout.
 
 ## Session Continuity
 
-Last session: 2026-09-14T18:08:10.172Z
-Stopped at: Phase 13 complete; fixed local preview verified
+Last session: 2026-09-15T01:57:24.573Z
+Stopped at: Milestone v1.3 completed and archived
 Resume file: None
 
 ## Operator Next Steps
 
-- Close the v1.3 milestone after final audit; subjective visual UAT remains deferred and non-blocking.
+- Start the next milestone with $gsd-new-milestone
