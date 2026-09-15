@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import PublicHeader from "./_components/PublicHeader";
 import { publicOrigin } from "./lib/site-metadata";
+import styles from "./layout.module.css";
 
 export const metadata: Metadata = {
   metadataBase: publicOrigin(),
@@ -16,7 +17,13 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="zh-CN" suppressHydrationWarning>
       <head><script dangerouslySetInnerHTML={{ __html: themeBootstrap }} /></head>
-      <body><PublicHeader />{children}</body>
+      <body>
+        <PublicHeader />
+        {children}
+        <footer className={styles.icpFooter}>
+          <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">黔ICP备2023015906号</a>
+        </footer>
+      </body>
     </html>
   );
 }
