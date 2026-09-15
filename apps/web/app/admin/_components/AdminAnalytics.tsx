@@ -17,6 +17,10 @@ function percent(value: number, total: number) {
   return total === 0 ? "0.0" : ((value / total) * 100).toFixed(1);
 }
 
+function averagePv(total: number, range: number) {
+  return new Intl.NumberFormat("zh-CN", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(total / range);
+}
+
 export function AnalyticsDisclosure() {
   return <aside className={styles.analyticsDisclosure} aria-labelledby="analytics-privacy-title">
     <h2 id="analytics-privacy-title">隐私说明</h2>
@@ -48,6 +52,16 @@ export function AnalyticsRangeNav({ range }: { range: AdminAnalytics["range"] })
   return <nav className={styles.rangeNav} aria-label="统计时间范围">
     {([7, 30, 90, 400] as const).map((value) => <a key={value} href={`/admin/analytics?range=${value}`} aria-current={range === value ? "page" : undefined}>{value} 天</a>)}
   </nav>;
+}
+
+export function AnalyticsKpis({ analytics }: { analytics: AdminAnalytics }) {
+  const activeDays = analytics.daily.filter((point) => point.pv > 0).length;
+  const peak = analytics.daily.reduce((highest, point) => point.pv > highest.pv ? point : highest, analytics.daily[0]!);
+  return <dl className={styles.analyticsKpis} role="group" aria-label="访问概览">
+    <div><dt>日均 PV</dt><dd>{averagePv(analytics.totalPv, analytics.range)}</dd><p>所选时段日均浏览</p></div>
+    <div><dt>有访问的天数</dt><dd>{activeDays}</dd><p>共 {analytics.range} 天</p></div>
+    <div><dt>最高单日</dt><dd>{pv(peak.pv)} PV</dd><p>{peak.day}</p></div>
+  </dl>;
 }
 
 export function AnalyticsDetails({ analytics }: { analytics: AdminAnalytics }) {

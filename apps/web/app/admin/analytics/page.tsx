@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import type { AdminAnalytics } from "@blog-x/contracts";
 import { getAdminAnalytics } from "../../lib/api";
-import { AnalyticsDetails, AnalyticsDisclosure, AnalyticsFailure, AnalyticsRangeNav, DailyTrend } from "../_components/AdminAnalytics";
+import { AnalyticsDetails, AnalyticsDisclosure, AnalyticsFailure, AnalyticsKpis, AnalyticsRangeNav, DailyTrend } from "../_components/AdminAnalytics";
 import styles from "../admin.module.css";
 
 type SearchParameters = Record<string, string | string[] | undefined>;
@@ -28,6 +28,7 @@ export default async function AdminAnalyticsPage({ searchParams }: { searchParam
     <AnalyticsRangeNav range={range} />
     {result.kind === "upstream_error" ? <AnalyticsFailure range={range} /> : <>
       <div className={styles.analyticsRangeActions}><p className={styles.rangeCaption}>{result.data.fromDay} 至 {result.data.toDay} · 共 {result.data.range} 天</p><a className={styles.analyticsCsvDownload} href={`/api/admin/analytics.csv?range=${range}&limit=8`}>下载每日 CSV</a></div>
+      <AnalyticsKpis analytics={result.data} />
       <DailyTrend analytics={result.data} />
       <AnalyticsDetails analytics={result.data} />
     </>}

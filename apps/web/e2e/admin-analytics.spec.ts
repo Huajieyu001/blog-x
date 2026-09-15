@@ -37,6 +37,10 @@ test("administrator analytics uses same-origin SSR navigation with strict ranges
   await expect(page.getByText("所选时段还没有浏览记录")).toHaveCount(0);
   const csvDownload = page.getByRole("link", { name: "下载每日 CSV" });
   await expect(csvDownload).toHaveAttribute("href", "/api/admin/analytics.csv?range=30&limit=8");
+  const overview = page.getByRole("group", { name: "访问概览" });
+  await expect(overview.getByText("日均 PV", { exact: true })).toBeVisible();
+  await expect(overview.getByText("有访问的天数", { exact: true })).toBeVisible();
+  await expect(overview.getByText("最高单日", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "30 天" })).toHaveAttribute("aria-current", "page");
   for (const range of ["7 天", "90 天", "400 天"]) await expect(page.getByRole("link", { name: range })).toBeVisible();
   await page.getByRole("link", { name: "7 天" }).click();

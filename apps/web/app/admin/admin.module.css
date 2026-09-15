@@ -213,6 +213,11 @@
 .analyticsRangeActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; }
 .analyticsCsvDownload { display: inline-flex; min-height: 44px; box-sizing: border-box; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 999px; padding: 0 16px; color: var(--ink) !important; font: 650 .85rem/1 ui-sans-serif, system-ui, sans-serif; text-decoration: none; white-space: nowrap; }
 .analyticsCsvDownload:hover { border-color: var(--ink); }
+.analyticsKpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 20px 0 0; }
+.analyticsKpis div { min-width: 0; border: 1px solid var(--line); border-radius: 5px; padding: 18px; background: var(--surface); }
+.analyticsKpis dt { color: var(--muted); font: 650 .78rem/1.3 ui-sans-serif, system-ui, sans-serif; }
+.analyticsKpis dd { margin: 8px 0 4px; color: var(--ink); font: 500 clamp(1.55rem, 3vw, 2.25rem)/1 ui-serif, Georgia, serif; font-variant-numeric: tabular-nums; }
+.analyticsKpis p { margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.45; }
 .loadingPanel { margin-top: 32px; }
 .loadingBlocks i, .loadingChart { display: block; border: 1px solid var(--line); border-radius: 6px; background: linear-gradient(105deg, var(--surface) 35%, color-mix(in srgb, var(--surface) 75%, var(--line)) 48%, var(--surface) 61%); background-size: 240% 100%; animation: admin-loading 1.5s ease-in-out infinite; }
 .loadingChart { height: 180px; margin-top: 18px; }
@@ -227,7 +232,7 @@
 .page a:focus-visible, .page button:focus-visible, .page input:focus-visible, .page textarea:focus-visible, .page select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 :global(html[data-theme="dark"]) .workspace, :global(html[data-theme="dark"]) .analyticsPage { --danger: #ffaca5; }
 @media (min-width: 721px) and (max-width: 1023px) { .workspace, .analyticsPage { padding-right: 24px; padding-left: 24px; }.overviewCards { grid-template-columns: repeat(2, minmax(0, 1fr)); }.focusPanels, .analyticsSplit { grid-template-columns: 1fr; } }
-@media (max-width: 720px) { .workspace, .analyticsPage { padding: 32px 18px 48px; }.workspaceHeader, .analyticsHeader { align-items: stretch; flex-direction: column; }.primaryLink, .analyticsCsvDownload { width: 100%; box-sizing: border-box; }.workspaceSection, .focusPanels .workspaceSection { margin-top: 32px; }.overviewCards, .focusPanels, .analyticsSplit, .loadingBlocks, .postListToolbar { grid-template-columns: 1fr; }.postFilters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }.postFilters button { justify-content: space-between; }.maintenanceList li { grid-template-columns: 1fr; gap: 2px; }.rangeNav { grid-template-columns: repeat(2, minmax(0, 1fr)); }.overviewCards article, .focusCard, .analyticsSummary, .dailyTrend, .sourcePanel, .topPanel, .analyticsDisclosure, .zeroPanel, .errorPanel, .emptyPanel { padding: 16px; } }
+@media (max-width: 720px) { .workspace, .analyticsPage { padding: 32px 18px 48px; }.workspaceHeader, .analyticsHeader { align-items: stretch; flex-direction: column; }.primaryLink, .analyticsCsvDownload { width: 100%; box-sizing: border-box; }.workspaceSection, .focusPanels .workspaceSection { margin-top: 32px; }.overviewCards, .focusPanels, .analyticsSplit, .analyticsKpis, .loadingBlocks, .postListToolbar { grid-template-columns: 1fr; }.postFilters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }.postFilters button { justify-content: space-between; }.maintenanceList li { grid-template-columns: 1fr; gap: 2px; }.rangeNav { grid-template-columns: repeat(2, minmax(0, 1fr)); }.overviewCards article, .focusCard, .analyticsSummary, .dailyTrend, .sourcePanel, .topPanel, .analyticsDisclosure, .zeroPanel, .errorPanel, .emptyPanel { padding: 16px; } }
 @media (prefers-reduced-motion: reduce) { .workspace *, .analyticsPage * { scroll-behavior: auto !important; transition: none !important; animation: none !important; } }
 
 @media (max-width: 720px) {
