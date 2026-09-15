@@ -1,0 +1,21 @@
+[Unit]
+Description=Blog X private secondary API SSH tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/blog-x/control/tunnel.sh
+Restart=always
+RestartSec=5
+User=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/etc/blog-x
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

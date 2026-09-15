@@ -1,0 +1,17 @@
+[Unit]
+Description=Blog X primary Web container
+After=docker.service blog-x-primary-tunnel.service
+Requires=docker.service blog-x-primary-tunnel.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/docker start -a blog-x-web
+ExecStop=/usr/bin/docker stop -t 30 blog-x-web
+Restart=always
+RestartSec=5
+TimeoutStopSec=35
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
