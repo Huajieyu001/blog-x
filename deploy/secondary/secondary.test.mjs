@@ -11,6 +11,12 @@ test("secondary compose keeps PostgreSQL private and API loopback-only", async (
   assert.match(compose, /- "127\.0\.0\.1:3001:3001"/);
   assert.doesNotMatch(compose, /5432:\d+|:\d+:5432/);
   assert.match(compose, /internal: true/);
+  const postgres = compose.slice(compose.indexOf("  postgres:"), compose.indexOf("\n  api:"));
+  const api = compose.slice(compose.indexOf("  api:"), compose.indexOf("\nvolumes:"));
+  assert.match(postgres, /networks: \[internal\]/);
+  assert.match(api, /networks: \[internal, ingress\]/);
+  assert.match(compose, /ingress:\n    driver: bridge/);
+  assert.doesNotMatch(postgres, /ingress/);
   assert.match(compose, /postgres-data:|media-data:/);
   assert.match(compose, /restart: unless-stopped/);
   assert.match(compose, /mem_limit: 1200m/);

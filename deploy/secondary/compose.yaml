@@ -50,7 +50,7 @@ services:
       - "127.0.0.1:3001:3001"
     volumes:
       - media-data:/var/lib/blog-x/media
-    networks: [internal]
+    networks: [internal, ingress]
     depends_on:
       postgres:
         condition: service_healthy
@@ -71,3 +71,5 @@ volumes:
 networks:
   internal:
     internal: true
+  ingress:
+    driver: bridge
