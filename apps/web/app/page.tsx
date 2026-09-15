@@ -32,7 +32,23 @@ export async function generateMetadata({ searchParams }: HomePageProps) {
   });
 }
 
-function EmptyState({ invalid = false }: { invalid?: boolean }) {
+function EmptyState({ kind }: { kind: "invalid" | "empty-blog" | "empty-page" }) {
+  if (kind === "empty-blog") {
+    return (
+      <div className={`${styles.empty} ${styles.emptyWelcome}`}>
+        <p className={styles.eyebrow}>COMING SOON</p>
+        <h3>第一篇文章正在准备中</h3>
+        <p>在内容发布前，可以先了解这个博客，浏览归档，或订阅后续更新。</p>
+        <nav className={styles.emptyActions} aria-label="空博客导航">
+          <Link href="/about">了解这个博客</Link>
+          <Link href="/archives">查看归档</Link>
+          <a href="/rss.xml">订阅 RSS</a>
+        </nav>
+      </div>
+    );
+  }
+
+  const invalid = kind === "invalid";
   return (
     <div className={styles.empty}>
       <h3>{invalid ? "页码无效" : "这一页还没有文章"}</h3>
@@ -60,7 +76,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           <h2 id="latest-posts">最新文章</h2>
           <p>{result ? `共 ${result.totalItems} 篇 · 第 ${result.page} 页` : "公开文章"}</p>
         </header>
-        {!query.success ? <EmptyState invalid /> : result && result.items.length === 0 ? <EmptyState /> : result ? (
+        {!query.success ? <EmptyState kind="invalid" /> : result && result.items.length === 0 ? <EmptyState kind={result.page === 1 && result.totalItems === 0 ? "empty-blog" : "empty-page"} /> : result ? (
           <div className={styles.postList}>
             {result.items.map((post, index) => (
               <PostCard key={post.slug} post={post} position={(result.page - 1) * result.pageSize + index + 1} />

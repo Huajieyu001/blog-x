@@ -51,6 +51,7 @@ test("public SSR home exposes editorial cards, stable pagination, and fresh life
   await expect(page.getByText("这一页还没有文章")).toBeVisible();
   await expect(page.getByTestId("post-card")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "返回最新文章" })).toHaveAttribute("href", "/");
+  await expect(page.getByRole("navigation", { name: "空博客导航" })).toHaveCount(0);
 
   await page.goto(`${webOrigin}/login`);
   await page.setExtraHTTPHeaders({ "cache-control": "no-cache", pragma: "no-cache" });
