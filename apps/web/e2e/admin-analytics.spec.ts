@@ -35,11 +35,14 @@ test("administrator analytics uses same-origin SSR navigation with strict ranges
   await expect(page.getByText("7 PV · 70.0%", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: analyticsTitle })).toBeVisible();
   await expect(page.getByText("所选时段还没有浏览记录")).toHaveCount(0);
+  const csvDownload = page.getByRole("link", { name: "下载每日 CSV" });
+  await expect(csvDownload).toHaveAttribute("href", "/api/admin/analytics.csv?range=30&limit=8");
   await expect(page.getByRole("link", { name: "30 天" })).toHaveAttribute("aria-current", "page");
   for (const range of ["7 天", "90 天", "400 天"]) await expect(page.getByRole("link", { name: range })).toBeVisible();
   await page.getByRole("link", { name: "7 天" }).click();
   await expect(page).toHaveURL(`${webOrigin}/admin/analytics?range=7`);
   await expect(page.getByRole("heading", { name: "所选时段还没有浏览记录" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "下载每日 CSV" })).toHaveAttribute("href", "/api/admin/analytics.csv?range=7&limit=8");
 });
 
 test("invalid analytics range never reaches an analytics API request and offers exact recovery", async ({ page }) => {
@@ -51,6 +54,7 @@ test("invalid analytics range never reaches an analytics API request and offers 
   await expect(page.getByText("请选择 7、30、90 或 400 天。", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "查看 30 天" })).toHaveAttribute("href", "/admin/analytics?range=30");
   expect(analyticsRequests).toBe(0);
+  await expect(page.getByRole("link", { name: "下载每日 CSV" })).toHaveCount(0);
 });
 
 test("dashboard keeps its authoring hierarchy and visible static actions", async ({ page }) => {
@@ -66,6 +70,11 @@ test("dashboard keeps content and analytics failures independent", async ({ page
   await page.goto(`${failureWebOrigin}/admin`);
   await expect(page.getByRole("heading", { name: "工作台" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "访问趋势暂时不可用" })).toBeVisible();
+  await page.goto(`${failureWebOrigin}/admin/analytics?range=30`);
+  await expect(page.getByRole("heading", { name: "暂时无法读取访问统计" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "下载每日 CSV" })).toHaveCount(0);
+
+  await page.goto(`${failureWebOrigin}/admin`);
   await expect(page.getByRole("heading", { name: "内容概况暂时不可用" })).toHaveCount(0);
   await expect(page.getByText("还没有文章。新建第一篇草稿，开始记录。")).toBeVisible();
 

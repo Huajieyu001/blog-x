@@ -13,6 +13,19 @@ export const adminAnalyticsRoutes: FastifyPluginAsync<Options> = async (app, opt
     reply.header("cache-control", "private, no-store, max-age=0");
     return payload;
   });
+  app.get<{ Querystring: Record<string, string | string[] | undefined> }>("/admin/analytics.csv", async (request, reply) => {
+    if (!await requireAdministrator(request, reply, { sessionAuth: options.sessionAuth })) return;
+    const query = adminAnalyticsQuerySchema.safeParse(request.query);
+    if (!query.success) return reply.code(400).send({ error: "invalid_query" });
+    try {
+      const analytics = adminAnalyticsResponseSchema.parse(await options.adminAnalyticsRepository.read(query.data));
+      reply.header("content-disposition", `attachment; filename="blog-x-daily-pv-${analytics.range}d.csv"`);
+      reply.type("text/csv; charset=utf-8");
+      return reply.send(`date,pv\n${analytics.daily.map((point) => `${point.day},${point.pv}`).join("\n")}\n`);
+    } catch {
+      return reply.code(503).send({ error: "analytics_unavailable" });
+    }
+  });
   app.get<{ Querystring: Record<string, string | string[] | undefined> }>("/admin/analytics", async (request, reply) => {
     // Set this before authentication so every possible outcome is private.
     reply.header("cache-control", "private, no-store, max-age=0");

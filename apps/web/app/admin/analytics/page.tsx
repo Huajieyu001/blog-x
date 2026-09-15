@@ -27,7 +27,7 @@ export default async function AdminAnalyticsPage({ searchParams }: { searchParam
     <AnalyticsDisclosure />
     <AnalyticsRangeNav range={range} />
     {result.kind === "upstream_error" ? <AnalyticsFailure range={range} /> : <>
-      <p className={styles.rangeCaption}>{result.data.fromDay} 至 {result.data.toDay} · 共 {result.data.range} 天</p>
+      <div className={styles.analyticsRangeActions}><p className={styles.rangeCaption}>{result.data.fromDay} 至 {result.data.toDay} · 共 {result.data.range} 天</p><a className={styles.analyticsCsvDownload} href={`/api/admin/analytics.csv?range=${range}&limit=8`}>下载每日 CSV</a></div>
       <DailyTrend analytics={result.data} />
       <AnalyticsDetails analytics={result.data} />
     </>}

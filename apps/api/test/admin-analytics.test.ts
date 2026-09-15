@@ -32,6 +32,7 @@ const validAnalytics = {
 
 async function createAnalyticsApp({ failing = false } = {}) {
   let repositoryCalls = 0;
+  const repositoryQueries: Array<{ range: 7 | 30 | 90 | 400; limit: number }> = [];
   const app = Fastify({ logger: { level: "silent" } });
   await app.register(cookie as unknown as FastifyPluginAsync);
   await app.register(adminAnalyticsRoutes, {
@@ -41,14 +42,15 @@ async function createAnalyticsApp({ failing = false } = {}) {
       revoke: async () => undefined,
     },
     adminAnalyticsRepository: {
-      read: async () => {
+      read: async (query) => {
         repositoryCalls += 1;
+        repositoryQueries.push(query);
         if (failing) throw new Error("private database detail");
         return validAnalytics;
       },
     },
   });
-  return { app, repositoryCalls: () => repositoryCalls };
+  return { app, repositoryCalls: () => repositoryCalls, repositoryQueries: () => repositoryQueries };
 }
 
 test("analytics is session-first, private no-store, and does not call the repository for anonymous requests", async (context) => {
@@ -90,6 +92,41 @@ test("analytics hides repository failures behind a non-cacheable unavailable res
   const { app } = await createAnalyticsApp({ failing: true });
   context.after(() => app.close());
   const response = await app.inject({ method: "GET", url: "/admin/analytics?range=30&limit=1", headers: { cookie: "blog_x_session=valid" } });
+  assert.equal(response.statusCode, 503);
+  assert.deepEqual(response.json(), { error: "analytics_unavailable" });
+  assert.equal(response.headers["cache-control"], "private, no-store, max-age=0");
+});
+
+test("daily analytics CSV authenticates before validation and exports only the selected aggregate series", async (context) => {
+  const { app, repositoryCalls, repositoryQueries } = await createAnalyticsApp();
+  context.after(() => app.close());
+
+  const anonymous = await app.inject({ method: "GET", url: "/admin/analytics.csv?range=invalid&limit=9" });
+  assert.equal(anonymous.statusCode, 401);
+  assert.deepEqual(anonymous.json(), { error: "unauthorized" });
+  assert.equal(anonymous.headers["cache-control"], "private, no-store, max-age=0");
+  assert.equal(repositoryCalls(), 0);
+
+  const headers = { cookie: "blog_x_session=valid" };
+  const invalid = await app.inject({ method: "GET", url: "/admin/analytics.csv?range=30&limit=1&extra=x", headers });
+  assert.equal(invalid.statusCode, 400);
+  assert.deepEqual(invalid.json(), { error: "invalid_query" });
+  assert.equal(invalid.headers["cache-control"], "private, no-store, max-age=0");
+  assert.equal(repositoryCalls(), 0);
+
+  const exported = await app.inject({ method: "GET", url: "/admin/analytics.csv?range=30&limit=8", headers });
+  assert.equal(exported.statusCode, 200);
+  assert.equal(exported.headers["cache-control"], "private, no-store, max-age=0");
+  assert.equal(exported.headers["content-type"], "text/csv; charset=utf-8");
+  assert.equal(exported.headers["content-disposition"], 'attachment; filename="blog-x-daily-pv-30d.csv"');
+  assert.equal(exported.body, `date,pv\n${validAnalytics.daily.map((point) => `${point.day},${point.pv}`).join("\n")}\n`);
+  assert.deepEqual(repositoryQueries(), [{ range: 30, limit: 8 }]);
+});
+
+test("daily analytics CSV redacts repository failures", async (context) => {
+  const { app } = await createAnalyticsApp({ failing: true });
+  context.after(() => app.close());
+  const response = await app.inject({ method: "GET", url: "/admin/analytics.csv?range=30&limit=8", headers: { cookie: "blog_x_session=valid" } });
   assert.equal(response.statusCode, 503);
   assert.deepEqual(response.json(), { error: "analytics_unavailable" });
   assert.equal(response.headers["cache-control"], "private, no-store, max-age=0");
