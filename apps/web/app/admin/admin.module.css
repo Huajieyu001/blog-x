@@ -196,7 +196,11 @@
 .workspaceSection { margin-top: 48px; min-width: 0; }
 .workspaceSection > h2, .analyticsPage h2 { margin: 0 0 16px; font: 500 clamp(1.35rem, 2vw, 1.8rem)/1.2 ui-serif, Georgia, "Noto Serif SC", serif; }
 .overviewCards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-.overviewCards article, .focusCard, .analyticsSummary, .dailyTrend, .sourcePanel, .topPanel, .analyticsDisclosure, .zeroPanel, .errorPanel, .emptyPanel { min-width: 0; border: 1px solid var(--line); border-radius: 5px; padding: 24px; background: var(--surface); }
+.overviewCard, .focusCard, .analyticsSummary, .dailyTrend, .sourcePanel, .topPanel, .analyticsDisclosure, .zeroPanel, .errorPanel, .emptyPanel { min-width: 0; border: 1px solid var(--line); border-radius: 5px; padding: 24px; background: var(--surface); }
+.overviewCard { color: var(--ink) !important; text-decoration: none; transition: border-color 160ms ease, transform 160ms ease; }
+.overviewCard:hover, .overviewCard[aria-current="true"] { border-color: var(--accent); }
+.overviewCard:hover { transform: translateY(-2px); }
+.overviewCard > span { display: inline-flex; min-height: 32px; align-items: center; margin-top: 8px; color: var(--accent); font-size: .78rem; font-weight: 700; }
 .overviewCards h3, .focusCard h3, .sourcePanel h3, .topPanel h3, .errorPanel h3 { margin: 0; font: 600 1rem/1.4 ui-serif, Georgia, serif; }
 .overviewCards strong { display: block; margin: 12px 0 4px; font: 500 2.6rem/1 ui-serif, Georgia, serif; font-variant-numeric: tabular-nums; }
 .overviewCards p, .focusCard p, .analyticsSummary p, .sourcePanel p, .topPanel p, .analyticsDisclosure p, .zeroPanel p, .errorPanel p { color: var(--muted); line-height: 1.6; }
@@ -232,7 +236,7 @@
 .page a:focus-visible, .page button:focus-visible, .page input:focus-visible, .page textarea:focus-visible, .page select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 :global(html[data-theme="dark"]) .workspace, :global(html[data-theme="dark"]) .analyticsPage { --danger: #ffaca5; }
 @media (min-width: 721px) and (max-width: 1023px) { .workspace, .analyticsPage { padding-right: 24px; padding-left: 24px; }.overviewCards { grid-template-columns: repeat(2, minmax(0, 1fr)); }.focusPanels, .analyticsSplit { grid-template-columns: 1fr; } }
-@media (max-width: 720px) { .workspace, .analyticsPage { padding: 32px 18px 48px; }.workspaceHeader, .analyticsHeader { align-items: stretch; flex-direction: column; }.primaryLink, .analyticsCsvDownload { width: 100%; box-sizing: border-box; }.workspaceSection, .focusPanels .workspaceSection { margin-top: 32px; }.overviewCards, .focusPanels, .analyticsSplit, .analyticsKpis, .loadingBlocks, .postListToolbar { grid-template-columns: 1fr; }.postFilters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }.postFilters button { justify-content: space-between; }.maintenanceList li { grid-template-columns: 1fr; gap: 2px; }.rangeNav { grid-template-columns: repeat(2, minmax(0, 1fr)); }.overviewCards article, .focusCard, .analyticsSummary, .dailyTrend, .sourcePanel, .topPanel, .analyticsDisclosure, .zeroPanel, .errorPanel, .emptyPanel { padding: 16px; } }
+@media (max-width: 720px) { .workspace, .analyticsPage { padding: 32px 18px 48px; }.workspaceHeader, .analyticsHeader { align-items: stretch; flex-direction: column; }.primaryLink, .analyticsCsvDownload { width: 100%; box-sizing: border-box; }.workspaceSection, .focusPanels .workspaceSection { margin-top: 32px; }.overviewCards, .focusPanels, .analyticsSplit, .analyticsKpis, .loadingBlocks, .postListToolbar { grid-template-columns: 1fr; }.postFilters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }.postFilters button { justify-content: space-between; }.maintenanceList li { grid-template-columns: 1fr; gap: 2px; }.rangeNav { grid-template-columns: repeat(2, minmax(0, 1fr)); }.overviewCard, .focusCard, .analyticsSummary, .dailyTrend, .sourcePanel, .topPanel, .analyticsDisclosure, .zeroPanel, .errorPanel, .emptyPanel { padding: 16px; } }
 @media (prefers-reduced-motion: reduce) { .workspace *, .analyticsPage * { scroll-behavior: auto !important; transition: none !important; animation: none !important; } }
 
 @media (max-width: 720px) {

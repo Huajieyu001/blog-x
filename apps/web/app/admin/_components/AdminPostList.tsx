@@ -1,6 +1,7 @@
 "use client";
 
 import type { AdminPost } from "@blog-x/contracts";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import styles from "../admin.module.css";
 import ArticleActions from "./ArticleActions";
@@ -15,12 +16,14 @@ const filterLabels: Array<{ value: PostFilter; label: string }> = [
   { value: "scheduled", label: "已预约" },
 ];
 
-export default function AdminPostList({ posts }: { posts: AdminPost[] }) {
+export default function AdminPostList({ posts, initialFilter = "all" }: { posts: AdminPost[]; initialFilter?: PostFilter }) {
+  const router = useRouter();
   const [records, setRecords] = useState(posts);
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<PostFilter>("all");
+  const [filter, setFilter] = useState<PostFilter>(initialFilter);
 
   useEffect(() => setRecords(posts), [posts]);
+  useEffect(() => setFilter(initialFilter), [initialFilter]);
 
   const counts = useMemo(() => ({
     all: records.length,
@@ -42,9 +45,14 @@ export default function AdminPostList({ posts }: { posts: AdminPost[] }) {
     });
   }, [filter, query, records]);
 
+  function selectFilter(nextFilter: PostFilter) {
+    setFilter(nextFilter);
+    router.replace(nextFilter === "all" ? "/admin#articles" : `/admin?status=${nextFilter}#articles`, { scroll: false });
+  }
+
   function resetFilters() {
     setQuery("");
-    setFilter("all");
+    selectFilter("all");
   }
 
   function updatePost(nextPost: AdminPost) {
@@ -77,7 +85,7 @@ export default function AdminPostList({ posts }: { posts: AdminPost[] }) {
               key={option.value}
               type="button"
               aria-pressed={filter === option.value}
-              onClick={() => setFilter(option.value)}
+              onClick={() => selectFilter(option.value)}
             >
               {option.label}<span>{counts[option.value]}</span>
             </button>
