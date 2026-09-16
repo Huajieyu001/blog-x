@@ -23,6 +23,7 @@ test("primary deploy backs up and health-gates a prebuilt candidate before cutov
   assert.ok(deploy.indexOf('"$(dirname "$0")/backup.sh"') < deploy.indexOf('docker load'));
   assert.doesNotMatch(deploy, /docker build/);
   assert.match(deploy, /docker load --input "\$image_archive"/);
+  assert.equal([...deploy.matchAll(/for _ in \$\(seq 1 20\)/g)].length, 2);
   assert.ok(deploy.indexOf('healthcheck.sh" 3101') < deploy.indexOf('mv -Tf "$CURRENT.next" "$CURRENT"'));
   assert.match(deploy, /systemctl is-active --quiet blog-x-primary-tunnel\.service/);
   assert.match(deploy, /systemctl enable --now blog-x-primary-web\.service/);

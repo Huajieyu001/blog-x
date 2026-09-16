@@ -63,6 +63,7 @@ docker create --name blog-x-web --network host --read-only --tmpfs /tmp:rw,noexe
   -e NODE_ENV=production -e HOST=127.0.0.1 -e PORT=3100 -e PUBLIC_ORIGIN="$PUBLIC_ORIGIN" -e INTERNAL_API_ORIGIN=http://127.0.0.1:3001 \
   -e BLOG_X_INGRESS_AUTH_SECRET="$BLOG_X_INGRESS_AUTH_SECRET" "$image" >/dev/null
 systemctl enable --now blog-x-primary-web.service
+for _ in $(seq 1 20); do "$(dirname "$0")/healthcheck.sh" 3100 >/dev/null && break || sleep 2; done
 "$(dirname "$0")/healthcheck.sh" 3100
 
 install -m 0640 "$release/blog-x.conf" "$NGINX_TARGET"
