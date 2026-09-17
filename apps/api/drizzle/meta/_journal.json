@@ -71,6 +71,13 @@
       "when": 1788577480607,
       "tag": "0009_article_daily_views",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789645099437,
+      "tag": "0010_glamorous_justice",
+      "breakpoints": true
     }
   ]
 }
