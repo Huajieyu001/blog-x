@@ -3,7 +3,7 @@ import test from "node:test";
 import cookie from "@fastify/cookie";
 import Fastify, { type FastifyPluginAsync } from "fastify";
 import { aboutInputSchema, adminPostInputSchema, taxonomyInputSchema } from "@blog-x/contracts";
-import { closeRuntimeResourcesOnAppClose } from "../src/app.js";
+import { closeRuntimeResourcesOnAppClose, migrationFingerprint, pendingMigrationIndex } from "../src/app.js";
 import { authRoutes } from "../src/routes/auth.js";
 import { parseApiRuntimeConfig } from "../src/security/config.js";
 import { requireAdministratorMutation, unsafeRoutePolicies } from "../src/security/mutation-guard.js";
@@ -14,6 +14,24 @@ class ManualClock implements Clock {
   now() { return this.value; }
   advance(milliseconds: number) { this.value += milliseconds; }
 }
+
+test("migration ledger advances only from an exact append-only history prefix", () => {
+  const migrations = [
+    { file: "0000_first.sql", sql: "select 1" },
+    { file: "0001_second.sql", sql: "select 2" },
+  ];
+  assert.equal(pendingMigrationIndex(migrations), 0);
+  assert.equal(pendingMigrationIndex(migrations, {
+    migrationCount: 1,
+    migrationFingerprint: migrationFingerprint(migrations.slice(0, 1)),
+  }), 1);
+  assert.equal(pendingMigrationIndex(migrations, {
+    migrationCount: 2,
+    migrationFingerprint: migrationFingerprint(migrations),
+  }), 2);
+  assert.throws(() => pendingMigrationIndex(migrations, { migrationCount: 3, migrationFingerprint: "0".repeat(64) }), /count/);
+  assert.throws(() => pendingMigrationIndex(migrations, { migrationCount: 1, migrationFingerprint: "0".repeat(64) }), /prefix/);
+});
 
 test("serving resources remain open until the Fastify application closes", async () => {
   const app = Fastify();

@@ -247,10 +247,30 @@ export async function buildApp(options: BuildAppOptions = {}) {
   return app;
 }
 
+type MigrationSource = { file: string; sql: string };
+
+export function migrationFingerprint(migrations: readonly MigrationSource[]) {
+  const fingerprint = createHash("sha256");
+  for (const migration of migrations) fingerprint.update(migration.file).update("\0").update(migration.sql).update("\0");
+  return fingerprint.digest("hex");
+}
+
+export function pendingMigrationIndex(migrations: readonly MigrationSource[], ledger?: { migrationCount: number; migrationFingerprint: string }) {
+  if (!ledger) return 0;
+  if (!Number.isInteger(ledger.migrationCount) || ledger.migrationCount < 0 || ledger.migrationCount > migrations.length) {
+    throw new Error("migration ledger count is invalid");
+  }
+  if (migrationFingerprint(migrations.slice(0, ledger.migrationCount)) !== ledger.migrationFingerprint) {
+    throw new Error("migration history prefix does not match the schema ledger");
+  }
+  return ledger.migrationCount;
+}
+
 async function migrate(pool: Pool) {
   const migrationDirectory = fileURLToPath(new URL("../drizzle/", import.meta.url));
   const migrationFiles = (await readdir(migrationDirectory)).filter((name) => /^\d+.*\.sql$/.test(name)).sort();
-  const fingerprint = createHash("sha256");
+  const migrations = await Promise.all(migrationFiles.map(async (file) => ({ file, sql: await readFile(`${migrationDirectory}/${file}`, "utf8") })));
+  const fingerprint = migrationFingerprint(migrations);
   const client = await pool.connect();
   try {
     await client.query("select pg_advisory_lock(hashtext('blog-x-phase1-migration'))");
@@ -260,10 +280,19 @@ async function migrate(pool: Pool) {
       console.log("migration lock acquired");
       await new Promise((accept) => setTimeout(accept, holdMs));
     }
-    for (const migrationFile of migrationFiles) {
-      const migration = await readFile(`${migrationDirectory}/${migrationFile}`, "utf8");
-      fingerprint.update(migrationFile).update("\0").update(migration).update("\0");
-      for (const statement of migration.split("--> statement-breakpoint").map((value) => value.trim()).filter(Boolean)) {
+    const ledgerTable = await client.query<{ exists: boolean }>("select to_regclass('public.blog_x_schema_ledger') is not null as exists");
+    let ledger: { migrationCount: number; migrationFingerprint: string } | undefined;
+    if (ledgerTable.rows[0]?.exists) {
+      const ledgerResult = await client.query<{ migration_count: number; migration_fingerprint: string }>("select migration_count, migration_fingerprint from blog_x_schema_ledger where scope = 'phase1'");
+      if (ledgerResult.rowCount === 1) ledger = {
+        migrationCount: Number(ledgerResult.rows[0]!.migration_count),
+        migrationFingerprint: ledgerResult.rows[0]!.migration_fingerprint,
+      };
+      else if (ledgerResult.rowCount !== 0) throw new Error("migration schema ledger is ambiguous");
+    }
+    const startIndex = pendingMigrationIndex(migrations, ledger);
+    for (const migration of migrations.slice(startIndex)) {
+      for (const statement of migration.sql.split("--> statement-breakpoint").map((value) => value.trim()).filter(Boolean)) {
         try {
           await client.query(statement);
         } catch (error: unknown) {
@@ -280,7 +309,7 @@ async function migrate(pool: Pool) {
       throw error;
     }
     await client.query("create table if not exists blog_x_schema_ledger (scope text primary key, migration_count integer not null, migration_fingerprint text not null, applied_at timestamp with time zone not null default now())");
-    await client.query("insert into blog_x_schema_ledger (scope, migration_count, migration_fingerprint) values ('phase1', $1, $2) on conflict (scope) do update set migration_count = excluded.migration_count, migration_fingerprint = excluded.migration_fingerprint, applied_at = now()", [migrationFiles.length, fingerprint.digest("hex")]);
+    await client.query("insert into blog_x_schema_ledger (scope, migration_count, migration_fingerprint) values ('phase1', $1, $2) on conflict (scope) do update set migration_count = excluded.migration_count, migration_fingerprint = excluded.migration_fingerprint, applied_at = now()", [migrationFiles.length, fingerprint]);
   } finally { await client.query("select pg_advisory_unlock(hashtext('blog-x-phase1-migration'))").catch(() => undefined); client.release(); }
 }
 async function seed(db: RuntimeResources["db"], administrator: { username: string; password: string }) {
