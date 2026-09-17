@@ -6,6 +6,7 @@
 - ✅ **v1.1 Content Discovery** — Phases 6–8 (shipped 2026-09-04)
 - ✅ **v1.2 Publishing Quality** — Phases 9–10 (shipped 2026-09-05)
 - ✅ **v1.3 Private Insights** — Phases 11–13 (shipped 2026-09-15)
+- 🚧 **v1.4 Post-launch Hardening** — Phases 14–17
 
 ## Completed Phases
 
@@ -18,4 +19,48 @@
 
 </details>
 
-完整 v1.3 计划、需求、验证和阶段记录位于 `.planning/milestones/`。下一里程碑尚未选择。
+完整历史计划、需求、验证和阶段记录位于 `.planning/milestones/`。
+
+### Phase 14: Post-launch Security and Content Recovery
+
+**Goal:** 管理员可安全轮换密码，正式入口获得完整响应头保护，软删除文章可从后台恢复为草稿。
+**Requirements**: SEC-04, SEC-05, CONT-09
+**Depends on:** Phase 13
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run $gsd-plan-phase 14 to break down)
+
+### Phase 15: Managed Media Library and Off-host Backup Readiness
+
+**Goal:** 管理员可复用与安全清理媒体，生产内容备份可安全同步到可配置异地目的地并完成恢复验证。
+**Requirements**: MEDIA-02, OPS-06
+**Depends on:** Phase 14
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run $gsd-plan-phase 15 to break down)
+
+### Phase 16: Site Identity Link Continuity and Revision History
+
+**Goal:** 站点身份可维护，旧文章链接持续可用，误改内容可通过服务端版本历史恢复。
+**Requirements**: SITE-01, LINK-01, CONT-10
+**Depends on:** Phase 15
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run $gsd-plan-phase 16 to break down)
+
+### Phase 17: Operational Monitoring and Retention
+
+**Goal:** 数据保留任务自动执行，关键服务、备份、证书与资源异常可被及时发现。
+**Requirements**: OPS-07
+**Depends on:** Phase 16
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run $gsd-plan-phase 17 to break down)

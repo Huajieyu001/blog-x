@@ -1,20 +1,20 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.3
-milestone_name: Private Insights
-status: Awaiting next milestone
-stopped_at: Phase 13 complete; fixed local preview verified
-last_updated: "2026-09-15T01:57:24.573Z"
-last_activity: 2026-09-15
-last_activity_desc: Milestone v1.3 completed and archived
+milestone: v1.4
+milestone_name: Post-launch Hardening
+status: Planning
+stopped_at: Phase 14 planning
+last_updated: "2026-09-17T00:00:00.000Z"
+last_activity: 2026-09-17
+last_activity_desc: Added phases 14-17 for post-launch hardening
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 8
-  completed_plans: 8
-  percent: 100
-current_phase: 13
-current_phase_name: Responsive Admin Workspace and Local Delivery
+  total_phases: 4
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
+current_phase: 14
+current_phase_name: Post-launch Security and Content Recovery
 ---
 
 # Project State
@@ -24,14 +24,14 @@ current_phase_name: Responsive Admin Workspace and Local Delivery
 See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** 博主能够可靠地发布和保存 Markdown 内容，访客能够持续、快速地通过博客域名阅读已发布文章。
-**Current focus:** Planning the next local-only milestone
+**Current focus:** Phase 14 security and content recovery
 
 ## Current Position
 
-Phase: Milestone v1.3 complete
+Phase: 14 of 17
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-09-15 — Milestone v1.3 completed and archived
+Status: Planning
+Last activity: 2026-09-17 — Added v1.4 post-launch hardening phases
 
 ## Performance Metrics
 
@@ -84,12 +84,22 @@ Decisions are logged in PROJECT.md Key Decisions table.
 
 ### Pending Todos
 
-None. v1.3 is archived; next milestone scope is not selected.
+- Phase 14: administrator password change, security headers, deleted article recovery.
+- Phase 15: managed media library and off-host backup readiness.
+- Phase 16: site identity, slug redirects and revision history.
+- Phase 17: operational monitoring and retention automation.
 
 ### Blockers/Concerns
 
 - 主观美观 UAT 在里程碑末尾记录并暂缓，不阻塞可自动验证工作。
-- 服务器连接、TLS、生产调度和部署继续受生产冻结限制，不属于 v1.3。
+- 真实服务器部署、密码轮换和异地备份目的地配置需要单独生产门禁。
+
+### Roadmap Evolution
+
+- Phase 14 added: Post-launch Security and Content Recovery
+- Phase 15 added: Managed Media Library and Off-host Backup Readiness
+- Phase 16 added: Site Identity Link Continuity and Revision History
+- Phase 17 added: Operational Monitoring and Retention
 
 ### Quick Tasks Completed
 
