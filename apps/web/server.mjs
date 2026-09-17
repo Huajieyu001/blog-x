@@ -8,6 +8,7 @@ const appDirectory = fileURLToPath(new URL(".", import.meta.url));
 const development = process.env.NODE_ENV !== "production";
 const host = process.env.HOST ?? "0.0.0.0";
 const port = Number(process.env.PORT ?? 3100);
+const defaultApiOrigin = process.env.INTERNAL_API_ORIGIN ?? "http://127.0.0.1:3001";
 const forwardingHeaderNames = new Set([
   "forwarded",
   "x-forwarded-for",
@@ -70,6 +71,45 @@ function matchingIngressSecret(received, expected) {
 
 function isFrameworkHeader(name) {
   return typeof name === "string" && name.toLowerCase() === "x-powered-by";
+}
+
+export function createRuntimeNextConfig({ dev = development, apiOrigin = defaultApiOrigin } = {}) {
+  const contentSecurityPolicy = [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""}`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self'",
+    "font-src 'self'",
+    `connect-src 'self'${dev ? " ws://127.0.0.1:3100" : ""}`,
+    "media-src 'self'",
+    "manifest-src 'self'",
+    "worker-src 'self' blob:",
+  ].join("; ");
+  const securityHeaders = [
+    { key: "Content-Security-Policy", value: contentSecurityPolicy },
+    { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+    { key: "X-Content-Type-Options", value: "nosniff" },
+    { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+    { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+    { key: "X-Frame-Options", value: "DENY" },
+    { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()" },
+  ];
+  return {
+    allowedDevOrigins: ["127.0.0.1"],
+    poweredByHeader: false,
+    transpilePackages: ["@blog-x/contracts"],
+    async headers() { return [{ source: "/:path*", headers: securityHeaders }]; },
+    async rewrites() {
+      return [
+        { source: "/api/:path*", destination: `${apiOrigin}/:path*` },
+        { source: "/media/:path*", destination: `${apiOrigin}/media/:path*` },
+      ];
+    },
+  };
 }
 
 function withoutFrameworkHeader(headers) {
@@ -138,7 +178,7 @@ export function installTrustedApiForwarding(request, environment = process.env) 
   return true;
 }
 
-export function createNextServerOptions({ dev = development, dir = appDirectory, hostname = host, listenPort = port } = {}) {
+export function createNextServerOptions({ dev = development, dir = appDirectory, hostname = host, listenPort = port, apiOrigin = defaultApiOrigin } = {}) {
   return {
     dev,
     dir,
@@ -146,7 +186,7 @@ export function createNextServerOptions({ dev = development, dir = appDirectory,
     port: listenPort,
     // The fixed preview mounts current .next/server.mjs over a seed image. Keep
     // this response policy explicit even if that image has an older config file.
-    conf: { poweredByHeader: false },
+    conf: createRuntimeNextConfig({ dev, apiOrigin }),
   };
 }
 

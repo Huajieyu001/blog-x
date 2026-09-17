@@ -1,19 +1,34 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createNextServerOptions, installFrameworkHeaderGuard, installTrustedApiForwarding } from "./server.mjs";
+import { createNextServerOptions, createRuntimeNextConfig, installFrameworkHeaderGuard, installTrustedApiForwarding } from "./server.mjs";
 
 const development = { NODE_ENV: "development" };
 const ingressSecret = "a".repeat(32);
 
-test("the Web production custom-server options explicitly disable the framework header", () => {
-  const options = createNextServerOptions({ dev: false, dir: "/runtime/web", hostname: "127.0.0.1", listenPort: 3100 });
-  assert.deepEqual(options, {
-    dev: false,
-    dir: "/runtime/web",
-    hostname: "127.0.0.1",
-    port: 3100,
-    conf: { poweredByHeader: false },
+test("the Web production custom-server carries the complete runtime config", async () => {
+  const options = createNextServerOptions({ dev: false, dir: "/runtime/web", hostname: "127.0.0.1", listenPort: 3100, apiOrigin: "http://api:3001" });
+  assert.deepEqual({ dev: options.dev, dir: options.dir, hostname: options.hostname, port: options.port }, {
+    dev: false, dir: "/runtime/web", hostname: "127.0.0.1", port: 3100,
   });
+  assert.equal(options.conf.poweredByHeader, false);
+  assert.deepEqual(await options.conf.rewrites(), [
+    { source: "/api/:path*", destination: "http://api:3001/:path*" },
+    { source: "/media/:path*", destination: "http://api:3001/media/:path*" },
+  ]);
+  const [{ headers }] = await options.conf.headers();
+  assert.deepEqual(Object.fromEntries(headers.map(({ key, value }) => [key, value])), {
+    "Content-Security-Policy": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; connect-src 'self'; media-src 'self'; manifest-src 'self'; worker-src 'self' blob:",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "X-Frame-Options": "DENY",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+  });
+  const developmentConfig = createRuntimeNextConfig({ dev: true, apiOrigin: "http://api:3001" });
+  const developmentCsp = (await developmentConfig.headers())[0].headers[0].value;
+  assert.match(developmentCsp, /script-src 'self' 'unsafe-inline' 'unsafe-eval'/);
+  assert.match(developmentCsp, /connect-src 'self' ws:\/\/127\.0\.0\.1:3100/);
 });
 
 function responseDouble(initialHeaders = {}) {
