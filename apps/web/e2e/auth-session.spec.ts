@@ -110,7 +110,7 @@ test("password change requires a fresh sign-in and restores the generated fixtur
 
     const invalidResponse = await changePassword(page, `${password}-wrong`, replacementPassword);
     expect(invalidResponse.status()).toBe(400);
-    await expect(page.getByRole("alert")).toContainText("当前密码错误");
+    await expect(page.locator("form").getByRole("alert")).toContainText("当前密码错误");
     expect(await page.evaluate(() => fetch("/api/auth/session").then((response) => response.status))).toBe(200);
 
     const changedResponse = await changePassword(page, password, replacementPassword);
@@ -118,7 +118,7 @@ test("password change requires a fresh sign-in and restores the generated fixtur
     expect(changedResponse.status()).toBe(200);
     await expect(page).toHaveURL(`${webOrigin}/login`);
     expect((await login(page, password)).status()).toBe(401);
-    await expect(page.getByRole("alert")).toContainText("用户名或密码错误。");
+    await expect(page.locator('#login-error[role="alert"]')).toContainText("用户名或密码错误。");
     expect((await login(page, replacementPassword)).status()).toBe(200);
     await expect(page).toHaveURL(`${webOrigin}/admin`);
     await page.goto(`${webOrigin}/admin/audit`);
