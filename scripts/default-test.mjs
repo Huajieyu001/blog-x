@@ -30,6 +30,7 @@ export const DEFAULT_TEST_CHILDREN = Object.freeze([
   child("web", [
     "apps/web/app/admin/_components/article-actions-schedule.test.ts",
     "apps/web/app/admin/_components/article-editor-recovery.test.ts",
+    "apps/web/app/layout.test.mjs",
     "apps/web/app/lib/admin-analytics.test.ts",
     "apps/web/app/lib/admin-content-results.test.ts",
     "apps/web/app/lib/search-discovery.test.ts",
