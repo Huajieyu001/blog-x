@@ -920,7 +920,7 @@ async function cleanupCanonicalRuntimeAuthority(context) {
 }
 
 async function startPhase11Ingress(context) {
-  if ((!context.phase11Data && !context.phase12Data) || context.phase11Ingress) return;
+  if ((!context.phase11Data && !context.phase12Data && !context.canonicalIntegration) || context.phase11Ingress) return;
   if (!context.ingressAuthSecret || context.runtimeWebPort === context.webPort) throw new Error("Phase 11 ingress fixture authority is invalid");
   const scrubbed = new Set(["forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-port", "x-forwarded-proto", "x-real-ip", "x-blog-x-client-ip", "x-blog-x-ingress-auth"]);
   const ingress = createHttpServer((incoming, outgoing) => {
@@ -2107,7 +2107,7 @@ async function runSingle(options) {
   allocatedGeneratedNamespaces.add(namespace);
   const database = validateDatabaseName(`blog_x_${namespace.slice("blogxverify_".length)}`, namespace);
   const webPort = options.webPort ?? await freePort();
-  const runtimeWebPort = options.phase11Data || options.phase12Data ? await freePort() : webPort;
+  const runtimeWebPort = options.phase11Data || options.phase12Data || options.canonicalIntegration ? await freePort() : webPort;
   const phaseLabel = options.canonicalIntegration ? "integration-" : options.lifecycleOnly ? "lifecycle-" : options.phase12Data ? "phase12-" : options.phase11Data ? "phase11-" : options.phase6Data ? "phase6-" : options.phase5Media || options.phase5Full ? "phase5-" : options.phase4Mode ? "phase4-" : options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
   const runId = namespace.replace("blogxverify_", phaseLabel);
   const publicOrigin = validateLoopbackHttpOrigin(`http://127.0.0.1:${webPort}`);
@@ -2136,7 +2136,7 @@ async function runSingle(options) {
   };
   allocatedGeneratedAuthorities.set(namespace, context);
   context.secrets.push(context.password, context.databaseUrl);
-  if (options.phase11Data || options.phase12Data) {
+  if (options.phase11Data || options.phase12Data || options.canonicalIntegration) {
     context.ingressAuthSecret = randomBytes(32).toString("base64url");
     context.secrets.push(context.ingressAuthSecret);
   }
