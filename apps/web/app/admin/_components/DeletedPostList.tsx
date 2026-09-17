@@ -53,15 +53,22 @@ export default function DeletedPostList({ initial }: { initial: DeletedPost[] })
             <p>删除前状态：{item.statusBeforeDeletion}</p>
             <p>删除时间：{new Date(item.deletedAt).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}（上海时间）</p>
           </div>
+          <button
+            className={styles.restoreButton}
+            aria-controls={confirming?.id === item.id ? `restore-dialog-${item.id}` : undefined}
+            aria-expanded={confirming?.id === item.id}
+            disabled={Boolean(confirming)}
+            onClick={(event) => { trigger.current = event.currentTarget; setConfirming(item); }}
+          >恢复为草稿</button>
           {confirming?.id === item.id ? (
-            <div className={styles.restoreDialog} role="dialog" aria-modal="true" aria-labelledby={`restore-dialog-${item.id}`}>
-              <p id={`restore-dialog-${item.id}`}>确认恢复为未公开草稿？文章不会自动发布。</p>
+            <div id={`restore-dialog-${item.id}`} className={styles.restoreDialog} role="dialog" aria-modal="true" aria-labelledby={`restore-dialog-label-${item.id}`}>
+              <p id={`restore-dialog-label-${item.id}`}>确认恢复为未公开草稿？文章不会自动发布。</p>
               <div className={styles.restoreDialogActions}>
                 <button className={styles.restoreConfirm} disabled={pending} onClick={() => void restore()}>确认恢复</button>
                 <button disabled={pending} onClick={cancel}>取消</button>
               </div>
             </div>
-          ) : <button className={styles.restoreButton} onClick={(event) => { trigger.current = event.currentTarget; setConfirming(item); }}>恢复为草稿</button>}
+          ) : null}
         </li>
       ))}</ul> : null}
     </section>
