@@ -179,7 +179,7 @@ test("generated canonical Web verifier keeps private static trust while publishi
   assert.match(authority, /ports: !override[\s\S]*127\.0\.0\.1:\$\{context\.runtimeWebPort \?\? context\.webPort\}:3100/);
   assert.match(source, /if \(options\.lifecycleOnly \|\| options\.phase11Data \|\| options\.phase12Data \|\| options\.canonicalIntegration\) await inspectGeneratedWebVerifierEdge\(context\)/);
   assert.match(source, /options\.lifecycleOnly[\s\S]*createCanonicalRuntimeAuthority\(context, \{ includeWeb: false, publishWeb: true \}\)/);
-  assert.match(authority, /TRUSTED_PROXY_CIDRS: \$\{privateNetwork\.web\}\/32[\s\S]*postgres:[\s\S]*ipv4_address: \$\{privateNetwork\.postgres\}[\s\S]*private:[\s\S]*ipv4_address: \$\{privateNetwork\.web\}[\s\S]*subnet: \$\{privateNetwork\.subnet\}[\s\S]*verifier-edge:[\s\S]*internal: false[\s\S]*subnet: \$\{privateNetwork\.edgeSubnet\}/);
+  assert.match(authority, /TRUSTED_PROXY_CIDRS: \$\{privateNetwork\.web\}\/32[\s\S]*BLOG_X_LOGIN_LIMIT: 20[\s\S]*postgres:[\s\S]*ipv4_address: \$\{privateNetwork\.postgres\}[\s\S]*private:[\s\S]*ipv4_address: \$\{privateNetwork\.web\}[\s\S]*subnet: \$\{privateNetwork\.subnet\}[\s\S]*verifier-edge:[\s\S]*internal: false[\s\S]*subnet: \$\{privateNetwork\.edgeSubnet\}/);
   assert.doesNotMatch(apiOverride, /verifier-edge/);
   assert.match(source, /async function inspectGeneratedWebVerifierEdge[\s\S]*\{\{\.Name\}\} \{\{\.State\}\} \{\{\.Ports\}\}[\s\S]*127\.0\.0\.1:\$\{port\}/);
   assert.match(source, /async function generatedWebVerifierFailureDiagnostics[\s\S]*composeArgs\(context, "ps"\)[\s\S]*logs", "--no-color", "--tail", "200", "api", "web"[\s\S]*redactText/);

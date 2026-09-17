@@ -840,6 +840,7 @@ async function createCanonicalRuntimeAuthority(context, { includeWeb = true, pub
     "  api:",
     "    environment:",
     `      TRUSTED_PROXY_CIDRS: ${privateNetwork.web}/32`,
+    "      BLOG_X_LOGIN_LIMIT: 20",
     "    volumes:",
     `      - ${JSON.stringify(`${resolve(root, "apps/api")}:/workspace/apps/api:ro`)}`,
     `      - ${JSON.stringify(`${resolve(root, "packages/contracts")}:/workspace/packages/contracts:ro`)}`,
