@@ -3,6 +3,52 @@ import { expect, test } from "@playwright/test";
 const webOrigin = process.env.E2E_WEB_ORIGIN ?? "http://127.0.0.1:3100";
 const primaryLabels = ["文章", "分类", "标签", "归档", "关于", "订阅"];
 
+function expectSecurityHeaders(headers: Record<string, string>) {
+  const csp = headers["content-security-policy"];
+  expect(csp).toBeTruthy();
+  expect(csp).toContain("default-src 'self'");
+  expect(csp).toContain("base-uri 'self'");
+  expect(csp).toContain("object-src 'none'");
+  expect(csp).toContain("frame-ancestors 'none'");
+  expect(csp).toContain("form-action 'self'");
+  expect(csp).toContain("script-src 'self' 'unsafe-inline'");
+  expect(csp).toContain("style-src 'self' 'unsafe-inline'");
+  expect(csp).toContain("img-src 'self'");
+  expect(csp).toContain("font-src 'self'");
+  expect(csp).toContain("connect-src 'self'");
+  expect(csp).toContain("media-src 'self'");
+  expect(csp).toContain("manifest-src 'self'");
+  expect(csp).toContain("worker-src 'self' blob:");
+  expect(csp).not.toContain("unsafe-eval");
+  expect(csp).not.toContain("*");
+  expect(headers["strict-transport-security"]).toBe("max-age=31536000; includeSubDomains");
+  expect(headers["x-content-type-options"]).toBe("nosniff");
+  expect(headers["referrer-policy"]).toBe("strict-origin-when-cross-origin");
+  expect(headers["x-frame-options"]).toBe("DENY");
+  expect(headers["permissions-policy"]).toBe("camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+  expect(headers["x-powered-by"]).toBeUndefined();
+}
+
+test("fixed public ingress applies security headers without blocking theme, API, or media rewrites", async ({ page, request }) => {
+  const cspErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error" && /content security policy/i.test(message.text())) cspErrors.push(message.text());
+  });
+
+  const home = await page.goto(`${webOrigin}/`, { waitUntil: "networkidle" });
+  expect(home?.status()).toBe(200);
+  expectSecurityHeaders(home!.headers());
+  await page.getByTestId("theme-toggle").getByLabel("深色").check();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+  for (const path of ["/login", "/admin", "/api/health", "/media/00000000-0000-4000-8000-000000000000"]) {
+    const response = await request.get(`${webOrigin}${path}`, { maxRedirects: 0 });
+    expect(response.status()).toBeLessThan(500);
+    expectSecurityHeaders(response.headers());
+  }
+  expect(cspErrors).toEqual([]);
+});
+
 test("shared public shell preserves ordered navigation, theme preference, and responsive keyboard access", async ({ page, browser }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${webOrigin}/`);
