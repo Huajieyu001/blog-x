@@ -3,6 +3,7 @@ import { z } from "zod";
 export const auditEventNameSchema = z.enum([
   "auth.login.succeeded",
   "auth.logout.succeeded",
+  "auth.password.changed",
   "article.created",
   "article.updated",
   "article.published",
@@ -27,7 +28,7 @@ export const auditTargetTypeSchema = z.enum(["administrator", "article", "catego
 
 const changedFieldSchema = z.enum([
   "title", "summary", "coverUrl", "slug", "markdown", "publishedAt", "seoDescription",
-  "categoryId", "tagIds", "coverMedia", "name", "status", "scheduledAt",
+  "categoryId", "tagIds", "coverMedia", "name", "status", "scheduledAt", "password",
 ]);
 const auditStatusSchema = z.enum(["draft", "published", "unpublished", "deleted"]);
 
