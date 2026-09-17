@@ -128,16 +128,16 @@ test("single administrator sessions are opaque, rotated, revocable, and do not l
   const deniedAudit = await app.inject({ method: "GET", url: "/admin/audit-events" });
   assert.equal(deniedAudit.statusCode, 401);
   assert.equal(deniedAudit.headers["cache-control"], "no-store");
-  const firstAuditPage = await app.inject({ method: "GET", url: "/admin/audit-events?limit=2", headers: { cookie: `blog_x_session=${thirdCookie}` } });
+  const firstAuditPage = await app.inject({ method: "GET", url: "/admin/audit-events?limit=2", headers: { cookie: `blog_x_session=${replacementCookie}` } });
   assert.equal(firstAuditPage.statusCode, 200, firstAuditPage.body);
   assert.equal(firstAuditPage.headers["cache-control"], "no-store");
   assert.equal(firstAuditPage.json().items.length, 2);
   assert.match(firstAuditPage.json().nextCursor, /^[A-Za-z0-9_-]+$/);
-  const secondAuditPage = await app.inject({ method: "GET", url: `/admin/audit-events?limit=2&cursor=${encodeURIComponent(firstAuditPage.json().nextCursor)}`, headers: { cookie: `blog_x_session=${thirdCookie}` } });
+  const secondAuditPage = await app.inject({ method: "GET", url: `/admin/audit-events?limit=2&cursor=${encodeURIComponent(firstAuditPage.json().nextCursor)}`, headers: { cookie: `blog_x_session=${replacementCookie}` } });
   assert.equal(secondAuditPage.statusCode, 200, secondAuditPage.body);
   assert.equal(secondAuditPage.json().items.length, 2);
   assert.equal(new Set([...firstAuditPage.json().items, ...secondAuditPage.json().items].map((event: { id: string }) => event.id)).size, 4);
-  const invalidAuditCursor = await app.inject({ method: "GET", url: "/admin/audit-events?cursor=not-a-valid-cursor", headers: { cookie: `blog_x_session=${thirdCookie}` } });
+  const invalidAuditCursor = await app.inject({ method: "GET", url: "/admin/audit-events?cursor=not-a-valid-cursor", headers: { cookie: `blog_x_session=${replacementCookie}` } });
   assert.equal(invalidAuditCursor.statusCode, 400);
   const logout = await app.inject({ method: "POST", url: "/auth/logout", headers: { origin: publicOrigin, cookie: `blog_x_session=${replacementCookie}` } });
   assert.equal(logout.statusCode, 200);
@@ -155,7 +155,7 @@ test("single administrator sessions are opaque, rotated, revocable, and do not l
     assert.equal(event.actor_administrator_id, seeded[0]!.id);
     assert.equal(event.target_type, "administrator");
     assert.equal(event.target_id, seeded[0]!.id);
-    assert.deepEqual(event.metadata, {});
+    assert.deepEqual(event.metadata, event.event === "auth.password.changed" ? { changedFields: ["password"] } : {});
   }
 
   const finalLogs = logs.join("");
