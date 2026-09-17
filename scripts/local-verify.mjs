@@ -855,6 +855,7 @@ async function createCanonicalRuntimeAuthority(context, { includeWeb = true, pub
       "    ports: !override",
       `      - ${JSON.stringify(`127.0.0.1:${context.runtimeWebPort ?? context.webPort}:3100`)}`,
       ...(includeWeb ? [
+        "    command: [\"node\", \"apps/web/server.mjs\"]",
         "    volumes:",
         `      - ${JSON.stringify(`${nextRoot}:/workspace/apps/web/.next:ro`)}`,
         `      - ${JSON.stringify(`${resolve(runtimeRoot, "server.mjs")}:/workspace/apps/web/server.mjs:ro`)}`,

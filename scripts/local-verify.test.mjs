@@ -161,7 +161,7 @@ test("Phase 11 data selection seals retention, export, privacy, restore, browser
   const phase11Setup = source.slice(source.indexOf("else if (options.phase11Data && !options.skipBuild)"), source.indexOf("else if (options.canonicalIntegration && !options.skipBuild)"));
   assert.match(phase11Setup, /build workspace for Phase 11 data[\s\S]*INTERNAL_API_ORIGIN[\s\S]*createCanonicalRuntimeAuthority/);
   assert.match(source, /hashRuntimeArtifact[\s\S]*symbolic link[\s\S]*readdir[\s\S]*localeCompare/);
-  assert.match(source, /NODE_ENV: production[\s\S]*ports: !override[\s\S]*\.next:ro[\s\S]*server\.mjs:ro/);
+  assert.match(source, /NODE_ENV: production[\s\S]*ports: !override[\s\S]*command: \[\\"node\\", \\"apps\/web\/server\.mjs\\"\][\s\S]*\.next:ro[\s\S]*server\.mjs:ro/);
   const phase11Runner = source.slice(source.indexOf("async function runPhase11DataChecks"), source.indexOf("const canonicalDatabaseEnvironment"));
   assert.doesNotMatch(phase11Runner, /build workspace|typecheck workspace/);
 });
