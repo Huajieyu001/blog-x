@@ -68,6 +68,52 @@ function matchingIngressSecret(received, expected) {
   return timingSafeEqual(Buffer.from(received), Buffer.from(expected));
 }
 
+function isFrameworkHeader(name) {
+  return typeof name === "string" && name.toLowerCase() === "x-powered-by";
+}
+
+function withoutFrameworkHeader(headers) {
+  if (Array.isArray(headers)) {
+    const filtered = [];
+    for (let index = 0; index < headers.length; index += 2) {
+      if (!isFrameworkHeader(headers[index])) filtered.push(headers[index], headers[index + 1]);
+    }
+    return filtered;
+  }
+  if (headers && typeof headers === "object") {
+    return Object.fromEntries(Object.entries(headers).filter(([name]) => !isFrameworkHeader(name)));
+  }
+  return headers;
+}
+
+/**
+ * Next's programmatic custom-server path can set framework headers after the
+ * static config was loaded. Guard both Node response write APIs at the edge.
+ */
+export function installFrameworkHeaderGuard(response) {
+  if (!response || typeof response.setHeader !== "function" || typeof response.writeHead !== "function" || typeof response.removeHeader !== "function") {
+    throw new Error("Web response does not support header guarding");
+  }
+  const setHeader = response.setHeader.bind(response);
+  const writeHead = response.writeHead.bind(response);
+  const removeFrameworkHeader = () => response.removeHeader("x-powered-by");
+  removeFrameworkHeader();
+  response.setHeader = (name, value) => {
+    if (isFrameworkHeader(name)) {
+      removeFrameworkHeader();
+      return response;
+    }
+    return setHeader(name, value);
+  };
+  response.writeHead = (...args) => {
+    removeFrameworkHeader();
+    if (args.length === 2 && typeof args[1] !== "string") args[1] = withoutFrameworkHeader(args[1]);
+    if (args.length >= 3) args[2] = withoutFrameworkHeader(args[2]);
+    return writeHead(...args);
+  };
+  return response;
+}
+
 /**
  * Removes every externally-controlled forwarding header before Next can read
  * it. API rewrites then receive one canonical address from a separately
@@ -98,6 +144,7 @@ async function main() {
   await application.prepare();
   const handle = application.getRequestHandler();
   createServer((request, response) => {
+    installFrameworkHeaderGuard(response);
     if (!installTrustedApiForwarding(request)) {
       response.writeHead(404, { "cache-control": "no-store" });
       response.end();
