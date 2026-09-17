@@ -146,6 +146,25 @@
 .auditPager { display: flex; justify-content: flex-end; margin-top: 24px; }
 .auditPager a { display: inline-flex; min-height: 44px; align-items: center; border: 1px solid var(--ink); border-radius: 999px; padding: 0 18px; color: var(--ink); text-decoration: none; }
 
+.trashSection { min-width: 0; margin-top: 32px; }
+.trashStatus { min-height: 1.5em; margin: 0 0 12px; color: var(--accent); font: 650 .86rem/1.5 ui-sans-serif, system-ui, sans-serif; }
+.trashRestored { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0 0 16px; border-left: 3px solid var(--accent); padding: 12px 16px; color: var(--muted); background: var(--surface); line-height: 1.6; }
+.trashRestored a { display: inline-flex; min-height: 44px; align-items: center; font-weight: 650; }
+.trashList { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.trashCard { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px 24px; align-items: center; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 20px; background: var(--surface); }
+.trashCardBody { min-width: 0; }
+.trashCard h2 { margin: 0; font: 600 clamp(1.15rem, 2vw, 1.35rem)/1.35 ui-serif, Georgia, "Noto Serif SC", serif; overflow-wrap: anywhere; }
+.trashCard p { margin: 8px 0 0; color: var(--muted); font: .82rem/1.55 ui-sans-serif, system-ui, sans-serif; overflow-wrap: anywhere; }
+.trashCard code { color: inherit; font: .78rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.restoreButton, .restoreConfirm, .restoreDialogActions button { display: inline-flex; min-height: 44px; box-sizing: border-box; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 999px; padding: 0 16px; color: var(--ink); background: var(--surface); font: 650 .86rem/1 ui-sans-serif, system-ui, sans-serif; cursor: pointer; }
+.restoreConfirm { border-color: var(--ink); color: var(--paper); background: var(--ink); }
+.restoreButton:disabled, .restoreDialogActions button:disabled { cursor: wait; opacity: .55; }
+.restoreDialog { grid-column: 1 / -1; min-width: 0; border: 1px solid var(--accent); border-radius: 6px; padding: 16px; background: var(--paper); }
+.restoreDialog p { margin: 0; color: var(--ink); font-weight: 650; }
+.restoreDialogActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+:global(html[data-theme="dark"]) .trashRestored { background: color-mix(in srgb, var(--surface) 88%, var(--paper)); }
+:global(html[data-theme="dark"]) .restoreDialog { background: color-mix(in srgb, var(--surface) 88%, var(--paper)); }
+
 .secondaryLink { display: inline-flex; min-height: 44px; box-sizing: border-box; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 999px; padding: 0 18px; color: var(--ink); font: 650 .85rem/1 ui-sans-serif, system-ui, sans-serif; text-decoration: none; white-space: nowrap; }
 .taxonomyGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-top: 32px; align-items: start; }
 .taxonomyPanel { min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 22px; background: var(--surface); }
@@ -259,6 +278,9 @@
   .mobileActive { display: block; }
   .markdownLabel textarea { min-height: 440px; }
   .lifecycle, .auditRow { display: grid; grid-template-columns: 1fr; }
+  .trashCard { grid-template-columns: 1fr; padding: 16px; }
+  .restoreButton, .restoreDialogActions button { width: 100%; }
+  .restoreDialogActions { display: grid; grid-template-columns: 1fr; }
   .postRow { padding: 16px; }
   .postRowFooter { display: grid; grid-template-columns: 1fr; }
   .editPostLink, .postActions, .postActions summary { width: 100%; }

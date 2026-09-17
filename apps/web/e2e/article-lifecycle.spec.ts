@@ -102,6 +102,33 @@ test("draft completes publish, edit, slug confirmation, unpublish, republish, an
   await expect(row).toHaveCount(0);
   expect((await context.request.get(`${webOrigin}/api/public/articles/${changedSlug}`)).status()).toBe(404);
 
+  await page.goto(`${webOrigin}/admin/trash`);
+  await expect(page.getByRole("heading", { name: "回收站" })).toBeVisible();
+  const trash = page.getByLabel("已删除文章");
+  await expect(trash).toContainText(editedTitle);
+  await expect(trash).toContainText(changedSlug);
+  await expect(trash).toContainText("删除前状态：published");
+  await expect(trash).not.toContainText("Original content");
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const restoreButton = trash.getByRole("button", { name: "恢复为草稿" });
+  expect((await restoreButton.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  await restoreButton.click();
+  const restoreDialog = trash.getByRole("dialog");
+  await expect(restoreDialog).toContainText("文章不会自动发布");
+  await restoreDialog.getByRole("button", { name: "取消" }).click();
+  await expect(restoreButton).toBeFocused();
+  await restoreButton.click();
+  await restoreDialog.getByRole("button", { name: "确认恢复" }).click();
+  await expect(trash.getByRole("status")).toHaveText("文章已恢复为草稿，仍未公开。");
+  await expect(trash.getByRole("link", { name: "打开草稿" })).toBeVisible();
+  await trash.getByRole("link", { name: "打开草稿" }).click();
+  await expect(page).toHaveURL(/\/admin\/posts\/[0-9a-f-]+$/);
+  await expect(page.getByText("状态：草稿")).toBeVisible();
+  await expect(page.getByLabel("Slug")).toHaveValue(changedSlug);
+  await expect(page.getByLabel("Markdown")).toHaveValue("# Browser lifecycle\n\nOriginal content");
+  expect((await context.request.get(`${webOrigin}/api/public/articles/${changedSlug}`)).status()).toBe(404);
+
   await page.goto(`${webOrigin}/admin/audit`);
   await expect(page.getByRole("heading", { name: "操作日志" })).toBeVisible();
   const audit = page.getByLabel("管理员操作记录");
@@ -113,6 +140,8 @@ test("draft completes publish, edit, slug confirmation, unpublish, republish, an
   await expect(audit.getByText("预约发布文章").first()).toBeVisible();
   await expect(audit.getByText("改期发布文章").first()).toBeVisible();
   await expect(audit.getByText("取消预约发布").first()).toBeVisible();
+  await expect(audit.getByText("恢复文章为草稿").first()).toBeVisible();
+  await expect(audit.getByText("状态：已删除 → 草稿").first()).toBeVisible();
   await expect(audit).not.toContainText(originalTitle);
   await expect(audit).not.toContainText(editedTitle);
   await expect(audit).not.toContainText("Original content");

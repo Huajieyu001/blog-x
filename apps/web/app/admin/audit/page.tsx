@@ -65,6 +65,14 @@ function formatShanghaiDateTime(value: string) {
   return `${shanghaiDateTime.format(new Date(value))}（上海时间）`;
 }
 
+function isDeletedArticleRestored(item: AuditEvent) {
+  return item.event === "article.updated"
+    && item.metadata.previousStatus === "deleted"
+    && item.metadata.status === "draft"
+    && item.metadata.changedFields?.length === 1
+    && item.metadata.changedFields[0] === "status";
+}
+
 function eventDetail(item: AuditEvent) {
   const details: string[] = [];
   if (item.metadata.previousStatus && item.metadata.status) {
@@ -103,7 +111,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
           {events.items.map((item) => (
             <article className={styles.auditRow} key={item.id}>
               <div>
-                <p className={styles.auditEvent}>{eventLabels[item.event]}</p>
+                <p className={styles.auditEvent}>{isDeletedArticleRestored(item) ? "恢复文章为草稿" : eventLabels[item.event]}</p>
                 <p className={styles.auditTarget}>操作对象：{targetLabels[item.targetType]}</p>
               </div>
               <div>
