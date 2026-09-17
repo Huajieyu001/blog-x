@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createNextServerOptions, createRuntimeNextConfig, installFrameworkHeaderGuard, installTrustedApiForwarding } from "./server.mjs";
+import { createNextServerOptions, createRuntimeNextConfig, createSecurityHeaders, installFrameworkHeaderGuard, installTrustedApiForwarding } from "./server.mjs";
 
 const development = { NODE_ENV: "development" };
 const ingressSecret = "a".repeat(32);
@@ -54,8 +54,9 @@ function responseDouble(initialHeaders = {}) {
 
 test("the Web custom-server boundary removes framework headers across Node response APIs", () => {
   const response = responseDouble({ "X-Powered-By": "preexisting" });
-  assert.equal(installFrameworkHeaderGuard(response), response);
+  assert.equal(installFrameworkHeaderGuard(response, { dev: false }), response);
   assert.equal(response.headers.has("x-powered-by"), false);
+  for (const { key, value } of createSecurityHeaders(false)) assert.equal(response.headers.get(key.toLowerCase()), value);
 
   assert.equal(response.setHeader("x-PoWeReD-bY", "Next.js"), response);
   assert.equal(response.setHeader("cache-control", "no-store"), response);

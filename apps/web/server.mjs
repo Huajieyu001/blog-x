@@ -73,7 +73,7 @@ function isFrameworkHeader(name) {
   return typeof name === "string" && name.toLowerCase() === "x-powered-by";
 }
 
-export function createRuntimeNextConfig({ dev = development, apiOrigin = defaultApiOrigin } = {}) {
+export function createSecurityHeaders(dev = development) {
   const contentSecurityPolicy = [
     "default-src 'self'",
     "base-uri 'self'",
@@ -89,7 +89,7 @@ export function createRuntimeNextConfig({ dev = development, apiOrigin = default
     "manifest-src 'self'",
     "worker-src 'self' blob:",
   ].join("; ");
-  const securityHeaders = [
+  return [
     { key: "Content-Security-Policy", value: contentSecurityPolicy },
     { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
     { key: "X-Content-Type-Options", value: "nosniff" },
@@ -98,6 +98,10 @@ export function createRuntimeNextConfig({ dev = development, apiOrigin = default
     { key: "X-Frame-Options", value: "DENY" },
     { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()" },
   ];
+}
+
+export function createRuntimeNextConfig({ dev = development, apiOrigin = defaultApiOrigin } = {}) {
+  const securityHeaders = createSecurityHeaders(dev);
   return {
     allowedDevOrigins: ["127.0.0.1"],
     poweredByHeader: false,
@@ -130,7 +134,7 @@ function withoutFrameworkHeader(headers) {
  * Next's programmatic custom-server path can set framework headers after the
  * static config was loaded. Guard both Node response write APIs at the edge.
  */
-export function installFrameworkHeaderGuard(response) {
+export function installFrameworkHeaderGuard(response, { dev = development } = {}) {
   if (!response || typeof response.setHeader !== "function" || typeof response.writeHead !== "function" || typeof response.removeHeader !== "function") {
     throw new Error("Web response does not support header guarding");
   }
@@ -138,6 +142,7 @@ export function installFrameworkHeaderGuard(response) {
   const writeHead = response.writeHead.bind(response);
   const removeFrameworkHeader = () => response.removeHeader("x-powered-by");
   removeFrameworkHeader();
+  for (const { key, value } of createSecurityHeaders(dev)) setHeader(key, value);
   response.setHeader = (name, value) => {
     if (isFrameworkHeader(name)) {
       removeFrameworkHeader();
