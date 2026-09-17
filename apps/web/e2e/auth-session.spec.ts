@@ -23,7 +23,7 @@ async function login(page: Page, submittedPassword: string) {
 
 async function changePassword(page: Page, currentPassword: string, newPassword: string) {
   await page.getByLabel("当前密码").fill(currentPassword);
-  await page.getByLabel("新密码").fill(newPassword);
+  await page.getByLabel("新密码", { exact: true }).fill(newPassword);
   await page.getByLabel("确认新密码").fill(newPassword);
   const response = page.waitForResponse((candidate) => candidate.url().endsWith("/api/auth/password"));
   await page.getByRole("button", { name: "修改密码" }).click();
@@ -100,7 +100,7 @@ test("password change requires a fresh sign-in and restores the generated fixtur
     await expect(page).toHaveURL(`${webOrigin}/admin/security`);
     await expect(page.getByRole("heading", { name: "账户安全" })).toBeVisible();
     await expect(page.getByLabel("当前密码")).toHaveAttribute("autocomplete", "current-password");
-    await expect(page.getByLabel("新密码")).toHaveAttribute("autocomplete", "new-password");
+    await expect(page.getByLabel("新密码", { exact: true })).toHaveAttribute("autocomplete", "new-password");
     const dimensions = await page.locator("form input, form button").evaluateAll((elements) => elements.map((element) => {
       const box = element.getBoundingClientRect();
       return { width: box.width, height: box.height };
