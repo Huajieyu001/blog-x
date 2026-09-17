@@ -1015,7 +1015,7 @@ async function inspectSchema(context) {
     "(select count(*) from pg_indexes where schemaname = 'public' and indexname = any(array['taxonomy_category_slug_unique','taxonomy_tag_slug_unique','article_tags_article_tag_unique','site_pages_key_unique','media_source_key_unique','media_derivative_key_unique','audit_events_newest_index','articles_schedule_due_index','article_daily_views_day_index']));",
   ].join(" ")));
   const values = result.stdout.trim().split("|").map(Number);
-  if (values.length !== 5 || values[0] !== 1 || values[1] !== 10 || values[2] !== 10 || values[3] !== 13 || values[4] !== 9) {
+  if (values.length !== 5 || values[0] !== 1 || values[1] !== 11 || values[2] !== 10 || values[3] !== 13 || values[4] !== 9) {
     throw new Error(`unexpected schema inspection result: ${result.stdout.trim()}`);
   }
 }

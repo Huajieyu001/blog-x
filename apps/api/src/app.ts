@@ -309,10 +309,13 @@ async function schemaVerify(pool: Pool) {
   if (scheduleColumns.rowCount !== 2) throw new Error("scheduled publishing columns are incomplete; run pnpm db:migrate first");
   const scheduleConstraints = await pool.query("select conname from pg_constraint where conrelid = 'articles'::regclass and conname = any($1)", [["articles_schedule_pair_check", "articles_schedule_draft_check"]]);
   if (scheduleConstraints.rowCount !== 2) throw new Error("scheduled publishing constraints are incomplete; run pnpm db:migrate first");
-  const auditEventConstraint = await pool.query<{ definition: string }>("select pg_get_constraintdef(oid) as definition from pg_constraint where conrelid = 'audit_events'::regclass and conname = 'audit_events_event_check'");
-  const auditDefinition = auditEventConstraint.rows[0]?.definition ?? "";
-  if (auditEventConstraint.rowCount !== 1 || !["article.scheduled", "article.rescheduled", "article.schedule_cancelled", "article.scheduled_published", "auth.password.changed"].every((event) => auditDefinition.includes(event))) {
-    throw new Error("scheduled audit event constraint is incomplete; run pnpm db:migrate first");
+  const auditConstraintDefinitions = await pool.query<{ conname: string; definition: string }>("select conname, pg_get_constraintdef(oid) as definition from pg_constraint where conrelid = 'audit_events'::regclass and conname = any($1)", [["audit_events_event_check", "audit_events_target_check"]]);
+  const auditDefinitionByName = new Map(auditConstraintDefinitions.rows.map((row) => [row.conname, row.definition]));
+  if (![
+    ["audit_events_event_check", "article.scheduled", "article.rescheduled", "article.schedule_cancelled", "article.scheduled_published", "auth.password.changed"],
+    ["audit_events_target_check", "auth.password.changed", "administrator", "actor_administrator_id"],
+  ].every(([name, ...required]) => required.every((term) => auditDefinitionByName.get(name)?.includes(term)))) {
+    throw new Error("password-change audit constraints are incomplete; run pnpm db:migrate first");
   }
   const pending = await pool.query("select count(*)::int as count from articles where deleted_at is null and legacy_media_review = 'pending'");
   if (Number(pending.rows[0]?.count) !== 0) throw new Error("retained articles still await legacy media classification; run pnpm db:migrate first");

@@ -21,6 +21,15 @@ async function login(page: Page, submittedPassword: string) {
   return response;
 }
 
+async function changePassword(page: Page, currentPassword: string, newPassword: string) {
+  await page.getByLabel("当前密码").fill(currentPassword);
+  await page.getByLabel("新密码").fill(newPassword);
+  await page.getByLabel("确认新密码").fill(newPassword);
+  const response = page.waitForResponse((candidate) => candidate.url().endsWith("/api/auth/password"));
+  await page.getByRole("button", { name: "修改密码" }).click();
+  return response;
+}
+
 test("login, refresh, expiry, logout, and revoked-token reuse stay server-authorized", async ({ page, context }) => {
   await page.goto(`${webOrigin}/admin`);
   await expect(page).toHaveURL(`${webOrigin}/login`);
@@ -74,4 +83,59 @@ test("login, refresh, expiry, logout, and revoked-token reuse stay server-author
   await context.addCookies([{ name: "blog_x_session", value: revokedSessionToken, url: webOrigin, httpOnly: true, sameSite: "Lax" }]);
   await page.goto(`${webOrigin}/admin`);
   await expect(page).toHaveURL(`${webOrigin}/login`);
+});
+
+test("password change requires a fresh sign-in and restores the generated fixture credential", async ({ page, context }) => {
+  const replacementPassword = `temporary-password-${runId}-change`;
+  let passwordChanged = false;
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${webOrigin}/admin`);
+  await expect(page).toHaveURL(`${webOrigin}/login`);
+  expect((await login(page, password)).status()).toBe(200);
+  await expect(page).toHaveURL(`${webOrigin}/admin`);
+
+  try {
+    await page.getByRole("link", { name: "账户安全" }).click();
+    await expect(page).toHaveURL(`${webOrigin}/admin/security`);
+    await expect(page.getByRole("heading", { name: "账户安全" })).toBeVisible();
+    await expect(page.getByLabel("当前密码")).toHaveAttribute("autocomplete", "current-password");
+    await expect(page.getByLabel("新密码")).toHaveAttribute("autocomplete", "new-password");
+    const dimensions = await page.locator("form input, form button").evaluateAll((elements) => elements.map((element) => {
+      const box = element.getBoundingClientRect();
+      return { width: box.width, height: box.height };
+    }));
+    expect(dimensions.every((box) => box.height >= 44 || box.width >= 44)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+    const invalidResponse = await changePassword(page, `${password}-wrong`, replacementPassword);
+    expect(invalidResponse.status()).toBe(400);
+    await expect(page.getByRole("alert")).toContainText("当前密码错误");
+    expect(await page.evaluate(() => fetch("/api/auth/session").then((response) => response.status))).toBe(200);
+
+    const changedResponse = await changePassword(page, password, replacementPassword);
+    passwordChanged = changedResponse.status() === 200;
+    expect(changedResponse.status()).toBe(200);
+    await expect(page).toHaveURL(`${webOrigin}/login`);
+    expect((await login(page, password)).status()).toBe(401);
+    await expect(page.getByRole("alert")).toContainText("用户名或密码错误。");
+    expect((await login(page, replacementPassword)).status()).toBe(200);
+    await expect(page).toHaveURL(`${webOrigin}/admin`);
+    await page.goto(`${webOrigin}/admin/audit`);
+    await expect(page.getByText("管理员修改密码")).toBeVisible();
+    await expect(page.getByText("变更：密码")).toBeVisible();
+    await expect(page.locator("body")).not.toContainText(replacementPassword);
+  } finally {
+    if (passwordChanged) {
+      await context.clearCookies();
+      await page.goto(`${webOrigin}/login`);
+      expect((await login(page, replacementPassword)).status()).toBe(200);
+      await expect(page).toHaveURL(`${webOrigin}/admin`);
+      await page.goto(`${webOrigin}/admin/security`);
+      const restoredResponse = await changePassword(page, replacementPassword, password);
+      expect(restoredResponse.status()).toBe(200);
+      await expect(page).toHaveURL(`${webOrigin}/login`);
+      expect((await login(page, password)).status()).toBe(200);
+      await expect(page).toHaveURL(`${webOrigin}/admin`);
+    }
+  }
 });

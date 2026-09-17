@@ -1,6 +1,6 @@
 import { Algorithm, hash, verify } from "@node-rs/argon2";
 import { changePasswordInputSchema, changePasswordResponseSchema, loginInputSchema, loginResponseSchema, logoutResponseSchema, sessionStatusSchema } from "@blog-x/contracts";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { sessionCookieName, sessionCookieOptions, type SessionService } from "../auth/sessions.js";
@@ -90,7 +90,11 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
       const rows = await tx.select().from(schema.administrators).where(eq(schema.administrators.id, administratorId)).for("update");
       const administrator = rows[0];
       if (!administrator || !(await verify(administrator.passwordHash, parsed.data.currentPassword))) return false;
-      const now = new Date();
+      // Database time keeps every session revocation in the password-change
+      // transaction on one authority, independent of the API host clock.
+      const transactionNowRaw = (await tx.execute<{ transactionNow: Date | string }>(sql`select CURRENT_TIMESTAMP as "transactionNow"`)).rows[0]?.transactionNow;
+      const now = transactionNowRaw instanceof Date ? transactionNowRaw : new Date(String(transactionNowRaw));
+      if (Number.isNaN(now.getTime())) throw new Error("transaction timestamp is unavailable");
       await tx.update(schema.administrators).set({ passwordHash: replacementHash }).where(eq(schema.administrators.id, administratorId));
       await tx.update(schema.sessions).set({ revokedAt: now }).where(and(eq(schema.sessions.administratorId, administratorId), isNull(schema.sessions.revokedAt)));
       await appendAuditEvent(tx, { actorAdministratorId: administratorId, event: "auth.password.changed", targetType: "administrator", targetId: administratorId, metadata: { changedFields: ["password"] } });
