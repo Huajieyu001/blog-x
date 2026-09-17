@@ -2007,7 +2007,7 @@ async function runPhase5GeneratedPipeline() {
       writePortableExportV1: async () => JSON.stringify({ format: "blog-x-portable-export", version: 1, exportedAt: new Date().toISOString(), articles: [], categories: [], tags: [], about: null, media: [{ id: mediaId, width: 1, height: 1, mimeType: "image/webp", createdAt: new Date().toISOString() }] }),
       copyApiMedia: async () => [{ id: mediaId, sourceKey: `source/${mediaId}.bin`, derivativeKey: `derivative/${mediaId}.webp`, source, derivative }],
       readAllowlistedInventory: async () => ({
-        migration: { count: 10, fingerprint: inventoryDigest },
+        migration: { count: 11, fingerprint: inventoryDigest },
         images: { api: imageDigest("api"), web: imageDigest("web"), postgres: imageDigest("postgres") },
         configChecksums: [{ path: "compose.yaml", sha256: hashText(await readFile(resolve(root, "compose.yaml"))) }],
         variableNamesPresent: ["DATABASE_URL", "MEDIA_ROOT", "PUBLIC_ORIGIN"],
