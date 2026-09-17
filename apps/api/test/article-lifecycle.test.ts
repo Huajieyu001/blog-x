@@ -640,7 +640,7 @@ test("deleted article recovery is content-free, serialized, and rolls back when 
   });
   assert.equal(reservedDuringDelete.statusCode, 409);
   assert.equal((await app.inject({ method: "POST", url: `/admin/posts/${second.id}/restore`, headers: { ...headers, origin: "https://untrusted.invalid" }, payload: {} })).statusCode, 403);
-  assert.equal((await app.inject({ method: "POST", url: `/admin/posts/${second.id}/restore`, headers: { origin: publicOrigin, cookie }, payload: {} })).statusCode, 415);
+  assert.equal((await app.inject({ method: "POST", url: `/admin/posts/${second.id}/restore`, headers: { origin: publicOrigin, cookie, "content-type": "text/plain" }, payload: "{}" })).statusCode, 415);
   assert.equal((await app.inject({ method: "POST", url: `/admin/posts/${second.id}/restore`, headers, payload: { unexpected: true } })).statusCode, 400);
   assert.equal((await app.inject({ method: "GET", url: `/public/articles/${second.slug}` })).statusCode, 404);
 
