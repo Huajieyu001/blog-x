@@ -6,6 +6,7 @@ import styles from "../admin.module.css";
 const eventLabels: Record<AuditEventName, string> = {
   "auth.login.succeeded": "管理员登录",
   "auth.logout.succeeded": "管理员退出",
+  "auth.password.changed": "管理员修改密码",
   "article.created": "创建文章草稿",
   "article.updated": "更新文章",
   "article.published": "发布文章",
@@ -30,6 +31,7 @@ const fieldLabels: Record<string, string> = {
   title: "标题", summary: "摘要", coverUrl: "旧封面地址", slug: "Slug", markdown: "正文",
   publishedAt: "发布时间", seoDescription: "SEO 描述", categoryId: "分类", tagIds: "标签",
   coverMedia: "封面媒体", name: "名称", status: "状态", scheduledAt: "预约时间",
+  password: "密码",
 };
 
 const targetLabels: Record<AuditEvent["targetType"], string> = {

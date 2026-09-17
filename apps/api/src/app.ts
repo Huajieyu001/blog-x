@@ -141,7 +141,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
     logger: {
       level: options.logger?.level ?? (process.env.NODE_ENV === "production" ? "info" : "silent"),
       ...options.logger,
-      redact: ["req.headers.cookie", "req.headers.authorization", "req.headers.x-blog-x-ingress-auth", "req.headers.x-blog-x-client-ip", "res.headers.set-cookie", "password", "token", "credentials"],
+      redact: ["req.headers.cookie", "req.headers.authorization", "req.headers.x-blog-x-ingress-auth", "req.headers.x-blog-x-client-ip", "req.body.currentPassword", "req.body.newPassword", "res.headers.set-cookie", "password", "token", "credentials"],
     },
   });
   // TypeScript 7's bundler resolution does not model the package's CommonJS

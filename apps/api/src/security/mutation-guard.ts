@@ -22,6 +22,7 @@ export type UnsafeRoutePolicy = {
 export const unsafeRoutePolicies: readonly UnsafeRoutePolicy[] = [
   { method: "POST", url: "/auth/login", contentType: "json", bodyLimit: 64 * 1024, limiter: "login", generalLimiter: true },
   { method: "POST", url: "/auth/logout", contentType: "none", bodyLimit: 1, limiter: "administrator", generalLimiter: true },
+  { method: "POST", url: "/auth/password", contentType: "json", bodyLimit: 8 * 1024, limiter: "administrator", generalLimiter: true },
   { method: "POST", url: "/admin/posts/preview", contentType: "json", bodyLimit: 256 * 1024, limiter: "administrator", generalLimiter: true },
   { method: "POST", url: "/admin/posts", contentType: "json", bodyLimit: 256 * 1024, limiter: "administrator", generalLimiter: true },
   { method: "PUT", url: "/admin/posts/:id", contentType: "json", bodyLimit: 256 * 1024, limiter: "administrator", generalLimiter: true },

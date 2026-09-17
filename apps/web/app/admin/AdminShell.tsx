@@ -14,6 +14,7 @@ const navigation = [
   { href: "/admin/analytics", label: "访问统计", active: (path: string) => path.startsWith("/admin/analytics") },
   { href: "/admin/taxonomy", label: "分类与标签", active: (path: string) => path.startsWith("/admin/taxonomy") },
   { href: "/admin/about", label: "关于页", active: (path: string) => path.startsWith("/admin/about") },
+  { href: "/admin/security", label: "账户安全", active: (path: string) => path.startsWith("/admin/security") },
   { href: "/admin/audit", label: "操作日志", active: (path: string) => path.startsWith("/admin/audit") },
 ];
 
