@@ -112,6 +112,19 @@ test("single administrator sessions are opaque, rotated, revocable, and do not l
   const thirdLogin = await app.inject({ method: "POST", url: "/auth/login", headers, payload: { username, password } });
   assert.equal(thirdLogin.statusCode, 200);
   const thirdCookie = cookieValue(String(thirdLogin.headers["set-cookie"]));
+  const replacementPassword = "replacement-password-that-must-not-leak";
+  const invalidChange = await app.inject({ method: "POST", url: "/auth/password", headers: { ...headers, cookie: `blog_x_session=${thirdCookie}` }, payload: { currentPassword: "not-the-current-password", newPassword: replacementPassword } });
+  assert.equal(invalidChange.statusCode, 400);
+  assert.deepEqual(invalidChange.json(), { error: "invalid_current_password" });
+  const changed = await app.inject({ method: "POST", url: "/auth/password", headers: { ...headers, cookie: `blog_x_session=${thirdCookie}` }, payload: { currentPassword: password, newPassword: replacementPassword } });
+  assert.equal(changed.statusCode, 200);
+  assert.deepEqual(changed.json(), { ok: true });
+  assert.match(String(changed.headers["set-cookie"]), /Max-Age=0/i);
+  assert.equal((await app.inject({ method: "GET", url: "/auth/session", headers: { cookie: `blog_x_session=${thirdCookie}` } })).statusCode, 401);
+  assert.equal((await app.inject({ method: "POST", url: "/auth/login", headers, payload: { username, password } })).statusCode, 401);
+  const replacementLogin = await app.inject({ method: "POST", url: "/auth/login", headers, payload: { username, password: replacementPassword } });
+  assert.equal(replacementLogin.statusCode, 200);
+  const replacementCookie = cookieValue(String(replacementLogin.headers["set-cookie"]));
   const deniedAudit = await app.inject({ method: "GET", url: "/admin/audit-events" });
   assert.equal(deniedAudit.statusCode, 401);
   assert.equal(deniedAudit.headers["cache-control"], "no-store");
@@ -126,10 +139,10 @@ test("single administrator sessions are opaque, rotated, revocable, and do not l
   assert.equal(new Set([...firstAuditPage.json().items, ...secondAuditPage.json().items].map((event: { id: string }) => event.id)).size, 4);
   const invalidAuditCursor = await app.inject({ method: "GET", url: "/admin/audit-events?cursor=not-a-valid-cursor", headers: { cookie: `blog_x_session=${thirdCookie}` } });
   assert.equal(invalidAuditCursor.statusCode, 400);
-  const logout = await app.inject({ method: "POST", url: "/auth/logout", headers: { origin: publicOrigin, cookie: `blog_x_session=${thirdCookie}` } });
+  const logout = await app.inject({ method: "POST", url: "/auth/logout", headers: { origin: publicOrigin, cookie: `blog_x_session=${replacementCookie}` } });
   assert.equal(logout.statusCode, 200);
   assert.match(String(logout.headers["set-cookie"]), /Max-Age=0/i);
-  const reused = await app.inject({ method: "GET", url: "/auth/session", headers: { cookie: `blog_x_session=${thirdCookie}` } });
+  const reused = await app.inject({ method: "GET", url: "/auth/session", headers: { cookie: `blog_x_session=${replacementCookie}` } });
   assert.equal(reused.statusCode, 401);
 
   const audit = await pool.query<{ event: string; actor_administrator_id: string; target_type: string; target_id: string; metadata: unknown }>(
@@ -137,7 +150,7 @@ test("single administrator sessions are opaque, rotated, revocable, and do not l
   );
   assert.deepEqual(Object.fromEntries(
     [...new Set(audit.rows.map((row) => row.event))].map((event) => [event, audit.rows.filter((row) => row.event === event).length]),
-  ), { "auth.login.succeeded": 4, "auth.logout.succeeded": 1 });
+  ), { "auth.login.succeeded": 5, "auth.password.changed": 1, "auth.logout.succeeded": 1 });
   for (const event of audit.rows) {
     assert.equal(event.actor_administrator_id, seeded[0]!.id);
     assert.equal(event.target_type, "administrator");
@@ -150,4 +163,5 @@ test("single administrator sessions are opaque, rotated, revocable, and do not l
   assert.doesNotMatch(finalLogs, new RegExp(firstCookie));
   assert.doesNotMatch(finalLogs, new RegExp(secondCookie));
   assert.doesNotMatch(finalLogs, new RegExp(thirdCookie));
+  assert.doesNotMatch(finalLogs, new RegExp(replacementPassword));
 });

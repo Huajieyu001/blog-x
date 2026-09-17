@@ -125,6 +125,7 @@ test("auth logout, schedule mutations, and legacy publish have named unsafe rout
   assert.deepEqual(named, [
     "POST /auth/login",
     "POST /auth/logout",
+    "POST /auth/password",
     "POST /admin/posts/preview",
     "POST /admin/posts",
     "PUT /admin/posts/:id",
