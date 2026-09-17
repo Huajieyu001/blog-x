@@ -1,9 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { installFrameworkHeaderGuard, installTrustedApiForwarding } from "./server.mjs";
+import { createNextServerOptions, installFrameworkHeaderGuard, installTrustedApiForwarding } from "./server.mjs";
 
 const development = { NODE_ENV: "development" };
 const ingressSecret = "a".repeat(32);
+
+test("the Web production custom-server options explicitly disable the framework header", () => {
+  const options = createNextServerOptions({ dev: false, dir: "/runtime/web", hostname: "127.0.0.1", listenPort: 3100 });
+  assert.deepEqual(options, {
+    dev: false,
+    dir: "/runtime/web",
+    hostname: "127.0.0.1",
+    port: 3100,
+    conf: { poweredByHeader: false },
+  });
+});
 
 function responseDouble(initialHeaders = {}) {
   const headers = new Map(Object.entries(initialHeaders).map(([name, value]) => [name.toLowerCase(), value]));

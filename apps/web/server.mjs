@@ -138,9 +138,21 @@ export function installTrustedApiForwarding(request, environment = process.env) 
   return true;
 }
 
+export function createNextServerOptions({ dev = development, dir = appDirectory, hostname = host, listenPort = port } = {}) {
+  return {
+    dev,
+    dir,
+    hostname,
+    port: listenPort,
+    // The fixed preview mounts current .next/server.mjs over a seed image. Keep
+    // this response policy explicit even if that image has an older config file.
+    conf: { poweredByHeader: false },
+  };
+}
+
 async function main() {
   if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error("invalid PORT");
-  const application = next({ dev: development, dir: appDirectory, hostname: host, port });
+  const application = next(createNextServerOptions());
   await application.prepare();
   const handle = application.getRequestHandler();
   createServer((request, response) => {
