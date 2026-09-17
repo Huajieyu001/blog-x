@@ -35,6 +35,7 @@ test("Next security headers retain only the required development CSP exception",
   assert.match(config, /Strict-Transport-Security", value: "max-age=31536000; includeSubDomains"/);
   assert.match(config, /X-Content-Type-Options", value: "nosniff"/);
   assert.match(config, /Referrer-Policy", value: "strict-origin-when-cross-origin"/);
+  assert.match(config, /Cross-Origin-Opener-Policy", value: "same-origin"/);
   assert.match(config, /X-Frame-Options", value: "DENY"/);
   assert.match(config, /Permissions-Policy", value: "camera=\(\), microphone=\(\), geolocation=\(\), payment=\(\), usb=\(\)"/);
   assert.doesNotMatch(config, /upgrade-insecure-requests|preload|\*\//);

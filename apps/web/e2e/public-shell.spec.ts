@@ -24,6 +24,7 @@ function expectSecurityHeaders(headers: Record<string, string>) {
   expect(headers["strict-transport-security"]).toBe("max-age=31536000; includeSubDomains");
   expect(headers["x-content-type-options"]).toBe("nosniff");
   expect(headers["referrer-policy"]).toBe("strict-origin-when-cross-origin");
+  expect(headers["cross-origin-opener-policy"]).toBe("same-origin");
   expect(headers["x-frame-options"]).toBe("DENY");
   expect(headers["permissions-policy"]).toBe("camera=(), microphone=(), geolocation=(), payment=(), usb=()");
   expect(headers["x-powered-by"]).toBeUndefined();
