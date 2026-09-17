@@ -11,6 +11,15 @@ import { administrators, articles, sessions } from "../src/db/schema.js";
 
 const databaseUrl = process.env.AUTH_TEST_DATABASE_URL;
 const publicOrigin = "http://127.0.0.1:3100";
+// This single lifecycle test intentionally exercises more login transitions
+// than the production anti-bruteforce allowance. Keep its seam bounded while
+// leaving production defaults untouched.
+const testRateLimits = {
+  login: { limit: 20, windowMs: 60_000 },
+  request: { limit: 300, windowMs: 60_000 },
+  administratorMutation: { limit: 120, windowMs: 60_000 },
+  storeCapacity: 4_096,
+};
 
 function cookieValue(setCookie: string) {
   const match = /^blog_x_session=([^;]+)/.exec(setCookie);
@@ -74,7 +83,7 @@ test("single administrator sessions are opaque, rotated, revocable, and do not l
   await assert.rejects(seedAdministrator(db, { username: `${username}-second`, password }), /second administrator/i);
   assert.equal((await db.select().from(administrators)).length, 1);
 
-  const app = await buildApp({ logger: { level: "info", stream }, publicOrigin });
+  const app = await buildApp({ logger: { level: "info", stream }, publicOrigin, rateLimits: testRateLimits });
   context.after(async () => { await app.close(); });
   const headers = { origin: publicOrigin, "content-type": "application/json" };
   const wrong = await app.inject({ method: "POST", url: "/auth/login", headers, payload: { username, password: "wrong-password" } });
@@ -110,7 +119,7 @@ test("single administrator sessions are opaque, rotated, revocable, and do not l
   assert.doesNotMatch(String(firstLogin.headers["set-cookie"]), /Domain=/i);
 
   const httpsOrigin = "https://blog.example.test";
-  const httpsApp = await buildApp({ publicOrigin: httpsOrigin });
+  const httpsApp = await buildApp({ publicOrigin: httpsOrigin, rateLimits: testRateLimits });
   context.after(async () => { await httpsApp.close(); });
   const secureLogin = await httpsApp.inject({ method: "POST", url: "/auth/login", headers: { origin: httpsOrigin, "content-type": "application/json" }, payload: { username, password } });
   assert.equal(secureLogin.statusCode, 200);
