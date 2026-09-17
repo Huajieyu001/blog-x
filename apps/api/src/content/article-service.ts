@@ -7,6 +7,7 @@ import {
   type AdminPostUpdateInput,
   type ArticleAction,
   type ArticleStatus,
+  type DeletedPost,
   type ScheduleArticleInput,
 } from "@blog-x/contracts";
 import type { AdminPostRepository, StoredAdminPost } from "./admin-repository.js";
@@ -22,6 +23,7 @@ export type ArticleServiceError =
 
 export type ArticleServiceResult = { ok: true; post: AdminPost } | { ok: false; detail: ArticleServiceError };
 export type DeleteServiceResult = { ok: true; deleted: { id: string; deleted: true } } | { ok: false; detail: ArticleServiceError };
+export type RestoreServiceResult = { ok: true; restored: { id: string; restored: true; status: "draft" } } | { ok: false; detail: { error: "not_found" } };
 
 function serialize(post: StoredAdminPost): AdminPost {
   // Durable scheduling attribution is execution authority for the local due
@@ -88,6 +90,21 @@ function nextVersion(current: StoredAdminPost, transactionNow: Date) {
   return new Date(Math.max(transactionNow.getTime(), current.updatedAt.getTime() + 1));
 }
 
+function deletedVersion(current: { updatedAt: Date }, transactionNow: Date) {
+  return new Date(Math.max(transactionNow.getTime(), current.updatedAt.getTime() + 1));
+}
+
+function serializeDeleted(post: { id: string; title: string; slug: string; status: string; deletedAt: Date; updatedAt: Date }): DeletedPost {
+  return {
+    id: post.id,
+    title: post.title,
+    slug: post.slug,
+    statusBeforeDeletion: articleStatusSchema.parse(post.status),
+    deletedAt: post.deletedAt.toISOString(),
+    version: post.updatedAt.toISOString(),
+  };
+}
+
 function confirmationMatches(id: string, current: StoredAdminPost, input: AdminPostUpdateInput) {
   return input.slugChangeConfirmation?.articleId === id
     && input.slugChangeConfirmation.currentSlug === current.slug
@@ -152,6 +169,29 @@ export function createArticleService(repository: AdminPostRepository) {
 
   async function listDrafts() {
     return Promise.all((await repository.listRetained()).map(serialize));
+  }
+
+  async function listDeleted() {
+    return (await repository.listDeleted()).map(serializeDeleted);
+  }
+
+  async function restoreDeleted(id: string, actorAdministratorId: string): Promise<RestoreServiceResult> {
+    const result = await repository.transactDeleted<RestoreServiceResult>(id, actorAdministratorId, async (current, update, audit, transactionNow) => {
+      await update({
+        status: "draft",
+        deletedAt: null,
+        scheduledAt: null,
+        scheduledByAdministratorId: null,
+        updatedAt: deletedVersion(current, transactionNow),
+      });
+      await audit("article.updated", {
+        previousStatus: "deleted",
+        status: "draft",
+        changedFields: ["status"],
+      });
+      return { ok: true, restored: { id, restored: true, status: "draft" } };
+    });
+    return result ?? { ok: false, detail: { error: "not_found" } };
   }
 
   async function updateDraft(id: string, input: AdminPostUpdateInput, actorAdministratorId: string): Promise<ArticleServiceResult> {
@@ -290,7 +330,7 @@ export function createArticleService(repository: AdminPostRepository) {
     return result ?? { ok: false, detail: { error: "not_found" } };
   }
 
-  return { createDraft, getDraft, listDrafts, updateDraft, transition, schedule, cancelSchedule };
+  return { createDraft, getDraft, listDrafts, listDeleted, restoreDeleted, updateDraft, transition, schedule, cancelSchedule };
 }
 
 export type ArticleService = ReturnType<typeof createArticleService>;

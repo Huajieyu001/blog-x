@@ -49,6 +49,23 @@ export const articleActionSchema = z.enum(["publish", "unpublish", "republish", 
 export const lifecycleActionInputSchema = z.object({}).strict().optional().default({});
 export const deletedArticleSchema = z.object({ id: z.uuid(), deleted: z.literal(true) }).strict();
 
+/** Content-free administrative projection for soft-deleted articles. */
+export const deletedPostSchema = z.object({
+  id: z.uuid(),
+  title: z.string(),
+  slug: z.string(),
+  statusBeforeDeletion: articleStatusSchema,
+  deletedAt: z.string().datetime({ offset: true }),
+  version: z.string().datetime({ offset: true }),
+}).strict();
+
+export const deletedPostListSchema = z.array(deletedPostSchema);
+export const restoredArticleSchema = z.object({
+  id: z.uuid(),
+  restored: z.literal(true),
+  status: z.literal("draft"),
+}).strict();
+
 export const scheduleArticleInputSchema = z.object({
   scheduledAt: scheduledAtSchema,
 }).strict();
@@ -103,6 +120,7 @@ export function suggestSlug(title: string) {
 export type AdminPostInput = z.infer<typeof adminPostInputSchema>;
 export type AdminPostUpdateInput = z.infer<typeof adminPostUpdateSchema>;
 export type AdminPost = z.infer<typeof adminPostSchema>;
+export type DeletedPost = z.infer<typeof deletedPostSchema>;
 export type ArticleAction = z.infer<typeof articleActionSchema>;
 export type ArticleStatus = z.infer<typeof articleStatusSchema>;
 export type LegacyMediaReview = z.infer<typeof legacyMediaReviewSchema>;

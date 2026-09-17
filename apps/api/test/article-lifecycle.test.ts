@@ -570,3 +570,116 @@ test("publish, edit, slug confirmation, unpublish, republish, and soft delete ar
     assert.doesNotMatch(serializedMetadata, new RegExp(slug));
   }
 });
+
+test("deleted article recovery is content-free, serialized, and rolls back when audit evidence fails", async (context) => {
+  if (!databaseUrl) {
+    context.skip("LIFECYCLE_TEST_DATABASE_URL must name a disposable migrated PostgreSQL database");
+    return;
+  }
+
+  const pool = new Pool({ connectionString: databaseUrl });
+  const db = drizzle({ client: pool, schema: { administrators, articles, sessions } });
+  const username = `recovery-test-${Date.now()}`;
+  const password = "recovery-test-password";
+  await pool.query("truncate table audit_events, sessions, articles, administrators cascade");
+  context.after(async () => {
+    await pool.query("drop trigger if exists lifecycle_restore_audit_failure on audit_events");
+    await pool.query("drop function if exists lifecycle_restore_audit_failure()");
+    await pool.query("truncate table audit_events, sessions, articles, administrators cascade");
+    await pool.end();
+  });
+  await seedAdministrator(db, { username, password });
+  const administrator = (await db.select({ id: administrators.id }).from(administrators).limit(1))[0]!;
+  const app = await buildApp({ publicOrigin });
+  context.after(async () => { await app.close(); });
+  const login = await app.inject({ method: "POST", url: "/auth/login", headers: { origin: publicOrigin, "content-type": "application/json" }, payload: { username, password } });
+  const cookie = sessionCookie(String(login.headers["set-cookie"]));
+  const headers = { origin: publicOrigin, cookie, "content-type": "application/json" };
+  const makeDraft = async (suffix: string) => {
+    const result = await app.inject({
+      method: "POST",
+      url: "/admin/posts",
+      headers,
+      payload: {
+        title: `Deleted ${suffix}`,
+        summary: `Private summary ${suffix}`,
+        coverUrl: "",
+        slug: `deleted-recovery-${suffix}-${Date.now()}`,
+        markdown: `# Private markdown ${suffix}`,
+        publishedAt: null,
+        seoDescription: `Private SEO ${suffix}`,
+      },
+    });
+    assert.equal(result.statusCode, 201, result.body);
+    return result.json() as { id: string; slug: string };
+  };
+  const first = await makeDraft("first");
+  const second = await makeDraft("second");
+  await db.update(articles).set({ deletedAt: new Date("2032-01-01T00:00:00.000Z") }).where(eq(articles.id, first.id));
+  await db.update(articles).set({ deletedAt: new Date("2032-01-02T00:00:00.000Z") }).where(eq(articles.id, second.id));
+
+  const anonymousList = await app.inject({ method: "GET", url: "/admin/deleted-posts" });
+  const anonymousRestore = await app.inject({ method: "POST", url: `/admin/posts/${second.id}/restore`, payload: {} });
+  assert.equal(anonymousList.statusCode, 401);
+  assert.equal(anonymousRestore.statusCode, 401);
+  const list = await app.inject({ method: "GET", url: "/admin/deleted-posts", headers: { cookie } });
+  assert.equal(list.statusCode, 200);
+  assert.equal(list.headers["cache-control"], "no-store");
+  const deletedItems = list.json() as Array<Record<string, unknown>>;
+  assert.deepEqual(deletedItems.map((item) => item.id), [second.id, first.id]);
+  for (const item of deletedItems) {
+    assert.deepEqual(Object.keys(item).sort(), ["deletedAt", "id", "slug", "statusBeforeDeletion", "title", "version"]);
+    assert.equal("markdown" in item || "summary" in item || "seoDescription" in item || "coverMedia" in item || "publishedAt" in item, false);
+  }
+
+  const reservedDuringDelete = await app.inject({
+    method: "POST",
+    url: "/admin/posts",
+    headers,
+    payload: { title: "Slug conflict", summary: "", coverUrl: "", slug: second.slug, markdown: "# conflict", publishedAt: null, seoDescription: "" },
+  });
+  assert.equal(reservedDuringDelete.statusCode, 409);
+  assert.equal((await app.inject({ method: "POST", url: `/admin/posts/${second.id}/restore`, headers: { ...headers, origin: "https://untrusted.invalid" }, payload: {} })).statusCode, 403);
+  assert.equal((await app.inject({ method: "POST", url: `/admin/posts/${second.id}/restore`, headers: { origin: publicOrigin, cookie }, payload: {} })).statusCode, 415);
+  assert.equal((await app.inject({ method: "POST", url: `/admin/posts/${second.id}/restore`, headers, payload: { unexpected: true } })).statusCode, 400);
+  assert.equal((await app.inject({ method: "GET", url: `/public/articles/${second.slug}` })).statusCode, 404);
+
+  const [firstRestore, concurrentRestore] = await Promise.all([
+    app.inject({ method: "POST", url: `/admin/posts/${second.id}/restore`, headers, payload: {} }),
+    app.inject({ method: "POST", url: `/admin/posts/${second.id}/restore`, headers, payload: {} }),
+  ]);
+  const successfulRestore = [firstRestore, concurrentRestore].find((result) => result.statusCode === 200);
+  const rejectedRestore = [firstRestore, concurrentRestore].find((result) => result.statusCode === 404);
+  assert.ok(successfulRestore);
+  assert.ok(rejectedRestore);
+  assert.deepEqual(successfulRestore.json(), { id: second.id, restored: true, status: "draft" });
+  assert.equal((await app.inject({ method: "POST", url: `/admin/posts/${second.id}/restore`, headers, payload: {} })).statusCode, 404);
+  assert.equal((await app.inject({ method: "POST", url: "/admin/posts/00000000-0000-4000-8000-000000000000/restore", headers, payload: {} })).statusCode, 404);
+  const restored = (await db.select().from(articles).where(eq(articles.id, second.id)))[0]!;
+  assert.equal(restored.status, "draft");
+  assert.equal(restored.deletedAt, null);
+  assert.equal(restored.scheduledAt, null);
+  assert.equal(restored.scheduledByAdministratorId, null);
+  assert.equal(restored.slug, second.slug);
+  assert.equal((await app.inject({ method: "GET", url: `/public/articles/${second.slug}` })).statusCode, 404);
+  assert.equal((await app.inject({ method: "GET", url: `/admin/posts/${second.id}`, headers: { cookie } })).json().status, "draft");
+  const reservedAfterRestore = await app.inject({
+    method: "POST",
+    url: "/admin/posts",
+    headers,
+    payload: { title: "Slug conflict after recovery", summary: "", coverUrl: "", slug: second.slug, markdown: "# conflict", publishedAt: null, seoDescription: "" },
+  });
+  assert.equal(reservedAfterRestore.statusCode, 409);
+  const restoreAudit = await pool.query<{ actor_administrator_id: string; metadata: Record<string, unknown> }>("select actor_administrator_id, metadata from audit_events where event = 'article.updated' and target_id = $1", [second.id]);
+  assert.deepEqual(restoreAudit.rows, [{ actor_administrator_id: administrator.id, metadata: { previousStatus: "deleted", status: "draft", changedFields: ["status"] } }]);
+
+  await pool.query("create function lifecycle_restore_audit_failure() returns trigger language plpgsql as $$ begin if new.event = 'article.updated' then raise exception 'forced restore audit failure'; end if; return new; end; $$");
+  await pool.query("create trigger lifecycle_restore_audit_failure before insert on audit_events for each row execute function lifecycle_restore_audit_failure()");
+  const beforeFailure = (await db.select().from(articles).where(eq(articles.id, first.id)))[0]!;
+  const failedRestore = await app.inject({ method: "POST", url: `/admin/posts/${first.id}/restore`, headers, payload: {} });
+  assert.equal(failedRestore.statusCode, 500);
+  const afterFailure = (await db.select().from(articles).where(eq(articles.id, first.id)))[0]!;
+  assert.equal(afterFailure.status, beforeFailure.status);
+  assert.equal(afterFailure.deletedAt?.toISOString(), beforeFailure.deletedAt?.toISOString());
+  assert.equal(afterFailure.updatedAt.toISOString(), beforeFailure.updatedAt.toISOString());
+});

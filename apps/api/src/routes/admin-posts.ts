@@ -7,12 +7,14 @@ import {
   adminPostUpdateSchema,
   articleActionSchema,
   deletedArticleSchema,
+  deletedPostListSchema,
   fieldErrorResponseSchema,
   invalidTransitionResponseSchema,
   lifecycleActionInputSchema,
   publishedSlugConfirmationRequiredSchema,
   scheduleArticleInputSchema,
   scheduleConflictResponseSchema,
+  restoredArticleSchema,
   slugConflictResponseSchema,
   slugSuggestionSchema,
   suggestSlug,
@@ -138,6 +140,11 @@ export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async 
     return adminPostListSchema.parse(await options.articleService.listDrafts());
   });
 
+  app.get("/admin/deleted-posts", async (request, reply) => {
+    if (!await requireAdministrator(request, reply, options.mutationGuard)) return;
+    return deletedPostListSchema.parse(await options.articleService.listDeleted());
+  });
+
   app.get<{ Params: { id: string } }>("/admin/posts/:id", async (request, reply) => {
     if (!await requireAdministrator(request, reply, options.mutationGuard)) return;
     const id = adminPostIdSchema.safeParse(request.params.id);
@@ -210,6 +217,19 @@ export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async 
     const result = await options.articleService.cancelSchedule(id.data, administratorId);
     if (result.ok && !request.headers.accept?.includes("application/json")) return reply.redirect(`/admin/posts/${id.data}`);
     return sendServiceResult(result, reply);
+  });
+
+  app.post<{ Params: { id: string } }>("/admin/posts/:id/restore", { bodyLimit: 64 * 1024 }, async (request, reply) => {
+    const administratorId = await requireAdministratorMutation(request, reply, options.mutationGuard);
+    if (!administratorId) return;
+    if (!requireContentType(request, reply, "application/json")) return;
+    const id = adminPostIdSchema.safeParse(request.params.id);
+    if (!id.success) return reply.code(404).send({ error: "not_found" });
+    const input = lifecycleActionInputSchema.safeParse(request.body);
+    if (!input.success) return reply.code(400).send(fieldErrors(input.error));
+    const result = await options.articleService.restoreDeleted(id.data, administratorId);
+    if (!result.ok) return reply.code(404).send({ error: "not_found" });
+    return restoredArticleSchema.parse(result.restored);
   });
 
   for (const action of articleActionSchema.options) {

@@ -25,6 +25,17 @@ const selectedPost = {
   legacyMediaReview: schema.articles.legacyMediaReview,
 };
 
+// Never widen this projection: deleted-list consumers must not receive article
+// content or publication metadata merely to offer a recovery action.
+const selectedDeletedPost = {
+  id: schema.articles.id,
+  title: schema.articles.title,
+  slug: schema.articles.slug,
+  status: schema.articles.status,
+  deletedAt: schema.articles.deletedAt,
+  updatedAt: schema.articles.updatedAt,
+};
+
 export type StoredAdminPost = {
   id: string;
   title: string;
@@ -44,6 +55,15 @@ export type StoredAdminPost = {
   legacyMediaReview: "pending" | "clear" | "review_required";
 };
 
+export type StoredDeletedPost = {
+  id: string;
+  title: string;
+  slug: string;
+  status: string;
+  deletedAt: Date;
+  updatedAt: Date;
+};
+
 export type RetainedArticleChanges = Partial<{
   title: string;
   summary: string;
@@ -55,7 +75,7 @@ export type RetainedArticleChanges = Partial<{
   scheduledByAdministratorId: string | null;
   seoDescription: string;
   status: string;
-  deletedAt: Date;
+  deletedAt: Date | null;
   updatedAt: Date;
   categoryId: string | null;
   coverMediaId: string | null;
@@ -73,6 +93,10 @@ type RetainedArticleAudit = (
   event: Extract<AuditEventName, `article.${string}`>,
   metadata?: AuditMetadata,
 ) => Promise<void>;
+
+type DeletedArticleUpdate = (changes: Pick<RetainedArticleChanges, "status" | "deletedAt" | "scheduledAt" | "scheduledByAdministratorId" | "updatedAt">) => Promise<void>;
+
+type DeletedArticleAudit = RetainedArticleAudit;
 
 export type DueArticleCandidate = {
   current: StoredAdminPost;
@@ -133,6 +157,16 @@ export function createAdminPostRepository(db: Database) {
     const posts = await db.select(selectedPost).from(schema.articles).where(isNull(schema.articles.deletedAt)).orderBy(desc(schema.articles.updatedAt)); return Promise.all(posts.map((post) => hydrate(db, post as typeof schema.articles.$inferSelect)));
   }
 
+  async function listDeleted(): Promise<StoredDeletedPost[]> {
+    const posts = await db.select(selectedDeletedPost).from(schema.articles)
+      .where(isNotNull(schema.articles.deletedAt))
+      .orderBy(desc(schema.articles.deletedAt), desc(schema.articles.id));
+    return posts.map((post): StoredDeletedPost => {
+      if (!post.deletedAt) throw new Error("deleted article projection is missing deletion time");
+      return { ...post, deletedAt: post.deletedAt };
+    });
+  }
+
   async function transactRetained<T>(
     id: string,
     actorAdministratorId: string,
@@ -168,6 +202,34 @@ export function createAdminPostRepository(db: Database) {
         ...(metadata ? { metadata } : {}),
       });
       return operation(currentWithTags, update, audit, transactionNow);
+    });
+  }
+
+  async function transactDeleted<T>(
+    id: string,
+    actorAdministratorId: string,
+    operation: (current: StoredDeletedPost, update: DeletedArticleUpdate, audit: DeletedArticleAudit, transactionNow: Date) => Promise<T>,
+  ): Promise<T | null> {
+    return db.transaction(async (tx) => {
+      const current = (await tx.select(selectedDeletedPost).from(schema.articles)
+        .where(and(eq(schema.articles.id, id), isNotNull(schema.articles.deletedAt))).limit(1).for("update"))[0];
+      if (!current?.deletedAt) return null;
+      const deletedCurrent: StoredDeletedPost = { ...current, deletedAt: current.deletedAt };
+      const transactionNowRaw = (await tx.execute<{ transactionNow: Date | string }>(sql`select CURRENT_TIMESTAMP as "transactionNow"`)).rows[0]?.transactionNow;
+      const transactionNow = transactionNowRaw instanceof Date ? transactionNowRaw : new Date(String(transactionNowRaw));
+      if (Number.isNaN(transactionNow.getTime())) throw new Error("transaction timestamp is unavailable");
+      const update: DeletedArticleUpdate = async (changes) => {
+        const updated = (await tx.update(schema.articles).set(changes).where(and(eq(schema.articles.id, id), isNotNull(schema.articles.deletedAt))).returning({ id: schema.articles.id }))[0];
+        if (!updated) throw new Error("deleted article update did not return a row");
+      };
+      const audit: DeletedArticleAudit = (event, metadata) => appendAuditEvent(tx, {
+        actorAdministratorId,
+        event,
+        targetType: "article",
+        targetId: id,
+        ...(metadata ? { metadata } : {}),
+      });
+      return operation(deletedCurrent, update, audit, transactionNow);
     });
   }
 
@@ -222,7 +284,7 @@ export function createAdminPostRepository(db: Database) {
     });
   }
 
-  return { createDraft, findRetainedById, listRetained, transactRetained, transactDue };
+  return { createDraft, findRetainedById, listRetained, listDeleted, transactRetained, transactDeleted, transactDue };
 }
 
 export type AdminPostRepository = ReturnType<typeof createAdminPostRepository>;
