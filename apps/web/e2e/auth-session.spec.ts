@@ -95,6 +95,7 @@ test("password change requires a fresh sign-in and restores the generated fixtur
   await expect(page).toHaveURL(`${webOrigin}/admin`);
 
   try {
+    await page.getByRole("button", { name: "打开后台导航" }).click();
     await page.getByRole("link", { name: "账户安全" }).click();
     await expect(page).toHaveURL(`${webOrigin}/admin/security`);
     await expect(page.getByRole("heading", { name: "账户安全" })).toBeVisible();
