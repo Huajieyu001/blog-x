@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getAdminAboutResult, getAdminAuditEventsResult, getAdminPostResult } from "./api.js";
+import { getAdminAboutResult, getAdminAuditEventsResult, getAdminDeletedPostsResult, getAdminPostResult } from "./api.js";
 
 function installFetch(fetcher: typeof fetch) {
   const original = globalThis.fetch;
@@ -14,6 +14,11 @@ test("About reads distinguish a missing page from an upstream failure", async (c
 
   assert.deepEqual(await getAdminAboutResult("cookie"), { kind: "not_found" });
   assert.deepEqual(await getAdminAboutResult("cookie"), { kind: "upstream_error" });
+});
+
+test("deleted rows fail closed when content fields are present", async (context) => {
+  context.after(installFetch(async () => new Response(JSON.stringify([{ id: "00000000-0000-4000-8000-000000000001", title: "deleted", slug: "deleted", statusBeforeDeletion: "draft", deletedAt: "2026-01-01T00:00:00.000Z", version: "2026-01-01T00:00:00.000Z", markdown: "secret" }]))));
+  assert.deepEqual(await getAdminDeletedPostsResult("cookie"), { kind: "upstream_error" });
 });
 
 test("audit reads distinguish a genuine empty log from invalid upstream data", async (context) => {

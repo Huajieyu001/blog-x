@@ -27,6 +27,8 @@ import {
   type AuditEventList,
   adminAnalyticsResponseSchema,
   type AdminAnalytics,
+  deletedPostListSchema,
+  type DeletedPost,
 } from "@blog-x/contracts";
 
 const internalApiOrigin = process.env.INTERNAL_API_ORIGIN ?? "http://127.0.0.1:3001";
@@ -120,6 +122,15 @@ export async function getAdminPostsResult(cookieHeader: string): Promise<AdminRe
   } catch {
     return { kind: "upstream_error" };
   }
+}
+
+export async function getAdminDeletedPostsResult(cookieHeader: string): Promise<AdminResult<DeletedPost[]>> {
+  try {
+    const response = await fetch(`${internalApiOrigin}/admin/deleted-posts`, { cache: "no-store", headers: cookieHeader ? { cookie: cookieHeader } : undefined });
+    if (!response.ok) return { kind: "upstream_error" };
+    const parsed = deletedPostListSchema.safeParse(await response.json());
+    return parsed.success ? { kind: "ok", data: parsed.data } : { kind: "upstream_error" };
+  } catch { return { kind: "upstream_error" }; }
 }
 
 export async function getAdminAnalytics(
