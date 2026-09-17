@@ -329,16 +329,20 @@ test("generated main-browser fixture schedules exact specs and cleans its paths 
   const executed = [];
   const usernames = [];
   const webResets = [];
+  const fixtureLifecycle = [];
   const succeeded = await runGeneratedMainBrowserFixture(context, {
     seedScenario: async (scenarioContext, path, paths) => {
+      fixtureLifecycle.push(`seed:${path}`);
       roots.push(paths.root);
       usernames.push(scenarioContext.username);
       return path.endsWith("auth-session.spec.ts")
         ? { E2E_EXPIRED_SESSION_TOKEN: "expired-token", E2E_REVOKED_SESSION_TOKEN: "revoked-token" }
         : {};
     },
-    resetWeb: async (_scenarioContext, path) => { webResets.push(path); },
+    quiesce: async (_scenarioContext, path) => { fixtureLifecycle.push(`quiesce:${path}`); },
+    resetWeb: async (_scenarioContext, path) => { fixtureLifecycle.push(`restore:${path}`); webResets.push(path); },
     runSpec: async (_context, path, environment) => {
+      fixtureLifecycle.push(`run:${path}`);
       executed.push(path);
       assert.equal(environment.E2E_WEB_ORIGIN, context.webOrigin);
       return { tests: 1, passed: 1, failed: 0, cancelled: 0, skipped: 0, todo: 0 };
@@ -349,6 +353,7 @@ test("generated main-browser fixture schedules exact specs and cleans its paths 
   assert.equal(new Set(usernames).size, migratedMainBrowserSpecs.length);
   assert.equal(usernames.every((username) => username.startsWith(`${context.username}-`)), true);
   assert.deepEqual(webResets, migratedMainBrowserSpecs);
+  assert.deepEqual(fixtureLifecycle, migratedMainBrowserSpecs.flatMap((path) => [`quiesce:${path}`, `seed:${path}`, `restore:${path}`, `run:${path}`]));
   assert.equal(new Set(roots).size, 1);
   await assert.rejects(stat(roots[0]), /ENOENT/);
   assert.deepEqual(succeeded.counts, { tests: 6, passed: 6, failed: 0, cancelled: 0, skipped: 0, todo: 0 });
@@ -357,6 +362,7 @@ test("generated main-browser fixture schedules exact specs and cleans its paths 
   let failureRoot;
   let cleanupCalls = 0;
   await assert.rejects(runGeneratedMainBrowserFixture(context, {
+    quiesce: async () => undefined,
     seedScenario: async (_context, _path, paths) => { failureRoot = paths.root; return {}; },
     resetWeb: async () => undefined,
     runSpec: async () => { throw new Error("injected browser failure"); },
@@ -367,6 +373,13 @@ test("generated main-browser fixture schedules exact specs and cleans its paths 
   await assert.rejects(stat(failureRoot), /ENOENT/);
 
   const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
+  const browserFixture = runner.slice(runner.indexOf("async function quiesceGeneratedWebScenario"), runner.indexOf("export async function runGeneratedMainBrowserFixture"));
+  assert.match(browserFixture, /quiesce generated Web request authority[\s\S]*"stop", "web"[\s\S]*quiesce generated API request authority[\s\S]*"stop", "api"/);
+  assert.match(browserFixture, /await quiesce\(scenarioContext, file\);[\s\S]*await seedScenario\(scenarioContext, file, paths\);[\s\S]*await resetWeb\(scenarioContext, file\);/);
+  assert.match(browserFixture, /recreate generated API rate authority[\s\S]*"up", "-d", "--force-recreate", "--wait", "api"[\s\S]*recreate generated Web cache authority[\s\S]*"up", "-d", "--force-recreate", "--wait", "web"/);
+  const browserSeeding = runner.slice(runner.indexOf("async function seed(context"), runner.indexOf("async function runMainBrowserSpec"));
+  assert.match(browserSeeding, /reset generated main-browser data for \$\{file\}[\s\S]*quiescent: true/);
+  assert.match(browserSeeding, /seed generated administrator without request authority[\s\S]*"run", "--rm", "-T"/);
   const lifecycle = runner.slice(runner.indexOf("async function runSingle"), runner.indexOf("async function parallelCheck"));
   assert.match(lifecycle, /finally[\s\S]*convergeGeneratedProjectCleanup/);
   assert.match(runner, /async function convergeGeneratedProjectCleanup[\s\S]*docker-compose[\s\S]*down[\s\S]*confirmGeneratedProjectAbsent/);

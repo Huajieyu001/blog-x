@@ -1080,22 +1080,34 @@ async function assertCleanLogs(context) {
   if (/blog_x_session=[^;\s\[]/i.test(raw)) throw new Error("captured logs contain a session cookie value");
 }
 
-async function seed(context) {
-  await compose(context, "seed generated administrator", "exec", "-T",
+async function seed(context, { quiescent = false } = {}) {
+  const authority = [
     "-e", `DATABASE_URL=${context.databaseUrl}`,
     "-e", `ADMIN_USERNAME=${context.username}`,
     "-e", `ADMIN_PASSWORD=${context.password}`,
-    "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:seed");
+  ];
+  if (!quiescent) {
+    await compose(context, "seed generated administrator", "exec", "-T", ...authority,
+      "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:seed");
+    return;
+  }
+  const currentAuthority = context.phase6Data || context.phase11Data || context.phase12Data || context.canonicalIntegration;
+  await compose(context, "seed generated administrator without request authority", "run", "--rm", "-T",
+    ...(currentAuthority ? [
+      "--volume", `${resolve(root, "apps/api")}:/workspace/apps/api:ro`,
+      "--volume", `${resolve(root, "packages/contracts")}:/workspace/packages/contracts:ro`,
+    ] : []),
+    ...authority, "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:seed");
 }
 
-async function resetAcceptanceData(context, label) {
+async function resetAcceptanceData(context, label, { quiescent = false } = {}) {
   await compose(context, label, "exec", "-T", "postgres", "psql", "-U", "blog_x", "-d", context.database,
     "-c", "truncate table sessions, article_tags, articles, categories, tags, site_pages, media, administrators cascade");
-  await seed(context);
+  await seed(context, { quiescent });
 }
 
 async function seedMainBrowserScenario(context, file) {
-  await resetAcceptanceData(context, `reset generated main-browser data for ${file}`);
+  await resetAcceptanceData(context, `reset generated main-browser data for ${file}`, { quiescent: true });
   if (file === "apps/web/e2e/about-archive.spec.ts") {
     await compose(context, "seed generated About draft browser facts", ...psqlArgs(context,
       "insert into site_pages (key,title,markdown,status) values ('about','关于页草稿','','draft');"));
@@ -1152,9 +1164,13 @@ async function runMainBrowserSpec(context, file, environment) {
   return parsePlaywrightResult(result.combined);
 }
 
+async function quiesceGeneratedWebScenario(context, file) {
+  await compose(context, `quiesce generated Web request authority for ${file}`, "stop", "web");
+  await compose(context, `quiesce generated API request authority for ${file}`, "stop", "api");
+}
+
 async function resetGeneratedWebScenario(context, file) {
-  await compose(context, `restart generated API rate authority for ${file}`, "restart", "api");
-  await compose(context, `wait for generated API rate authority for ${file}`, "up", "-d", "--wait", "api");
+  await compose(context, `recreate generated API rate authority for ${file}`, "up", "-d", "--force-recreate", "--wait", "api");
   await compose(context, `recreate generated Web cache authority for ${file}`, "up", "-d", "--force-recreate", "--wait", "web");
   await waitForHttp(context.webOrigin);
 }
@@ -1162,13 +1178,14 @@ async function resetGeneratedWebScenario(context, file) {
 async function runGeneratedMainBrowserFixtureSelection(context, runtime, selectedPaths) {
   validateMainBrowserContext(context);
   if (!runtime || typeof runtime !== "object" || Array.isArray(runtime)) throw new Error("main-browser fixture runtime must be an object");
-  const allowedRuntimeKeys = new Set(["seedScenario", "resetWeb", "runSpec", "cleanupRoot"]);
+  const allowedRuntimeKeys = new Set(["quiesce", "seedScenario", "resetWeb", "runSpec", "cleanupRoot"]);
   for (const name of Object.keys(runtime)) if (!allowedRuntimeKeys.has(name)) throw new Error(`main-browser fixture runtime field is invalid: ${name}`);
+  const quiesce = runtime.quiesce ?? quiesceGeneratedWebScenario;
   const seedScenario = runtime.seedScenario ?? seedMainBrowserScenario;
   const resetWeb = runtime.resetWeb ?? resetGeneratedWebScenario;
   const runSpec = runtime.runSpec ?? runMainBrowserSpec;
   const cleanupRoot = runtime.cleanupRoot ?? cleanupGeneratedMainBrowserRoot;
-  if (![seedScenario, resetWeb, runSpec, cleanupRoot].every((value) => typeof value === "function")) throw new Error("main-browser fixture runtime callbacks are invalid");
+  if (![quiesce, seedScenario, resetWeb, runSpec, cleanupRoot].every((value) => typeof value === "function")) throw new Error("main-browser fixture runtime callbacks are invalid");
 
   const fixtureRoot = await mkdtemp(resolve(tmpdir(), "blog-x-main-browser-"));
   const paths = Object.freeze({
@@ -1182,6 +1199,7 @@ async function runGeneratedMainBrowserFixtureSelection(context, runtime, selecte
     await Promise.all([mkdir(paths.backup, { mode: 0o700 }), mkdir(paths.media, { mode: 0o700 })]);
     for (const [index, file] of selectedPaths.entries()) {
       const scenarioContext = { ...context, username: `${context.username}-${index + 1}` };
+      await quiesce(scenarioContext, file);
       const scenarioFacts = await seedScenario(scenarioContext, file, paths);
       await resetWeb(scenarioContext, file);
       const environment = createMainBrowserEnvironment(scenarioContext, scenarioFacts);
