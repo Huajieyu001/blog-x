@@ -48,7 +48,7 @@ export default function PublicHeader({ siteName }: { siteName: string }) {
   return (
     <header className={styles.publicHeader} data-testid="public-header">
       <div className={styles.headerBar}>
-        <Link className={styles.brand} href="/">{siteName}</Link>
+        <Link className={styles.brand} href="/" prefetch={false}>{siteName}</Link>
         <div className={styles.headerControls}>
           <ThemeControl />
           <button
@@ -73,13 +73,13 @@ export default function PublicHeader({ siteName }: { siteName: string }) {
         aria-label="站点导航"
       >
         {links.map((link) => (
-          <Link key={link.href} href={link.href} aria-current={link.active(pathname) ? "page" : undefined} tabIndex={compact && !open ? -1 : undefined}>
+          <Link key={link.href} href={link.href} prefetch={false} aria-current={link.active(pathname) ? "page" : undefined} tabIndex={compact && !open ? -1 : undefined}>
             {link.label}
           </Link>
         ))}
         <a href="/rss.xml" type="application/rss+xml" tabIndex={compact && !open ? -1 : undefined}>订阅</a>
         <SearchForm tabIndex={compact && !open ? -1 : undefined} />
-        <Link className={styles.managementLink} href="/admin" tabIndex={compact && !open ? -1 : undefined}>管理</Link>
+        <Link className={styles.managementLink} href="/admin" prefetch={false} tabIndex={compact && !open ? -1 : undefined}>管理</Link>
       </nav>
     </header>
   );

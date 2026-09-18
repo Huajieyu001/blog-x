@@ -50,6 +50,18 @@ test("fixed public ingress applies security headers without blocking theme, API,
   expect(cspErrors).toEqual([]);
 });
 
+test("public shell does not fan out navigation prefetches", async ({ page }) => {
+  const prefetches: string[] = [];
+  page.on("request", (request) => {
+    if (request.headers()["next-router-prefetch"] === "1") prefetches.push(new URL(request.url()).pathname);
+  });
+
+  const response = await page.goto(`${webOrigin}/`, { waitUntil: "networkidle" });
+  expect(response?.status()).toBe(200);
+  await expect(page.getByTestId("public-header")).toBeVisible();
+  expect(prefetches).toEqual([]);
+});
+
 test("shared public shell preserves ordered navigation, theme preference, and responsive keyboard access", async ({ page, browser }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${webOrigin}/`);

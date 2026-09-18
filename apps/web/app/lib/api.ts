@@ -34,6 +34,7 @@ import {
   adminSiteSettingsSchema,
   type AdminSiteSettings,
 } from "@blog-x/contracts";
+import { cache } from "react";
 
 const internalApiOrigin = process.env.INTERNAL_API_ORIGIN ?? "http://127.0.0.1:3001";
 
@@ -81,10 +82,17 @@ export async function getAdminAboutResult(cookieHeader: string): Promise<AdminOp
   } catch { return { kind: "upstream_error" }; }
 }
 
-export function getPublicAbout() { return getPublic("/public/about", publicAboutSchema, true); }
+const cachedPublicAbout = cache(() => getPublic("/public/about", publicAboutSchema, true));
+const cachedPublicSiteSettings = cache(() => getPublic("/public/site-settings", publicSiteSettingsSchema));
+const cachedPublicPosts = cache((page: number) => getPublic(`/public/articles?page=${encodeURIComponent(String(page))}`, publicPostListResponseSchema));
+const cachedPublicPost = cache((slug: string) => getPublic(`/public/articles/${encodeURIComponent(slug)}`, publicPostDetailSchema, true));
+const cachedPublicTaxonomyPosts = cache((kind: "categories" | "tags", slug: string, page: number) => getPublic(`/public/${kind}/${encodeURIComponent(slug)}/articles?page=${encodeURIComponent(String(page))}`, publicTaxonomyPostListSchema, true));
+
+/** React.cache keeps repeated public reads within one RSC render request to one API call. */
+export function getPublicAbout() { return cachedPublicAbout(); }
 
 export function getPublicSiteSettings(): Promise<PublicResult<PublicSiteSettings>> {
-  return getPublic("/public/site-settings", publicSiteSettingsSchema);
+  return cachedPublicSiteSettings();
 }
 
 export async function getAdminSiteSettingsResult(cookieHeader: string): Promise<AdminOptionalResult<AdminSiteSettings>> {
@@ -204,11 +212,11 @@ export async function getAdminTaxonomyResult(
 }
 
 export function getPublicPosts(page: number): Promise<PublicResult<PublicPostListResponse>> {
-  return getPublic(`/public/articles?page=${encodeURIComponent(String(page))}`, publicPostListResponseSchema);
+  return cachedPublicPosts(page);
 }
 
 export function getPublicPost(slug: string): Promise<PublicResult<PublicPostDetail>> {
-  return getPublic(`/public/articles/${encodeURIComponent(slug)}`, publicPostDetailSchema, true);
+  return cachedPublicPost(slug);
 }
 
 export function getPublicDistribution(): Promise<PublicResult<PublicDistribution>> {
@@ -220,7 +228,7 @@ export function getPublicTaxonomy(kind: "categories" | "tags") {
 }
 
 export function getPublicTaxonomyPosts(kind: "categories" | "tags", slug: string, page: number) {
-  return getPublic(`/public/${kind}/${encodeURIComponent(slug)}/articles?page=${encodeURIComponent(String(page))}`, publicTaxonomyPostListSchema, true);
+  return cachedPublicTaxonomyPosts(kind, slug, page);
 }
 
 export function getPublicSearch(query: string, page: number): Promise<PublicResult<PublicSearchResponse>> {
