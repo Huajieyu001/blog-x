@@ -221,6 +221,24 @@ function parseComposePs(stdout) {
 function cleanOutput(result) { return String(result?.stdout ?? "").trim(); }
 function normalizeDump(value) { return value.split("\n").filter((line) => line && !/^--|^SET |^SELECT pg_catalog\.set_config|^\\restrict |^\\unrestrict /.test(line)).join("\n").trim(); }
 
+/**
+ * Next's App Router can emit request-scoped Flight scripts and CSP nonces while
+ * rendering the same server HTML. The delivery receipt therefore binds the
+ * visible server-rendered HTML surface, rather than those transport details.
+ */
+export function semanticHtmlDigest(bytes) {
+  if (typeof bytes !== "string") fail("HTML route body is invalid");
+  const body = /<body\b[^>]*>([\s\S]*)<\/body\s*>/i.exec(bytes)?.[1] ?? bytes;
+  const stable = body
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, "")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, "")
+    .replace(/<link\b[^>]*>/gi, "")
+    .replace(/\s(?:nonce|data-nextjs-[\w-]*)=(?:\"[^\"]*\"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(/>\s+</g, "><")
+    .trim();
+  return digest(stable);
+}
+
 const ENV_OVERRIDE = /^(?:DOCKER_|COMPOSE_|BUILDX_|BUILDKIT_|COLIMA_)/;
 export function buildMinimalChildEnvironment(ambient = process.env, additions = {}) {
   const forbidden = Object.keys(ambient).find((key) => ENV_OVERRIDE.test(key));
@@ -467,6 +485,7 @@ function routeSource(fetch) {
       const contentType = response.headers?.get?.("content-type");
       const mediaType = typeof contentType === "string" ? contentType.split(";", 1)[0].trim().toLowerCase() : "";
       if (mediaType === "application/json" || mediaType.endsWith("+json")) { try { fact.body = JSON.parse(bytes); } catch { fail(`route ${path} returned malformed JSON`); } }
+      else if (mediaType === "text/html" || mediaType.endsWith("+html")) fact.bodySha256 = semanticHtmlDigest(bytes);
       output[path] = fact;
     }
     assertRouteObservations(output);

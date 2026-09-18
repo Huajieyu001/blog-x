@@ -45,6 +45,7 @@ import {
   deliveryAuthorityForRevision,
   parseRevisionAddressedEvidencePath,
   safeRecoveryForRefreshFailure,
+  semanticHtmlDigest,
 } from "./refresh-local-runtime-core.mjs";
 import {
   assertCanonicalPortOwner,
@@ -1756,6 +1757,30 @@ test("route collection records stale HTML and JSON API observations by declared 
     return fakeRouteResponse(url, malformed[path]);
   }).createFactSources();
   await assert.rejects(sources.routes(), /malformed JSON|route|health/i);
+});
+
+test("route collection hashes the visible server HTML while rejecting semantic page drift", async () => {
+  const document = (nonce, flight, heading) => `<!doctype html><html><head><style>.build-${nonce}{color:red}</style><script nonce="${nonce}">self.__next_f.push(${JSON.stringify(flight)})</script></head><body data-nextjs-router="${nonce}"><main><h1>${heading}</h1><p>稳定的公开内容</p></main><script nonce="${nonce}">window.__request=${JSON.stringify(flight)}</script></body></html>`;
+  const first = document("first-nonce", "flight-a", "Blog X");
+  const transportVariant = document("second-nonce", "flight-b", "Blog X");
+  const changedPage = document("third-nonce", "flight-c", "内容被替换");
+
+  assert.equal(semanticHtmlDigest(first), semanticHtmlDigest(transportVariant));
+  assert.notEqual(semanticHtmlDigest(first), semanticHtmlDigest(changedPage));
+
+  const collect = (home) => testRuntime(memoryArtifactFs(), undefined, async () => ({ stdout: "" }), async (url) => {
+    const path = url.slice("http://127.0.0.1:3100".length);
+    const response = structuredClone(finalRouteResponses[path]);
+    if (path === "/") response.body = home;
+    return fakeRouteResponse(url, response);
+  }).createFactSources().routes();
+
+  const baseline = await collect(first);
+  const equivalent = await collect(transportVariant);
+  const changed = await collect(changedPage);
+  assert.equal(baseline["/"].bodySha256, equivalent["/"].bodySha256);
+  assert.notEqual(baseline["/"].bodySha256, changed["/"].bodySha256);
+  assert.deepEqual(baseline["/api/health"], equivalent["/api/health"]);
 });
 
 test("route collection fetches plural archives exactly once and never requests singular authority", async () => {

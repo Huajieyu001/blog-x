@@ -34,6 +34,7 @@ const entries = [
   { path: "apps/api/test/public-discovery.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
   { path: "apps/api/test/public-distribution.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
   { path: "apps/api/test/public-list.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
+  { path: "apps/api/test/site-settings.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
   { path: "apps/api/test/public-visibility.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
   { path: "apps/api/test/taxonomy.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
 

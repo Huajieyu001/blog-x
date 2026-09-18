@@ -63,7 +63,7 @@ test("local delivery acceptance binds the exact complete integration inventory o
   assert.match(result.generatedIntegration.resultSha256, /^[a-f0-9]{64}$/);
   assert.match(result.phase7Browser.outputSha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(result.inventory, PACKAGE_TEST_INVENTORY.filter((entry) => entry.scope === "integration").map((entry) => entry.path).sort());
-  assert.equal(new Set(result.inventory).size, 30);
+  assert.equal(new Set(result.inventory).size, 33);
   assert.equal(Object.keys(result).sort().join(","), "counts,format,generatedIntegration,inventory,manifestSha256,phase7Browser,releaseState,resultSha256,version");
   assert.deepEqual(parseLocalDeliveryAcceptanceRecord(result), result);
   assert.equal(assertGeneratedIntegrationCleanupAcknowledgement(generatedOutput, { requireFour: true }).namespaces.length, 4);
