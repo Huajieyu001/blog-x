@@ -98,6 +98,16 @@ export const articles = pgTable("articles", {
   check("articles_schedule_draft_check", sql`${table.scheduledAt} is null or (${table.status} = 'draft' and ${table.deletedAt} is null)`),
 ]);
 
+/** Durable aliases for formerly public article URLs.  The target is identity, never another slug. */
+export const articleSlugRedirects = pgTable("article_slug_redirects", {
+  fromSlug: text("from_slug").primaryKey(),
+  articleId: uuid("article_id").notNull().references(() => articles.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("article_slug_redirects_article_index").on(table.articleId),
+  check("article_slug_redirects_from_slug_check", sql`length(btrim(${table.fromSlug})) > 0`),
+]);
+
 export const articleDailyViews = pgTable("article_daily_views", {
   articleId: uuid("article_id").notNull().references(() => articles.id, { onDelete: "restrict" }),
   day: date("day").notNull(),

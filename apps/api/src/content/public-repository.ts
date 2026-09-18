@@ -7,6 +7,7 @@ import {
   publicPostPageSize,
   publicRelatedPostLimit,
   publicRelatedPostsResponseSchema,
+  publicArticleRedirectResponseSchema,
   publicSearchPageSize,
   publicSearchResponseSchema,
 } from "@blog-x/contracts";
@@ -321,7 +322,14 @@ export function createPublicRepository(db: Database) {
       .where(and(publicPredicate, eq(schema.articles.slug, slug)))
       .limit(1);
     const article = rows[0];
-    if (!article) return null;
+    if (!article) {
+      const redirect = (await db.select({ slug: schema.articles.slug })
+        .from(schema.articleSlugRedirects)
+        .innerJoin(schema.articles, eq(schema.articleSlugRedirects.articleId, schema.articles.id))
+        .where(and(eq(schema.articleSlugRedirects.fromSlug, slug), publicPredicate))
+        .limit(1))[0];
+      return redirect ? { kind: "redirect" as const, location: publicArticleRedirectResponseSchema.parse({ location: `/public/articles/${redirect.slug}` }).location } : null;
+    }
     if (!article.publishedAt || article.status !== "published") throw new Error("public predicate returned a non-public article");
     const tags = await db.select({ name: schema.tags.name, slug: schema.tags.slug })
       .from(schema.articleTags)
@@ -334,7 +342,7 @@ export function createPublicRepository(db: Database) {
       height: schema.media.height,
       mimeType: schema.media.derivativeMimeType,
     }).from(schema.media).where(eq(schema.media.id, article.coverMediaId)).limit(1))[0] : null;
-    return {
+    return { kind: "article" as const, article: {
       title: article.title,
       summary: article.summary,
       seoDescription: article.seoDescription,
@@ -347,7 +355,7 @@ export function createPublicRepository(db: Database) {
       tags,
       publishedAt: article.publishedAt.toISOString(),
       ...(cover ? { cover: { ...cover, url: `/media/${cover.id}`, alt: article.coverAlt, decorative: article.coverDecorative } } : {}),
-    };
+    } };
   }
 
   async function distribution() {

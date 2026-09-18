@@ -57,6 +57,11 @@ export const publicPostNotFoundResponseSchema = z.object({
   error: z.literal("not_found"),
 }).strict();
 
+/** Only an API-owned, root-relative detail route is safe to forward to the web app. */
+export const publicArticleRedirectResponseSchema = z.object({
+  location: z.string().regex(/^\/public\/articles\/[A-Za-z0-9][A-Za-z0-9-]*$/),
+}).strict();
+
 export const invalidPublicPageResponseSchema = z.object({
   error: z.literal("invalid_page"),
 }).strict();

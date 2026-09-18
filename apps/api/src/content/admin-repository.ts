@@ -9,6 +9,11 @@ export class MissingMediaReferenceError extends Error {
   constructor() { super("article references missing or deleted media"); }
 }
 
+export class ReservedArticleSlugError extends Error {
+  readonly code = "23505";
+  constructor() { super("article slug is already reserved"); }
+}
+
 type Database = NodePgDatabase<typeof schema>;
 const selectedPost = {
   id: schema.articles.id,
@@ -132,6 +137,21 @@ function mediaIds(input: { markdown: string; coverMedia?: MediaReference | null;
 }
 
 export function createAdminPostRepository(db: Database) {
+  async function lockSlugs(executor: Database, slugs: string[]) {
+    for (const slug of [...new Set(slugs)].sort()) {
+      await executor.execute(sql`select pg_advisory_xact_lock(hashtext(${slug}))`);
+    }
+  }
+
+  async function reserveSlug(executor: Database, slug: string, articleId?: string) {
+    const current = (await executor.select({ id: schema.articles.id }).from(schema.articles)
+      .where(and(eq(schema.articles.slug, slug), articleId ? sql`${schema.articles.id} <> ${articleId}` : undefined)).limit(1))[0];
+    if (current) throw new ReservedArticleSlugError();
+    const alias = (await executor.select({ articleId: schema.articleSlugRedirects.articleId }).from(schema.articleSlugRedirects)
+      .where(eq(schema.articleSlugRedirects.fromSlug, slug)).limit(1))[0];
+    if (alias && alias.articleId !== articleId) throw new ReservedArticleSlugError();
+    return alias;
+  }
   async function lockRetainedMedia(executor: Database, input: { markdown: string; coverMedia?: MediaReference | null; coverMediaId?: string | null }) {
     const ids = mediaIds(input);
     if (!ids.length) return;
@@ -154,6 +174,8 @@ export function createAdminPostRepository(db: Database) {
   async function createDraft(input: AdminPostInput, actorAdministratorId: string) {
     return db.transaction(async (tx) => {
       const { tagIds, article } = values(input);
+      await lockSlugs(tx as Database, [article.slug]);
+      await reserveSlug(tx as Database, article.slug);
       await lockRetainedMedia(tx as Database, { markdown: article.markdown, coverMediaId: article.coverMediaId });
       const created = (await tx.insert(schema.articles).values({ ...article, status: "draft" }).returning(selectedPost))[0];
       if (!created) return null;
@@ -209,6 +231,21 @@ export function createAdminPostRepository(db: Database) {
           markdown: changes.markdown ?? currentWithTags.markdown,
           coverMediaId: changes.coverMediaId === undefined ? current.coverMediaId : changes.coverMediaId,
         });
+        const slugChanged = changes.slug !== undefined && changes.slug !== current.slug;
+        if (slugChanged) {
+          await lockSlugs(tx as Database, [current.slug, changes.slug!]);
+          const ownAlias = await reserveSlug(tx as Database, changes.slug!, id);
+          // Moving back to our own former URL releases only that one source.  The
+          // old current URL becomes an alias in the same transaction, preserving
+          // all other aliases as direct identity -> current-slug lookups.
+          if (ownAlias) await tx.delete(schema.articleSlugRedirects).where(and(
+            eq(schema.articleSlugRedirects.fromSlug, changes.slug!),
+            eq(schema.articleSlugRedirects.articleId, id),
+          ));
+          if (current.publishedAt) {
+            await tx.insert(schema.articleSlugRedirects).values({ fromSlug: current.slug, articleId: id });
+          }
+        }
         const updated = (await tx.update(schema.articles).set(changes).where(eq(schema.articles.id, id)).returning(selectedPost))[0];
         if (!updated) throw new Error("retained article update did not return a row");
         if (tagIds) {

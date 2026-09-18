@@ -6,6 +6,7 @@ import {
   publicDistributionSchema,
   publicPostDetailSchema,
   publicPostNotFoundResponseSchema,
+  publicArticleRedirectResponseSchema,
   publicPostPageQuerySchema,
   publicRelatedPostsResponseSchema,
   publicSearchPageSize,
@@ -67,7 +68,10 @@ export const publicPostRoutes: FastifyPluginAsync<PublicPostRouteOptions> = asyn
     if (!article) {
       return reply.code(404).send(publicPostNotFoundResponseSchema.parse({ error: "not_found" }));
     }
-    const { markdown, ...metadata } = article;
+    if (article?.kind === "redirect") {
+      return reply.code(308).header("location", publicArticleRedirectResponseSchema.parse({ location: article.location }).location).send();
+    }
+    const { markdown, ...metadata } = article.article;
     const rendered = await renderMarkdown(markdown);
     return publicPostDetailSchema.parse({
       ...metadata,

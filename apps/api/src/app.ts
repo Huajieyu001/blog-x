@@ -11,7 +11,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { and, inArray, isNull } from "drizzle-orm";
 import Fastify, { type FastifyInstance, type FastifyLoggerOptions, type FastifyPluginAsync } from "fastify";
 import { Pool } from "pg";
-import { administrators, articleDailyViews, articleTags, articles, auditEvents, categories, media, sessions, sitePages, siteSettings, tags } from "./db/schema.js";
+import { administrators, articleDailyViews, articleSlugRedirects, articleTags, articles, auditEvents, categories, media, sessions, sitePages, siteSettings, tags } from "./db/schema.js";
 import { seedAdministrator } from "./db/seed-admin.js";
 import { authRoutes } from "./routes/auth.js";
 import { createSessionService } from "./auth/sessions.js";
@@ -51,7 +51,7 @@ import { createSiteSettingsRepository } from "./content/site-settings-repository
 import { createSiteSettingsService } from "./content/site-settings-service.js";
 import { siteSettingsRoutes } from "./routes/site-settings.js";
 
-const databaseSchema = { administrators, articles, articleDailyViews, sessions, categories, tags, articleTags, sitePages, siteSettings, media, auditEvents };
+const databaseSchema = { administrators, articles, articleSlugRedirects, articleDailyViews, sessions, categories, tags, articleTags, sitePages, siteSettings, media, auditEvents };
 
 type PublishDueArguments = { ok: true; limit: number } | { ok: false; code: "invalid_arguments" };
 
@@ -336,12 +336,14 @@ async function seed(db: RuntimeResources["db"], administrator: { username: strin
   await seedAdministrator(db, administrator);
 }
 async function schemaVerify(pool: Pool) {
-  const result = await pool.query("select tablename from pg_tables where schemaname = 'public' and tablename = any($1)", [["administrators", "sessions", "articles", "article_daily_views", "categories", "tags", "article_tags", "site_pages", "site_settings", "media", "audit_events"]]);
-  if (result.rowCount !== 11) throw new Error("site settings schema is not active; run pnpm db:migrate first");
+  const result = await pool.query("select tablename from pg_tables where schemaname = 'public' and tablename = any($1)", [["administrators", "sessions", "articles", "article_slug_redirects", "article_daily_views", "categories", "tags", "article_tags", "site_pages", "site_settings", "media", "audit_events"]]);
+  if (result.rowCount !== 12) throw new Error("article slug redirects schema is not active; run pnpm db:migrate first");
   const ledger = await pool.query("select migration_count from blog_x_schema_ledger where scope = 'phase1'");
-  if (ledger.rowCount !== 1 || Number(ledger.rows[0]?.migration_count) !== 14) throw new Error("site settings migration ledger is incomplete; run pnpm db:migrate first");
-  const indices = await pool.query("select indexname from pg_indexes where schemaname = 'public' and indexname = any($1)", [["taxonomy_category_slug_unique", "taxonomy_tag_slug_unique", "article_tags_article_tag_unique", "articles_category_public_index", "site_pages_key_unique", "site_settings_singleton_unique", "media_source_key_unique", "media_derivative_key_unique", "media_catalog_retained_index", "articles_cover_media_index", "audit_events_newest_index", "articles_schedule_due_index", "article_daily_views_day_index"]]);
-  if (indices.rowCount !== 13) throw new Error("required indexes are incomplete; run pnpm db:migrate first");
+  if (ledger.rowCount !== 1 || Number(ledger.rows[0]?.migration_count) !== 15) throw new Error("article slug redirects migration ledger is incomplete; run pnpm db:migrate first");
+  const indices = await pool.query("select indexname from pg_indexes where schemaname = 'public' and indexname = any($1)", [["taxonomy_category_slug_unique", "taxonomy_tag_slug_unique", "article_tags_article_tag_unique", "articles_category_public_index", "site_pages_key_unique", "site_settings_singleton_unique", "media_source_key_unique", "media_derivative_key_unique", "media_catalog_retained_index", "articles_cover_media_index", "audit_events_newest_index", "articles_schedule_due_index", "article_daily_views_day_index", "article_slug_redirects_article_index"]]);
+  if (indices.rowCount !== 14) throw new Error("required indexes are incomplete; run pnpm db:migrate first");
+  const redirectConstraints = await pool.query("select conname from pg_constraint where conrelid = 'article_slug_redirects'::regclass and conname = any($1)", [["article_slug_redirects_pkey", "article_slug_redirects_article_id_articles_id_fk", "article_slug_redirects_from_slug_check"]]);
+  if (redirectConstraints.rowCount !== 3) throw new Error("article slug redirects constraints are incomplete; run pnpm db:migrate first");
   const viewConstraints = await pool.query("select conname from pg_constraint where conrelid = 'article_daily_views'::regclass and conname = any($1)", [["article_daily_views_pkey", "article_daily_views_article_id_articles_id_fk", "article_daily_views_counters_nonnegative_check", "article_daily_views_total_matches_sources_check"]]);
   if (viewConstraints.rowCount !== 4) throw new Error("view aggregate constraints are incomplete; run pnpm db:migrate first");
   const constraints = await pool.query("select conname from pg_constraint where conrelid = 'site_pages'::regclass and conname = any($1)", [["site_pages_key_about_check", "site_pages_status_check"]]);
