@@ -3,6 +3,7 @@
 import { mediaUploadResponseSchema, type MediaReference } from "@blog-x/contracts";
 import { useMemo, useRef, useState } from "react";
 import styles from "../admin.module.css";
+import MediaLibrary from "./MediaLibrary";
 
 const acceptedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const maximumBytes = 5 * 1024 * 1024;
@@ -111,6 +112,15 @@ export default function MediaPanel({
     announce(action === onCover ? "图片已设为封面。" : "图片已插入 Markdown。", "success");
   }
 
+  function selectExisting(reference: MediaReference) {
+    setUploaded(reference);
+    setAlt("");
+    setDecorative(false);
+    setFile(null);
+    setUploadFailed(false);
+    announce("已选择已有图片；请为这次使用填写替代文本，或标记为装饰图片。", "success", true);
+  }
+
   return (
     <section className={styles.mediaPanel} aria-labelledby="media-panel-title">
       <div>
@@ -177,6 +187,7 @@ export default function MediaPanel({
           <figcaption>{media.width} × {media.height} · {media.mimeType}</figcaption>
         </figure>
       ) : null}
+      <MediaLibrary onSelect={selectExisting} />
       {currentCover ? <p className={styles.mediaFilename}>当前封面：{currentCover.url}</p> : null}
       <p
         id="media-upload-status"

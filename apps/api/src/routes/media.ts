@@ -1,5 +1,6 @@
 import {
   invalidMediaResponseSchema,
+  mediaCatalogQuerySchema,
   mediaIdSchema,
   mediaNotFoundResponseSchema,
 } from "@blog-x/contracts";
@@ -9,6 +10,7 @@ import type { Multipart } from "@fastify/multipart";
 import type { SessionService } from "../auth/sessions.js";
 import type { MediaService } from "../content/media-service.js";
 import { requireAdministratorMutation, requireContentType, type MutationGuardOptions } from "../security/mutation-guard.js";
+import { requireAdministrator } from "../security/mutation-guard.js";
 
 const maximumSourceBytes = 5 * 1024 * 1024;
 
@@ -20,6 +22,13 @@ export const mediaRoutes: FastifyPluginAsync<{
 }> = async (app, options) => {
   await app.register(multipart, {
     limits: { files: 1, fields: 2, fieldSize: 500, fileSize: maximumSourceBytes, parts: 3 },
+  });
+
+  app.get("/admin/media", async (request, reply) => {
+    if (!await requireAdministrator(request, reply, options)) return;
+    const parsed = mediaCatalogQuerySchema.safeParse(request.query);
+    if (!parsed.success) return reply.code(400).send(invalidMediaResponseSchema.parse({ error: "invalid_media" }));
+    return reply.send(await options.mediaService.listCatalog(parsed.data));
   });
 
   app.post("/admin/media", { bodyLimit: maximumSourceBytes + 64 * 1024 }, async (request, reply) => {

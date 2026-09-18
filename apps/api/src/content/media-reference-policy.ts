@@ -52,3 +52,17 @@ export function classifyArticleMedia({ markdown, coverUrl }: { markdown: string;
     invalidCoverUrl,
   };
 }
+
+/**
+ * Extracts only real Markdown image/imageReference URLs.  This shares the
+ * renderer's AST semantics, so UUID-looking prose, links, and code blocks do
+ * not accidentally keep a file alive.
+ */
+export function extractArticleMediaIds(markdown: string): Set<string> {
+  const ids = new Set<string>();
+  for (const source of inspectMarkdownImageSources(markdown)) {
+    if (!isMediaPath(source)) continue;
+    ids.add(source.slice("/media/".length).toLowerCase());
+  }
+  return ids;
+}
