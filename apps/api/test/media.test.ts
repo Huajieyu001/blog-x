@@ -187,6 +187,17 @@ test("authenticated upload stores protected source and serves only the immutable
     sourceFiles: (await readdir(join(mediaRoot, "source"))).length,
     derivativeFiles: (await readdir(join(mediaRoot, "derivative"))).length,
   }, validBaseline, "invalid uploads leave the valid database and exact-file baseline unchanged");
+
+  const secondRecord = (await pool.query("select source_key, derivative_key from media where id = $1", [secondUpload.json().id])).rows[0];
+  assert.ok(secondRecord, "the unreferenced second upload has durable storage authority before deletion");
+  const deleted = await app.inject({ method: "DELETE", url: `/admin/media/${secondUpload.json().id}`, headers: { origin, cookie } });
+  assert.equal(deleted.statusCode, 200, deleted.body);
+  assert.deepEqual(deleted.json(), { id: secondUpload.json().id, deleted: true });
+  assert.equal((await app.inject({ method: "GET", url: `/media/${secondUpload.json().id}` })).statusCode, 404);
+  await assert.rejects(readFile(join(mediaRoot, secondRecord.source_key)), /ENOENT/);
+  await assert.rejects(readFile(join(mediaRoot, secondRecord.derivative_key)), /ENOENT/);
+  const deletionAudit = (await pool.query("select event, target_type, target_id, metadata from audit_events where event = 'media.deleted' and target_id = $1", [secondUpload.json().id])).rows;
+  assert.deepEqual(deletionAudit, [{ event: "media.deleted", target_type: "media", target_id: secondUpload.json().id, metadata: {} }]);
 });
 
 test("Markdown admits only exact same-origin media UUID paths", async () => {

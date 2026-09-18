@@ -43,7 +43,7 @@ export const mediaRoutes: FastifyPluginAsync<{
     if (result.kind === "not_found") return reply.code(404).send(mediaNotFoundResponseSchema.parse({ error: "not_found" }));
     if (result.kind === "in_use") return reply.code(409).send(mediaInUseResponseSchema.parse({ error: "media_in_use", referenceCount: result.referenceCount }));
     if (result.kind === "cleanup_pending") return reply.code(503).send(mediaCleanupPendingResponseSchema.parse({ error: "media_cleanup_pending" }));
-    return reply.send(mediaDeletedResponseSchema.parse(result));
+    return reply.send(mediaDeletedResponseSchema.parse({ id: result.id, deleted: result.deleted }));
   });
 
   app.post("/admin/media", { bodyLimit: maximumSourceBytes + 64 * 1024 }, async (request, reply) => {
