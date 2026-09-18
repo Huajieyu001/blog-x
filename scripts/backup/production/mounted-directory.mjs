@@ -29,8 +29,8 @@ async function restrictive(path, expectedType, label) {
 }
 
 function parseDestination(value) {
-  if (!strictObject(value, ["kind", "mountRoot", "profileId"]) || (value.kind !== "generated-test" && value.kind !== "service")
-    || typeof value.mountRoot !== "string" || value.mountRoot.includes("${") || value.mountRoot.includes("..") || value.profileId !== profileId) fail("policy is invalid");
+  if (!strictObject(value, ["kind", "mountRoot", "profileId", "provider"]) || (value.kind !== "generated-test" && value.kind !== "service")
+    || typeof value.mountRoot !== "string" || value.mountRoot.includes("${") || value.mountRoot.includes("..") || value.profileId !== profileId || value.provider !== "mounted-directory") fail("policy is invalid");
   const mountRoot = resolve(value.mountRoot);
   const workspace = resolve(process.cwd());
   if (mountRoot === "/" || within(mountRoot, workspace)) fail("root is broad");
@@ -39,7 +39,7 @@ function parseDestination(value) {
   } else if (mountRoot === resolve(tmpdir()) || within(mountRoot, resolve(tmpdir()))) {
     fail("service root is invalid");
   }
-  return { kind: value.kind, mountRoot, profileId: value.profileId };
+  return { kind: value.kind, mountRoot, profileId: value.profileId, provider: value.provider };
 }
 
 export async function validateMountedDestination(value, inspectMount) {
@@ -76,6 +76,19 @@ function receiptFor(value) {
 export async function createMountedDirectoryTransport(value, { inspectMount } = {}) {
   const destination = await validateMountedDestination(value, inspectMount);
   const objectsRoot = resolve(destination.mountRoot, "objects");
+  const receiptHash = (receipt) => createHash("sha256").update(JSON.stringify(receipt)).digest("hex");
+  async function readVerifiedSet(setId) {
+    if (!setPattern.test(setId ?? "")) fail("set ID is invalid");
+    const cipherPath = resolve(objectsRoot, `${setId}.aesgcm`);
+    const receiptPath = resolve(objectsRoot, `${setId}.receipt.json`);
+    await Promise.all([restrictive(cipherPath, "file", "ciphertext"), restrictive(receiptPath, "file", "receipt")]);
+    let receipt;
+    try { receipt = receiptFor(JSON.parse(await readFile(receiptPath, "utf8"))); } catch { fail("receipt is invalid"); }
+    if (receipt.setId !== setId || receipt.destinationProfileId !== destination.profileId) fail("catalog receipt identity mismatch");
+    const ciphertext = await readFile(cipherPath);
+    if (createHash("sha256").update(ciphertext).digest("hex") !== receipt.ciphertextSha256) fail("catalog ciphertext digest mismatch");
+    return { setId, ciphertext, receipt, receiptSha256: receiptHash(receipt) };
+  }
   return {
     scope: destination.kind === "generated-test" ? "generated-mounted-fixture" : "service-mounted-directory",
     destinationProfileId: destination.profileId,
@@ -86,10 +99,22 @@ export async function createMountedDirectoryTransport(value, { inspectMount } = 
       await restrictive(objectsRoot, "directory", "objects prefix");
       const cipherPath = resolve(objectsRoot, `${setId}.aesgcm`);
       const receiptPath = resolve(objectsRoot, `${setId}.receipt.json`);
+      const present = await Promise.all([cipherPath, receiptPath].map(async (path) => lstat(path).then(() => true).catch((error) => {
+        if (error?.code === "ENOENT") return false;
+        throw error;
+      })));
+      if (present[0] || present[1]) {
+        if (!present[0] || !present[1]) fail("object collision is incomplete");
+        const existing = await readVerifiedSet(setId);
+        if (existing.receipt.ciphertextSha256 !== ciphertextSha256 || existing.receipt.manifestSha256 !== manifestSha256
+          || existing.receipt.aadSha256 !== aadSha256 || existing.receipt.createdAt !== createdAt
+          || !existing.ciphertext.equals(ciphertext)) fail("object collision does not match the complete set");
+        return { ...existing.receipt, receiptSha256: existing.receiptSha256 };
+      }
       const token = randomBytes(12).toString("hex");
       const cipherIncomplete = resolve(objectsRoot, `.${setId}.aesgcm.incomplete-${token}`);
       const receiptIncomplete = resolve(objectsRoot, `.${setId}.receipt.json.incomplete-${token}`);
-      for (const path of [cipherPath, receiptPath, cipherIncomplete, receiptIncomplete]) await lstat(path).then(() => fail("object collision exists")).catch((error) => { if (error?.code !== "ENOENT") throw error; });
+      for (const path of [cipherIncomplete, receiptIncomplete]) await lstat(path).then(() => fail("object collision exists")).catch((error) => { if (error?.code !== "ENOENT") throw error; });
       await writeFile(cipherIncomplete, ciphertext, { flag: "wx", mode: 0o600 });
       await fsync(cipherIncomplete);
       const remoteDigest = createHash("sha256").update(await readFile(cipherIncomplete)).digest("hex");
@@ -101,7 +126,7 @@ export async function createMountedDirectoryTransport(value, { inspectMount } = 
       await fsync(receiptIncomplete);
       await rename(receiptIncomplete, receiptPath);
       await fsyncDirectory(objectsRoot);
-      return { ...receipt, receiptSha256: createHash("sha256").update(JSON.stringify(receipt)).digest("hex") };
+      return { ...receipt, receiptSha256: receiptHash(receipt) };
     },
     async catalog() {
       try { await restrictive(objectsRoot, "directory", "objects prefix"); } catch (error) { if (/is missing/.test(error.message)) return []; throw error; }
@@ -121,14 +146,14 @@ export async function createMountedDirectoryTransport(value, { inspectMount } = 
       const output = [];
       for (const [setId, record] of records) {
         if (!record.cipherPath || !record.receiptPath) fail("catalog receipt pair is incomplete");
-        await Promise.all([restrictive(record.cipherPath, "file", "ciphertext"), restrictive(record.receiptPath, "file", "receipt")]);
-        const receipt = receiptFor(JSON.parse(await readFile(record.receiptPath, "utf8")));
-        if (receipt.setId !== setId || receipt.destinationProfileId !== destination.profileId) fail("catalog receipt identity mismatch");
-        const ciphertextSha256 = createHash("sha256").update(await readFile(record.cipherPath)).digest("hex");
-        if (ciphertextSha256 !== receipt.ciphertextSha256) fail("catalog ciphertext digest mismatch");
-        output.push({ setId, cipherPath: record.cipherPath, receiptPath: record.receiptPath, receipt, receiptSha256: createHash("sha256").update(JSON.stringify(receipt)).digest("hex") });
+        const verified = await readVerifiedSet(setId);
+        output.push({ setId, cipherPath: record.cipherPath, receiptPath: record.receiptPath, receipt: verified.receipt, receiptSha256: verified.receiptSha256 });
       }
       return output.sort((left, right) => left.setId.localeCompare(right.setId));
+    },
+    async readSet(setId) {
+      const verified = await readVerifiedSet(setId);
+      return { setId: verified.setId, ciphertext: Buffer.from(verified.ciphertext), receipt: { ...verified.receipt }, receiptSha256: verified.receiptSha256 };
     },
     async deleteCatalogEntry(entry) {
       if (!entry || !setPattern.test(entry.setId ?? "") || dirname(entry.cipherPath ?? "") !== objectsRoot || dirname(entry.receiptPath ?? "") !== objectsRoot) fail("deletion target is invalid");

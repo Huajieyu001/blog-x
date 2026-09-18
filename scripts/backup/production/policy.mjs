@@ -55,12 +55,14 @@ export function parseProductionPipelinePolicy(value) {
   const collectorPolicy = parseProductionBackupPolicy({
     format: "blog-x-production-backup-policy", version: 1, sourceAuthority: value.sourceAuthority, collector: value.collector,
   });
-  if (!strictObject(value.destination, ["kind", "mountRoot", "profileId"]) || !strictObject(value.keyAuthority, ["keyPath", "kind"])
+  if (!strictObject(value.destination, ["kind", "mountRoot", "profileId", "provider"]) || !strictObject(value.keyAuthority, ["keyPath", "kind"])
     || !strictObject(value.resultAuthority, ["kind", "root"]) || !strictObject(value.alertAuthority, ["kind", "root"])
-    || !strictObject(value.retention, ["minimumKnownGood", "policyId"]) || !/^[a-z0-9-]{3,80}$/.test(value.retention.policyId ?? "")
-    || !Number.isSafeInteger(value.retention.minimumKnownGood) || value.retention.minimumKnownGood < 1) fail();
+    || !strictObject(value.retention, ["maximumSets", "minimumKnownGood", "policyId"]) || !/^[a-z0-9-]{3,80}$/.test(value.retention.policyId ?? "")
+    || !Number.isSafeInteger(value.retention.minimumKnownGood) || value.retention.minimumKnownGood < 1
+    || !Number.isSafeInteger(value.retention.maximumSets) || value.retention.maximumSets < value.retention.minimumKnownGood
+    || value.destination.provider !== "mounted-directory") fail();
   for (const [authority, keys] of [
-    [value.destination, ["kind", "mountRoot", "profileId"]], [value.keyAuthority, ["keyPath", "kind"]],
+    [value.destination, ["kind", "mountRoot", "profileId", "provider"]], [value.keyAuthority, ["keyPath", "kind"]],
     [value.resultAuthority, ["kind", "root"]], [value.alertAuthority, ["kind", "root"]],
   ]) {
     if ((authority.kind !== "generated-test" && authority.kind !== "service") || Object.keys(authority).sort().join(",") !== [...keys].sort().join(",")) fail();

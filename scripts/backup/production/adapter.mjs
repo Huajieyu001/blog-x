@@ -21,7 +21,7 @@ function strictObject(value, keys) {
 
 function parseInput(value) {
   if (!strictObject(value, ["alertAuthority", "createdAt", "destination", "keyAuthority", "resultAuthority", "retention", "sourceAuthority", "sourceRoot"])
-    || typeof value.sourceRoot !== "string" || !Number.isFinite(Date.parse(value.createdAt)) || !strictObject(value.retention, ["minimumKnownGood", "policyId"])) fail("input is invalid");
+    || typeof value.sourceRoot !== "string" || !Number.isFinite(Date.parse(value.createdAt)) || !strictObject(value.retention, ["maximumSets", "minimumKnownGood", "policyId"])) fail("input is invalid");
   return value;
 }
 
@@ -44,7 +44,7 @@ export async function runProductionBackup(value, dependencies = {}) {
     manifestSha256: encrypted.manifestSha256, aadSha256: encrypted.aadSha256, createdAt: input.createdAt,
   });
   if (!receipt || receipt.ciphertextSha256 !== encrypted.ciphertextSha256 || receipt.manifestSha256 !== encrypted.manifestSha256 || receipt.aadSha256 !== encrypted.aadSha256) fail("receipt binding mismatch");
-  const retention = await applySafeRetention({ transport, retentionPolicyId: input.retention.policyId, minimumKnownGood: input.retention.minimumKnownGood });
+  const retention = await applySafeRetention({ transport, retentionPolicyId: input.retention.policyId, minimumKnownGood: input.retention.minimumKnownGood, maximumSets: input.retention.maximumSets });
   const scope = input.sourceAuthority.kind === "service" && concreteTransport.scope === "service-mounted-directory" && transport === concreteTransport
     ? "service-production-pipeline"
     : transport.scope ?? concreteTransport.scope;

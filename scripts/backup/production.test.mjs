@@ -89,8 +89,8 @@ async function adapterFixture(context, suffix = "d1b2c3d4") {
     sourceRoot: collected.finalRoot,
     sourceAuthority: policy.sourceAuthority,
     keyAuthority: { kind: "generated-test", keyPath },
-    destination: { kind: "generated-test", mountRoot, profileId },
-    retention: { policyId: "daily-v1", minimumKnownGood: 1 },
+    destination: { kind: "generated-test", mountRoot, profileId, provider: "mounted-directory" },
+    retention: { policyId: "daily-v1", minimumKnownGood: 1, maximumSets: 3 },
     resultAuthority: { kind: "generated-test", root: resultRoot },
     alertAuthority: { kind: "generated-test", root: alertRoot },
     createdAt: "2026-08-09T10:00:00.000Z",
@@ -115,8 +115,8 @@ async function pipelineFixture(context, suffix = "j1b2c3d4") {
   return {
     format: "blog-x-production-pipeline-policy", version: 1,
     sourceAuthority: collector.sourceAuthority, collector: collector.collector,
-    destination: { kind: "generated-test", mountRoot, profileId }, keyAuthority: { kind: "generated-test", keyPath },
-    retention: { policyId: "daily-v1", minimumKnownGood: 1 },
+    destination: { kind: "generated-test", mountRoot, profileId, provider: "mounted-directory" }, keyAuthority: { kind: "generated-test", keyPath },
+    retention: { policyId: "daily-v1", minimumKnownGood: 1, maximumSets: 3 },
     resultAuthority: { kind: "generated-test", root: resultRoot }, alertAuthority: { kind: "generated-test", root: alertRoot },
   };
 }
@@ -318,6 +318,28 @@ test("a successful generated fake remains fault-only and cannot parse as product
   assert.throws(() => parseProductionReleaseEvidence(result), /generated|live/i);
 });
 
+test("mounted transport retries only an exact complete ciphertext receipt pair and provides sealed read-back", async (context) => {
+  const input = await adapterFixture(context, "r1b2c3d4");
+  const transport = await createMountedDirectoryTransport(input.destination, { inspectMount: async (root) => ({ isMountPoint: true, root }) });
+  const payload = {
+    setId: "20260809T100000Z-a1b2c3d4", ciphertext: Buffer.from("exact-ciphertext"), manifestSha256: "a".repeat(64),
+    aadSha256: "b".repeat(64), createdAt: "2026-08-09T10:00:00.000Z",
+  };
+  payload.ciphertextSha256 = sha(payload.ciphertext);
+  const first = await transport.transfer(payload);
+  const retry = await transport.transfer({ ...payload, ciphertext: Buffer.from(payload.ciphertext) });
+  assert.equal(retry.receiptSha256, first.receiptSha256);
+  assert.equal((await transport.catalog()).length, 1);
+  const readBack = await transport.readSet(payload.setId);
+  assert.deepEqual(readBack.ciphertext, payload.ciphertext);
+  assert.equal(readBack.receiptSha256, first.receiptSha256);
+  assert.equal(Object.hasOwn(readBack, "cipherPath"), false);
+  await assert.rejects(transport.transfer({ ...payload, ciphertext: Buffer.from("conflicting-ciphertext"), ciphertextSha256: sha("conflicting-ciphertext") }), /collision.*match/i);
+  await assert.rejects(transport.transfer({ ...payload, manifestSha256: "c".repeat(64) }), /collision.*match/i);
+  await rm(join(input.destination.mountRoot, "objects", `${payload.setId}.receipt.json`));
+  await assert.rejects(transport.transfer(payload), /incomplete/i);
+});
+
 test("receipt-gated retention preserves the minimum known-good ciphertext and deletes nothing on catalog ambiguity", async (context) => {
   const input = await adapterFixture(context, "i1b2c3d4");
   const transport = await createMountedDirectoryTransport(input.destination, { inspectMount: async (root) => ({ isMountPoint: true, root }) });
@@ -329,11 +351,11 @@ test("receipt-gated retention preserves the minimum known-good ciphertext and de
   await transfer("20260809T100000Z-a1b2c3d4");
   await transfer("20260809T100001Z-b1b2c3d4");
   await transfer("20260809T100002Z-c1b2c3d4");
-  const retained = await applySafeRetention({ transport, retentionPolicyId: "daily-v1", minimumKnownGood: 2 });
+  const retained = await applySafeRetention({ transport, retentionPolicyId: "daily-v1", minimumKnownGood: 2, maximumSets: 2 });
   assert.deepEqual(retained.deletedSetIds, ["20260809T100000Z-a1b2c3d4"]);
   assert.equal((await transport.catalog()).length, 2);
   await writeFile(join(input.destination.mountRoot, "objects", "unexpected.txt"), "ambiguous", { mode: 0o600 });
-  await assert.rejects(applySafeRetention({ transport, retentionPolicyId: "daily-v1", minimumKnownGood: 1 }), /catalog|unexpected/i);
+  await assert.rejects(applySafeRetention({ transport, retentionPolicyId: "daily-v1", minimumKnownGood: 1, maximumSets: 1 }), /catalog|unexpected/i);
   assert.equal((await readdir(join(input.destination.mountRoot, "objects"))).filter((name) => name.endsWith(".aesgcm")).length, 2);
 });
 
