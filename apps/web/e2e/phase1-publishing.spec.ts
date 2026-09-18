@@ -157,7 +157,9 @@ test("Phase 1 completes the local author-to-reader publishing journey through vi
   expect((await context.request.get(`${webOrigin}/posts/${originalSlug}`)).status()).toBe(200);
   await slugDialog.getByRole("button", { name: "确认修改 Slug" }).click();
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("更改已保存");
-  expect((await context.request.get(`${webOrigin}/posts/${originalSlug}`)).status()).toBe(404);
+  const historicRedirect = await context.request.get(`${webOrigin}/posts/${originalSlug}`, { maxRedirects: 0 });
+  expect(historicRedirect.status()).toBe(308);
+  expect(historicRedirect.headers()["location"]).toBe(`/posts/${changedSlug}`);
   expect((await context.request.get(`${webOrigin}/posts/${changedSlug}`)).status()).toBe(200);
 
   await page.getByRole("button", { name: "下线" }).click();
