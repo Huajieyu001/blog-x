@@ -1031,12 +1031,12 @@ async function inspectSchema(context) {
   const result = await compose(context, "inspect migration ledger and schema", ...psqlArgs(context, [
     "select (select count(*) from blog_x_schema_ledger),",
     "(select migration_count from blog_x_schema_ledger where scope = 'phase1'),",
-    "(select count(*) from pg_tables where schemaname = 'public' and tablename = any(array['administrators','articles','article_daily_views','sessions','categories','tags','article_tags','site_pages','site_settings','media','audit_events'])),",
-    "(select count(*) from pg_constraint where conname = any(array['site_pages_key_about_check','site_pages_status_check','site_settings_name_check','site_settings_registration_number_check','articles_cover_alt_check','articles_legacy_media_review_check','articles_schedule_pair_check','articles_schedule_draft_check','audit_events_event_check','audit_events_target_check','audit_events_metadata_check','article_daily_views_pkey','article_daily_views_article_id_articles_id_fk','article_daily_views_counters_nonnegative_check','article_daily_views_total_matches_sources_check'])),",
-    "(select count(*) from pg_indexes where schemaname = 'public' and indexname = any(array['taxonomy_category_slug_unique','taxonomy_tag_slug_unique','article_tags_article_tag_unique','site_pages_key_unique','site_settings_singleton_unique','media_source_key_unique','media_derivative_key_unique','audit_events_newest_index','articles_schedule_due_index','article_daily_views_day_index']));",
+    "(select count(*) from pg_tables where schemaname = 'public' and tablename = any(array['administrators','articles','article_slug_redirects','article_daily_views','sessions','categories','tags','article_tags','site_pages','site_settings','media','audit_events'])),",
+    "(select count(*) from pg_constraint where conname = any(array['site_pages_key_about_check','site_pages_status_check','site_settings_name_check','site_settings_registration_number_check','articles_cover_alt_check','articles_legacy_media_review_check','articles_schedule_pair_check','articles_schedule_draft_check','audit_events_event_check','audit_events_target_check','audit_events_metadata_check','article_daily_views_pkey','article_daily_views_article_id_articles_id_fk','article_daily_views_counters_nonnegative_check','article_daily_views_total_matches_sources_check','article_slug_redirects_pkey','article_slug_redirects_article_id_articles_id_fk','article_slug_redirects_from_slug_check'])),",
+    "(select count(*) from pg_indexes where schemaname = 'public' and indexname = any(array['taxonomy_category_slug_unique','taxonomy_tag_slug_unique','article_tags_article_tag_unique','site_pages_key_unique','site_settings_singleton_unique','media_source_key_unique','media_derivative_key_unique','audit_events_newest_index','articles_schedule_due_index','article_daily_views_day_index','article_slug_redirects_article_index']));",
   ].join(" ")));
   const values = result.stdout.trim().split("|").map(Number);
-  if (values.length !== 5 || values[0] !== 1 || values[1] !== 14 || values[2] !== 11 || values[3] !== 15 || values[4] !== 10) {
+  if (values.length !== 5 || values[0] !== 1 || values[1] !== 15 || values[2] !== 12 || values[3] !== 18 || values[4] !== 11) {
     throw new Error(`unexpected schema inspection result: ${result.stdout.trim()}`);
   }
 }

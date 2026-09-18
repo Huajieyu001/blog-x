@@ -462,7 +462,7 @@ test("Phase 5 media selection keeps legacy restore evidence compatible with the 
     browserSuites: ["apps/web/e2e/phase1-publishing.spec.ts", "apps/web/e2e/phase4-restore.spec.ts"],
   });
   const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
-  assert.match(runner, /values\[1\] !== 14/);
+  assert.match(runner, /values\[1\] !== 15/);
   assert.doesNotMatch(runner, /values\[1\] !== 6/);
   assert.match(runner, /--phase5-media/);
   assert.match(runner, /PHASE5_LEGACY_ARTICLE_ID/);
@@ -587,10 +587,10 @@ test("Phase 6 data selection is exact, once-only, and separate from Phase 5 rece
 test("Phase 6 interruption and parallel paths keep exact generated authority", async () => {
   const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
   const schema = runner.slice(runner.indexOf("async function inspectSchema"), runner.indexOf("async function runMigration"));
-  assert.match(schema, /values\[1\] !== 14/);
-  assert.match(schema, /values\[2\] !== 11/);
-  assert.match(schema, /values\[3\] !== 15/);
-  assert.match(schema, /values\[4\] !== 10/);
+  assert.match(schema, /values\[1\] !== 15/);
+  assert.match(schema, /values\[2\] !== 12/);
+  assert.match(schema, /values\[3\] !== 18/);
+  assert.match(schema, /values\[4\] !== 11/);
   assert.match(schema, /articles_schedule_pair_check/);
   assert.match(schema, /articles_schedule_draft_check/);
   assert.match(schema, /articles_schedule_due_index/);
@@ -616,7 +616,7 @@ test("Phase 6 interruption and parallel paths keep exact generated authority", a
   assert.doesNotMatch(parallel, /phase5|receipt/i);
 });
 
-test("current migration authority is a complete fourteen-entry Drizzle history", async () => {
+test("current migration authority is a complete fifteen-entry Drizzle history", async () => {
   const drizzleRoot = join(process.cwd(), "apps/api/drizzle");
   const metadataRoot = join(drizzleRoot, "meta");
   const sqlFiles = (await readdir(drizzleRoot)).filter((name) => /^\d{4}_.+\.sql$/.test(name)).sort();
@@ -624,17 +624,18 @@ test("current migration authority is a complete fourteen-entry Drizzle history",
   const journal = JSON.parse(await readFile(join(metadataRoot, "_journal.json"), "utf8"));
   const mediaMigration = await readFile(join(drizzleRoot, "0012_media-audit-metadata.sql"), "utf8");
   const settingsMigration = await readFile(join(drizzleRoot, "0013_site_settings.sql"), "utf8");
+  const redirectMigration = await readFile(join(drizzleRoot, "0014_article-slug-redirects.sql"), "utf8");
   const schema = await readFile(join(process.cwd(), "apps/api/src/db/schema.ts"), "utf8");
   const findings = [];
 
-  if (sqlFiles.length !== 14 || sqlFiles[0] !== "0000_phase1_walking_skeleton.sql" || sqlFiles.at(-1) !== "0013_site_settings.sql") {
-    findings.push(`numbered SQL authority must contain exactly 0000 through 0013; found ${sqlFiles.join(", ")}`);
+  if (sqlFiles.length !== 15 || sqlFiles[0] !== "0000_phase1_walking_skeleton.sql" || sqlFiles.at(-1) !== "0014_article-slug-redirects.sql") {
+    findings.push(`numbered SQL authority must contain exactly 0000 through 0014; found ${sqlFiles.join(", ")}`);
   }
   const journalTail = journal.entries?.at(-1);
-  if (journal.entries?.length !== 14 || journalTail?.idx !== 13 || journalTail?.tag !== "0013_site_settings") {
-    findings.push(`journal must end at idx 13 / 0013_site_settings; found ${JSON.stringify(journalTail)}`);
+  if (journal.entries?.length !== 15 || journalTail?.idx !== 14 || journalTail?.tag !== "0014_article-slug-redirects") {
+    findings.push(`journal must end at idx 14 / 0014_article-slug-redirects; found ${JSON.stringify(journalTail)}`);
   }
-  if (!metadataFiles.includes("0012_snapshot.json") || !metadataFiles.includes("0013_snapshot.json")) findings.push("generated metadata must include current snapshots");
+  if (!metadataFiles.includes("0012_snapshot.json") || !metadataFiles.includes("0013_snapshot.json") || !metadataFiles.includes("0014_snapshot.json")) findings.push("generated metadata must include current snapshots");
 
   const snapshot = metadataFiles.includes("0012_snapshot.json")
     ? await readFile(join(metadataRoot, "0012_snapshot.json"), "utf8")
@@ -654,6 +655,12 @@ test("current migration authority is a complete fourteen-entry Drizzle history",
   }
   const settingsSnapshot = metadataFiles.includes("0013_snapshot.json") ? await readFile(join(metadataRoot, "0013_snapshot.json"), "utf8") : "";
   if (settingsSnapshot && !settingsSnapshot.includes("site_settings")) findings.push("site-settings snapshot is incomplete");
+  const redirectSnapshot = metadataFiles.includes("0014_snapshot.json") ? await readFile(join(metadataRoot, "0014_snapshot.json"), "utf8") : "";
+  for (const token of ["article_slug_redirects", "article_slug_redirects_article_index", "article_slug_redirects_from_slug_check"]) {
+    if (!redirectMigration.includes(token)) findings.push(`slug redirect migration is missing ${token}`);
+    if (!schema.includes(token)) findings.push(`Drizzle schema is missing ${token}`);
+    if (redirectSnapshot && !redirectSnapshot.includes(token)) findings.push(`slug redirect snapshot is missing ${token}`);
+  }
   assert.deepEqual(findings, [], "current migration authorities must be structurally identical");
 });
 
