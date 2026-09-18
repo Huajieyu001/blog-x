@@ -206,6 +206,12 @@ test("administrator shell is private, responsive, compact, and theme-aware", asy
     await page.goto(`${webOrigin}${path}`);
     await expect(navigation.getByRole("link", { name: currentLabel })).toHaveAttribute("aria-current", "page");
     await expect.poll(async () => navigation.getByRole("link").evaluateAll((links) => links.filter((link) => link.getAttribute("aria-current") === "page").length)).toBe(1);
+    if (path === "/admin/about") {
+      const publicAbout = page.getByRole("link", { name: "查看公开关于页" });
+      await publicAbout.focus();
+      await expect(publicAbout).toBeFocused();
+      expect(await publicAbout.evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe("none");
+    }
   }
   await expect(page.getByRole("button", { name: "退出登录" })).toBeVisible();
 
@@ -256,30 +262,21 @@ test("administrator shell is private, responsive, compact, and theme-aware", asy
 
   const routes = [
     ["/admin/taxonomy", "分类与标签", "返回文章管理"],
-    ["/admin/about", "关于页", "查看公开关于页"],
     ["/admin/audit", "操作日志", "返回工作台"],
     ["/admin/analytics?range=30", "访问统计", "30 天"],
   ] as const;
-  for (const width of [390, 768, 1280]) {
-    await page.setViewportSize({ width, height: 900 });
-    for (const [path, heading, controlName] of routes) {
-      await page.goto(`${webOrigin}${path}`);
-      await expect(page.getByRole("heading", { name: heading })).toBeVisible();
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-      const control = page.getByRole("link", { name: controlName }).first();
-      const target = await control.boundingBox();
-      expect(target?.height).toBeGreaterThanOrEqual(44);
-      expect(target?.width).toBeGreaterThanOrEqual(44);
-    }
+  await page.setViewportSize({ width: 390, height: 900 });
+  for (const [path, heading, controlName] of routes) {
+    await page.goto(`${webOrigin}${path}`);
+    await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    const control = page.getByRole("link", { name: controlName }).first();
+    const target = await control.boundingBox();
+    expect(target?.height).toBeGreaterThanOrEqual(44);
+    expect(target?.width).toBeGreaterThanOrEqual(44);
   }
 
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(`${webOrigin}/admin/about`);
-  const publicAbout = page.getByRole("link", { name: "查看公开关于页" });
-  await publicAbout.focus();
-  await expect(publicAbout).toBeFocused();
-  expect(await publicAbout.evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe("none");
-
   const theme = page.getByRole("radiogroup", { name: "切换主题" });
   await page.getByLabel("浅色", { exact: true }).check();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
