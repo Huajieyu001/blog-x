@@ -28,6 +28,22 @@ import {
 type EditorFields = EditorRecoveryFields;
 
 const articleStatusLabels = { draft: "草稿", published: "已发布", unpublished: "已下线" } as const;
+const firstSaveFlashPrefix = "blog-x:editor:first-save:";
+
+function firstSaveFlashKey(id: string) { return `${firstSaveFlashPrefix}${id}`; }
+function writeFirstSaveFlash(id: string) {
+  try { window.sessionStorage.setItem(firstSaveFlashKey(id), JSON.stringify({ id, message: "草稿已保存" })); } catch { /* navigation remains safe */ }
+}
+function consumeFirstSaveFlash(id: string) {
+  const key = firstSaveFlashKey(id);
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    window.sessionStorage.removeItem(key);
+    if (!raw || raw.length > 200) return null;
+    const value: unknown = JSON.parse(raw);
+    return typeof value === "object" && value !== null && (value as { id?: unknown }).id === id && (value as { message?: unknown }).message === "草稿已保存" ? "草稿已保存" : null;
+  } catch { try { window.sessionStorage.removeItem(key); } catch {} return null; }
+}
 
 const emptyFields: EditorFields = {
   title: "",
@@ -126,6 +142,10 @@ export default function ArticleEditor({
   publishedAtCorrectionRef.current = publishedAtCorrection;
 
   useEffect(() => {
+    if (post?.id) {
+      const flash = consumeFirstSaveFlash(post.id);
+      if (flash) setMessage(flash);
+    }
     const storage = getEditorRecoveryStorage();
     if (!storage) {
       setRecoveryMessage("浏览器存储不可用；请及时手动保存");
@@ -392,10 +412,8 @@ export default function ArticleEditor({
       }
       if (!postId) {
         setPostId(saved.data.id);
-        // Keep the successful-save status and recovery state in this client
-        // editor while refreshing the edit-route server siblings (history).
-        window.history.replaceState(window.history.state, "", `/admin/posts/${saved.data.id}`);
-        router.refresh();
+        writeFirstSaveFlash(saved.data.id);
+        router.replace(`/admin/posts/${saved.data.id}`);
       } else {
         // The revision history is a server sibling of this client editor. Refresh
         // it only after a successful existing-post save, preserving local edits.
