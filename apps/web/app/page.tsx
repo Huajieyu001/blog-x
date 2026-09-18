@@ -43,8 +43,8 @@ function EmptyState({ kind }: { kind: "invalid" | "empty-blog" | "empty-page" })
         <h3>第一篇文章正在准备中</h3>
         <p>在内容发布前，可以先了解这个博客，浏览归档，或订阅后续更新。</p>
         <nav className={styles.emptyActions} aria-label="空博客导航">
-          <Link href="/about">了解这个博客</Link>
-          <Link href="/archives">查看归档</Link>
+          <Link href="/about" prefetch={false}>了解这个博客</Link>
+          <Link href="/archives" prefetch={false}>查看归档</Link>
           <a href="/rss.xml">订阅 RSS</a>
         </nav>
       </div>
