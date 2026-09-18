@@ -179,9 +179,9 @@ test("generated canonical Web verifier keeps private static trust while publishi
   const authority = source.slice(source.indexOf("async function createCanonicalRuntimeAuthority"), source.indexOf("async function hashRuntimeArtifact"));
   const apiOverride = authority.slice(authority.indexOf('"  api:"'), authority.indexOf("...(includeWeb ? ["));
   assert.match(authority, /ports: !override[\s\S]*127\.0\.0\.1:\$\{context\.runtimeWebPort \?\? context\.webPort\}:3100/);
-  assert.match(source, /if \(options\.lifecycleOnly \|\| options\.phase11Data \|\| options\.phase12Data \|\| options\.canonicalIntegration\) await inspectGeneratedWebVerifierEdge\(context\)/);
+  assert.match(source, /if \(options\.lifecycleOnly \|\| options\.phase11Data \|\| options\.phase12Data \|\| options\.canonicalIntegration \|\| phase15Gate\) await inspectGeneratedWebVerifierEdge\(context\)/);
   assert.match(source, /options\.lifecycleOnly[\s\S]*createCanonicalRuntimeAuthority\(context, \{ includeWeb: false, publishWeb: true \}\)/);
-  assert.match(source, /runtimeWebPort = options\.phase11Data \|\| options\.phase12Data \|\| options\.canonicalIntegration \? await freePort\(\) : webPort/);
+  assert.match(source, /const phase15Gate = options\.phase15Media \|\| options\.phase15Backup \|\| options\.phase15Full;[\s\S]*runtimeWebPort = options\.phase11Data \|\| options\.phase12Data \|\| options\.canonicalIntegration \|\| phase15Gate \? await freePort\(\) : webPort/);
   assert.match(source, /options\.phase11Data \|\| options\.phase12Data \|\| options\.canonicalIntegration[\s\S]*context\.ingressAuthSecret = randomBytes/);
   assert.match(source, /startPhase11Ingress[\s\S]*context\.canonicalIntegration[\s\S]*x-blog-x-ingress-auth/);
   assert.match(authority, /TRUSTED_PROXY_CIDRS: \$\{privateNetwork\.web\}\/32[\s\S]*BLOG_X_LOGIN_LIMIT: 20[\s\S]*postgres:[\s\S]*ipv4_address: \$\{privateNetwork\.postgres\}[\s\S]*private:[\s\S]*ipv4_address: \$\{privateNetwork\.web\}[\s\S]*subnet: \$\{privateNetwork\.subnet\}[\s\S]*verifier-edge:[\s\S]*internal: false[\s\S]*subnet: \$\{privateNetwork\.edgeSubnet\}/);
@@ -477,6 +477,13 @@ test("Phase 15 media selector is sealed to generated media API and browser autho
   const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
   assert.match(runner, /--phase15-media/);
   assert.match(runner, /Phase 15 media accepts only the sealed complete invocation/);
+  const phase15Setup = runner.slice(runner.indexOf("else if (phase15Gate && !options.skipBuild)"), runner.indexOf("else if (options.phase5Full && !options.skipBuild)"));
+  assert.match(phase15Setup, /preflightOfflinePrerequisites[\s\S]*typecheck workspace for Phase 15[\s\S]*build workspace for Phase 15[\s\S]*createCanonicalRuntimeAuthority/);
+  assert.match(runner, /!options\.canonicalIntegration && !phase15Gate\) await compose\(context, "build local API and Web images"/);
+  assert.match(runner, /phase15Gate\) await inspectGeneratedWebVerifierEdge\(context\)/);
+  assert.match(runner, /currentSchemaAuthority = [\s\S]*phase15Gate/);
+  assert.match(runner, /!context\.phase15Gate\) \|\| context\.phase11Ingress/);
+  assert.match(runner, /context\.canonicalIntegration \|\| context\.phase15Gate/);
   assert.match(runner, /createMainBrowserEnvironment\(context\)/);
   const mediaSpec = await readFile(join(process.cwd(), "apps/web/e2e/media.spec.ts"), "utf8");
   assert.match(mediaSpec, /getByRole\("heading", \{ name: "媒体库", level: 1 \}\)/);

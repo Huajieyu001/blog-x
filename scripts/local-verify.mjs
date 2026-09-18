@@ -934,7 +934,7 @@ async function cleanupCanonicalRuntimeAuthority(context) {
 }
 
 async function startPhase11Ingress(context) {
-  if ((!context.phase11Data && !context.phase12Data && !context.canonicalIntegration) || context.phase11Ingress) return;
+  if ((!context.phase11Data && !context.phase12Data && !context.canonicalIntegration && !context.phase15Gate) || context.phase11Ingress) return;
   if (!context.ingressAuthSecret || context.runtimeWebPort === context.webPort) throw new Error("Phase 11 ingress fixture authority is invalid");
   const scrubbed = new Set(["forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-port", "x-forwarded-proto", "x-real-ip", "x-blog-x-client-ip", "x-blog-x-ingress-auth"]);
   const ingress = createHttpServer((incoming, outgoing) => {
@@ -1037,7 +1037,7 @@ async function inspectSchema(context) {
 }
 
 async function runMigration(context, label) {
-  const currentAuthority = context.phase6Data || context.phase11Data || context.phase12Data || context.canonicalIntegration;
+  const currentAuthority = context.phase6Data || context.phase11Data || context.phase12Data || context.canonicalIntegration || context.phase15Gate;
   return currentAuthority
     ? compose(context, label, "run", "--rm", "-T",
       "--volume", `${resolve(root, "apps/api")}:/workspace/apps/api:ro`,
@@ -1107,7 +1107,7 @@ async function seed(context, { quiescent = false } = {}) {
       "api", "corepack", "pnpm", "--filter", "@blog-x/api", "db:seed");
     return;
   }
-  const currentAuthority = context.phase6Data || context.phase11Data || context.phase12Data || context.canonicalIntegration;
+  const currentAuthority = context.phase6Data || context.phase11Data || context.phase12Data || context.canonicalIntegration || context.phase15Gate;
   await compose(context, "seed generated administrator without request authority", "run", "--rm", "-T",
     ...(currentAuthority ? [
       "--volume", `${resolve(root, "apps/api")}:/workspace/apps/api:ro`,
@@ -1261,7 +1261,7 @@ async function runDatabaseSuite(context, variable, file) {
     "-e", `DATABASE_URL=${context.databaseUrl}`,
     "-e", `${variable}=${context.databaseUrl}`,
   ];
-  const result = context.phase6Data || context.phase11Data || context.phase12Data || context.canonicalIntegration
+  const result = context.phase6Data || context.phase11Data || context.phase12Data || context.canonicalIntegration || context.phase15Gate
     ? await compose(context, `run ${file}`, "run", "--rm", "-T",
         "--volume", `${resolve(root, "apps/api")}:/workspace/apps/api:ro`,
         "--volume", `${resolve(root, "packages/contracts")}:/workspace/packages/contracts:ro`,
@@ -2144,7 +2144,8 @@ async function runSingle(options) {
   allocatedGeneratedNamespaces.add(namespace);
   const database = validateDatabaseName(`blog_x_${namespace.slice("blogxverify_".length)}`, namespace);
   const webPort = options.webPort ?? await freePort();
-  const runtimeWebPort = options.phase11Data || options.phase12Data || options.canonicalIntegration ? await freePort() : webPort;
+  const phase15Gate = options.phase15Media || options.phase15Backup || options.phase15Full;
+  const runtimeWebPort = options.phase11Data || options.phase12Data || options.canonicalIntegration || phase15Gate ? await freePort() : webPort;
   const phaseLabel = options.canonicalIntegration ? "integration-" : options.lifecycleOnly ? "lifecycle-" : options.phase12Data ? "phase12-" : options.phase11Data ? "phase11-" : options.phase6Data ? "phase6-" : options.phase15Media || options.phase15Backup || options.phase15Full ? "phase15-" : options.phase5Media || options.phase5Full ? "phase5-" : options.phase4Mode ? "phase4-" : options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
   const runId = namespace.replace("blogxverify_", phaseLabel);
   const publicOrigin = validateLoopbackHttpOrigin(`http://127.0.0.1:${webPort}`);
@@ -2168,12 +2169,13 @@ async function runSingle(options) {
     phase11Data: options.phase11Data,
     phase12Data: options.phase12Data,
     phase6Data: options.phase6Data,
+    phase15Gate,
     canonicalIntegration: options.canonicalIntegration,
     internalRun: options.internalRun,
   };
   allocatedGeneratedAuthorities.set(namespace, context);
   context.secrets.push(context.password, context.databaseUrl);
-  if (options.phase11Data || options.phase12Data || options.canonicalIntegration) {
+  if (options.phase11Data || options.phase12Data || options.canonicalIntegration || phase15Gate) {
     context.ingressAuthSecret = randomBytes(32).toString("base64url");
     context.secrets.push(context.ingressAuthSecret);
   }
@@ -2214,13 +2216,21 @@ async function runSingle(options) {
       await createCanonicalRuntimeAuthority(context);
       context.canonicalPrebuilt = true;
     }
+    else if (phase15Gate && !options.skipBuild) {
+      await preflightOfflinePrerequisites(context);
+      process.stdout.write("[local-verify] build and seal current Phase 15 runtime from offline workspace authority\n");
+      await runStep(context, "typecheck workspace for Phase 15", "corepack", ["pnpm", "-r", "typecheck"], { env: process.env });
+      await runStep(context, "build workspace for Phase 15", "corepack", ["pnpm", "-r", "build"], { env: { ...process.env, PUBLIC_ORIGIN: context.publicOrigin, INTERNAL_API_ORIGIN: context.internalApiOrigin } });
+      await createCanonicalRuntimeAuthority(context);
+      context.phase15Prebuilt = true;
+    }
     else if (options.phase5Full && !options.skipBuild) {
       await preflightOfflinePrerequisites(context);
       process.stdout.write("[local-verify] use prevalidated local verifier images for the Phase 5 offline gate\n");
     }
     else if ((options.phase4Mode === "full" || options.phase5Media || options.phase15Media || options.phase15Backup || options.phase15Full) && !options.skipBuild) await preflightOfflinePrerequisites(context);
     else if (["operations", "restore"].includes(options.phase4Mode) && !options.skipBuild) await preflightCachedImages(context);
-    if (!options.skipBuild && !options.phase5Full && !options.phase6Data && !options.phase11Data && !options.phase12Data && !options.canonicalIntegration) await compose(context, "build local API and Web images", "build", "api", "web");
+    if (!options.skipBuild && !options.phase5Full && !options.phase6Data && !options.phase11Data && !options.phase12Data && !options.canonicalIntegration && !phase15Gate) await compose(context, "build local API and Web images", "build", "api", "web");
     await compose(context, "start isolated PostgreSQL", "up", "-d", "--wait", "postgres");
     if (options.interruptionCheck && !options.canonicalIntegration) await interruptionCheck(context);
     else {
@@ -2229,11 +2239,11 @@ async function runSingle(options) {
     }
     if (!options.interruptionCheck) await migrationRetryPreservation(context);
     await compose(context, "start isolated API and Web", "up", "-d", "--wait", "api", "web");
-    if (options.lifecycleOnly || options.phase11Data || options.phase12Data || options.canonicalIntegration) await inspectGeneratedWebVerifierEdge(context);
+    if (options.lifecycleOnly || options.phase11Data || options.phase12Data || options.canonicalIntegration || phase15Gate) await inspectGeneratedWebVerifierEdge(context);
     await runStep(context, "confirm exact generated media volume", "docker", ["volume", "inspect", context.mediaVolume]);
     await startPhase11Ingress(context);
     await waitForHttp(context.webOrigin);
-    const currentSchemaAuthority = options.phase6Data || options.phase11Data || options.phase12Data || options.canonicalIntegration;
+    const currentSchemaAuthority = options.phase6Data || options.phase11Data || options.phase12Data || options.canonicalIntegration || phase15Gate;
     await compose(context, "verify active schema", ...(currentSchemaAuthority
       ? ["run", "--rm", "-T", "--volume", `${resolve(root, "apps/api")}:/workspace/apps/api:ro`, "--volume", `${resolve(root, "packages/contracts")}:/workspace/packages/contracts:ro`, "-e", `DATABASE_URL=${context.databaseUrl}`]
       : ["exec", "-T", "-e", `DATABASE_URL=${context.databaseUrl}`]),
