@@ -97,6 +97,7 @@ export default function AdminShell({ children }: { children: ReactNode }) {
               key={item.href}
               ref={index === 0 ? firstLinkRef : undefined}
               href={item.href}
+              prefetch={false}
               aria-current={item.active(pathname, hash) ? "page" : undefined}
               onClick={() => {
                 const moveFocusToContent = open;

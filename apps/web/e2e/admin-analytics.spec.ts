@@ -186,6 +186,7 @@ test("administrator shell is private, responsive, compact, and theme-aware", asy
     ["/admin/analytics?range=30", "访问统计"],
     ["/admin/taxonomy", "分类与标签"],
     ["/admin/about", "关于页"],
+    ["/admin/settings", "站点设置"],
     ["/admin/audit", "操作日志"],
   ] as const;
 
@@ -244,6 +245,7 @@ test("administrator shell is private, responsive, compact, and theme-aware", asy
   const routes = [
     ["/admin/taxonomy", "分类与标签", "返回文章管理"],
     ["/admin/about", "关于页", "查看公开关于页"],
+    ["/admin/settings", "站点设置", "查看首页"],
     ["/admin/audit", "操作日志", "返回工作台"],
     ["/admin/analytics?range=30", "访问统计", "30 天"],
   ] as const;
