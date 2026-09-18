@@ -464,7 +464,7 @@ test("Phase 5 media selection keeps legacy restore evidence compatible with the 
     browserSuites: ["apps/web/e2e/phase1-publishing.spec.ts", "apps/web/e2e/phase4-restore.spec.ts"],
   });
   const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
-  assert.match(runner, /values\[1\] !== 15/);
+  assert.match(runner, /values\[1\] !== 16/);
   assert.doesNotMatch(runner, /values\[1\] !== 6/);
   assert.match(runner, /--phase5-media/);
   assert.match(runner, /PHASE5_LEGACY_ARTICLE_ID/);
@@ -589,15 +589,22 @@ test("Phase 6 data selection is exact, once-only, and separate from Phase 5 rece
 test("Phase 6 interruption and parallel paths keep exact generated authority", async () => {
   const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
   const schema = runner.slice(runner.indexOf("async function inspectSchema"), runner.indexOf("async function runMigration"));
-  assert.match(schema, /values\[1\] !== 15/);
-  assert.match(schema, /values\[2\] !== 12/);
-  assert.match(schema, /values\[3\] !== 18/);
-  assert.match(schema, /values\[4\] !== 11/);
+  assert.match(schema, /values\[1\] !== 16/);
+  assert.match(schema, /values\[2\] !== 13/);
+  assert.match(schema, /values\[3\] !== 20/);
+  assert.match(schema, /values\[4\] !== 13/);
   assert.match(schema, /articles_schedule_pair_check/);
   assert.match(schema, /articles_schedule_draft_check/);
   assert.match(schema, /articles_schedule_due_index/);
   assert.match(schema, /article_daily_views_total_matches_sources_check/);
   assert.match(schema, /article_daily_views_day_index/);
+  for (const token of [
+    "article_revisions",
+    "article_revisions_pkey",
+    "article_revisions_article_id_articles_id_fk",
+    "article_revisions_article_source_version_unique",
+    "article_revisions_newest_index",
+  ]) assert.match(schema, new RegExp(token));
   const interruption = runner.slice(runner.indexOf("async function interruptionCheck"), runner.indexOf("async function migrationRetryPreservation"));
   assert.match(interruption, /\$\{context\.namespace\}_migration_interrupt/);
   assert.match(interruption, /migration lock acquired/);
