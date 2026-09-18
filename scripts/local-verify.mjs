@@ -71,9 +71,9 @@ export function canonicalIntegrationSelection() {
     .sort((left, right) => left.path.localeCompare(right.path));
   const paths = entries.map((entry) => entry.path);
   const groups = frozenGroups(entries);
-  const expectedOwners = { database: 14, "backup-restore": 1, media: 1, "main-browser": 15, "error-browser": 1, "restore-browser": 1 };
-  if (entries.length !== 33 || new Set(paths).size !== entries.length
-    || paths.filter((path) => path.startsWith("apps/api/")).length !== 16
+  const expectedOwners = { database: 15, "backup-restore": 1, media: 1, "main-browser": 15, "error-browser": 1, "restore-browser": 1 };
+  if (entries.length !== 34 || new Set(paths).size !== entries.length
+    || paths.filter((path) => path.startsWith("apps/api/")).length !== 17
     || paths.filter((path) => path.startsWith("apps/web/e2e/")).length !== 17
     || Object.entries(expectedOwners).some(([owner, count]) => groups[owner]?.length !== count)
     || Object.keys(groups).some((owner) => !Object.hasOwn(expectedOwners, owner))) {
@@ -1866,6 +1866,7 @@ export const canonicalDatabaseEnvironment = Object.freeze({
   "apps/api/test/article-draft-preview.test.ts": "ARTICLE_TEST_DATABASE_URL",
   "apps/api/test/article-lifecycle.test.ts": "LIFECYCLE_TEST_DATABASE_URL",
   "apps/api/test/article-slug-redirects.test.ts": "LIFECYCLE_TEST_DATABASE_URL",
+  "apps/api/test/article-revisions.test.ts": "LIFECYCLE_TEST_DATABASE_URL",
   "apps/api/test/auth-session.test.ts": "AUTH_TEST_DATABASE_URL",
   "apps/api/test/distribution-export.test.ts": "PHASE3_TEST_DATABASE_URL",
   "apps/api/test/pages-archive.test.ts": "AUTH_TEST_DATABASE_URL",

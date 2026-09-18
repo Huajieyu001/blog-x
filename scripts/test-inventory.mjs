@@ -26,6 +26,7 @@ const entries = [
   { path: "apps/api/test/article-draft-preview.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
   { path: "apps/api/test/article-lifecycle.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
   { path: "apps/api/test/article-slug-redirects.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
+  { path: "apps/api/test/article-revisions.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
   { path: "apps/api/test/auth-session.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
   { path: "apps/api/test/backup-restore.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "backup-restore" },
   { path: "apps/api/test/distribution-export.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },

@@ -71,21 +71,22 @@ function phase11RuntimeAuthority() {
 test("canonical integration selection owns exact non-Phase-7 inventory once by fixture owner", () => {
   const selection = canonicalIntegrationSelection();
   assert.deepEqual(selection.paths, canonicalGeneratedPaths);
-  assert.equal(selection.paths.length, 33);
+  assert.equal(selection.paths.length, 34);
   assert.equal(new Set(selection.paths).size, selection.paths.length);
   assert.deepEqual(Object.fromEntries(Object.entries(selection.groups).map(([owner, paths]) => [owner, paths.length])), {
-    database: 14,
+    database: 15,
     "backup-restore": 1,
     media: 1,
     "main-browser": 15,
     "error-browser": 1,
     "restore-browser": 1,
   });
-  assert.equal(selection.paths.filter((path) => path.startsWith("apps/api/")).length, 16);
+  assert.equal(selection.paths.filter((path) => path.startsWith("apps/api/")).length, 17);
   assert.equal(selection.paths.filter((path) => path.startsWith("apps/web/e2e/")).length, 17);
   assert.equal(selection.paths.includes("apps/web/e2e/public-discovery.spec.ts"), false);
   assert.equal(canonicalDatabaseEnvironment["apps/api/test/site-settings.test.ts"], "AUTH_TEST_DATABASE_URL");
   assert.equal(canonicalDatabaseEnvironment["apps/api/test/article-slug-redirects.test.ts"], "LIFECYCLE_TEST_DATABASE_URL");
+  assert.equal(canonicalDatabaseEnvironment["apps/api/test/article-revisions.test.ts"], "LIFECYCLE_TEST_DATABASE_URL");
   assert.deepEqual(Object.keys(canonicalDatabaseEnvironment).sort(), selection.groups.database);
   assert.match(selection.manifestSha256, /^[a-f0-9]{64}$/);
 });
@@ -228,7 +229,7 @@ test("generated integration result binds exact paths actual counts cleanup and d
   assert.equal(result.version, 1);
   assert.equal(result.releaseState, "BLOCKED");
   assert.deepEqual(result.inventory, selection.paths);
-  assert.deepEqual(result.counts, { tests: 33, passed: 33, failed: 0, cancelled: 0, skipped: 0, todo: 0 });
+  assert.deepEqual(result.counts, { tests: 34, passed: 34, failed: 0, cancelled: 0, skipped: 0, todo: 0 });
   assert.deepEqual(result.cleanup, cleanup);
   assert.equal(result.manifestSha256, selection.manifestSha256);
   assert.match(result.resultSha256, /^[a-f0-9]{64}$/);
@@ -617,7 +618,7 @@ test("Phase 6 interruption and parallel paths keep exact generated authority", a
   assert.doesNotMatch(parallel, /phase5|receipt/i);
 });
 
-test("current migration authority is a complete fifteen-entry Drizzle history", async () => {
+test("current migration authority is a complete sixteen-entry Drizzle history", async () => {
   const drizzleRoot = join(process.cwd(), "apps/api/drizzle");
   const metadataRoot = join(drizzleRoot, "meta");
   const sqlFiles = (await readdir(drizzleRoot)).filter((name) => /^\d{4}_.+\.sql$/.test(name)).sort();
@@ -626,17 +627,18 @@ test("current migration authority is a complete fifteen-entry Drizzle history", 
   const mediaMigration = await readFile(join(drizzleRoot, "0012_media-audit-metadata.sql"), "utf8");
   const settingsMigration = await readFile(join(drizzleRoot, "0013_site_settings.sql"), "utf8");
   const redirectMigration = await readFile(join(drizzleRoot, "0014_article-slug-redirects.sql"), "utf8");
+  const revisionsMigration = await readFile(join(drizzleRoot, "0015_article-revisions.sql"), "utf8");
   const schema = await readFile(join(process.cwd(), "apps/api/src/db/schema.ts"), "utf8");
   const findings = [];
 
-  if (sqlFiles.length !== 15 || sqlFiles[0] !== "0000_phase1_walking_skeleton.sql" || sqlFiles.at(-1) !== "0014_article-slug-redirects.sql") {
-    findings.push(`numbered SQL authority must contain exactly 0000 through 0014; found ${sqlFiles.join(", ")}`);
+  if (sqlFiles.length !== 16 || sqlFiles[0] !== "0000_phase1_walking_skeleton.sql" || sqlFiles.at(-1) !== "0015_article-revisions.sql") {
+    findings.push(`numbered SQL authority must contain exactly 0000 through 0015; found ${sqlFiles.join(", ")}`);
   }
   const journalTail = journal.entries?.at(-1);
-  if (journal.entries?.length !== 15 || journalTail?.idx !== 14 || journalTail?.tag !== "0014_article-slug-redirects") {
-    findings.push(`journal must end at idx 14 / 0014_article-slug-redirects; found ${JSON.stringify(journalTail)}`);
+  if (journal.entries?.length !== 16 || journalTail?.idx !== 15 || journalTail?.tag !== "0015_article-revisions") {
+    findings.push(`journal must end at idx 15 / 0015_article-revisions; found ${JSON.stringify(journalTail)}`);
   }
-  if (!metadataFiles.includes("0012_snapshot.json") || !metadataFiles.includes("0013_snapshot.json") || !metadataFiles.includes("0014_snapshot.json")) findings.push("generated metadata must include current snapshots");
+  if (!metadataFiles.includes("0012_snapshot.json") || !metadataFiles.includes("0013_snapshot.json") || !metadataFiles.includes("0014_snapshot.json") || !metadataFiles.includes("0015_snapshot.json")) findings.push("generated metadata must include current snapshots");
 
   const snapshot = metadataFiles.includes("0012_snapshot.json")
     ? await readFile(join(metadataRoot, "0012_snapshot.json"), "utf8")
@@ -661,6 +663,12 @@ test("current migration authority is a complete fifteen-entry Drizzle history", 
     if (!redirectMigration.includes(token)) findings.push(`slug redirect migration is missing ${token}`);
     if (!schema.includes(token)) findings.push(`Drizzle schema is missing ${token}`);
     if (redirectSnapshot && !redirectSnapshot.includes(token)) findings.push(`slug redirect snapshot is missing ${token}`);
+  }
+  const revisionSnapshot = metadataFiles.includes("0015_snapshot.json") ? await readFile(join(metadataRoot, "0015_snapshot.json"), "utf8") : "";
+  for (const token of ["article_revisions", "article_revisions_newest_index", "article_revisions_article_source_version_unique"]) {
+    if (!revisionsMigration.includes(token)) findings.push(`article revision migration is missing ${token}`);
+    if (!schema.includes(token)) findings.push(`Drizzle schema is missing ${token}`);
+    if (revisionSnapshot && !revisionSnapshot.includes(token)) findings.push(`article revision snapshot is missing ${token}`);
   }
   assert.deepEqual(findings, [], "current migration authorities must be structurally identical");
 });
