@@ -124,7 +124,7 @@ test("administrator uploads, reuses, protects, and safely deletes responsive med
   expect(mediaResponse.headers()["x-content-type-options"]).toBe("nosniff");
 
   await page.goto(`${webOrigin}/admin/media`);
-  await expect(page.getByRole("heading", { name: "媒体库" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "媒体库", level: 1 })).toBeVisible();
   const library = page.getByRole("list", { name: "媒体目录" });
   const purposefulId = purposefulUrl!.slice("/media/".length);
   await page.getByLabel("按媒体 ID 搜索").fill(purposefulId);
@@ -172,7 +172,7 @@ test("administrator uploads, reuses, protects, and safely deletes responsive med
   for (const viewport of [{ width: 390, height: 812 }, { width: 768, height: 1024 }, { width: 1280, height: 900 }]) {
     await page.setViewportSize(viewport);
     await page.goto(`${webOrigin}/admin/media`);
-    const box = await page.getByRole("heading", { name: "媒体库" }).boundingBox();
+    const box = await page.getByRole("heading", { name: "媒体库", level: 1 }).boundingBox();
     expect(box).not.toBeNull();
     expect(box!.width).toBeLessThanOrEqual(viewport.width);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
