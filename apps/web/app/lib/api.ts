@@ -33,6 +33,8 @@ import {
   type PublicSiteSettings,
   adminSiteSettingsSchema,
   type AdminSiteSettings,
+  articleRevisionListSchema,
+  type ArticleRevisionSummary,
 } from "@blog-x/contracts";
 import { cache } from "react";
 
@@ -143,6 +145,20 @@ export async function getAdminPostResult(id: string, cookieHeader: string): Prom
     if (response.status === 404) return { kind: "not_found" };
     if (!response.ok) return { kind: "upstream_error" };
     const parsed = adminPostSchema.safeParse(await response.json());
+    return parsed.success ? { kind: "ok", data: parsed.data } : { kind: "upstream_error" };
+  } catch {
+    return { kind: "upstream_error" };
+  }
+}
+
+export async function getAdminRevisionListResult(id: string, cookieHeader: string): Promise<AdminResult<ArticleRevisionSummary[]>> {
+  try {
+    const response = await fetch(`${internalApiOrigin}/admin/posts/${encodeURIComponent(id)}/revisions`, {
+      cache: "no-store",
+      headers: cookieHeader ? { cookie: cookieHeader } : undefined,
+    });
+    if (!response.ok) return { kind: "upstream_error" };
+    const parsed = articleRevisionListSchema.safeParse(await response.json());
     return parsed.success ? { kind: "ok", data: parsed.data } : { kind: "upstream_error" };
   } catch {
     return { kind: "upstream_error" };

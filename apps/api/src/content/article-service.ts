@@ -1,6 +1,8 @@
 import {
   adminPostInputSchema,
   adminPostSchema,
+  articleRevisionDetailSchema,
+  articleRevisionSnapshotSchema,
   articleStatusSchema,
   type AdminPost,
   type AdminPostInput,
@@ -123,6 +125,7 @@ const editableFields = [
   "tagIds",
   "coverMedia",
 ] as const;
+type RevisionField = (typeof editableFields)[number];
 
 function equalDates(left: Date | null, right: string | null) {
   return (left?.toISOString() ?? null) === right;
@@ -261,6 +264,20 @@ export function createArticleService(repository: AdminPostRepository) {
     }));
   }
 
+  async function revisionDetail(id: string, revisionId: string) {
+    const [current, revision] = await Promise.all([repository.findRetainedById(id), repository.findRevision(id, revisionId)]);
+    if (!current || !revision) return null;
+    const snapshot = articleRevisionSnapshotSchema.parse(revision.snapshot);
+    const currentWire = serialize(current);
+    const fields: RevisionField[] = ["title", "summary", "coverUrl", "slug", "markdown", "publishedAt", "seoDescription", "categoryId", "tagIds", "coverMedia"];
+    const changedFields = fields.filter((field) => JSON.stringify(snapshot[field]) !== JSON.stringify(currentWire[field]));
+    return articleRevisionDetailSchema.parse({
+      revision: { id: revision.id, createdAt: revision.createdAt.toISOString(), sourceVersion: revision.sourceVersion.toISOString(), changedFields: revision.changedFields, snapshot },
+      current: currentWire,
+      changedFields,
+    });
+  }
+
   async function transition(id: string, action: ArticleAction, actorAdministratorId: string): Promise<ArticleServiceResult | DeleteServiceResult> {
     const result = await repository.transactRetained<ArticleServiceResult | DeleteServiceResult>(id, actorAdministratorId, async (current, update, audit, transactionNow) => {
       const status = statusOf(current);
@@ -351,7 +368,7 @@ export function createArticleService(repository: AdminPostRepository) {
     return result ?? { ok: false, detail: { error: "not_found" } };
   }
 
-  return { createDraft, getDraft, listDrafts, listDeleted, listRevisions, restoreDeleted, updateDraft, transition, schedule, cancelSchedule };
+  return { createDraft, getDraft, listDrafts, listDeleted, listRevisions, revisionDetail, restoreDeleted, updateDraft, transition, schedule, cancelSchedule };
 }
 
 export type ArticleService = ReturnType<typeof createArticleService>;

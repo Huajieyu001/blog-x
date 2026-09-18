@@ -3,6 +3,7 @@ import {
   adminPostIdSchema,
   adminPostListSchema,
   articleRevisionListSchema,
+  articleRevisionDetailSchema,
   adminPostPreviewInputSchema,
   adminPostPreviewSchema,
   adminPostUpdateSchema,
@@ -161,6 +162,15 @@ export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async 
     if (!id.success) return reply.code(404).send({ error: "not_found" });
     const revisions = await options.articleService.listRevisions(id.data);
     return revisions === null ? reply.code(404).send({ error: "not_found" }) : articleRevisionListSchema.parse(revisions);
+  });
+
+  app.get<{ Params: { id: string; revisionId: string } }>("/admin/posts/:id/revisions/:revisionId", async (request, reply) => {
+    if (!await requireAdministrator(request, reply, options.mutationGuard)) return;
+    const id = adminPostIdSchema.safeParse(request.params.id);
+    const revisionId = adminPostIdSchema.safeParse(request.params.revisionId);
+    if (!id.success || !revisionId.success) return reply.code(404).send({ error: "not_found" });
+    const detail = await options.articleService.revisionDetail(id.data, revisionId.data);
+    return detail ? articleRevisionDetailSchema.parse(detail) : reply.code(404).send({ error: "not_found" });
   });
 
   app.put<{ Params: { id: string } }>("/admin/posts/:id", { bodyLimit: 256 * 1024 }, async (request, reply) => {

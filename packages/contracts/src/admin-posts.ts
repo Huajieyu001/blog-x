@@ -98,6 +98,14 @@ export const slugSuggestionSchema = z.object({ slug: z.string() }).strict();
 export const adminPostIdSchema = z.uuid();
 export const articleRevisionSummarySchema = z.object({ id: z.uuid(), createdAt: z.string().datetime({ offset: true }), sourceVersion: z.string().datetime({ offset: true }), changedFields: z.array(z.string()).max(10) }).strict();
 export const articleRevisionListSchema = z.array(articleRevisionSummarySchema).max(20);
+export const articleRevisionSnapshotSchema = adminPostInputSchema.extend({ status: articleStatusSchema }).strict();
+export const articleRevisionDetailSchema = z.object({
+  revision: articleRevisionSummarySchema.extend({ snapshot: articleRevisionSnapshotSchema }).strict(),
+  current: adminPostSchema,
+  changedFields: z.array(z.enum(["title", "summary", "coverUrl", "slug", "markdown", "publishedAt", "seoDescription", "categoryId", "tagIds", "coverMedia"])) .max(10),
+}).strict();
+export const articleRevisionRestoreInputSchema = z.object({ version: z.string().datetime({ offset: true }) }).strict();
+export const staleRevisionVersionSchema = z.object({ error: z.literal("stale_version") }).strict();
 
 export const fieldErrorResponseSchema = z.object({
   error: z.literal("validation_failed"),
@@ -122,6 +130,7 @@ export function suggestSlug(title: string) {
 export type AdminPostInput = z.infer<typeof adminPostInputSchema>;
 export type AdminPostUpdateInput = z.infer<typeof adminPostUpdateSchema>;
 export type AdminPost = z.infer<typeof adminPostSchema>;
+export type ArticleRevisionSummary = z.infer<typeof articleRevisionSummarySchema>;
 export type DeletedPost = z.infer<typeof deletedPostSchema>;
 export type ArticleAction = z.infer<typeof articleActionSchema>;
 export type ArticleStatus = z.infer<typeof articleStatusSchema>;
@@ -129,3 +138,4 @@ export type LegacyMediaReview = z.infer<typeof legacyMediaReviewSchema>;
 export type PublishedSlugConfirmation = z.infer<typeof publishedSlugConfirmationSchema>;
 export type FieldErrorResponse = z.infer<typeof fieldErrorResponseSchema>;
 export type ScheduleArticleInput = z.infer<typeof scheduleArticleInputSchema>;
+export type ArticleRevisionDetail = z.infer<typeof articleRevisionDetailSchema>;

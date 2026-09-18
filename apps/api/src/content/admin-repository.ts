@@ -217,6 +217,10 @@ export function createAdminPostRepository(db: Database) {
       .orderBy(desc(schema.articleRevisions.createdAt), desc(schema.articleRevisions.id)).limit(20);
   }
 
+  async function findRevision(articleId: string, revisionId: string) {
+    return (await db.select().from(schema.articleRevisions).where(and(eq(schema.articleRevisions.articleId, articleId), eq(schema.articleRevisions.id, revisionId))).limit(1))[0] ?? null;
+  }
+
   async function transactRetained<T>(
     id: string,
     actorAdministratorId: string,
@@ -372,7 +376,7 @@ export function createAdminPostRepository(db: Database) {
     });
   }
 
-  return { createDraft, findRetainedById, listRetained, listDeleted, listRevisions, transactRetained, transactDeleted, transactDue };
+  return { createDraft, findRetainedById, listRetained, listDeleted, listRevisions, findRevision, transactRetained, transactDeleted, transactDue };
 }
 
 export type AdminPostRepository = ReturnType<typeof createAdminPostRepository>;
