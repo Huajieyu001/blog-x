@@ -2,7 +2,8 @@ import { execFile } from "node:child_process";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runProductionBackup } from "./production/adapter.mjs";
+import { recordBackupFailure, runProductionBackup } from "./production/adapter.mjs";
+import { randomBytes } from "node:crypto";
 import { collectProductionBackupSet } from "./production/collector.mjs";
 import { parseProductionPipelinePolicy } from "./production/policy.mjs";
 import { validateProductionSourceBase, verifyProductionBackupSource } from "./production/source-authority.mjs";
@@ -22,23 +23,28 @@ async function inspectLocalMount(root) {
 
 export async function runProductionPipeline(value, dependencies = {}) {
   const policy = parseProductionPipelinePolicy(value);
-  const authority = validateProductionSourceBase(policy.sourceAuthority);
-  const existing = await readdir(authority.sourceBase);
-  if (existing.some((entry) => entry.startsWith(".") && entry.includes(".incomplete-"))) fail("source staging authority is not empty");
-  const collected = await collectProductionBackupSet({
-    format: "blog-x-production-backup-policy", version: 1, sourceAuthority: policy.sourceAuthority, collector: policy.collector,
-  }, dependencies);
-  const source = await verifyProductionBackupSource(collected.finalRoot, policy.sourceAuthority);
-  const createdAt = source.manifest.createdAt;
-  const result = await runProductionBackup({
-    sourceRoot: collected.finalRoot, sourceAuthority: policy.sourceAuthority, keyAuthority: policy.keyAuthority,
-    destination: policy.destination, retention: policy.retention, resultAuthority: policy.resultAuthority,
-    alertAuthority: policy.alertAuthority, createdAt,
-  }, { inspectMount: dependencies.inspectMount ?? inspectLocalMount });
-  if (policy.sourceAuthority.kind === "generated-test" && result.scope === "generated-mounted-fixture") {
-    return { ...result, scope: "generated-production-pipeline" };
+  const runId = `attempt-${randomBytes(8).toString("hex")}`;
+  try {
+    const authority = validateProductionSourceBase(policy.sourceAuthority);
+    const existing = await readdir(authority.sourceBase);
+    if (existing.some((entry) => entry.startsWith(".") && entry.includes(".incomplete-"))) fail("source staging authority is not empty");
+    const collected = await collectProductionBackupSet({
+      format: "blog-x-production-backup-policy", version: 1, sourceAuthority: policy.sourceAuthority, collector: policy.collector,
+    }, dependencies);
+    const source = await verifyProductionBackupSource(collected.finalRoot, policy.sourceAuthority);
+    const createdAt = source.manifest.createdAt;
+    const input = {
+      sourceRoot: collected.finalRoot, sourceAuthority: policy.sourceAuthority, keyAuthority: policy.keyAuthority,
+      destination: policy.destination, retention: policy.retention, resultAuthority: policy.resultAuthority,
+      alertAuthority: policy.alertAuthority, createdAt,
+    };
+    const result = await runProductionBackup(input, { inspectMount: dependencies.inspectMount ?? inspectLocalMount, ...dependencies });
+    if (policy.sourceAuthority.kind === "generated-test" && result.scope === "generated-mounted-fixture") return { ...result, scope: "generated-production-pipeline" };
+    return result;
+  } catch (error) {
+    await recordBackupFailure({ ...policy, sourceAuthority: policy.sourceAuthority }, error, { runId, observedAt: new Date().toISOString(), recordFailure: dependencies.recordFailure }).catch(() => undefined);
+    throw error;
   }
-  return result;
 }
 
 function option(name) {
@@ -55,7 +61,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
     readFile(policyPath, "utf8").then(JSON.parse).then((policy) => runProductionPipeline(policy)).then((result) => {
       process.stdout.write(`PRODUCTION BACKUP PIPELINE COMPLETE ${result.setId}\n`);
     }).catch((error) => {
-      process.stderr.write(`PRODUCTION BACKUP PIPELINE FAILED ${error instanceof Error ? error.message : "unknown"}\n`);
+      const failure = error?.backupFailure;
+      process.stderr.write(`PRODUCTION BACKUP PIPELINE FAILED ${failure?.stage ?? "result"} ${failure?.code ?? "RESULT_FAILED"}\n`);
       process.exitCode = 1;
     });
   }

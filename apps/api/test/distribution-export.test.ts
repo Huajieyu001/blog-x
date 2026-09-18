@@ -33,17 +33,21 @@ test("the protected export reconstructs every retained source state without bina
   const categoryId = "00000000-0000-4000-8000-000000000010";
   const tagIds = ["00000000-0000-4000-8000-000000000020", "00000000-0000-4000-8000-000000000021"];
   const mediaId = "00000000-0000-4000-8000-000000000030";
+  const tombstonedMediaId = "00000000-0000-4000-8000-000000000031";
   const scheduledByAdministratorId = (await db.select({ id: schema.administrators.id }).from(schema.administrators).limit(1))[0]!.id;
   await db.insert(schema.categories).values({ id: categoryId, name: "工程实践", slug: "engineering", createdAt, updatedAt });
   await db.insert(schema.tags).values([
     { id: tagIds[0], name: "TypeScript", slug: "typescript", createdAt, updatedAt },
     { id: tagIds[1], name: "可迁移", slug: "portable", createdAt, updatedAt },
   ]);
-  await db.insert(schema.media).values({
-    id: mediaId, sourceKey: `source/${mediaId}.bin`, derivativeKey: `derivative/${mediaId}.png`,
-    sourceMimeType: "image/png", derivativeMimeType: "image/png", sourceBytes: 64, derivativeBytes: 32,
-    width: 32, height: 18, createdAt,
-  });
+  await db.insert(schema.media).values([
+    { id: mediaId, sourceKey: `source/${mediaId}.bin`, derivativeKey: `derivative/${mediaId}.png`,
+      sourceMimeType: "image/png", derivativeMimeType: "image/png", sourceBytes: 64, derivativeBytes: 32,
+      width: 32, height: 18, createdAt, deletedAt: null },
+    { id: tombstonedMediaId, sourceKey: `source/${tombstonedMediaId}.bin`, derivativeKey: `derivative/${tombstonedMediaId}.png`,
+      sourceMimeType: "image/png", derivativeMimeType: "image/png", sourceBytes: 64, derivativeBytes: 32,
+      width: 32, height: 18, createdAt, deletedAt },
+  ]);
   const articleRows = [
     { id: "00000000-0000-4000-8000-000000000040", title: "保留草稿", summary: "strict manifest tracer", coverUrl: "https://images.example.test/historic-cover.png", slug: "retained-unicode-draft", markdown: "# 原文\n\n![历史图片](https://images.example.test/historic.png)\n\n<script>alert('never render')</script>\n\n中文 ✅", seoDescription: "source authority", status: "draft", publishedAt: null, scheduledAt, scheduledByAdministratorId, deletedAt: null, createdAt, updatedAt, categoryId, coverMediaId: mediaId, coverAlt: "封面", coverDecorative: false, legacyMediaReview: "review_required" },
     { id: "00000000-0000-4000-8000-000000000041", title: "已发布", summary: "published", coverUrl: "", slug: "retained-published", markdown: "# published", seoDescription: "published source", status: "published", publishedAt, scheduledAt: null, scheduledByAdministratorId: null, deletedAt: null, createdAt, updatedAt, categoryId, coverMediaId: null, coverAlt: "", coverDecorative: false, legacyMediaReview: "clear" },
@@ -132,6 +136,7 @@ test("the protected export reconstructs every retained source state without bina
     const categoryIds = new Set(manifest.categories.map((item) => item.id));
     const exportedTagIds = new Set(manifest.tags.map((item) => item.id));
     const mediaIds = new Set(manifest.media.map((item) => item.id));
+    assert.equal(mediaIds.has(tombstonedMediaId), false, "tombstoned media must not enter a portable export");
     for (const article of manifest.articles) {
       assert.ok(!article.categoryId || categoryIds.has(article.categoryId), "category references must not dangle");
       assert.ok(!article.coverMediaId || mediaIds.has(article.coverMediaId), "media references must not dangle");
@@ -147,7 +152,7 @@ test("the protected export reconstructs every retained source state without bina
       articles: sourceArticles.map((item) => ({ ...item, publishedAt: item.publishedAt?.toISOString() ?? null, scheduledAt: item.scheduledAt?.toISOString() ?? null, deletedAt: item.deletedAt?.toISOString() ?? null, createdAt: item.createdAt.toISOString(), updatedAt: item.updatedAt.toISOString(), tagIds: (sourceTagIds.get(item.id) ?? []).sort() })).sort((left, right) => left.id.localeCompare(right.id)),
       categories: sourceCategories.map((item) => ({ ...item, createdAt: item.createdAt.toISOString(), updatedAt: item.updatedAt.toISOString() })).sort((left, right) => left.id.localeCompare(right.id)),
       tags: sourceTags.map((item) => ({ ...item, createdAt: item.createdAt.toISOString(), updatedAt: item.updatedAt.toISOString() })).sort((left, right) => left.id.localeCompare(right.id)),
-      media: sourceMedia.map((item) => ({ id: item.id, width: item.width, height: item.height, mimeType: item.derivativeMimeType, createdAt: item.createdAt.toISOString() })).sort((left, right) => left.id.localeCompare(right.id)),
+      media: sourceMedia.filter((item) => item.deletedAt === null).map((item) => ({ id: item.id, width: item.width, height: item.height, mimeType: item.derivativeMimeType, createdAt: item.createdAt.toISOString() })).sort((left, right) => left.id.localeCompare(right.id)),
       about: sourceAbout[0] && { ...sourceAbout[0], version: sourceAbout[0].version.toISOString(), createdAt: sourceAbout[0].createdAt.toISOString(), updatedAt: sourceAbout[0].updatedAt.toISOString() },
     };
     const reconstructed = {

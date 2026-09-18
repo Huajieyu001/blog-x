@@ -5,6 +5,9 @@ import { basename, dirname, resolve } from "node:path";
 
 const digestPattern = /^[a-f0-9]{64}$/;
 const setPattern = /^\d{8}T\d{6}Z-[a-z0-9]{8,32}$/;
+const runPattern = /^[a-z0-9][a-z0-9-]{7,80}$/;
+const failureStages = new Set(["collection", "encryption", "transfer", "receipt", "retention", "result", "recovery"]);
+const failureCodes = new Set(["COLLECTION_FAILED", "ENCRYPTION_FAILED", "TRANSFER_FAILED", "RECEIPT_INVALID", "RETENTION_FAILED", "RESULT_FAILED", "RECOVERY_FAILED"]);
 
 function fail(message) {
   throw new Error(`production result ${message}`);
@@ -58,6 +61,23 @@ export function redactProductionBackupResult(value) {
   return productionBackupResultSchema.parse(JSON.parse(JSON.stringify(value)));
 }
 
+export const productionBackupFailureSchema = {
+  parse(value) {
+    if (!strictObject(value, ["code", "format", "observedAt", "runId", "scope", "stage", "status", "version"])) fail("failure schema is invalid");
+    if (value.format !== "blog-x-production-backup-attempt" || value.version !== 1 || value.status !== "failed"
+      || !runPattern.test(value.runId ?? "") || !Number.isFinite(Date.parse(value.observedAt))
+      || !failureStages.has(value.stage) || !failureCodes.has(value.code)
+      || !["generated-production-pipeline", "service-production-pipeline"].includes(value.scope)) fail("failure schema is invalid");
+    const serialized = JSON.stringify(value);
+    if (/postgres(?:ql)?:\/\/|-----BEGIN|\b(?:password|cookie|token)\b|\bhttps?:\/\//i.test(serialized)) fail("failure contains sensitive authority");
+    return value;
+  },
+};
+
+export function redactProductionBackupFailure(value) {
+  return productionBackupFailureSchema.parse(JSON.parse(JSON.stringify(value)));
+}
+
 export function parseProductionReleaseEvidence(value) {
   const parsed = productionBackupResultSchema.parse(value);
   if (parsed.scope !== "service-production-pipeline" || parsed.alertOutcome !== "recorded") fail("generated or unconfirmed evidence is not live production evidence");
@@ -85,6 +105,13 @@ export async function recordProductionResult(authority, value) {
   const result = redactProductionBackupResult(value);
   await appendAtomic(root.root, `result-${result.setId}.json`, result);
   return result;
+}
+
+export async function recordProductionFailure(authority, value) {
+  const root = await validateResultAuthority(authority);
+  const failure = redactProductionBackupFailure(value);
+  await appendAtomic(root.root, `attempt-${failure.runId}.json`, failure);
+  return failure;
 }
 
 export async function recordAlertOutcome(authority, value) {

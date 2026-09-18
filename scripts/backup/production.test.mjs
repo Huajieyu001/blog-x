@@ -12,7 +12,7 @@ import { runProductionPipeline } from "./production-pipeline.mjs";
 import { createMountedDirectoryTransport } from "./production/mounted-directory.mjs";
 import { applySafeRetention } from "./production/retention.mjs";
 import { createGeneratedFakeTransport } from "./production/transport.mjs";
-import { parseProductionReleaseEvidence } from "./production/results.mjs";
+import { parseProductionReleaseEvidence, recordProductionFailure } from "./production/results.mjs";
 import { parseProductionBackupPolicy } from "./production/policy.mjs";
 import { validateProductionBackupSource, verifyProductionBackupSource } from "./production/source-authority.mjs";
 
@@ -172,15 +172,16 @@ test("production source authority accepts only an exact generated root and share
   }
 });
 
-test("production authorities reject stale migration count 8 after accepting current count 9", async (context) => {
+test("production authorities bind a positive migration ledger fingerprint without pinning a historical count", async (context) => {
   const sourceBase = await mkdtemp(join(tmpdir(), "blog-x-production-source-"));
   context.after(async () => { await rm(sourceBase, { recursive: true, force: true }); });
   const currentInventory = await collectorDependencies().readAllowlistedInventory();
-  assert.doesNotThrow(() => createProductionInventory(currentInventory), "collector inventory accepts current migration count 9");
+  assert.doesNotThrow(() => createProductionInventory(currentInventory), "collector inventory accepts a positive migration count");
+  assert.doesNotThrow(() => createProductionInventory({ ...currentInventory, migration: { ...currentInventory.migration, count: 12 } }), "collector inventory accepts later append-only migrations");
   assert.throws(() => createProductionInventory({
     ...currentInventory,
-    migration: { ...currentInventory.migration, count: 8 },
-  }), /migration/i, "collector inventory rejects stale migration count 8");
+    migration: { ...currentInventory.migration, count: 0 },
+  }), /migration/i, "collector inventory rejects a missing migration ledger");
 
   const currentRoot = join(sourceBase, setId);
   await mkdir(currentRoot, { mode: 0o700 });
@@ -188,10 +189,14 @@ test("production authorities reject stale migration count 8 after accepting curr
   const authority = { kind: "generated-test", sourceBase };
   assert.equal((await verifyProductionBackupSource(currentRoot, authority)).inventory.migration.count, 9);
 
-  const staleRoot = join(sourceBase, "20260809T100001Z-b1c2d3e4");
-  await mkdir(staleRoot, { mode: 0o700 });
-  await writeCompleteSet(staleRoot, 8);
-  await assert.rejects(verifyProductionBackupSource(staleRoot, authority), /migration.*count/i, "source authority rejects stale migration count 8");
+  const laterRoot = join(sourceBase, "20260809T100001Z-b1c2d3e4");
+  await mkdir(laterRoot, { mode: 0o700 });
+  await writeCompleteSet(laterRoot, 12);
+  assert.equal((await verifyProductionBackupSource(laterRoot, authority)).inventory.migration.count, 12);
+  const invalidRoot = join(sourceBase, "20260809T100002Z-c1c2d3e4");
+  await mkdir(invalidRoot, { mode: 0o700 });
+  await writeCompleteSet(invalidRoot, 0);
+  await assert.rejects(verifyProductionBackupSource(invalidRoot, authority), /config inventory/i, "source authority rejects a missing migration ledger");
 });
 
 test("production source authority rejects rehearsal roots, links, and content mutations before success", async (context) => {
@@ -269,7 +274,7 @@ test("collector fails closed at every collection and finalization stage without 
     ["portable", collectorDependencies({ writePortableExportV1: async () => { throw new Error("portable stage fault"); } })],
     ["media", collectorDependencies({ copyApiMedia: async () => { throw new Error("media stage fault"); } })],
     ["config", collectorDependencies({ readAllowlistedInventory: async () => { throw new Error("config stage fault"); } })],
-    ["migration", collectorDependencies({ readAllowlistedInventory: async () => ({ ...await collectorDependencies().readAllowlistedInventory(), migration: { count: 6, fingerprint: "a".repeat(64) } }) })],
+    ["migration", collectorDependencies({ readAllowlistedInventory: async () => ({ ...await collectorDependencies().readAllowlistedInventory(), migration: { count: 0, fingerprint: "a".repeat(64) } }) })],
     ["image", collectorDependencies({ readAllowlistedInventory: async () => ({ ...await collectorDependencies().readAllowlistedInventory(), images: { api: "sha256:bad" } }) })],
     ["manifest", { ...collectorDependencies(), filesystem: failureFilesystem("manifest") }],
     ["COMPLETE", { ...collectorDependencies(), filesystem: failureFilesystem("complete") }],
@@ -298,14 +303,14 @@ test("concrete generated mount receives only authenticated ciphertext, receipt, 
 
 test("adapter fails closed for mount, receipt, catalog, retention, result, alert, and fake transport faults", async (context) => {
   const mountFault = await adapterFixture(context, "e1b2c3d4");
-  await assert.rejects(runProductionBackup(mountFault, { inspectMount: async () => ({ isMountPoint: false }) }), /mount/i);
+  await assert.rejects(runProductionBackup(mountFault, { inspectMount: async () => ({ isMountPoint: false }) }), /transfer/i);
   const receiptFault = await adapterFixture(context, "f1b2c3d4");
   const fake = createGeneratedFakeTransport({ failAt: "receipt" });
-  await assert.rejects(runProductionBackup(receiptFault, { inspectMount: async (root) => ({ isMountPoint: true, root }), transport: fake }), /receipt/i);
+  await assert.rejects(runProductionBackup(receiptFault, { inspectMount: async (root) => ({ isMountPoint: true, root }), transport: fake }), /transfer|receipt/i);
   const resultFault = await adapterFixture(context, "g1b2c3d4");
   await assert.rejects(runProductionBackup(resultFault, { inspectMount: async (root) => ({ isMountPoint: true, root }), recordResult: async () => { throw new Error("result stage fault"); } }), /result/i);
   const alertFault = await adapterFixture(context, "h1b2c3d4");
-  await assert.rejects(runProductionBackup(alertFault, { inspectMount: async (root) => ({ isMountPoint: true, root }), recordAlert: async () => ({ status: "unconfirmed" }) }), /alert/i);
+  await assert.rejects(runProductionBackup(alertFault, { inspectMount: async (root) => ({ isMountPoint: true, root }), recordAlert: async () => ({ status: "unconfirmed" }) }), /result/i);
 });
 
 test("a successful generated fake remains fault-only and cannot parse as production release evidence", async (context) => {
@@ -338,6 +343,18 @@ test("mounted transport retries only an exact complete ciphertext receipt pair a
   await assert.rejects(transport.transfer({ ...payload, manifestSha256: "c".repeat(64) }), /collision.*match/i);
   await rm(join(input.destination.mountRoot, "objects", `${payload.setId}.receipt.json`));
   await assert.rejects(transport.transfer(payload), /incomplete/i);
+});
+
+test("failure attempt evidence is append-only, fixed-schema, and redacted", async (context) => {
+  const input = await adapterFixture(context, "s1b2c3d4");
+  const result = await recordProductionFailure(input.resultAuthority, {
+    format: "blog-x-production-backup-attempt", version: 1, status: "failed", runId: "attempt-a1b2c3d4",
+    observedAt: "2026-08-09T10:00:00.000Z", scope: "generated-production-pipeline", stage: "transfer", code: "TRANSFER_FAILED",
+  });
+  assert.equal(result.code, "TRANSFER_FAILED");
+  const entries = await readdir(input.resultAuthority.root);
+  assert.equal(entries.filter((entry) => entry.startsWith("attempt-")).length, 1);
+  await assert.rejects(recordProductionFailure(input.resultAuthority, { ...result, runId: "attempt-a1b2c3d5", code: "postgres://secret" }), /schema|sensitive/i);
 });
 
 test("receipt-gated retention preserves the minimum known-good ciphertext and deletes nothing on catalog ambiguity", async (context) => {

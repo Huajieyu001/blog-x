@@ -1,5 +1,5 @@
 import { portableExportManifestSchema, type PortableExportManifest } from "@blog-x/contracts";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, isNull } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "../db/schema.js";
 
@@ -32,7 +32,7 @@ export function createExportRepository(db: Database) {
         tx.select().from(schema.categories).orderBy(asc(schema.categories.id)),
         tx.select().from(schema.tags).orderBy(asc(schema.tags.id)),
         tx.select().from(schema.articleTags).orderBy(asc(schema.articleTags.articleId), asc(schema.articleTags.tagId)),
-        tx.select({ id: schema.media.id, width: schema.media.width, height: schema.media.height, mimeType: schema.media.derivativeMimeType, createdAt: schema.media.createdAt }).from(schema.media).orderBy(asc(schema.media.id)),
+        tx.select({ id: schema.media.id, width: schema.media.width, height: schema.media.height, mimeType: schema.media.derivativeMimeType, createdAt: schema.media.createdAt }).from(schema.media).where(isNull(schema.media.deletedAt)).orderBy(asc(schema.media.id)),
         tx.select().from(schema.sitePages).where(eq(schema.sitePages.key, "about")).orderBy(asc(schema.sitePages.id)),
       ]);
       const tagIdsByArticle = new Map<string, string[]>();

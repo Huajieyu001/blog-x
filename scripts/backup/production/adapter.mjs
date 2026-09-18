@@ -5,6 +5,7 @@ import { createMountedDirectoryTransport } from "./mounted-directory.mjs";
 import { applySafeRetention } from "./retention.mjs";
 import {
   recordAlertOutcome,
+  recordProductionFailure,
   recordProductionResult,
   validateAlertAuthority,
   validateResultAuthority,
@@ -19,6 +20,19 @@ function strictObject(value, keys) {
   return value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).sort().join(",") === [...keys].sort().join(",");
 }
 
+function stageFailure(stage, code) {
+  const error = new Error(`production backup ${stage} failed`);
+  error.backupFailure = { stage, code };
+  return error;
+}
+
+async function stage(name, code, operation) {
+  try { return await operation(); } catch (error) {
+    if (error?.backupFailure) throw error;
+    throw stageFailure(name, code);
+  }
+}
+
 function parseInput(value) {
   if (!strictObject(value, ["alertAuthority", "createdAt", "destination", "keyAuthority", "resultAuthority", "retention", "sourceAuthority", "sourceRoot"])
     || typeof value.sourceRoot !== "string" || !Number.isFinite(Date.parse(value.createdAt)) || !strictObject(value.retention, ["maximumSets", "minimumKnownGood", "policyId"])) fail("input is invalid");
@@ -30,21 +44,21 @@ export async function runProductionBackup(value, dependencies = {}) {
   const sourceRoot = resolve(input.sourceRoot);
   const mountRoot = resolve(input.destination.mountRoot ?? "");
   if (mountRoot === sourceRoot || mountRoot.startsWith(`${sourceRoot}/`) || sourceRoot.startsWith(`${mountRoot}/`)) fail("mount authority overlaps the source authority");
-  const source = await verifyProductionBackupSource(input.sourceRoot, input.sourceAuthority);
-  await Promise.all([validateResultAuthority(input.resultAuthority), validateAlertAuthority(input.alertAuthority)]);
-  const concreteTransport = await createMountedDirectoryTransport(input.destination, { inspectMount: dependencies.inspectMount });
+  const source = await stage("collection", "COLLECTION_FAILED", () => verifyProductionBackupSource(input.sourceRoot, input.sourceAuthority));
+  await stage("result", "RESULT_FAILED", () => Promise.all([validateResultAuthority(input.resultAuthority), validateAlertAuthority(input.alertAuthority)]));
+  const concreteTransport = await stage("transfer", "TRANSFER_FAILED", () => createMountedDirectoryTransport(input.destination, { inspectMount: dependencies.inspectMount }));
   const transport = dependencies.transport ?? concreteTransport;
   if (!transport || typeof transport.transfer !== "function" || typeof transport.catalog !== "function" || typeof transport.deleteCatalogEntry !== "function") fail("transport is invalid");
-  const encrypted = await encryptBackupPayload({
+  const encrypted = await stage("encryption", "ENCRYPTION_FAILED", () => encryptBackupPayload({
     sourceRoot: input.sourceRoot, manifest: source.manifest, marker: source.marker, createdAt: input.createdAt,
     retentionPolicyId: input.retention.policyId, destinationProfileId: concreteTransport.destinationProfileId, keyAuthority: input.keyAuthority,
-  });
-  const receipt = await transport.transfer({
+  }));
+  const receipt = await stage("transfer", "TRANSFER_FAILED", () => transport.transfer({
     setId: source.manifest.setId, ciphertext: encrypted.ciphertext, ciphertextSha256: encrypted.ciphertextSha256,
     manifestSha256: encrypted.manifestSha256, aadSha256: encrypted.aadSha256, createdAt: input.createdAt,
-  });
-  if (!receipt || receipt.ciphertextSha256 !== encrypted.ciphertextSha256 || receipt.manifestSha256 !== encrypted.manifestSha256 || receipt.aadSha256 !== encrypted.aadSha256) fail("receipt binding mismatch");
-  const retention = await applySafeRetention({ transport, retentionPolicyId: input.retention.policyId, minimumKnownGood: input.retention.minimumKnownGood, maximumSets: input.retention.maximumSets });
+  }));
+  if (!receipt || receipt.ciphertextSha256 !== encrypted.ciphertextSha256 || receipt.manifestSha256 !== encrypted.manifestSha256 || receipt.aadSha256 !== encrypted.aadSha256) throw stageFailure("receipt", "RECEIPT_INVALID");
+  const retention = await stage("retention", "RETENTION_FAILED", () => applySafeRetention({ transport, retentionPolicyId: input.retention.policyId, minimumKnownGood: input.retention.minimumKnownGood, maximumSets: input.retention.maximumSets }));
   const scope = input.sourceAuthority.kind === "service" && concreteTransport.scope === "service-mounted-directory" && transport === concreteTransport
     ? "service-production-pipeline"
     : transport.scope ?? concreteTransport.scope;
@@ -60,12 +74,20 @@ export async function runProductionBackup(value, dependencies = {}) {
     alert = await recordAlert(input.alertAuthority, { setId: source.manifest.setId, status: "recorded", createdAt: input.createdAt });
   } catch {
     await (dependencies.recordResult ?? recordProductionResult)(input.resultAuthority, buildResult("unconfirmed")).catch(() => undefined);
-    fail("alert outcome is unconfirmed");
+    throw stageFailure("result", "RESULT_FAILED");
   }
   if (alert?.status !== "recorded") {
     await (dependencies.recordResult ?? recordProductionResult)(input.resultAuthority, buildResult("unconfirmed"));
-    fail("alert outcome is unconfirmed");
+    throw stageFailure("result", "RESULT_FAILED");
   }
   const result = buildResult("recorded");
-  return (dependencies.recordResult ?? recordProductionResult)(input.resultAuthority, result);
+  return stage("result", "RESULT_FAILED", () => (dependencies.recordResult ?? recordProductionResult)(input.resultAuthority, result));
+}
+
+export async function recordBackupFailure(input, error, dependencies = {}) {
+  const failure = error?.backupFailure ?? { stage: "result", code: "RESULT_FAILED" };
+  const runId = dependencies.runId;
+  const observedAt = dependencies.observedAt ?? new Date().toISOString();
+  const scope = input?.sourceAuthority?.kind === "service" ? "service-production-pipeline" : "generated-production-pipeline";
+  return (dependencies.recordFailure ?? recordProductionFailure)(input.resultAuthority, { format: "blog-x-production-backup-attempt", version: 1, status: "failed", runId, observedAt, scope, ...failure });
 }
