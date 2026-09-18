@@ -565,6 +565,8 @@ test("Phase 6 interruption and parallel paths keep exact generated authority", a
   const runner = await readFile(join(process.cwd(), "scripts/local-verify.mjs"), "utf8");
   const schema = runner.slice(runner.indexOf("async function inspectSchema"), runner.indexOf("async function runMigration"));
   assert.match(schema, /values\[1\] !== 13/);
+  assert.match(schema, /values\[3\] !== 13/);
+  assert.doesNotMatch(schema, /values\[3\] !== 14/);
   assert.match(schema, /articles_schedule_pair_check/);
   assert.match(schema, /articles_schedule_draft_check/);
   assert.match(schema, /articles_schedule_due_index/);
