@@ -125,6 +125,7 @@ export default function ArticleEditor({
   const previewSequence = useRef(0);
   const editSequence = useRef(0);
   const saveInFlight = useRef(false);
+  const suppressRecoveryWrites = useRef(false);
   const fieldsRef = useRef(fields);
   const publishedAtCorrectionRef = useRef(publishedAtCorrection);
   const baselineFields = useRef(JSON.stringify(initialFields(post)));
@@ -231,6 +232,10 @@ export default function ArticleEditor({
     }
     const timer = window.setTimeout(() => {
       try {
+        if (suppressRecoveryWrites.current) {
+          removeEditorRecoverySnapshot(storage, target);
+          return;
+        }
         // A save can advance the baseline while a previously scheduled debounce
         // is waiting. Never let that stale callback recreate a recovery draft.
         if (JSON.stringify(fieldsRef.current) === baselineFields.current) {
@@ -260,6 +265,10 @@ export default function ArticleEditor({
       if (!storage) return;
       const target: EditorRecoveryTarget = postId ? { kind: "post", id: postId } : { kind: "new" };
       try {
+        if (suppressRecoveryWrites.current) {
+          removeEditorRecoverySnapshot(storage, target);
+          return;
+        }
         if (JSON.stringify(fieldsRef.current) === baselineFields.current) {
           removeEditorRecoverySnapshot(storage, target);
           return;
@@ -421,6 +430,7 @@ export default function ArticleEditor({
         }
       }
       if (!postId) {
+        if (!editsContinued) suppressRecoveryWrites.current = true;
         setPostId(saved.data.id);
         writeFirstSaveFlash(saved.data.id);
         // Navigation can remount this client boundary before finally runs.
