@@ -63,7 +63,12 @@ export function createMediaService(db: Database, storage: MediaStorage) {
       mimeType: schema.media.derivativeMimeType,
       createdAt: schema.media.createdAt,
     }).from(schema.media)
-      .where(and(isNull(schema.media.deletedAt), query.q ? ilike(schema.media.id, `%${query.q}%`) : undefined))
+      .where(and(
+        isNull(schema.media.deletedAt),
+        // PostgreSQL UUID values cannot be matched with ILIKE directly. Keep
+        // the user fragment parameterized while comparing a text projection.
+        query.q ? ilike(sql`cast(${schema.media.id} as text)`, `%${query.q}%`) : undefined,
+      ))
       .orderBy(desc(schema.media.createdAt), desc(schema.media.id))
       .limit(12)
       .offset((query.page - 1) * 12);

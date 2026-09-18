@@ -130,6 +130,18 @@ test("authenticated upload stores protected source and serves only the immutable
   assert.deepEqual({ width: uploaded.json().width, height: uploaded.json().height, alt: uploaded.json().alt, decorative: uploaded.json().decorative }, { width: 32, height: 18, alt: "", decorative: false });
   assert.doesNotMatch(JSON.stringify(uploaded.json()), /private-name|source|derivative|mediaRoot|\.\./i);
 
+  const secondUpload = await app.inject({ method: "POST", url: "/admin/media", headers: { origin, cookie, "content-type": upload.contentType }, payload: upload.body });
+  assert.equal(secondUpload.statusCode, 201, secondUpload.body);
+  const catalog = await app.inject({ method: "GET", url: `/admin/media?page=1&q=${uploaded.json().id.slice(0, 12)}`, headers: { cookie } });
+  assert.equal(catalog.statusCode, 200, catalog.body);
+  assert.deepEqual(catalog.json().items.map((item: { id: string }) => item.id), [uploaded.json().id], "partial UUID search is parameterized against the UUID text value");
+  const exactCatalog = await app.inject({ method: "GET", url: `/admin/media?page=1&q=${uploaded.json().id}`, headers: { cookie } });
+  assert.equal(exactCatalog.statusCode, 200);
+  assert.deepEqual(exactCatalog.json().items.map((item: { id: string }) => item.id), [uploaded.json().id]);
+  const noMatch = await app.inject({ method: "GET", url: "/admin/media?page=1&q=%27%20or%201%3D1--", headers: { cookie } });
+  assert.equal(noMatch.statusCode, 200, noMatch.body);
+  assert.deepEqual(noMatch.json().items, [], "search text is not SQL authority");
+
   const record = (await pool.query("select source_key, derivative_key, source_mime_type, derivative_mime_type from media where id = $1", [uploaded.json().id])).rows[0];
   assert.match(record.source_key, /^source\/[0-9a-f-]{36}\.bin$/);
   assert.match(record.derivative_key, /^derivative\/[0-9a-f-]{36}\.(?:jpg|png|webp)$/);
