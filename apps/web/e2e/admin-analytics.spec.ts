@@ -165,6 +165,18 @@ test("analytics remains keyboard-accessible, bounded, and document-width-safe ac
   await expect(scroller).toBeFocused();
 });
 
+test("site settings workspace remains responsive with its fixed ICP guidance", async ({ page }) => {
+  await login(page);
+  for (const width of [390, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`${webOrigin}/admin/settings`);
+    await expect(page.getByRole("heading", { name: "站点设置" })).toBeVisible();
+    await expect(page.getByText("备案号固定保留为“黔ICP备2023015906号”，并始终链接至工信部备案查询页面。", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "保存站点设置" })).toBeDisabled();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  }
+});
+
 test("administrator shell is private, responsive, compact, and theme-aware", async ({ page }) => {
   const origins = new Set<string>();
   page.on("request", (request) => origins.add(new URL(request.url()).origin));
@@ -245,7 +257,6 @@ test("administrator shell is private, responsive, compact, and theme-aware", asy
   const routes = [
     ["/admin/taxonomy", "分类与标签", "返回文章管理"],
     ["/admin/about", "关于页", "查看公开关于页"],
-    ["/admin/settings", "站点设置", "查看首页"],
     ["/admin/audit", "操作日志", "返回工作台"],
     ["/admin/analytics?range=30", "访问统计", "30 天"],
   ] as const;
