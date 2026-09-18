@@ -15,7 +15,7 @@ const links = [
   { href: "/about", label: "关于", active: (path: string) => path === "/about" },
 ];
 
-export default function PublicHeader() {
+export default function PublicHeader({ siteName }: { siteName: string }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [compact, setCompact] = useState(false);
@@ -48,7 +48,7 @@ export default function PublicHeader() {
   return (
     <header className={styles.publicHeader} data-testid="public-header">
       <div className={styles.headerBar}>
-        <Link className={styles.brand} href="/">Blog X</Link>
+        <Link className={styles.brand} href="/">{siteName}</Link>
         <div className={styles.headerControls}>
           <ThemeControl />
           <button

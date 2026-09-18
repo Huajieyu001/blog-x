@@ -26,13 +26,14 @@ const eventLabels: Record<AuditEventName, string> = {
   "tag.deleted": "删除标签",
   "about.saved": "保存关于页",
   "about.published": "发布关于页",
+  "site_settings.updated": "更新站点设置",
 };
 
 const fieldLabels: Record<string, string> = {
   title: "标题", summary: "摘要", coverUrl: "旧封面地址", slug: "Slug", markdown: "正文",
   publishedAt: "发布时间", seoDescription: "SEO 描述", categoryId: "分类", tagIds: "标签",
   coverMedia: "封面媒体", name: "名称", status: "状态", scheduledAt: "预约时间",
-  password: "密码",
+  password: "密码", description: "简介", publicInfo: "公开展示信息",
 };
 
 const targetLabels: Record<AuditEvent["targetType"], string> = {
@@ -42,6 +43,7 @@ const targetLabels: Record<AuditEvent["targetType"], string> = {
   tag: "标签",
   about: "关于页",
   media: "媒体",
+  site_settings: "站点设置",
 };
 
 type AuditStatus = NonNullable<AuditEvent["metadata"]["status"]>;

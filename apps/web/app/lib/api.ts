@@ -29,6 +29,10 @@ import {
   type AdminAnalytics,
   deletedPostListSchema,
   type DeletedPost,
+  publicSiteSettingsSchema,
+  type PublicSiteSettings,
+  adminSiteSettingsSchema,
+  type AdminSiteSettings,
 } from "@blog-x/contracts";
 
 const internalApiOrigin = process.env.INTERNAL_API_ORIGIN ?? "http://127.0.0.1:3001";
@@ -78,6 +82,20 @@ export async function getAdminAboutResult(cookieHeader: string): Promise<AdminOp
 }
 
 export function getPublicAbout() { return getPublic("/public/about", publicAboutSchema, true); }
+
+export function getPublicSiteSettings(): Promise<PublicResult<PublicSiteSettings>> {
+  return getPublic("/public/site-settings", publicSiteSettingsSchema);
+}
+
+export async function getAdminSiteSettingsResult(cookieHeader: string): Promise<AdminOptionalResult<AdminSiteSettings>> {
+  try {
+    const response = await fetch(`${internalApiOrigin}/admin/site-settings`, { cache: "no-store", headers: cookieHeader ? { cookie: cookieHeader } : undefined });
+    if (response.status === 404) return { kind: "not_found" };
+    if (!response.ok) return { kind: "upstream_error" };
+    const parsed = adminSiteSettingsSchema.safeParse(await response.json());
+    return parsed.success ? { kind: "ok", data: parsed.data } : { kind: "upstream_error" };
+  } catch { return { kind: "upstream_error" }; }
+}
 
 export function getArchives() { return getPublic("/public/archives", archiveSchema); }
 

@@ -1,8 +1,8 @@
-import { publicPostPageQuerySchema } from "@blog-x/contracts";
+import { defaultSiteSettings, publicPostPageQuerySchema } from "@blog-x/contracts";
 import Link from "next/link";
 import Pagination from "./_components/Pagination";
 import PostCard from "./_components/PostCard";
-import { getPublicPosts } from "./lib/api";
+import { getPublicPosts, getPublicSiteSettings } from "./lib/api";
 import { pageMetadata, resolveCanonicalPage } from "./lib/site-metadata";
 import styles from "./public.module.css";
 
@@ -15,18 +15,21 @@ export const dynamic = "force-dynamic";
 async function homeResult(searchParams: Record<string, string | string[] | undefined>) {
   const rawPage = searchParams.page;
   const query = publicPostPageQuerySchema.safeParse({ page: rawPage });
-  const outcome = query.success ? await getPublicPosts(query.data.page) : null;
+  const [outcome, siteResult] = await Promise.all([
+    query.success ? getPublicPosts(query.data.page) : null,
+    getPublicSiteSettings(),
+  ]);
   if (outcome && outcome.kind !== "ok") throw new Error("public content unavailable");
-  return { query, outcome, result: outcome?.kind === "ok" ? outcome.data : null };
+  return { query, outcome, result: outcome?.kind === "ok" ? outcome.data : null, site: siteResult.kind === "ok" ? siteResult.data : defaultSiteSettings };
 }
 
 export async function generateMetadata({ searchParams }: HomePageProps) {
   const resolvedSearchParams = await searchParams;
-  const { result } = await homeResult(resolvedSearchParams);
+  const { result, site } = await homeResult(resolvedSearchParams);
   const canonical = resolveCanonicalPage("/", resolvedSearchParams, result?.totalPages ?? 0);
   return pageMetadata({
     title: "最新文章",
-    description: "记录代码、系统与长期实践。",
+    description: site.description,
     path: canonical.canonical ? new URL(canonical.canonical).pathname + new URL(canonical.canonical).search : "/",
     index: canonical.index,
   });
@@ -59,17 +62,17 @@ function EmptyState({ kind }: { kind: "invalid" | "empty-blog" | "empty-page" })
 }
 
 export default async function HomePage({ searchParams }: HomePageProps) {
-  const { query, result } = await homeResult(await searchParams);
+  const { query, result, site } = await homeResult(await searchParams);
   const page = query.success ? query.data.page : 1;
 
   return (
     <main className={styles.page}>
       <section className={styles.hero} aria-labelledby="site-title">
         <div>
-          <p className={styles.eyebrow}>Personal notes · Engineering &amp; life</p>
-          <h1 id="site-title">Blog X</h1>
+          <p className={styles.eyebrow}>{site.name} / RECENT WRITING</p>
+          <h1 id="site-title">{site.name}</h1>
         </div>
-        <p className={styles.heroText}>记录代码、系统与长期实践。保持好奇，也保留那些值得反复阅读的思考。</p>
+        <p className={styles.heroText}>{site.description}</p>
       </section>
       <section className={styles.feed} aria-labelledby="latest-posts">
         <header className={styles.feedHeader}>
