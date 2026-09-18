@@ -231,10 +231,16 @@ export default function ArticleEditor({
     }
     const timer = window.setTimeout(() => {
       try {
+        // A save can advance the baseline while a previously scheduled debounce
+        // is waiting. Never let that stale callback recreate a recovery draft.
+        if (JSON.stringify(fieldsRef.current) === baselineFields.current) {
+          removeEditorRecoverySnapshot(storage, target);
+          return;
+        }
         const snapshot = createEditorRecoverySnapshot({
           target,
           baseVersion: postId ? recoveryBaseVersion : null,
-          fields,
+          fields: fieldsRef.current,
           slugManuallyEdited: slugManuallyEdited.current,
         });
         setRecoveryMessage(writeEditorRecoverySnapshot(storage, snapshot).ok
