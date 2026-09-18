@@ -11,7 +11,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { and, inArray, isNull } from "drizzle-orm";
 import Fastify, { type FastifyInstance, type FastifyLoggerOptions, type FastifyPluginAsync } from "fastify";
 import { Pool } from "pg";
-import { administrators, articleDailyViews, articleSlugRedirects, articleTags, articles, auditEvents, categories, media, sessions, sitePages, siteSettings, tags } from "./db/schema.js";
+import { administrators, articleDailyViews, articleRevisions, articleSlugRedirects, articleTags, articles, auditEvents, categories, media, sessions, sitePages, siteSettings, tags } from "./db/schema.js";
 import { seedAdministrator } from "./db/seed-admin.js";
 import { authRoutes } from "./routes/auth.js";
 import { createSessionService } from "./auth/sessions.js";
@@ -51,7 +51,7 @@ import { createSiteSettingsRepository } from "./content/site-settings-repository
 import { createSiteSettingsService } from "./content/site-settings-service.js";
 import { siteSettingsRoutes } from "./routes/site-settings.js";
 
-const databaseSchema = { administrators, articles, articleSlugRedirects, articleDailyViews, sessions, categories, tags, articleTags, sitePages, siteSettings, media, auditEvents };
+const databaseSchema = { administrators, articles, articleRevisions, articleSlugRedirects, articleDailyViews, sessions, categories, tags, articleTags, sitePages, siteSettings, media, auditEvents };
 
 type PublishDueArguments = { ok: true; limit: number } | { ok: false; code: "invalid_arguments" };
 

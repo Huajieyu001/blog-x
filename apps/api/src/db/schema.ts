@@ -108,6 +108,19 @@ export const articleSlugRedirects = pgTable("article_slug_redirects", {
   check("article_slug_redirects_from_slug_check", sql`length(btrim(${table.fromSlug})) > 0`),
 ]);
 
+export const articleRevisions = pgTable("article_revisions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  articleId: uuid("article_id").notNull().references(() => articles.id, { onDelete: "cascade" }),
+  sourceVersion: timestamp("source_version", { withTimezone: true, precision: 3 }).notNull(),
+  snapshot: jsonb("snapshot").notNull(),
+  changedFields: jsonb("changed_fields").notNull(),
+  actorAdministratorId: uuid("actor_administrator_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, precision: 3 }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("article_revisions_article_source_version_unique").on(table.articleId, table.sourceVersion),
+  index("article_revisions_newest_index").on(table.articleId, table.createdAt.desc(), table.id.desc()),
+]);
+
 export const articleDailyViews = pgTable("article_daily_views", {
   articleId: uuid("article_id").notNull().references(() => articles.id, { onDelete: "restrict" }),
   day: date("day").notNull(),

@@ -104,6 +104,8 @@ type RetainedArticleAudit = (
   metadata?: AuditMetadata,
 ) => Promise<void>;
 
+type RetainedArticleRevision = (current: StoredAdminPost, changedFields: string[]) => Promise<void>;
+
 type DeletedArticleUpdate = (changes: Pick<RetainedArticleChanges, "status" | "deletedAt" | "scheduledAt" | "scheduledByAdministratorId" | "updatedAt">) => Promise<void>;
 
 type DeletedArticleAudit = RetainedArticleAudit;
@@ -209,10 +211,16 @@ export function createAdminPostRepository(db: Database) {
     });
   }
 
+  async function listRevisions(id: string) {
+    return db.select({ id: schema.articleRevisions.id, createdAt: schema.articleRevisions.createdAt, sourceVersion: schema.articleRevisions.sourceVersion, changedFields: schema.articleRevisions.changedFields })
+      .from(schema.articleRevisions).where(eq(schema.articleRevisions.articleId, id))
+      .orderBy(desc(schema.articleRevisions.createdAt), desc(schema.articleRevisions.id)).limit(20);
+  }
+
   async function transactRetained<T>(
     id: string,
     actorAdministratorId: string,
-    operation: (current: StoredAdminPost, update: RetainedArticleUpdate, audit: RetainedArticleAudit, transactionNow: Date) => Promise<T>,
+    operation: (current: StoredAdminPost, update: RetainedArticleUpdate, audit: RetainedArticleAudit, transactionNow: Date, snapshot: RetainedArticleRevision) => Promise<T>,
   ): Promise<T | null> {
     return db.transaction(async (tx) => {
       const current = (await tx.select(selectedPost).from(schema.articles)
@@ -263,7 +271,25 @@ export function createAdminPostRepository(db: Database) {
         targetId: id,
         ...(metadata ? { metadata } : {}),
       });
-      return operation(currentWithTags, update, audit, transactionNow);
+      const snapshot: RetainedArticleRevision = async (source, changedFields) => {
+        await tx.insert(schema.articleRevisions).values({
+          articleId: id,
+          sourceVersion: source.updatedAt,
+          snapshot: {
+            title: source.title, summary: source.summary, coverUrl: source.coverUrl, slug: source.slug,
+            markdown: source.markdown, publishedAt: source.publishedAt?.toISOString() ?? null,
+            seoDescription: source.seoDescription, categoryId: source.categoryId, tagIds: source.tagIds,
+            coverMedia: source.coverMedia, status: source.status,
+          },
+          changedFields,
+          actorAdministratorId,
+        });
+        await tx.execute(sql`delete from article_revisions where article_id = ${id} and id in (
+          select id from article_revisions where article_id = ${id}
+          order by created_at desc, id desc offset 20
+        )`);
+      };
+      return operation(currentWithTags, update, audit, transactionNow, snapshot);
     });
   }
 
@@ -346,7 +372,7 @@ export function createAdminPostRepository(db: Database) {
     });
   }
 
-  return { createDraft, findRetainedById, listRetained, listDeleted, transactRetained, transactDeleted, transactDue };
+  return { createDraft, findRetainedById, listRetained, listDeleted, listRevisions, transactRetained, transactDeleted, transactDue };
 }
 
 export type AdminPostRepository = ReturnType<typeof createAdminPostRepository>;

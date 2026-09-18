@@ -96,6 +96,8 @@ export const adminPostPreviewInputSchema = z.object({
 export const adminPostPreviewSchema = z.object({ html: z.string() }).strict();
 export const slugSuggestionSchema = z.object({ slug: z.string() }).strict();
 export const adminPostIdSchema = z.uuid();
+export const articleRevisionSummarySchema = z.object({ id: z.uuid(), createdAt: z.string().datetime({ offset: true }), sourceVersion: z.string().datetime({ offset: true }), changedFields: z.array(z.string()).max(10) }).strict();
+export const articleRevisionListSchema = z.array(articleRevisionSummarySchema).max(20);
 
 export const fieldErrorResponseSchema = z.object({
   error: z.literal("validation_failed"),

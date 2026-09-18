@@ -201,7 +201,7 @@ export function createArticleService(repository: AdminPostRepository) {
 
   async function updateDraft(id: string, input: AdminPostUpdateInput, actorAdministratorId: string): Promise<ArticleServiceResult> {
     let result: ArticleServiceResult | null;
-    try { result = await repository.transactRetained<ArticleServiceResult>(id, actorAdministratorId, async (current, update, audit, transactionNow) => {
+    try { result = await repository.transactRetained<ArticleServiceResult>(id, actorAdministratorId, async (current, update, audit, transactionNow, snapshot) => {
       const status = statusOf(current);
       if (!resolveRetainedTransition(status, "edit")) return { ok: false, detail: { error: "not_found" } };
       const mediaFields = mediaValidationFields(input);
@@ -225,6 +225,7 @@ export function createArticleService(repository: AdminPostRepository) {
         ? (input.publishedAt ? new Date(input.publishedAt) : null)
         : current.publishedAt;
       const changedFields = changedFieldNames(current, input, publishedAt);
+      if (changedFields.length) await snapshot(current, changedFields);
       const updated = await update({
         title: input.title,
         summary: input.summary,
@@ -247,6 +248,17 @@ export function createArticleService(repository: AdminPostRepository) {
       throw error;
     }
     return result ?? { ok: false, detail: { error: "not_found" } };
+  }
+
+  async function listRevisions(id: string) {
+    const current = await repository.findRetainedById(id);
+    if (!current) return null;
+    return (await repository.listRevisions(id)).map((revision) => ({
+      id: revision.id,
+      createdAt: revision.createdAt.toISOString(),
+      sourceVersion: revision.sourceVersion.toISOString(),
+      changedFields: revision.changedFields,
+    }));
   }
 
   async function transition(id: string, action: ArticleAction, actorAdministratorId: string): Promise<ArticleServiceResult | DeleteServiceResult> {
@@ -339,7 +351,7 @@ export function createArticleService(repository: AdminPostRepository) {
     return result ?? { ok: false, detail: { error: "not_found" } };
   }
 
-  return { createDraft, getDraft, listDrafts, listDeleted, restoreDeleted, updateDraft, transition, schedule, cancelSchedule };
+  return { createDraft, getDraft, listDrafts, listDeleted, listRevisions, restoreDeleted, updateDraft, transition, schedule, cancelSchedule };
 }
 
 export type ArticleService = ReturnType<typeof createArticleService>;
