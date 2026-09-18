@@ -29,9 +29,10 @@ export const auditEvents = pgTable("audit_events", {
   occurredAt: timestamp("occurred_at", { withTimezone: true, precision: 3 }).defaultNow().notNull(),
 }, (table) => [
   index("audit_events_newest_index").on(table.occurredAt.desc(), table.id.desc()),
-  check("audit_events_event_check", sql`${table.event} in ('auth.login.succeeded', 'auth.logout.succeeded', 'auth.password.changed', 'article.created', 'article.updated', 'article.published', 'article.unpublished', 'article.republished', 'article.deleted', 'article.scheduled', 'article.rescheduled', 'article.schedule_cancelled', 'article.scheduled_published', 'category.created', 'category.updated', 'category.deleted', 'tag.created', 'tag.updated', 'tag.deleted', 'about.saved', 'about.published')`),
+  check("audit_events_event_check", sql`${table.event} in ('auth.login.succeeded', 'auth.logout.succeeded', 'auth.password.changed', 'media.deleted', 'article.created', 'article.updated', 'article.published', 'article.unpublished', 'article.republished', 'article.deleted', 'article.scheduled', 'article.rescheduled', 'article.schedule_cancelled', 'article.scheduled_published', 'category.created', 'category.updated', 'category.deleted', 'tag.created', 'tag.updated', 'tag.deleted', 'about.saved', 'about.published')`),
   check("audit_events_target_check", sql`(
     (${table.event} in ('auth.login.succeeded', 'auth.logout.succeeded', 'auth.password.changed') and ${table.targetType} = 'administrator' and ${table.targetId} = ${table.actorAdministratorId})
+    or (${table.event} = 'media.deleted' and ${table.targetType} = 'media' and ${table.targetId} is not null)
     or (${table.event} like 'article.%' and ${table.targetType} = 'article' and ${table.targetId} is not null)
     or (${table.event} like 'category.%' and ${table.targetType} = 'category' and ${table.targetId} is not null)
     or (${table.event} like 'tag.%' and ${table.targetType} = 'tag' and ${table.targetId} is not null)
@@ -50,10 +51,12 @@ export const media = pgTable("media", {
   derivativeBytes: integer("derivative_bytes").notNull(),
   width: integer("width").notNull(),
   height: integer("height").notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("media_source_key_unique").on(table.sourceKey),
   uniqueIndex("media_derivative_key_unique").on(table.derivativeKey),
+  index("media_catalog_retained_index").on(table.createdAt.desc(), table.id.desc()).where(sql`${table.deletedAt} is null`),
   check("media_source_mime_check", sql`${table.sourceMimeType} in ('image/jpeg', 'image/png', 'image/webp')`),
   check("media_derivative_mime_check", sql`${table.derivativeMimeType} in ('image/jpeg', 'image/png', 'image/webp')`),
   check("media_dimensions_check", sql`${table.width} > 0 and ${table.height} > 0 and ${table.width} <= 2400 and ${table.height} <= 2400`),

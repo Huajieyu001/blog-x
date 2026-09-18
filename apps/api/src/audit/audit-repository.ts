@@ -26,6 +26,7 @@ const expectedTarget: Record<AuditEventName, AuditTargetType> = {
   "auth.login.succeeded": "administrator",
   "auth.logout.succeeded": "administrator",
   "auth.password.changed": "administrator",
+  "media.deleted": "media",
   "article.created": "article",
   "article.updated": "article",
   "article.published": "article",

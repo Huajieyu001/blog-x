@@ -4,6 +4,7 @@ export const auditEventNameSchema = z.enum([
   "auth.login.succeeded",
   "auth.logout.succeeded",
   "auth.password.changed",
+  "media.deleted",
   "article.created",
   "article.updated",
   "article.published",
@@ -24,7 +25,7 @@ export const auditEventNameSchema = z.enum([
   "about.published",
 ]);
 
-export const auditTargetTypeSchema = z.enum(["administrator", "article", "category", "tag", "about"]);
+export const auditTargetTypeSchema = z.enum(["administrator", "article", "category", "tag", "about", "media"]);
 
 const changedFieldSchema = z.enum([
   "title", "summary", "coverUrl", "slug", "markdown", "publishedAt", "seoDescription",
