@@ -6,6 +6,7 @@ import { Pool } from "pg";
 import { createAdminPostRepository } from "../src/content/admin-repository.js";
 import { createArticleService } from "../src/content/article-service.js";
 import * as schema from "../src/db/schema.js";
+import { revisionFieldEqual } from "../src/content/article-service.js";
 
 const databaseUrl = process.env.LIFECYCLE_TEST_DATABASE_URL;
 
@@ -33,6 +34,11 @@ test("revision detail is strict and only exposes the selected article snapshot",
   };
   assert.equal(articleRevisionDetailSchema.safeParse(detail).success, true);
   assert.equal(articleRevisionDetailSchema.safeParse({ ...detail, leaked: "no" }).success, false);
+});
+
+test("revision comparison treats absent and null cover media as the same empty cover", () => {
+  assert.equal(revisionFieldEqual("coverMedia", null, undefined), true);
+  assert.equal(revisionFieldEqual("coverMedia", { id: "a" }, { id: "b" }), false);
 });
 
 test("restoring a revision uses a version guard, preserves slug continuity, and writes content-free recovery evidence", async (context) => {

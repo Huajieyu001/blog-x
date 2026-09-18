@@ -143,6 +143,13 @@ function equalCoverMedia(left: StoredAdminPost["coverMedia"], right: AdminPostUp
   return left.id === right.id && left.alt === right.alt && left.decorative === right.decorative;
 }
 
+export function revisionFieldEqual(field: RevisionField, left: unknown, right: unknown) {
+  // Wire DTOs omit an absent optional cover while snapshots persist it as null.
+  // Both encode the same authoring state; media objects still compare exactly.
+  if (field === "coverMedia") return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function changedFieldNames(current: StoredAdminPost, input: AdminPostUpdateInput, publishedAt: Date | null) {
   const valuesMatch: Record<(typeof editableFields)[number], boolean> = {
     title: current.title === input.title,
@@ -273,7 +280,7 @@ export function createArticleService(repository: AdminPostRepository) {
     const snapshot = articleRevisionSnapshotSchema.parse(revision.snapshot);
     const currentWire = serialize(current);
     const fields: RevisionField[] = ["title", "summary", "coverUrl", "slug", "markdown", "publishedAt", "seoDescription", "categoryId", "tagIds", "coverMedia"];
-    const changedFields = fields.filter((field) => JSON.stringify(snapshot[field]) !== JSON.stringify(currentWire[field]));
+    const changedFields = fields.filter((field) => !revisionFieldEqual(field, snapshot[field], currentWire[field]));
     return articleRevisionDetailSchema.parse({
       revision: { id: revision.id, createdAt: revision.createdAt.toISOString(), sourceVersion: revision.sourceVersion.toISOString(), changedFields: revision.changedFields, snapshot },
       current: currentWire,
