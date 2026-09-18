@@ -260,6 +260,10 @@ export default function ArticleEditor({
       if (!storage) return;
       const target: EditorRecoveryTarget = postId ? { kind: "post", id: postId } : { kind: "new" };
       try {
+        if (JSON.stringify(fieldsRef.current) === baselineFields.current) {
+          removeEditorRecoverySnapshot(storage, target);
+          return;
+        }
         writeEditorRecoverySnapshot(storage, createEditorRecoverySnapshot({
           target,
           baseVersion: postId ? recoveryBaseVersion : null,
@@ -419,6 +423,10 @@ export default function ArticleEditor({
       if (!postId) {
         setPostId(saved.data.id);
         writeFirstSaveFlash(saved.data.id);
+        // Navigation can remount this client boundary before finally runs.
+        // Release the guard first so the edit route is never born disabled.
+        saveInFlight.current = false;
+        setSaving(false);
         router.replace(`/admin/posts/${saved.data.id}`);
       } else {
         // The revision history is a server sibling of this client editor. Refresh
