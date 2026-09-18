@@ -333,6 +333,12 @@ export function phase15MediaSelection() {
   };
 }
 
+export function phase15BackupSelection() {
+  return Object.freeze({
+    nodeSuites: Object.freeze(["scripts/backup/production.test.mjs", "scripts/backup/restore.test.mjs", "scripts/local-verify.test.mjs"]),
+  });
+}
+
 function uniqueSuites(suites) {
   return [...new Map(suites.map((suite) => [Array.isArray(suite) ? suite[1] : suite, suite])).values()];
 }
@@ -1954,6 +1960,14 @@ async function runPhase15MediaChecks(context) {
   assertPlaywrightJourney(browser.combined);
 }
 
+async function runPhase15BackupChecks(context) {
+  const selection = phase15BackupSelection();
+  for (const file of selection.nodeSuites) {
+    const result = await runStep(context, `run ${file}`, "node", ["--test", "--test-reporter=tap", file], { env: process.env });
+    assertSemanticTap(result.combined);
+  }
+}
+
 function generatedProductionProject() {
   return `blogxprodverify_${randomBytes(6).toString("hex")}`;
 }
@@ -2021,9 +2035,9 @@ async function runPhase5GeneratedPipeline() {
       format: "blog-x-production-pipeline-policy", version: 1,
       sourceAuthority: { kind: "generated-test", sourceBase: authorities.sourceBase },
       collector: { project, database: `blog_x_prod_${suffix}`, mediaRoot: authorities.mediaRoot },
-      destination: { kind: "generated-test", mountRoot: authorities.mountRoot, profileId },
+      destination: { kind: "generated-test", mountRoot: authorities.mountRoot, profileId, provider: "mounted-directory" },
       keyAuthority: { kind: "generated-test", keyPath },
-      retention: { policyId: "daily-v1", minimumKnownGood: 1 },
+      retention: { policyId: "daily-v1", minimumKnownGood: 1, maximumSets: 3 },
       resultAuthority: { kind: "generated-test", root: authorities.resultRoot },
       alertAuthority: { kind: "generated-test", root: authorities.alertRoot },
     };
@@ -2131,7 +2145,7 @@ async function runSingle(options) {
   const database = validateDatabaseName(`blog_x_${namespace.slice("blogxverify_".length)}`, namespace);
   const webPort = options.webPort ?? await freePort();
   const runtimeWebPort = options.phase11Data || options.phase12Data || options.canonicalIntegration ? await freePort() : webPort;
-  const phaseLabel = options.canonicalIntegration ? "integration-" : options.lifecycleOnly ? "lifecycle-" : options.phase12Data ? "phase12-" : options.phase11Data ? "phase11-" : options.phase6Data ? "phase6-" : options.phase15Media ? "phase15-" : options.phase5Media || options.phase5Full ? "phase5-" : options.phase4Mode ? "phase4-" : options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
+  const phaseLabel = options.canonicalIntegration ? "integration-" : options.lifecycleOnly ? "lifecycle-" : options.phase12Data ? "phase12-" : options.phase11Data ? "phase11-" : options.phase6Data ? "phase6-" : options.phase15Media || options.phase15Backup || options.phase15Full ? "phase15-" : options.phase5Media || options.phase5Full ? "phase5-" : options.phase4Mode ? "phase4-" : options.phase3Mode ? "phase3-" : options.phase2Full ? "phase2-" : "phase1-";
   const runId = namespace.replace("blogxverify_", phaseLabel);
   const publicOrigin = validateLoopbackHttpOrigin(`http://127.0.0.1:${webPort}`);
   const context = {
@@ -2204,7 +2218,7 @@ async function runSingle(options) {
       await preflightOfflinePrerequisites(context);
       process.stdout.write("[local-verify] use prevalidated local verifier images for the Phase 5 offline gate\n");
     }
-    else if ((options.phase4Mode === "full" || options.phase5Media || options.phase15Media) && !options.skipBuild) await preflightOfflinePrerequisites(context);
+    else if ((options.phase4Mode === "full" || options.phase5Media || options.phase15Media || options.phase15Backup || options.phase15Full) && !options.skipBuild) await preflightOfflinePrerequisites(context);
     else if (["operations", "restore"].includes(options.phase4Mode) && !options.skipBuild) await preflightCachedImages(context);
     if (!options.skipBuild && !options.phase5Full && !options.phase6Data && !options.phase11Data && !options.phase12Data && !options.canonicalIntegration) await compose(context, "build local API and Web images", "build", "api", "web");
     await compose(context, "start isolated PostgreSQL", "up", "-d", "--wait", "postgres");
@@ -2271,6 +2285,13 @@ async function runSingle(options) {
     }
     else if (options.phase15Media) {
       await runPhase15MediaChecks(context);
+    }
+    else if (options.phase15Backup) {
+      await runPhase15BackupChecks(context);
+    }
+    else if (options.phase15Full) {
+      await runPhase15MediaChecks(context);
+      await runPhase15BackupChecks(context);
     }
     else if (options.phase3Mode === "full") {
       await fullPhaseChecks(context, true);
@@ -2575,6 +2596,8 @@ async function main() {
   const phase4Modes = ["security", "operations", "restore", "full"].filter((mode) => flags.has(`--phase4-${mode}`));
   const phase5Media = flags.has("--phase5-media");
   const phase15Media = flags.has("--phase15-media");
+  const phase15Backup = flags.has("--phase15-backup");
+  const phase15Full = flags.has("--phase15-full");
   const phase5Full = flags.has("--phase5-full");
   const phase6Data = flags.has("--phase6-data");
   const phase11Data = flags.has("--phase11-data");
@@ -2582,12 +2605,15 @@ async function main() {
   if (argumentsList.some((argument) => argument.startsWith("--phase15-media") && argument !== "--phase15-media")) {
     throw new Error("Phase 15 media accepts only the sealed complete invocation");
   }
+  if (argumentsList.some((argument) => /--phase15-(?:backup|full)=/.test(argument))) {
+    throw new Error("Phase 15 backup accepts only the sealed complete invocation");
+  }
   if (argumentsList.some((argument) => argument.startsWith("--phase12-data") && argument !== "--phase12-data")) {
     throw new Error("Phase 12 data accepts only the sealed complete invocation");
   }
   const canonicalIntegration = flags.has("--canonical-integration");
   const lifecycleOnly = flags.has("--lifecycle-only");
-  if (phase3Modes.length + phase4Modes.length + Number(phase5Media) + Number(phase15Media) + Number(phase5Full) + Number(phase6Data) + Number(phase11Data) + Number(phase12Data) + Number(canonicalIntegration) + Number(lifecycleOnly) > 1) {
+  if (phase3Modes.length + phase4Modes.length + Number(phase5Media) + Number(phase15Media) + Number(phase15Backup) + Number(phase15Full) + Number(phase5Full) + Number(phase6Data) + Number(phase11Data) + Number(phase12Data) + Number(canonicalIntegration) + Number(lifecycleOnly) > 1) {
     throw new Error("choose at most one Phase 3, Phase 4, Phase 5, Phase 6, Phase 11, Phase 12, Phase 15, canonical integration, or lifecycle selection");
   }
   const options = {
@@ -2598,6 +2624,8 @@ async function main() {
     phase4Mode: phase4Modes[0],
     phase5Media,
     phase15Media,
+    phase15Backup,
+    phase15Full,
     phase5Full,
     phase6Data,
     phase11Data,
@@ -2606,7 +2634,7 @@ async function main() {
     lifecycleOnly,
     interruptAfterReady: flags.has("--interrupt-after-ready"),
     internalRun: flags.has("--internal-run"),
-    fullPhase: !phase4Modes.length && !phase5Media && !phase15Media && !phase5Full && !phase6Data && !phase11Data && !phase12Data && !canonicalIntegration && !lifecycleOnly && (flags.has("--full-phase") || flags.has("--phase2-full") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run"))),
+    fullPhase: !phase4Modes.length && !phase5Media && !phase15Media && !phase15Backup && !phase15Full && !phase5Full && !phase6Data && !phase11Data && !phase12Data && !canonicalIntegration && !lifecycleOnly && (flags.has("--full-phase") || flags.has("--phase2-full") || (!flags.has("--infrastructure-only") && !flags.has("--internal-run"))),
     interruptionCheck: flags.has("--interruption-check"),
     parallelCheck: flags.has("--parallel-check"),
     skipBuild: flags.has("--skip-build"),
@@ -2615,6 +2643,9 @@ async function main() {
   if (flags.has("--internal-run") && phase5Full) throw new Error("internal verification children cannot acquire Phase 5 receipt authority");
   if (phase15Media && (argumentsList.length !== 1 || !flags.has("--phase15-media") || options.internalRun || options.namespace !== undefined || options.webPort !== undefined || options.skipBuild)) {
     throw new Error("Phase 15 media accepts only the sealed complete invocation");
+  }
+  if ((phase15Backup || phase15Full) && (argumentsList.length !== 1 || options.internalRun || options.namespace !== undefined || options.webPort !== undefined || options.skipBuild)) {
+    throw new Error("Phase 15 backup accepts only the sealed complete invocation");
   }
   const phase11Arguments = argumentsList.filter((argument) => argument !== "--");
   if (phase11Data && (phase11Arguments.length !== 1 || !flags.has("--phase11-data") || options.internalRun || options.namespace !== undefined || options.webPort !== undefined || options.skipBuild)) {

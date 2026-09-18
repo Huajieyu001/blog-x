@@ -32,6 +32,7 @@ import {
   phase5Selection,
   phase5MediaSelection,
   phase15MediaSelection,
+  phase15BackupSelection,
   phase6Selection,
   phase11Selection,
   phase12Selection,
@@ -486,6 +487,12 @@ test("Phase 15 media selector is sealed to generated media API and browser autho
   const rejected = spawnSync(process.execPath, ["scripts/local-verify.mjs", "--phase15-media=extra"], { cwd: process.cwd(), encoding: "utf8" });
   assert.notEqual(rejected.status, 0);
   assert.match(`${rejected.stdout}${rejected.stderr}`, /Phase 15 media accepts only the sealed complete invocation|OFFLINE PREREQUISITE|docker/i);
+});
+
+test("Phase 15 backup selector keeps encrypted recovery checks separate", () => {
+  assert.deepEqual(phase15BackupSelection(), {
+    nodeSuites: ["scripts/backup/production.test.mjs", "scripts/backup/restore.test.mjs", "scripts/local-verify.test.mjs"],
+  });
 });
 
 test("Phase 5 full selection is an exact once-only Phase 1-5 superset with a terminal receipt boundary", async () => {

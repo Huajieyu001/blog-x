@@ -10,7 +10,9 @@ import { collectProductionBackupSet, createProductionInventory } from "./product
 import { runProductionBackup } from "./production/adapter.mjs";
 import { runProductionPipeline } from "./production-pipeline.mjs";
 import { createMountedDirectoryTransport } from "./production/mounted-directory.mjs";
+import { cleanupDecryptedBackup, decryptBackupPayload, encryptBackupPayload } from "./production/encryption.mjs";
 import { applySafeRetention } from "./production/retention.mjs";
+import { generatedRecoveryDrillInput, runRecoveryDrill } from "./recovery-drill.mjs";
 import { createGeneratedFakeTransport } from "./production/transport.mjs";
 import { parseProductionReleaseEvidence, recordProductionFailure } from "./production/results.mjs";
 import { parseProductionBackupPolicy } from "./production/policy.mjs";
@@ -355,6 +357,40 @@ test("failure attempt evidence is append-only, fixed-schema, and redacted", asyn
   const entries = await readdir(input.resultAuthority.root);
   assert.equal(entries.filter((entry) => entry.startsWith("attempt-")).length, 1);
   await assert.rejects(recordProductionFailure(input.resultAuthority, { ...result, runId: "attempt-a1b2c3d5", code: "postgres://secret" }), /schema|sensitive/i);
+});
+
+test("encrypted mounted read-back authenticates before staging and restores only an isolated generated target", async (context) => {
+  const input = await adapterFixture(context, "u1b2c3d4");
+  const source = await verifyProductionBackupSource(input.sourceRoot, input.sourceAuthority);
+  const transport = await createMountedDirectoryTransport(input.destination, { inspectMount: async (root) => ({ isMountPoint: true, root }) });
+  const encrypted = await encryptBackupPayload({
+    sourceRoot: input.sourceRoot, manifest: source.manifest, marker: source.marker, createdAt: source.manifest.createdAt,
+    retentionPolicyId: input.retention.policyId, destinationProfileId: transport.destinationProfileId, keyAuthority: input.keyAuthority,
+  });
+  await transport.transfer({ setId: source.manifest.setId, ...encrypted, createdAt: source.manifest.createdAt });
+  const token = source.manifest.setId.split("-")[1];
+  const stagingRoot = join(tmpdir(), `blog-x-backup-verify-recovery-${token}`);
+  const remote = await transport.readSet(source.manifest.setId);
+  const decrypted = await decryptBackupPayload({ ciphertext: remote.ciphertext, receipt: remote.receipt, retentionPolicyId: input.retention.policyId, keyAuthority: input.keyAuthority, stagingRoot });
+  assert.equal(JSON.parse(await readFile(join(decrypted.backupRoot, "portable-export-v1.json"), "utf8")).media.length, 1);
+  await cleanupDecryptedBackup(stagingRoot);
+  await assert.rejects(readFile(stagingRoot), /ENOENT/);
+  const tampered = Buffer.from(remote.ciphertext);
+  tampered[tampered.length - 1] ^= 1;
+  await assert.rejects(decryptBackupPayload({ ciphertext: tampered, receipt: remote.receipt, retentionPolicyId: input.retention.policyId, keyAuthority: input.keyAuthority, stagingRoot }), /digest|authentication/i);
+  const restoreRoot = join(tmpdir(), `blog-x-restore-verify-${token}`);
+  let restorePlan;
+  const drill = await runRecoveryDrill(generatedRecoveryDrillInput({
+    setId: source.manifest.setId, transport, keyAuthority: input.keyAuthority, retentionPolicyId: input.retention.policyId,
+    restoreRoot, webOrigin: "http://127.0.0.1:19080",
+  }), {
+    inspectTarget: async () => ({ namespaceExists: false, databaseExists: false, mediaVolumeExists: false, rootExists: false, rootIsLink: false, rootEntries: [] }),
+    mutate: async (plan) => { restorePlan = plan; return { restored: true }; },
+  });
+  assert.equal(drill.setId, source.manifest.setId);
+  assert.equal(restorePlan.backupRoot, join(stagingRoot, source.manifest.setId));
+  await assert.rejects(readFile(stagingRoot), /ENOENT/);
+  await assert.rejects(runRecoveryDrill({ ...generatedRecoveryDrillInput({ setId: source.manifest.setId, transport, keyAuthority: input.keyAuthority, retentionPolicyId: input.retention.policyId, restoreRoot, webOrigin: "http://127.0.0.1:19080" }), namespace: "blogxrestore_bad" }), /authority/i);
 });
 
 test("receipt-gated retention preserves the minimum known-good ciphertext and deletes nothing on catalog ambiguity", async (context) => {
