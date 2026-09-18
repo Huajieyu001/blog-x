@@ -481,6 +481,8 @@ test("Phase 15 media selector is sealed to generated media API and browser autho
   assert.match(mediaSpec, /getByRole\("heading", \{ name: "媒体库", level: 1 \}\)/);
   assert.match(mediaSpec, /getByRole\("region", \{ name: "已有媒体" \}\)/);
   assert.match(mediaSpec, /getByRole\("region", \{ name: "媒体库" \}\)/);
+  assert.match(mediaSpec, /getByRole\("listitem"\)\.filter\(\{ hasText: purposefulId \}\)/);
+  assert.match(mediaSpec, /getByRole\("listitem"\)\.filter\(\{ hasText: unusedId \}\)/);
   const rejected = spawnSync(process.execPath, ["scripts/local-verify.mjs", "--phase15-media=extra"], { cwd: process.cwd(), encoding: "utf8" });
   assert.notEqual(rejected.status, 0);
   assert.match(`${rejected.stdout}${rejected.stderr}`, /Phase 15 media accepts only the sealed complete invocation|OFFLINE PREREQUISITE|docker/i);

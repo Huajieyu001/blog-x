@@ -130,15 +130,19 @@ test("administrator uploads, reuses, protects, and safely deletes responsive med
   const purposefulId = purposefulUrl!.slice("/media/".length);
   await manageRegion.getByLabel("按媒体 ID 搜索").fill(purposefulId);
   await manageRegion.getByRole("button", { name: "搜索" }).click();
-  await expect(library).toContainText("被 1 篇内容引用");
-  await expect(library.getByRole("button", { name: "删除媒体" })).toHaveCount(0);
+  const purposefulCard = library.getByRole("listitem").filter({ hasText: purposefulId });
+  await expect(purposefulCard).toHaveCount(1);
+  await expect(purposefulCard).toContainText("被 1 篇内容引用");
+  await expect(purposefulCard.getByRole("button", { name: "删除媒体" })).toHaveCount(0);
 
   await page.goto(editorUrl);
   const selectRegion = page.getByRole("region", { name: "已有媒体" });
   const selectLibrary = selectRegion.getByRole("list", { name: "可复用媒体" });
   await selectRegion.getByLabel("按媒体 ID 搜索").fill(purposefulId);
   await selectRegion.getByRole("button", { name: "搜索" }).click();
-  await selectLibrary.getByRole("button", { name: "选择" }).click();
+  const selectCard = selectLibrary.getByRole("listitem").filter({ hasText: purposefulId });
+  await expect(selectCard).toHaveCount(1);
+  await selectCard.getByRole("button", { name: "选择" }).click();
   await expect(uploadStatus).toHaveText("已选择已有图片；请为这次使用填写替代文本，或标记为装饰图片。", { timeout: 10_000 });
   await page.getByTestId("media-alt-text").fill("复用的宽幅架构图");
   await page.getByRole("button", { name: "插入 Markdown" }).click();
@@ -152,17 +156,19 @@ test("administrator uploads, reuses, protects, and safely deletes responsive med
   const unusedId = unusedUrl!.slice("/media/".length);
   await deleteRegion.getByLabel("按媒体 ID 搜索").fill(unusedId);
   await deleteRegion.getByRole("button", { name: "搜索" }).click();
-  const deleteButton = deleteLibrary.getByRole("button", { name: "删除媒体" });
-  await expect(deleteLibrary).toContainText("未被内容引用");
+  const unusedCard = deleteLibrary.getByRole("listitem").filter({ hasText: unusedId });
+  await expect(unusedCard).toHaveCount(1);
+  const deleteButton = unusedCard.getByRole("button", { name: "删除媒体" });
+  await expect(unusedCard).toContainText("未被内容引用");
   await deleteButton.click();
-  const deleteDialog = deleteLibrary.getByRole("dialog");
+  const deleteDialog = unusedCard.getByRole("dialog");
   await expect(deleteDialog).toContainText("删除后文件不可恢复");
   await page.keyboard.press("Escape");
   await expect(deleteButton).toBeFocused();
   await deleteButton.click();
   await deleteDialog.getByRole("button", { name: "确认永久删除" }).click();
   await expect(deleteRegion.getByRole("status")).toHaveText("媒体已永久删除。");
-  await expect(deleteLibrary).not.toContainText(unusedId);
+  await expect(unusedCard).toHaveCount(0);
   expect((await context.request.get(`${webOrigin}${unusedUrl}`)).status()).toBe(404);
 
   await page.goto(`${webOrigin}/admin/audit`);
