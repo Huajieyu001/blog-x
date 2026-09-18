@@ -10,7 +10,7 @@ import {
   type DeletedPost,
   type ScheduleArticleInput,
 } from "@blog-x/contracts";
-import type { AdminPostRepository, StoredAdminPost } from "./admin-repository.js";
+import { MissingMediaReferenceError, type AdminPostRepository, type StoredAdminPost } from "./admin-repository.js";
 import { resolveRetainedTransition } from "./article-state.js";
 import { classifyArticleMedia } from "./media-reference-policy.js";
 
@@ -154,10 +154,15 @@ function changedFieldNames(current: StoredAdminPost, input: AdminPostUpdateInput
 }
 
 export function createArticleService(repository: AdminPostRepository) {
-  async function createDraft(input: AdminPostInput, actorAdministratorId: string) {
+  async function createDraft(input: AdminPostInput, actorAdministratorId: string): Promise<ArticleServiceResult> {
     const fields = mediaValidationFields(input);
     if (fields) return { ok: false, detail: { error: "validation_failed", fields } } as const;
-    const post = await repository.createDraft(input, actorAdministratorId);
+    let post: StoredAdminPost | null;
+    try { post = await repository.createDraft(input, actorAdministratorId); }
+    catch (error) {
+      if (error instanceof MissingMediaReferenceError) return { ok: false, detail: { error: "validation_failed", fields: { markdown: ["图片不存在或已删除"], coverMedia: ["封面图片不存在或已删除"] } } };
+      throw error;
+    }
     if (!post) throw new Error("draft was not persisted");
     return { ok: true, post: serialize(post) } as const;
   }
@@ -195,7 +200,8 @@ export function createArticleService(repository: AdminPostRepository) {
   }
 
   async function updateDraft(id: string, input: AdminPostUpdateInput, actorAdministratorId: string): Promise<ArticleServiceResult> {
-    const result = await repository.transactRetained<ArticleServiceResult>(id, actorAdministratorId, async (current, update, audit, transactionNow) => {
+    let result: ArticleServiceResult | null;
+    try { result = await repository.transactRetained<ArticleServiceResult>(id, actorAdministratorId, async (current, update, audit, transactionNow) => {
       const status = statusOf(current);
       if (!resolveRetainedTransition(status, "edit")) return { ok: false, detail: { error: "not_found" } };
       const mediaFields = mediaValidationFields(input);
@@ -236,7 +242,10 @@ export function createArticleService(repository: AdminPostRepository) {
       }, input.tagIds);
       await audit("article.updated", { previousStatus: status, status, changedFields });
       return { ok: true, post: serialize(updated) };
-    });
+    }); } catch (error) {
+      if (error instanceof MissingMediaReferenceError) return { ok: false, detail: { error: "validation_failed", fields: { markdown: ["图片不存在或已删除"], coverMedia: ["封面图片不存在或已删除"] } } };
+      throw error;
+    }
     return result ?? { ok: false, detail: { error: "not_found" } };
   }
 

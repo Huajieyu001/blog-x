@@ -161,6 +161,7 @@ test("auth logout, schedule mutations, and legacy publish have named unsafe rout
     "POST /admin/about/preview",
     "POST /admin/about/publish",
     "POST /admin/media",
+    "DELETE /admin/media/:id",
     "POST /articles/publish",
   ]);
   for (const policy of unsafeRoutePolicies) {

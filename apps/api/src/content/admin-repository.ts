@@ -1,8 +1,13 @@
 import { legacyMediaReviewSchema, mediaReferenceSchema, type AdminPostInput, type AuditEventName, type AuditMetadata, type MediaReference } from "@blog-x/contracts";
-import { and, asc, desc, eq, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { appendAuditEvent } from "../audit/audit-repository.js";
 import * as schema from "../db/schema.js";
+import { extractArticleMediaIds } from "./media-reference-policy.js";
+
+export class MissingMediaReferenceError extends Error {
+  constructor() { super("article references missing or deleted media"); }
+}
 
 type Database = NodePgDatabase<typeof schema>;
 const selectedPost = {
@@ -119,7 +124,21 @@ function values(input: AdminPostInput) {
   };
 }
 
+function mediaIds(input: { markdown: string; coverMedia?: MediaReference | null; coverMediaId?: string | null }) {
+  const ids = extractArticleMediaIds(input.markdown);
+  const coverId = input.coverMedia?.id ?? input.coverMediaId;
+  if (coverId) ids.add(coverId);
+  return [...ids].sort();
+}
+
 export function createAdminPostRepository(db: Database) {
+  async function lockRetainedMedia(executor: Database, input: { markdown: string; coverMedia?: MediaReference | null; coverMediaId?: string | null }) {
+    const ids = mediaIds(input);
+    if (!ids.length) return;
+    const rows = await executor.select({ id: schema.media.id }).from(schema.media)
+      .where(and(inArray(schema.media.id, ids), isNull(schema.media.deletedAt))).for("key share");
+    if (rows.length !== ids.length) throw new MissingMediaReferenceError();
+  }
   async function hydrate(executor: Database, post: typeof schema.articles.$inferSelect, tagIds?: string[]): Promise<StoredAdminPost> {
     const resolvedTags = tagIds ?? (await executor.select({ tagId: schema.articleTags.tagId }).from(schema.articleTags).where(eq(schema.articleTags.articleId, post.id))).map((row) => row.tagId);
     let coverMedia: MediaReference | null = null;
@@ -135,6 +154,7 @@ export function createAdminPostRepository(db: Database) {
   async function createDraft(input: AdminPostInput, actorAdministratorId: string) {
     return db.transaction(async (tx) => {
       const { tagIds, article } = values(input);
+      await lockRetainedMedia(tx as Database, { markdown: article.markdown, coverMediaId: article.coverMediaId });
       const created = (await tx.insert(schema.articles).values({ ...article, status: "draft" }).returning(selectedPost))[0];
       if (!created) return null;
       if (tagIds.length) await tx.insert(schema.articleTags).values(tagIds.map((tagId) => ({ articleId: created.id, tagId })));
@@ -177,6 +197,7 @@ export function createAdminPostRepository(db: Database) {
         .where(and(eq(schema.articles.id, id), isNull(schema.articles.deletedAt))).limit(1).for("update"))[0];
       if (!current) return null;
       const currentWithTags = await hydrate(tx as Database, current as typeof schema.articles.$inferSelect);
+      await lockRetainedMedia(tx as Database, { markdown: currentWithTags.markdown, coverMedia: currentWithTags.coverMedia });
       // PostgreSQL evaluates CURRENT_TIMESTAMP once per transaction. Exposing that
       // exact value keeps schedule policy, versioning, and later due publication
       // independent of the API host clock.
@@ -184,6 +205,10 @@ export function createAdminPostRepository(db: Database) {
       const transactionNow = transactionNowRaw instanceof Date ? transactionNowRaw : new Date(String(transactionNowRaw));
       if (Number.isNaN(transactionNow.getTime())) throw new Error("transaction timestamp is unavailable");
       const update: RetainedArticleUpdate = async (changes, tagIds) => {
+        await lockRetainedMedia(tx as Database, {
+          markdown: changes.markdown ?? currentWithTags.markdown,
+          coverMediaId: changes.coverMediaId === undefined ? current.coverMediaId : changes.coverMediaId,
+        });
         const updated = (await tx.update(schema.articles).set(changes).where(eq(schema.articles.id, id)).returning(selectedPost))[0];
         if (!updated) throw new Error("retained article update did not return a row");
         if (tagIds) {

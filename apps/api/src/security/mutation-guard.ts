@@ -40,6 +40,7 @@ export const unsafeRoutePolicies: readonly UnsafeRoutePolicy[] = [
   { method: "POST", url: "/admin/about/preview", contentType: "json", bodyLimit: 256 * 1024, limiter: "administrator", generalLimiter: true },
   { method: "POST", url: "/admin/about/publish", contentType: "json", bodyLimit: 64 * 1024, limiter: "administrator", generalLimiter: true },
   { method: "POST", url: "/admin/media", contentType: "multipart", bodyLimit: 5 * 1024 * 1024 + 64 * 1024, limiter: "administrator", generalLimiter: true },
+  { method: "DELETE", url: "/admin/media/:id", contentType: "none", bodyLimit: 1, limiter: "administrator", generalLimiter: true },
   { method: "POST", url: "/articles/publish", contentType: "json", bodyLimit: 256 * 1024, limiter: "administrator", generalLimiter: true },
 ];
 

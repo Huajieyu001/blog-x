@@ -8,6 +8,7 @@ import {
 } from "@blog-x/contracts";
 import cookie from "@fastify/cookie";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { and, inArray, isNull } from "drizzle-orm";
 import Fastify, { type FastifyInstance, type FastifyLoggerOptions, type FastifyPluginAsync } from "fastify";
 import { Pool } from "pg";
 import { administrators, articleDailyViews, articleTags, articles, auditEvents, categories, media, sessions, sitePages, tags } from "./db/schema.js";
@@ -17,7 +18,7 @@ import { createSessionService } from "./auth/sessions.js";
 import { createAdminPostRepository } from "./content/admin-repository.js";
 import { createArticleService } from "./content/article-service.js";
 import { createScheduledPublisher, publishDueMaximumLimit, type PublishDueResult, ScheduledPublicationError } from "./content/scheduled-publisher.js";
-import { classifyArticleMedia } from "./content/media-reference-policy.js";
+import { classifyArticleMedia, extractArticleMediaIds } from "./content/media-reference-policy.js";
 import { adminPostRoutes } from "./routes/admin-posts.js";
 import { createPublicRepository } from "./content/public-repository.js";
 import { publicPostRoutes } from "./routes/public-posts.js";
@@ -221,8 +222,8 @@ export async function buildApp(options: BuildAppOptions = {}) {
     if (!requireContentType(request, reply, "application/json")) return;
     const parsed = publishInputSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid article" });
-    const media = classifyArticleMedia({ markdown: parsed.data.markdown, coverUrl: "" });
-    if (media.invalidMarkdownSources.length) {
+    const mediaClassification = classifyArticleMedia({ markdown: parsed.data.markdown, coverUrl: "" });
+    if (mediaClassification.invalidMarkdownSources.length) {
       return reply.code(400).send({
         error: "validation_failed",
         fields: { markdown: ["图片只能使用已上传媒体的 /media/<uuid> 地址"] },
@@ -230,6 +231,16 @@ export async function buildApp(options: BuildAppOptions = {}) {
     }
     try {
       const article = await db.transaction(async (tx) => {
+        const mediaIds = [...extractArticleMediaIds(parsed.data.markdown)].sort();
+        if (mediaIds.length) {
+          const locked = await tx.select({ id: media.id }).from(media)
+            .where(and(inArray(media.id, mediaIds), isNull(media.deletedAt))).for("key share");
+          if (locked.length !== mediaIds.length) {
+            const error = new Error("article references missing or deleted media") as Error & { code: string };
+            error.code = "BLOG_X_MEDIA_REFERENCE";
+            throw error;
+          }
+        }
         const now = new Date();
         const inserted = await tx.insert(articles).values({ ...parsed.data, status: "published", legacyMediaReview: "clear", publishedAt: now, updatedAt: now }).returning({ id: articles.id, slug: articles.slug, title: articles.title, publishedAt: articles.publishedAt });
         const created = inserted[0];
@@ -241,6 +252,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
       return publishedArticleSchema.parse({ title: article.title, slug: article.slug, publishedAt: article.publishedAt.toISOString() });
     } catch (error: unknown) {
       if ((error as { code?: string }).code === "23505") return reply.code(409).send({ error: "slug already reserved" });
+      if ((error as { code?: string }).code === "BLOG_X_MEDIA_REFERENCE") return reply.code(400).send({ error: "validation_failed", fields: { markdown: ["图片不存在或已删除"] } });
       throw error;
     }
   });

@@ -7,6 +7,7 @@ const eventLabels: Record<AuditEventName, string> = {
   "auth.login.succeeded": "管理员登录",
   "auth.logout.succeeded": "管理员退出",
   "auth.password.changed": "管理员修改密码",
+  "media.deleted": "删除媒体",
   "article.created": "创建文章草稿",
   "article.updated": "更新文章",
   "article.published": "发布文章",
@@ -40,6 +41,7 @@ const targetLabels: Record<AuditEvent["targetType"], string> = {
   category: "分类",
   tag: "标签",
   about: "关于页",
+  media: "媒体",
 };
 
 type AuditStatus = NonNullable<AuditEvent["metadata"]["status"]>;

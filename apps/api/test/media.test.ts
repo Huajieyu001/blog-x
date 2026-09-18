@@ -13,6 +13,7 @@ import { administrators, media, sessions } from "../src/db/schema.js";
 import { processMedia } from "../src/media/processor.js";
 import { LocalMediaStorage } from "../src/media/storage.js";
 import { createMediaService } from "../src/content/media-service.js";
+import { extractArticleMediaIds } from "../src/content/media-reference-policy.js";
 
 const databaseUrl = process.env.AUTH_TEST_DATABASE_URL;
 const origin = "http://127.0.0.1:3100";
@@ -179,4 +180,19 @@ test("Markdown admits only exact same-origin media UUID paths", async () => {
   ].join("\n\n"));
   assert.match(html, new RegExp(`src="/media/${id}"`));
   assert.doesNotMatch(html, /\.\.|source=|#source|src="(?:data:|file:)/i);
+});
+
+test("media reference extraction counts only real Markdown image nodes once", () => {
+  const first = "00000000-0000-4000-8000-000000000001";
+  const second = "00000000-0000-4000-8000-000000000002";
+  const ids = extractArticleMediaIds([
+    `![direct](/media/${first})`,
+    `![again](/media/${first})`,
+    `[image-ref]: /media/${second}`,
+    "![reference][image-ref]",
+    `ordinary link: [${first}](/media/${first})`,
+    `\`${second}\``,
+    `\`\`\`md\n![](/media/${second})\n\`\`\``,
+  ].join("\n\n"));
+  assert.deepEqual([...ids].sort(), [first, second]);
 });

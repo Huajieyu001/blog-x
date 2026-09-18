@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { mediaCatalogQuerySchema, mediaCatalogResponseSchema, mediaUploadResponseSchema } from "@blog-x/contracts";
-import { desc, eq, ilike } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "../db/schema.js";
 import { processMedia } from "../media/processor.js";
 import type { MediaStorage } from "../media/storage.js";
 import { extractArticleMediaIds } from "./media-reference-policy.js";
+import { appendAuditEvent } from "../audit/audit-repository.js";
 
 type Database = NodePgDatabase<typeof schema>;
 
@@ -48,7 +49,7 @@ export function createMediaService(db: Database, storage: MediaStorage) {
     const row = (await db.select({
       derivativeKey: schema.media.derivativeKey,
       mimeType: schema.media.derivativeMimeType,
-    }).from(schema.media).where(eq(schema.media.id, id)).limit(1))[0];
+    }).from(schema.media).where(and(eq(schema.media.id, id), isNull(schema.media.deletedAt))).limit(1))[0];
     if (!row) return null;
     return { mimeType: row.mimeType, stream: storage.streamDerivative(row.derivativeKey) };
   }
@@ -62,7 +63,7 @@ export function createMediaService(db: Database, storage: MediaStorage) {
       mimeType: schema.media.derivativeMimeType,
       createdAt: schema.media.createdAt,
     }).from(schema.media)
-      .where(query.q ? ilike(schema.media.id, `%${query.q}%`) : undefined)
+      .where(and(isNull(schema.media.deletedAt), query.q ? ilike(schema.media.id, `%${query.q}%`) : undefined))
       .orderBy(desc(schema.media.createdAt), desc(schema.media.id))
       .limit(12)
       .offset((query.page - 1) * 12);
@@ -98,7 +99,52 @@ export function createMediaService(db: Database, storage: MediaStorage) {
     });
   }
 
-  return { upload, findDerivative, listCatalog };
+  async function referenceCount(executor: Database, id: string) {
+    const retained = await executor.select({
+      coverMediaId: schema.articles.coverMediaId,
+      markdown: schema.articles.markdown,
+    }).from(schema.articles);
+    let count = 0;
+    for (const article of retained) {
+      const references = extractArticleMediaIds(article.markdown);
+      if (article.coverMediaId) references.add(article.coverMediaId);
+      if (references.has(id)) count += 1;
+    }
+    return count;
+  }
+
+  async function deleteUnused(id: string, actorAdministratorId: string) {
+    const outcome = await db.transaction(async (tx) => {
+      const current = (await tx.select({
+        id: schema.media.id,
+        sourceKey: schema.media.sourceKey,
+        derivativeKey: schema.media.derivativeKey,
+        deletedAt: schema.media.deletedAt,
+      }).from(schema.media).where(eq(schema.media.id, id)).limit(1).for("update"))[0];
+      if (!current) return { kind: "not_found" } as const;
+      const references = await referenceCount(tx as Database, id);
+      if (references) return { kind: "in_use", referenceCount: references } as const;
+      if (!current.deletedAt) {
+        const transactionNow = (await tx.execute<{ transactionNow: Date | string }>(sql`select CURRENT_TIMESTAMP as "transactionNow"`)).rows[0]?.transactionNow;
+        const deletedAt = transactionNow instanceof Date ? transactionNow : new Date(String(transactionNow));
+        if (Number.isNaN(deletedAt.getTime())) throw new Error("transaction timestamp is unavailable");
+        await tx.update(schema.media).set({ deletedAt }).where(eq(schema.media.id, id));
+        await appendAuditEvent(tx, { actorAdministratorId, event: "media.deleted", targetType: "media", targetId: id, metadata: {} });
+      }
+      return { kind: "cleanup", sourceKey: current.sourceKey, derivativeKey: current.derivativeKey } as const;
+    });
+    if (outcome.kind !== "cleanup") return outcome;
+    try {
+      await storage.removeExact(outcome.sourceKey);
+      await storage.removeExact(outcome.derivativeKey);
+      return { kind: "deleted", id, deleted: true } as const;
+    } catch {
+      // Never include storage keys or paths in a client-visible failure.
+      return { kind: "cleanup_pending" } as const;
+    }
+  }
+
+  return { upload, findDerivative, listCatalog, deleteUnused };
 }
 
 export type MediaService = ReturnType<typeof createMediaService>;
