@@ -125,17 +125,19 @@ test("administrator uploads, reuses, protects, and safely deletes responsive med
 
   await page.goto(`${webOrigin}/admin/media`);
   await expect(page.getByRole("heading", { name: "媒体库", level: 1 })).toBeVisible();
-  const library = page.getByRole("list", { name: "媒体目录" });
+  const manageRegion = page.getByRole("region", { name: "媒体库" });
+  const library = manageRegion.getByRole("list", { name: "媒体目录" });
   const purposefulId = purposefulUrl!.slice("/media/".length);
-  await page.getByLabel("按媒体 ID 搜索").fill(purposefulId);
-  await page.getByRole("button", { name: "搜索" }).click();
+  await manageRegion.getByLabel("按媒体 ID 搜索").fill(purposefulId);
+  await manageRegion.getByRole("button", { name: "搜索" }).click();
   await expect(library).toContainText("被 1 篇内容引用");
   await expect(library.getByRole("button", { name: "删除媒体" })).toHaveCount(0);
 
   await page.goto(editorUrl);
-  const selectLibrary = page.getByLabel("可复用媒体");
-  await selectLibrary.getByLabel("按媒体 ID 搜索").fill(purposefulId);
-  await selectLibrary.getByRole("button", { name: "搜索" }).click();
+  const selectRegion = page.getByRole("region", { name: "已有媒体" });
+  const selectLibrary = selectRegion.getByRole("list", { name: "可复用媒体" });
+  await selectRegion.getByLabel("按媒体 ID 搜索").fill(purposefulId);
+  await selectRegion.getByRole("button", { name: "搜索" }).click();
   await selectLibrary.getByRole("button", { name: "选择" }).click();
   await expect(uploadStatus).toHaveText("已选择已有图片；请为这次使用填写替代文本，或标记为装饰图片。", { timeout: 10_000 });
   await page.getByTestId("media-alt-text").fill("复用的宽幅架构图");
@@ -145,10 +147,11 @@ test("administrator uploads, reuses, protects, and safely deletes responsive med
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("更改已保存");
 
   await page.goto(`${webOrigin}/admin/media`);
-  const deleteLibrary = page.getByRole("list", { name: "媒体目录" });
+  const deleteRegion = page.getByRole("region", { name: "媒体库" });
+  const deleteLibrary = deleteRegion.getByRole("list", { name: "媒体目录" });
   const unusedId = unusedUrl!.slice("/media/".length);
-  await page.getByLabel("按媒体 ID 搜索").fill(unusedId);
-  await page.getByRole("button", { name: "搜索" }).click();
+  await deleteRegion.getByLabel("按媒体 ID 搜索").fill(unusedId);
+  await deleteRegion.getByRole("button", { name: "搜索" }).click();
   const deleteButton = deleteLibrary.getByRole("button", { name: "删除媒体" });
   await expect(deleteLibrary).toContainText("未被内容引用");
   await deleteButton.click();
@@ -158,7 +161,7 @@ test("administrator uploads, reuses, protects, and safely deletes responsive med
   await expect(deleteButton).toBeFocused();
   await deleteButton.click();
   await deleteDialog.getByRole("button", { name: "确认永久删除" }).click();
-  await expect(deleteLibrary.getByRole("status")).toHaveText("媒体已永久删除。");
+  await expect(deleteRegion.getByRole("status")).toHaveText("媒体已永久删除。");
   await expect(deleteLibrary).not.toContainText(unusedId);
   expect((await context.request.get(`${webOrigin}${unusedUrl}`)).status()).toBe(404);
 
@@ -176,7 +179,7 @@ test("administrator uploads, reuses, protects, and safely deletes responsive med
     expect(box).not.toBeNull();
     expect(box!.width).toBeLessThanOrEqual(viewport.width);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-    const search = page.getByLabel("按媒体 ID 搜索");
+    const search = page.getByRole("region", { name: "媒体库" }).getByLabel("按媒体 ID 搜索");
     expect((await search.boundingBox())?.height).toBeGreaterThanOrEqual(44);
   }
 });
