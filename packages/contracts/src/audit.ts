@@ -23,13 +23,14 @@ export const auditEventNameSchema = z.enum([
   "tag.deleted",
   "about.saved",
   "about.published",
+  "site_settings.updated",
 ]);
 
-export const auditTargetTypeSchema = z.enum(["administrator", "article", "category", "tag", "about", "media"]);
+export const auditTargetTypeSchema = z.enum(["administrator", "article", "category", "tag", "about", "media", "site_settings"]);
 
 const changedFieldSchema = z.enum([
   "title", "summary", "coverUrl", "slug", "markdown", "publishedAt", "seoDescription",
-  "categoryId", "tagIds", "coverMedia", "name", "status", "scheduledAt", "password",
+  "categoryId", "tagIds", "coverMedia", "name", "description", "publicInfo", "status", "scheduledAt", "password",
 ]);
 const auditStatusSchema = z.enum(["draft", "published", "unpublished", "deleted"]);
 

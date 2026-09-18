@@ -131,3 +131,20 @@ export const articleTags = pgTable("article_tags", {
 export const sitePages = pgTable("site_pages", {
   id: uuid("id").defaultRandom().primaryKey(), key: text("key").notNull(), title: text("title").notNull(), markdown: text("markdown").notNull().default(""), status: text("status").notNull().default("draft"), version: timestamp("version", { withTimezone: true }).defaultNow().notNull(), createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(), updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [uniqueIndex("site_pages_key_unique").on(table.key), check("site_pages_key_about_check", sql`${table.key} = 'about'`), check("site_pages_status_check", sql`${table.status} in ('draft', 'published')`)]);
+
+/** One durable identity row. The fixed ICP value is intentionally not editable through content settings. */
+export const siteSettings = pgTable("site_settings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  singleton: boolean("singleton").notNull().default(true),
+  name: text("name").notNull().default("Blog X"),
+  description: text("description").notNull().default("记录代码、系统与长期实践。"),
+  publicInfo: text("public_info").notNull().default(""),
+  registrationNumber: text("registration_number").notNull().default("黔ICP备2023015906号"),
+  version: timestamp("version", { withTimezone: true, precision: 3 }).defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("site_settings_singleton_unique").on(table.singleton),
+  check("site_settings_name_check", sql`length(btrim(${table.name})) > 0`),
+  check("site_settings_registration_number_check", sql`${table.registrationNumber} = '黔ICP备2023015906号'`),
+]);

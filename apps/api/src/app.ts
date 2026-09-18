@@ -11,7 +11,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { and, inArray, isNull } from "drizzle-orm";
 import Fastify, { type FastifyInstance, type FastifyLoggerOptions, type FastifyPluginAsync } from "fastify";
 import { Pool } from "pg";
-import { administrators, articleDailyViews, articleTags, articles, auditEvents, categories, media, sessions, sitePages, tags } from "./db/schema.js";
+import { administrators, articleDailyViews, articleTags, articles, auditEvents, categories, media, sessions, sitePages, siteSettings, tags } from "./db/schema.js";
 import { seedAdministrator } from "./db/seed-admin.js";
 import { authRoutes } from "./routes/auth.js";
 import { createSessionService } from "./auth/sessions.js";
@@ -47,8 +47,11 @@ import { formatCleanupViewsFailure, formatCleanupViewsResult, parseCleanupViewsA
 import { publicViewRoutes } from "./routes/public-views.js";
 import { createAdminAnalyticsRepository, type AdminAnalyticsRepository } from "./content/admin-analytics-repository.js";
 import { adminAnalyticsRoutes } from "./routes/admin-analytics.js";
+import { createSiteSettingsRepository } from "./content/site-settings-repository.js";
+import { createSiteSettingsService } from "./content/site-settings-service.js";
+import { siteSettingsRoutes } from "./routes/site-settings.js";
 
-const databaseSchema = { administrators, articles, articleDailyViews, sessions, categories, tags, articleTags, sitePages, media, auditEvents };
+const databaseSchema = { administrators, articles, articleDailyViews, sessions, categories, tags, articleTags, sitePages, siteSettings, media, auditEvents };
 
 type PublishDueArguments = { ok: true; limit: number } | { ok: false; code: "invalid_arguments" };
 
@@ -209,6 +212,11 @@ export async function buildApp(options: BuildAppOptions = {}) {
   const pageRepository = createPageRepository(db);
   await app.register(pageRoutes, { pageService: createPageService(pageRepository), sessionAuth: app.sessionAuth, publicOrigin, mutationGuard });
   await app.register(publicPageRoutes, { pageRepository });
+  await app.register(siteSettingsRoutes, {
+    siteSettingsService: createSiteSettingsService(createSiteSettingsRepository(db)),
+    sessionAuth: app.sessionAuth,
+    mutationGuard,
+  });
   const mediaStorage = new LocalMediaStorage(options.mediaRoot ?? process.env.MEDIA_ROOT ?? resolve(process.cwd(), "uploads"));
   await app.register(mediaRoutes, {
     mediaService: createMediaService(db, mediaStorage),

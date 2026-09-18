@@ -45,6 +45,7 @@ const expectedTarget: Record<AuditEventName, AuditTargetType> = {
   "tag.deleted": "tag",
   "about.saved": "about",
   "about.published": "about",
+  "site_settings.updated": "site_settings",
 };
 
 export async function appendAuditEvent(executor: InsertExecutor, input: AuditEventInput) {

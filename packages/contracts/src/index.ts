@@ -9,3 +9,4 @@ export * from "./media";
 export * from "./distribution";
 export * from "./audit";
 export * from "./analytics";
+export * from "./site-settings";
