@@ -10,6 +10,7 @@ import {
   suggestSlug,
 } from "@blog-x/contracts";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useRouter } from "next/navigation";
 import styles from "../admin.module.css";
 import ArticleActions from "./ArticleActions";
 import MediaPanel from "./MediaPanel";
@@ -86,6 +87,7 @@ export default function ArticleEditor({
   categories: TaxonomyTerm[];
   tags: TaxonomyTerm[];
 }) {
+  const router = useRouter();
   const [fields, setFields] = useState(() => initialFields(post));
   const [postId, setPostId] = useState(post?.id);
   const [currentPost, setCurrentPost] = useState(post);
@@ -390,7 +392,11 @@ export default function ArticleEditor({
       }
       if (!postId) {
         setPostId(saved.data.id);
-        window.history.replaceState(window.history.state, "", `/admin/posts/${saved.data.id}`);
+        router.replace(`/admin/posts/${saved.data.id}`);
+      } else {
+        // The revision history is a server sibling of this client editor. Refresh
+        // it only after a successful existing-post save, preserving local edits.
+        router.refresh();
       }
     } catch {
       setMessage("网络异常，草稿内容仍保留在编辑器中");
