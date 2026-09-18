@@ -125,7 +125,7 @@ test("administrator uploads, reuses, protects, and safely deletes responsive med
 
   await page.goto(`${webOrigin}/admin/media`);
   await expect(page.getByRole("heading", { name: "媒体库" })).toBeVisible();
-  const library = page.getByLabel("媒体目录");
+  const library = page.getByRole("list", { name: "媒体目录" });
   const purposefulId = purposefulUrl!.slice("/media/".length);
   await page.getByLabel("按媒体 ID 搜索").fill(purposefulId);
   await page.getByRole("button", { name: "搜索" }).click();
@@ -145,7 +145,7 @@ test("administrator uploads, reuses, protects, and safely deletes responsive med
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("更改已保存");
 
   await page.goto(`${webOrigin}/admin/media`);
-  const deleteLibrary = page.getByLabel("媒体目录");
+  const deleteLibrary = page.getByRole("list", { name: "媒体目录" });
   const unusedId = unusedUrl!.slice("/media/".length);
   await page.getByLabel("按媒体 ID 搜索").fill(unusedId);
   await page.getByRole("button", { name: "搜索" }).click();
