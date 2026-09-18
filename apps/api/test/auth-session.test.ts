@@ -37,7 +37,7 @@ test("password-change migration ledger and database audit constraints retain onl
   const actorId = "11111111-1111-4111-8111-111111111111";
   const otherId = "22222222-2222-4222-8222-222222222222";
   const ledger = await pool.query<{ migration_count: number }>("select migration_count from blog_x_schema_ledger where scope = 'phase1'");
-  assert.deepEqual(ledger.rows, [{ migration_count: 11 }]);
+  assert.deepEqual(ledger.rows, [{ migration_count: 13 }]);
   const constraints = await pool.query<{ conname: string; definition: string }>("select conname, pg_get_constraintdef(oid) as definition from pg_constraint where conrelid = 'audit_events'::regclass and conname = any($1)", [["audit_events_event_check", "audit_events_target_check"]]);
   const byName = new Map(constraints.rows.map((row) => [row.conname, row.definition]));
   assert.match(byName.get("audit_events_event_check") ?? "", /auth\.password\.changed/);
