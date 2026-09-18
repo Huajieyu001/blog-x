@@ -75,14 +75,20 @@ test("draft completes publish, edit, slug confirmation, unpublish, republish, an
   expect((await context.request.get(`${webOrigin}/api/public/articles/${originalSlug}`)).status()).toBe(200);
   await slugDialog.getByRole("button", { name: "确认修改 Slug" }).click();
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("更改已保存");
-  expect((await context.request.get(`${webOrigin}/api/public/articles/${originalSlug}`)).status()).toBe(404);
+  const redirect = await context.request.get(`${webOrigin}/api/public/articles/${originalSlug}`, { maxRedirects: 0 });
+  expect(redirect.status()).toBe(308);
+  expect(redirect.headers()["location"]).toBe(`/public/articles/${changedSlug}`);
   expect((await context.request.get(`${webOrigin}/api/public/articles/${changedSlug}`)).status()).toBe(200);
+
+  await page.goto(`${webOrigin}/posts/${originalSlug}`);
+  await expect(page).toHaveURL(`${webOrigin}/posts/${changedSlug}`);
 
   await page.getByRole("button", { name: "下线" }).click();
   await expect(page.getByText("状态：已下线")).toBeVisible();
   await expect(page.getByRole("button", { name: "重新发布" })).toBeVisible();
   await expect(page.getByLabel("首次发布时间更正", { exact: true })).toHaveValue(firstPublishedAt);
   expect((await context.request.get(`${webOrigin}/api/public/articles/${changedSlug}`)).status()).toBe(404);
+  expect((await context.request.get(`${webOrigin}/api/public/articles/${originalSlug}`, { maxRedirects: 0 })).status()).toBe(404);
 
   await page.getByRole("button", { name: "重新发布" }).click();
   await expect(page.getByText("状态：已发布")).toBeVisible();

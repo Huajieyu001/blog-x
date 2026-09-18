@@ -40,6 +40,7 @@ const internalApiOrigin = process.env.INTERNAL_API_ORIGIN ?? "http://127.0.0.1:3
 
 type Parser<T> = { safeParse: (value: unknown) => { success: true; data: T } | { success: false } };
 export type PublicResult<T> = { kind: "ok"; data: T } | { kind: "not_found" } | { kind: "upstream_error" };
+export type PublicPostResult = PublicResult<PublicPostDetail> | { kind: "redirect"; location: string };
 export type AdminResult<T> = { kind: "ok"; data: T } | { kind: "upstream_error" };
 export type AdminOptionalResult<T> = AdminResult<T> | { kind: "not_found" };
 
@@ -85,7 +86,33 @@ export async function getAdminAboutResult(cookieHeader: string): Promise<AdminOp
 const cachedPublicAbout = cache(() => getPublic("/public/about", publicAboutSchema, true));
 const cachedPublicSiteSettings = cache(() => getPublic("/public/site-settings", publicSiteSettingsSchema));
 const cachedPublicPosts = cache((page: number) => getPublic(`/public/articles?page=${encodeURIComponent(String(page))}`, publicPostListResponseSchema));
-const cachedPublicPost = cache((slug: string) => getPublic(`/public/articles/${encodeURIComponent(slug)}`, publicPostDetailSchema, true));
+function redirectLocation(location: string | null) {
+  // The API is an upstream boundary. Never allow an absolute URL, a query,
+  // traversal, or a differently-shaped API route to become browser navigation.
+  const match = /^\/public\/articles\/([A-Za-z0-9][A-Za-z0-9-]*)$/.exec(location ?? "");
+  if (!match) return null;
+  try {
+    const slug = decodeURIComponent(match[1]);
+    return slug === match[1] ? `/posts/${encodeURIComponent(slug)}` : null;
+  } catch { return null; }
+}
+
+const cachedPublicPost = cache(async (slug: string): Promise<PublicPostResult> => {
+  try {
+    const response = await fetch(`${internalApiOrigin}/public/articles/${encodeURIComponent(slug)}`, { cache: "no-store", redirect: "manual" });
+    if (response.status === 308) {
+      const location = redirectLocation(response.headers.get("location"));
+      return location ? { kind: "redirect", location } : { kind: "upstream_error" };
+    }
+    if (response.status === 404) {
+      const missing = publicPostNotFoundResponseSchema.safeParse(await response.json());
+      return missing.success ? { kind: "not_found" } : { kind: "upstream_error" };
+    }
+    if (!response.ok) return { kind: "upstream_error" };
+    const parsed = publicPostDetailSchema.safeParse(await response.json());
+    return parsed.success ? { kind: "ok", data: parsed.data } : { kind: "upstream_error" };
+  } catch { return { kind: "upstream_error" }; }
+});
 const cachedPublicTaxonomyPosts = cache((kind: "categories" | "tags", slug: string, page: number) => getPublic(`/public/${kind}/${encodeURIComponent(slug)}/articles?page=${encodeURIComponent(String(page))}`, publicTaxonomyPostListSchema, true));
 
 /** React.cache keeps repeated public reads within one RSC render request to one API call. */
@@ -215,7 +242,7 @@ export function getPublicPosts(page: number): Promise<PublicResult<PublicPostLis
   return cachedPublicPosts(page);
 }
 
-export function getPublicPost(slug: string): Promise<PublicResult<PublicPostDetail>> {
+export function getPublicPost(slug: string): Promise<PublicPostResult> {
   return cachedPublicPost(slug);
 }
 

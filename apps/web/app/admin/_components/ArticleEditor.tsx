@@ -655,7 +655,7 @@ export default function ArticleEditor({
             <h2 id="slug-confirm-title">确认修改公开链接</h2>
             <p>旧 Slug：<code>{currentPost.slug}</code></p>
             <p>新 Slug：<code>{fields.slug}</code></p>
-            <p id="slug-confirm-description">此操作会改变已发布文章的公开 URL，现有外部链接可能失效。</p>
+            <p id="slug-confirm-description">此操作会改变已发布文章的公开 URL；文章保持公开时，保留的旧链接会永久跳转到新地址。</p>
             <div className={styles.dialogActions}>
               <button ref={cancelSlugButtonRef} type="button" disabled={saving} onClick={closeSlugConfirmation}>取消</button>
               <button ref={confirmSlugButtonRef} className={styles.dangerButton} type="button" disabled={saving} onClick={() => { void save(true); }}>{saving ? "保存中…" : "确认修改 Slug"}</button>

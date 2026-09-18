@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import ArticleBody from "../../_components/ArticleBody";
 import ArticleToc from "../../_components/ArticleToc";
 import PostCard from "../../_components/PostCard";
@@ -12,6 +12,7 @@ import styles from "../../public.module.css";
 export default async function PublicArticlePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const result = await getPublicPost(slug);
+  if (result.kind === "redirect") permanentRedirect(result.location);
   if (result.kind === "not_found") notFound();
   if (result.kind === "upstream_error") throw new Error("public content unavailable");
   const article = result.data;
@@ -88,6 +89,7 @@ export default async function PublicArticlePage({ params }: { params: Promise<{ 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const result = await getPublicPost(slug);
+  if (result.kind === "redirect") permanentRedirect(result.location);
   if (result.kind === "not_found") notFound();
   if (result.kind === "upstream_error") throw new Error("public content unavailable");
   const article = result.data;
