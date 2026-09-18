@@ -28,6 +28,7 @@ test("draft completes publish, edit, slug confirmation, unpublish, republish, an
   await page.getByLabel("Markdown").fill("# Browser lifecycle\n\nOriginal content");
   await page.getByRole("button", { name: "保存草稿" }).click();
   await expect(page).toHaveURL(/\/admin\/posts\/[0-9a-f-]+$/);
+  const adminArticleUrl = page.url();
   await expect(page.getByTestId("native-lifecycle-fallback")).toBeHidden();
   await expect(page.getByRole("button", { name: "发布" })).toBeVisible();
   await expect(page.getByRole("button", { name: "下线" })).toHaveCount(0);
@@ -83,6 +84,9 @@ test("draft completes publish, edit, slug confirmation, unpublish, republish, an
   await page.goto(`${webOrigin}/posts/${originalSlug}`);
   await expect(page).toHaveURL(`${webOrigin}/posts/${changedSlug}`);
 
+  await page.goto(adminArticleUrl);
+  await expect(page.getByLabel("Slug")).toHaveValue(changedSlug);
+  await expect(page.getByRole("button", { name: "下线" })).toBeVisible();
   await page.getByRole("button", { name: "下线" }).click();
   await expect(page.getByText("状态：已下线")).toBeVisible();
   await expect(page.getByRole("button", { name: "重新发布" })).toBeVisible();
