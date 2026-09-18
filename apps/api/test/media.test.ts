@@ -132,6 +132,7 @@ test("authenticated upload stores protected source and serves only the immutable
 
   const secondUpload = await app.inject({ method: "POST", url: "/admin/media", headers: { origin, cookie, "content-type": upload.contentType }, payload: upload.body });
   assert.equal(secondUpload.statusCode, 201, secondUpload.body);
+  assert.notEqual(secondUpload.json().id, uploaded.json().id, "a second valid media row proves catalog search narrows results");
   const catalog = await app.inject({ method: "GET", url: `/admin/media?page=1&q=${uploaded.json().id.slice(0, 12)}`, headers: { cookie } });
   assert.equal(catalog.statusCode, 200, catalog.body);
   assert.deepEqual(catalog.json().items.map((item: { id: string }) => item.id), [uploaded.json().id], "partial UUID search is parameterized against the UUID text value");
@@ -148,8 +149,12 @@ test("authenticated upload stores protected source and serves only the immutable
   assert.equal(record.source_mime_type, "image/png");
   assert.equal(record.derivative_mime_type, "image/png");
   assert.doesNotMatch(`${record.source_key}${record.derivative_key}`, /private-name|\.\./);
-  assert.equal((await readdir(join(mediaRoot, "source"))).length, 1);
-  assert.equal((await readdir(join(mediaRoot, "derivative"))).length, 1);
+  const validBaseline = {
+    media: (await pool.query("select count(*)::int as count from media")).rows[0].count,
+    sourceFiles: (await readdir(join(mediaRoot, "source"))).length,
+    derivativeFiles: (await readdir(join(mediaRoot, "derivative"))).length,
+  };
+  assert.deepEqual(validBaseline, { media: 2, sourceFiles: 2, derivativeFiles: 2 });
   assert.deepEqual(await readFile(join(mediaRoot, record.source_key)), image, "protected source remains API-owned and byte-exact");
 
   const derivative = await app.inject({ method: "GET", url: uploaded.json().url });
@@ -177,7 +182,11 @@ test("authenticated upload stores protected source and serves only the immutable
     assert.ok([400, 413].includes(response.statusCode), response.body);
     assert.deepEqual(response.json(), { error: "invalid_media" });
   }
-  assert.equal((await pool.query("select count(*)::int as count from media")).rows[0].count, 1, "invalid uploads leave no database record");
+  assert.deepEqual({
+    media: (await pool.query("select count(*)::int as count from media")).rows[0].count,
+    sourceFiles: (await readdir(join(mediaRoot, "source"))).length,
+    derivativeFiles: (await readdir(join(mediaRoot, "derivative"))).length,
+  }, validBaseline, "invalid uploads leave the valid database and exact-file baseline unchanged");
 });
 
 test("Markdown admits only exact same-origin media UUID paths", async () => {
