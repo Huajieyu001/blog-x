@@ -32,7 +32,7 @@ export const auditEvents = pgTable("audit_events", {
   check("audit_events_event_check", sql`${table.event} in ('auth.login.succeeded', 'auth.logout.succeeded', 'auth.password.changed', 'media.deleted', 'article.created', 'article.updated', 'article.published', 'article.unpublished', 'article.republished', 'article.deleted', 'article.scheduled', 'article.rescheduled', 'article.schedule_cancelled', 'article.scheduled_published', 'category.created', 'category.updated', 'category.deleted', 'tag.created', 'tag.updated', 'tag.deleted', 'about.saved', 'about.published')`),
   check("audit_events_target_check", sql`(
     (${table.event} in ('auth.login.succeeded', 'auth.logout.succeeded', 'auth.password.changed') and ${table.targetType} = 'administrator' and ${table.targetId} = ${table.actorAdministratorId})
-    or (${table.event} = 'media.deleted' and ${table.targetType} = 'media' and ${table.targetId} is not null)
+    or (${table.event} = 'media.deleted' and ${table.targetType} = 'media' and ${table.targetId} is not null and ${table.metadata} = '{}'::jsonb)
     or (${table.event} like 'article.%' and ${table.targetType} = 'article' and ${table.targetId} is not null)
     or (${table.event} like 'category.%' and ${table.targetType} = 'category' and ${table.targetId} is not null)
     or (${table.event} like 'tag.%' and ${table.targetType} = 'tag' and ${table.targetId} is not null)

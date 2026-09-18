@@ -85,6 +85,13 @@
       "when": 1789697090233,
       "tag": "0011_managed-media",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789697453631,
+      "tag": "0012_media-audit-metadata",
+      "breakpoints": true
     }
   ]
 }

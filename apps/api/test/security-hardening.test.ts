@@ -8,6 +8,7 @@ import { authRoutes } from "../src/routes/auth.js";
 import { parseApiRuntimeConfig } from "../src/security/config.js";
 import { requireAdministratorMutation, unsafeRoutePolicies } from "../src/security/mutation-guard.js";
 import { BoundedRateLimitStore, createRateLimitKey, type Clock } from "../src/security/rate-limiter.js";
+import { appendAuditEvent } from "../src/audit/audit-repository.js";
 
 class ManualClock implements Clock {
   constructor(private value = 0) {}
@@ -31,6 +32,17 @@ test("migration ledger advances only from an exact append-only history prefix", 
   }), 2);
   assert.throws(() => pendingMigrationIndex(migrations, { migrationCount: 3, migrationFingerprint: "0".repeat(64) }), /count/);
   assert.throws(() => pendingMigrationIndex(migrations, { migrationCount: 1, migrationFingerprint: "0".repeat(64) }), /prefix/);
+});
+
+test("media deletion audit evidence is content-free and has only a media target", async () => {
+  const inserted: unknown[] = [];
+  const executor = { insert: () => ({ values: async (value: unknown) => { inserted.push(value); } }) } as never;
+  const actor = "00000000-0000-4000-8000-000000000001";
+  const target = "00000000-0000-4000-8000-000000000002";
+  await appendAuditEvent(executor, { actorAdministratorId: actor, event: "media.deleted", targetType: "media", targetId: target, metadata: {} });
+  assert.equal(inserted.length, 1);
+  await assert.rejects(appendAuditEvent(executor, { actorAdministratorId: actor, event: "media.deleted", targetType: "media", targetId: target, metadata: { changedFields: ["markdown"] } }), /metadata/);
+  await assert.rejects(appendAuditEvent(executor, { actorAdministratorId: actor, event: "media.deleted", targetType: "article", targetId: target, metadata: {} }), /target/);
 });
 
 test("serving resources remain open until the Fastify application closes", async () => {

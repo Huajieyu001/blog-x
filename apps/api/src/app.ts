@@ -331,7 +331,7 @@ async function schemaVerify(pool: Pool) {
   const result = await pool.query("select tablename from pg_tables where schemaname = 'public' and tablename = any($1)", [["administrators", "sessions", "articles", "article_daily_views", "categories", "tags", "article_tags", "site_pages", "media", "audit_events"]]);
   if (result.rowCount !== 10) throw new Error("view aggregate schema is not active; run pnpm db:migrate first");
   const ledger = await pool.query("select migration_count from blog_x_schema_ledger where scope = 'phase1'");
-  if (ledger.rowCount !== 1 || Number(ledger.rows[0]?.migration_count) !== 12) throw new Error("managed media migration ledger is incomplete; run pnpm db:migrate first");
+  if (ledger.rowCount !== 1 || Number(ledger.rows[0]?.migration_count) !== 13) throw new Error("managed media migration ledger is incomplete; run pnpm db:migrate first");
   const indices = await pool.query("select indexname from pg_indexes where schemaname = 'public' and indexname = any($1)", [["taxonomy_category_slug_unique", "taxonomy_tag_slug_unique", "article_tags_article_tag_unique", "articles_category_public_index", "site_pages_key_unique", "media_source_key_unique", "media_derivative_key_unique", "media_catalog_retained_index", "articles_cover_media_index", "audit_events_newest_index", "articles_schedule_due_index", "article_daily_views_day_index"]]);
   if (indices.rowCount !== 12) throw new Error("required indexes are incomplete; run pnpm db:migrate first");
   const viewConstraints = await pool.query("select conname from pg_constraint where conrelid = 'article_daily_views'::regclass and conname = any($1)", [["article_daily_views_pkey", "article_daily_views_article_id_articles_id_fk", "article_daily_views_counters_nonnegative_check", "article_daily_views_total_matches_sources_check"]]);
@@ -358,7 +358,7 @@ async function schemaVerify(pool: Pool) {
   ].every(([name, ...required]) => required.every((term) => auditDefinitionByName.get(name)?.includes(term)))) {
     throw new Error("managed-media audit constraints are incomplete; run pnpm db:migrate first");
   }
-  if (!auditDefinitionByName.get("audit_events_target_check")?.includes("'media'")) throw new Error("managed-media audit target constraint is incomplete; run pnpm db:migrate first");
+  if (!auditDefinitionByName.get("audit_events_target_check")?.includes("'media'") || !auditDefinitionByName.get("audit_events_target_check")?.includes("'{}'::jsonb")) throw new Error("managed-media audit target constraint is incomplete; run pnpm db:migrate first");
   const mediaDeletedAt = await pool.query("select column_name from information_schema.columns where table_schema = 'public' and table_name = 'media' and column_name = 'deleted_at'");
   if (mediaDeletedAt.rowCount !== 1) throw new Error("managed-media tombstone column is incomplete; run pnpm db:migrate first");
   const pending = await pool.query("select count(*)::int as count from articles where deleted_at is null and legacy_media_review = 'pending'");

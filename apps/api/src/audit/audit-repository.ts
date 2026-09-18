@@ -51,6 +51,7 @@ export async function appendAuditEvent(executor: InsertExecutor, input: AuditEve
   const event = auditEventInputSchema.parse(input);
   if (expectedTarget[event.event] !== event.targetType) throw new Error("audit target does not match event");
   if (event.targetType === "administrator" && event.targetId !== event.actorAdministratorId) throw new Error("session event target must be its actor");
+  if (event.event === "media.deleted" && Object.keys(event.metadata).length !== 0) throw new Error("media deletion audit metadata must be empty");
   if (Buffer.byteLength(JSON.stringify(event.metadata), "utf8") > 2_048) throw new Error("audit metadata exceeds 2048 bytes");
   await executor.insert(schema.auditEvents).values(event);
 }
