@@ -392,7 +392,10 @@ export default function ArticleEditor({
       }
       if (!postId) {
         setPostId(saved.data.id);
-        router.replace(`/admin/posts/${saved.data.id}`);
+        // Keep the successful-save status and recovery state in this client
+        // editor while refreshing the edit-route server siblings (history).
+        window.history.replaceState(window.history.state, "", `/admin/posts/${saved.data.id}`);
+        router.refresh();
       } else {
         // The revision history is a server sibling of this client editor. Refresh
         // it only after a successful existing-post save, preserving local edits.
