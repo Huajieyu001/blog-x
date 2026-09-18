@@ -11,6 +11,7 @@ const navigation = [
   { href: "/admin", label: "工作台", active: (path: string, hash: string) => path === "/admin" && hash !== "#articles" },
   { href: "/admin#articles", label: "文章管理", active: (path: string, hash: string) => path.startsWith("/admin/posts/") || (path === "/admin" && hash === "#articles") },
   { href: "/admin/new", label: "新建文章", active: (path: string) => path === "/admin/new" },
+  { href: "/admin/media", label: "媒体库", active: (path: string) => path.startsWith("/admin/media") },
   { href: "/admin/analytics", label: "访问统计", active: (path: string) => path.startsWith("/admin/analytics") },
   { href: "/admin/taxonomy", label: "分类与标签", active: (path: string) => path.startsWith("/admin/taxonomy") },
   { href: "/admin/about", label: "关于页", active: (path: string) => path.startsWith("/admin/about") },

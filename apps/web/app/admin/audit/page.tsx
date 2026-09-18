@@ -7,7 +7,7 @@ const eventLabels: Record<AuditEventName, string> = {
   "auth.login.succeeded": "管理员登录",
   "auth.logout.succeeded": "管理员退出",
   "auth.password.changed": "管理员修改密码",
-  "media.deleted": "删除媒体",
+  "media.deleted": "删除未引用媒体",
   "article.created": "创建文章草稿",
   "article.updated": "更新文章",
   "article.published": "发布文章",
@@ -105,7 +105,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
         <div><p className={styles.eyebrow}>BLOG X / 安全记录</p><h1 id="audit-title">操作日志</h1><p>回顾账号、内容与站点设置的关键变更。</p></div>
         <a className={styles.secondaryLink} href="/admin">返回工作台</a>
       </header>
-      <aside className={styles.auditNotice}>仅记录成功的关键管理操作，不保存密码、登录令牌、文章正文、文件内容或客户端 IP。</aside>
+      <aside className={styles.auditNotice}>仅记录成功的关键管理操作，不保存密码、登录令牌、文章正文、文件内容、storage key、文件路径或客户端 IP。</aside>
       {result.kind === "upstream_error" ? <section className={`${styles.errorPanel} ${styles.adminRouteError}`} role="alert"><h2>暂时无法读取操作日志</h2><p>日志没有改变，请检查连接后重试。</p><a href="/admin/audit">重新加载操作日志</a></section> : null}
       {events && !events.items.length ? <section className={styles.emptyPanel}><h2>还没有操作记录</h2><p>登录、内容发布和站点设置变更会安全地显示在这里。</p></section> : null}
       {events?.items.length ? (
