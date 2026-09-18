@@ -671,6 +671,7 @@ test("current migration authority is a complete sixteen-entry Drizzle history", 
     if (!schema.includes(token)) findings.push(`Drizzle schema is missing ${token}`);
     if (redirectSnapshot && !redirectSnapshot.includes(token)) findings.push(`slug redirect snapshot is missing ${token}`);
   }
+  assert.match(await readFile(join(process.cwd(), "apps/api/src/app.ts"), "utf8"), /article_revisions[\s\S]*migration_count[\s\S]*16[\s\S]*article_revisions_newest_index/);
   const revisionSnapshot = metadataFiles.includes("0015_snapshot.json") ? await readFile(join(metadataRoot, "0015_snapshot.json"), "utf8") : "";
   for (const token of ["article_revisions", "article_revisions_newest_index", "article_revisions_article_source_version_unique"]) {
     if (!revisionsMigration.includes(token)) findings.push(`article revision migration is missing ${token}`);
