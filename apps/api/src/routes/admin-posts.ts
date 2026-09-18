@@ -4,6 +4,7 @@ import {
   adminPostListSchema,
   articleRevisionListSchema,
   articleRevisionDetailSchema,
+  articleRevisionRestoreInputSchema,
   adminPostPreviewInputSchema,
   adminPostPreviewSchema,
   adminPostUpdateSchema,
@@ -19,6 +20,7 @@ import {
   restoredArticleSchema,
   slugConflictResponseSchema,
   slugSuggestionSchema,
+  staleRevisionVersionSchema,
   suggestSlug,
 } from "@blog-x/contracts";
 import type { FastifyPluginAsync } from "fastify";
@@ -171,6 +173,28 @@ export const adminPostRoutes: FastifyPluginAsync<AdminPostRouteOptions> = async 
     if (!id.success || !revisionId.success) return reply.code(404).send({ error: "not_found" });
     const detail = await options.articleService.revisionDetail(id.data, revisionId.data);
     return detail ? articleRevisionDetailSchema.parse(detail) : reply.code(404).send({ error: "not_found" });
+  });
+
+  app.post<{ Params: { id: string; revisionId: string } }>("/admin/posts/:id/revisions/:revisionId/restore", { bodyLimit: 4 * 1024 }, async (request, reply) => {
+    const administratorId = await requireAdministratorMutation(request, reply, options.mutationGuard);
+    if (!administratorId) return;
+    if (!requireContentType(request, reply, "application/json")) return;
+    const id = adminPostIdSchema.safeParse(request.params.id);
+    const revisionId = adminPostIdSchema.safeParse(request.params.revisionId);
+    if (!id.success || !revisionId.success) return reply.code(404).send({ error: "not_found" });
+    const parsed = articleRevisionRestoreInputSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send(fieldErrors(parsed.error));
+    try {
+      const result = await options.articleService.restoreRevision(id.data, revisionId.data, parsed.data.version, administratorId);
+      if (result.ok) return result.post;
+      if (result.detail.error === "not_found") return reply.code(404).send({ error: "not_found" });
+      if (result.detail.error === "stale_version") return reply.code(409).send(staleRevisionVersionSchema.parse(result.detail));
+      return reply.code(400).send(fieldErrorResponseSchema.parse(result.detail));
+    } catch (error) {
+      if (isSlugConflict(error)) return reply.code(409).send(slugConflictResponseSchema.parse({ error: "slug_conflict", fields: { slug: ["Slug 已被占用"] } }));
+      if (isForeignKeyConflict(error)) return invalidTaxonomy(reply);
+      throw error;
+    }
   });
 
   app.put<{ Params: { id: string } }>("/admin/posts/:id", { bodyLimit: 256 * 1024 }, async (request, reply) => {

@@ -15,10 +15,10 @@ const cloneManifest = () => PACKAGE_TEST_INVENTORY.map((entry) => ({ ...entry })
 test("package test inventory is frozen, exact, complete and disjoint", async () => {
   assert.equal(Object.isFrozen(PACKAGE_TEST_INVENTORY), true);
   assert.equal(PACKAGE_TEST_INVENTORY.every(Object.isFrozen), true);
-  assert.equal(PACKAGE_TEST_INVENTORY.length, 50);
+  assert.equal(PACKAGE_TEST_INVENTORY.length, 51);
   assert.equal(DEFAULT_TEST_FILES.length, 15);
-  assert.equal(INTEGRATION_TEST_FILES.length, 35);
-  assert.equal(new Set([...DEFAULT_TEST_FILES, ...INTEGRATION_TEST_FILES]).size, 50);
+  assert.equal(INTEGRATION_TEST_FILES.length, 36);
+  assert.equal(new Set([...DEFAULT_TEST_FILES, ...INTEGRATION_TEST_FILES]).size, 51);
   assert.deepEqual(DEFAULT_TEST_FILES, [
     "packages/contracts/src/analytics.test.ts",
     "packages/contracts/src/public-discovery.test.ts",
@@ -38,7 +38,7 @@ test("package test inventory is frozen, exact, complete and disjoint", async () 
   ]);
 
   const result = await assertCompleteTestInventory();
-  assert.deepEqual(result, { total: 50, default: 15, integration: 35 });
+  assert.deepEqual(result, { total: 51, default: 15, integration: 36 });
 });
 
 test("integration inventory has exact runner-owner counts", () => {
@@ -56,7 +56,7 @@ test("integration inventory has exact runner-owner counts", () => {
     database: 15,
     "backup-restore": 1,
     media: 1,
-    "main-browser": 15,
+    "main-browser": 16,
     "error-browser": 1,
     "restore-browser": 1,
     "phase7-browser": 1,

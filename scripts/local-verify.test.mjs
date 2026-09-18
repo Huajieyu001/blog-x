@@ -71,18 +71,18 @@ function phase11RuntimeAuthority() {
 test("canonical integration selection owns exact non-Phase-7 inventory once by fixture owner", () => {
   const selection = canonicalIntegrationSelection();
   assert.deepEqual(selection.paths, canonicalGeneratedPaths);
-  assert.equal(selection.paths.length, 34);
+  assert.equal(selection.paths.length, 35);
   assert.equal(new Set(selection.paths).size, selection.paths.length);
   assert.deepEqual(Object.fromEntries(Object.entries(selection.groups).map(([owner, paths]) => [owner, paths.length])), {
     database: 15,
     "backup-restore": 1,
     media: 1,
-    "main-browser": 15,
+    "main-browser": 16,
     "error-browser": 1,
     "restore-browser": 1,
   });
   assert.equal(selection.paths.filter((path) => path.startsWith("apps/api/")).length, 17);
-  assert.equal(selection.paths.filter((path) => path.startsWith("apps/web/e2e/")).length, 17);
+  assert.equal(selection.paths.filter((path) => path.startsWith("apps/web/e2e/")).length, 18);
   assert.equal(selection.paths.includes("apps/web/e2e/public-discovery.spec.ts"), false);
   assert.equal(canonicalDatabaseEnvironment["apps/api/test/site-settings.test.ts"], "AUTH_TEST_DATABASE_URL");
   assert.equal(canonicalDatabaseEnvironment["apps/api/test/article-slug-redirects.test.ts"], "LIFECYCLE_TEST_DATABASE_URL");
@@ -229,7 +229,7 @@ test("generated integration result binds exact paths actual counts cleanup and d
   assert.equal(result.version, 1);
   assert.equal(result.releaseState, "BLOCKED");
   assert.deepEqual(result.inventory, selection.paths);
-  assert.deepEqual(result.counts, { tests: 34, passed: 34, failed: 0, cancelled: 0, skipped: 0, todo: 0 });
+  assert.deepEqual(result.counts, { tests: 35, passed: 35, failed: 0, cancelled: 0, skipped: 0, todo: 0 });
   assert.deepEqual(result.cleanup, cleanup);
   assert.equal(result.manifestSha256, selection.manifestSha256);
   assert.match(result.resultSha256, /^[a-f0-9]{64}$/);

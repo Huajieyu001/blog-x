@@ -7,6 +7,7 @@ export const auditEventNameSchema = z.enum([
   "media.deleted",
   "article.created",
   "article.updated",
+  "article.revision.restored",
   "article.published",
   "article.unpublished",
   "article.republished",
@@ -40,6 +41,7 @@ export const auditMetadataSchema = z.object({
   status: auditStatusSchema.optional(),
   scheduledAt: z.string().datetime({ offset: true }).optional(),
   previousScheduledAt: z.string().datetime({ offset: true }).optional(),
+  revisionId: z.uuid().optional(),
 }).strict();
 
 export const auditEventInputSchema = z.object({

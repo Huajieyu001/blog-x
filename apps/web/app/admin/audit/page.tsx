@@ -10,6 +10,7 @@ const eventLabels: Record<AuditEventName, string> = {
   "media.deleted": "删除未引用媒体",
   "article.created": "创建文章草稿",
   "article.updated": "更新文章",
+  "article.revision.restored": "恢复文章历史版本",
   "article.published": "发布文章",
   "article.unpublished": "下线文章",
   "article.republished": "重新发布文章",

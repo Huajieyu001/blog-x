@@ -1,3 +1,5 @@
+ALTER TABLE "audit_events" DROP CONSTRAINT "audit_events_event_check";--> statement-breakpoint
+ALTER TABLE "audit_events" ADD CONSTRAINT "audit_events_event_check" CHECK ("event" in ('auth.login.succeeded', 'auth.logout.succeeded', 'auth.password.changed', 'media.deleted', 'article.created', 'article.updated', 'article.revision.restored', 'article.published', 'article.unpublished', 'article.republished', 'article.deleted', 'article.scheduled', 'article.rescheduled', 'article.schedule_cancelled', 'article.scheduled_published', 'category.created', 'category.updated', 'category.deleted', 'tag.created', 'tag.updated', 'tag.deleted', 'about.saved', 'about.published', 'site_settings.updated'));--> statement-breakpoint
 CREATE TABLE "article_revisions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"article_id" uuid NOT NULL,

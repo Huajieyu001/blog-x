@@ -71,10 +71,10 @@ export function canonicalIntegrationSelection() {
     .sort((left, right) => left.path.localeCompare(right.path));
   const paths = entries.map((entry) => entry.path);
   const groups = frozenGroups(entries);
-  const expectedOwners = { database: 15, "backup-restore": 1, media: 1, "main-browser": 15, "error-browser": 1, "restore-browser": 1 };
-  if (entries.length !== 34 || new Set(paths).size !== entries.length
+  const expectedOwners = { database: 15, "backup-restore": 1, media: 1, "main-browser": 16, "error-browser": 1, "restore-browser": 1 };
+  if (entries.length !== 35 || new Set(paths).size !== entries.length
     || paths.filter((path) => path.startsWith("apps/api/")).length !== 17
-    || paths.filter((path) => path.startsWith("apps/web/e2e/")).length !== 17
+    || paths.filter((path) => path.startsWith("apps/web/e2e/")).length !== 18
     || Object.entries(expectedOwners).some(([owner, count]) => groups[owner]?.length !== count)
     || Object.keys(groups).some((owner) => !Object.hasOwn(expectedOwners, owner))) {
     throw new Error("canonical integration inventory ownership is incomplete or duplicated");
@@ -204,7 +204,7 @@ export function migratedMainBrowserSelection() {
 
 function canonicalMainBrowserSelection() {
   const paths = canonicalIntegrationSelection().groups["main-browser"];
-  if (!paths || paths.length !== 15 || new Set(paths).size !== paths.length) throw new Error("canonical main-browser ownership is invalid");
+  if (!paths || paths.length !== 16 || new Set(paths).size !== paths.length) throw new Error("canonical main-browser ownership is invalid");
   return [...paths];
 }
 

@@ -29,7 +29,7 @@ export const auditEvents = pgTable("audit_events", {
   occurredAt: timestamp("occurred_at", { withTimezone: true, precision: 3 }).defaultNow().notNull(),
 }, (table) => [
   index("audit_events_newest_index").on(table.occurredAt.desc(), table.id.desc()),
-  check("audit_events_event_check", sql`${table.event} in ('auth.login.succeeded', 'auth.logout.succeeded', 'auth.password.changed', 'media.deleted', 'article.created', 'article.updated', 'article.published', 'article.unpublished', 'article.republished', 'article.deleted', 'article.scheduled', 'article.rescheduled', 'article.schedule_cancelled', 'article.scheduled_published', 'category.created', 'category.updated', 'category.deleted', 'tag.created', 'tag.updated', 'tag.deleted', 'about.saved', 'about.published', 'site_settings.updated')`),
+  check("audit_events_event_check", sql`${table.event} in ('auth.login.succeeded', 'auth.logout.succeeded', 'auth.password.changed', 'media.deleted', 'article.created', 'article.updated', 'article.revision.restored', 'article.published', 'article.unpublished', 'article.republished', 'article.deleted', 'article.scheduled', 'article.rescheduled', 'article.schedule_cancelled', 'article.scheduled_published', 'category.created', 'category.updated', 'category.deleted', 'tag.created', 'tag.updated', 'tag.deleted', 'about.saved', 'about.published', 'site_settings.updated')`),
   check("audit_events_target_check", sql`(
     (${table.event} in ('auth.login.succeeded', 'auth.logout.succeeded', 'auth.password.changed') and ${table.targetType} = 'administrator' and ${table.targetId} = ${table.actorAdministratorId})
     or (${table.event} = 'media.deleted' and ${table.targetType} = 'media' and ${table.targetId} is not null and ${table.metadata} = '{}'::jsonb)

@@ -43,6 +43,7 @@ const entries = [
   { path: "apps/web/e2e/about-archive.spec.ts", kind: "web-e2e", scope: "integration", fixtureOwner: "main-browser" },
   { path: "apps/web/e2e/admin-analytics.spec.ts", kind: "web-e2e", scope: "integration", fixtureOwner: "main-browser" },
   { path: "apps/web/e2e/article-lifecycle.spec.ts", kind: "web-e2e", scope: "integration", fixtureOwner: "main-browser" },
+  { path: "apps/web/e2e/article-revisions.spec.ts", kind: "web-e2e", scope: "integration", fixtureOwner: "main-browser" },
   { path: "apps/web/e2e/article-toc.spec.ts", kind: "web-e2e", scope: "integration", fixtureOwner: "main-browser" },
   { path: "apps/web/e2e/auth-session.spec.ts", kind: "web-e2e", scope: "integration", fixtureOwner: "main-browser" },
   { path: "apps/web/e2e/draft-preview.spec.ts", kind: "web-e2e", scope: "integration", fixtureOwner: "main-browser" },

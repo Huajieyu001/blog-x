@@ -105,6 +105,7 @@ type RetainedArticleAudit = (
 ) => Promise<void>;
 
 type RetainedArticleRevision = (current: StoredAdminPost, changedFields: string[]) => Promise<void>;
+type RetainedArticleRevisionFinder = (revisionId: string) => Promise<{ id: string; snapshot: unknown } | null>;
 
 type DeletedArticleUpdate = (changes: Pick<RetainedArticleChanges, "status" | "deletedAt" | "scheduledAt" | "scheduledByAdministratorId" | "updatedAt">) => Promise<void>;
 
@@ -224,7 +225,7 @@ export function createAdminPostRepository(db: Database) {
   async function transactRetained<T>(
     id: string,
     actorAdministratorId: string,
-    operation: (current: StoredAdminPost, update: RetainedArticleUpdate, audit: RetainedArticleAudit, transactionNow: Date, snapshot: RetainedArticleRevision) => Promise<T>,
+    operation: (current: StoredAdminPost, update: RetainedArticleUpdate, audit: RetainedArticleAudit, transactionNow: Date, snapshot: RetainedArticleRevision, findRevision: RetainedArticleRevisionFinder) => Promise<T>,
   ): Promise<T | null> {
     return db.transaction(async (tx) => {
       const current = (await tx.select(selectedPost).from(schema.articles)
@@ -293,7 +294,15 @@ export function createAdminPostRepository(db: Database) {
           order by created_at desc, id desc offset 20
         )`);
       };
-      return operation(currentWithTags, update, audit, transactionNow, snapshot);
+      const findRevision: RetainedArticleRevisionFinder = async (revisionId) => {
+        const revision = (await tx.select({ id: schema.articleRevisions.id, snapshot: schema.articleRevisions.snapshot })
+          .from(schema.articleRevisions)
+          .where(and(eq(schema.articleRevisions.articleId, id), eq(schema.articleRevisions.id, revisionId)))
+          .limit(1)
+          .for("update"))[0];
+        return revision ?? null;
+      };
+      return operation(currentWithTags, update, audit, transactionNow, snapshot, findRevision);
     });
   }
 

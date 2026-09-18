@@ -26,6 +26,9 @@ export type ArticleServiceError =
 export type ArticleServiceResult = { ok: true; post: AdminPost } | { ok: false; detail: ArticleServiceError };
 export type DeleteServiceResult = { ok: true; deleted: { id: string; deleted: true } } | { ok: false; detail: ArticleServiceError };
 export type RestoreServiceResult = { ok: true; restored: { id: string; restored: true; status: "draft" } } | { ok: false; detail: { error: "not_found" } };
+export type RevisionRestoreServiceResult =
+  | { ok: true; post: AdminPost }
+  | { ok: false; detail: { error: "not_found" } | { error: "stale_version" } | { error: "validation_failed"; fields: Record<string, string[]> } };
 
 function serialize(post: StoredAdminPost): AdminPost {
   // Durable scheduling attribution is execution authority for the local due
@@ -278,6 +281,61 @@ export function createArticleService(repository: AdminPostRepository) {
     });
   }
 
+  async function restoreRevision(id: string, revisionId: string, version: string, actorAdministratorId: string): Promise<RevisionRestoreServiceResult> {
+    let result: RevisionRestoreServiceResult | null;
+    try { result = await repository.transactRetained<RevisionRestoreServiceResult>(id, actorAdministratorId, async (current, update, audit, transactionNow, snapshotCurrent, findRevision) => {
+      // The current row lock makes this a compare-and-swap guard. No snapshot,
+      // slug reservation, update, or audit has happened on a stale request.
+      if (current.updatedAt.toISOString() !== version) return { ok: false, detail: { error: "stale_version" } };
+      const revision = await findRevision(revisionId);
+      if (!revision) return { ok: false, detail: { error: "not_found" } };
+      const parsedSnapshot = articleRevisionSnapshotSchema.safeParse(revision.snapshot);
+      if (!parsedSnapshot.success) return { ok: false, detail: { error: "validation_failed", fields: validationFields(parsedSnapshot.error) } };
+      const { status: _historicStatus, ...candidate } = parsedSnapshot.data;
+      const validInput = adminPostInputSchema.safeParse(candidate);
+      if (!validInput.success) return { ok: false, detail: { error: "validation_failed", fields: validationFields(validInput.error) } };
+      const mediaFields = mediaValidationFields(validInput.data);
+      if (mediaFields) return { ok: false, detail: { error: "validation_failed", fields: mediaFields } };
+
+      // A restoration is itself a meaningful save: preserve the exact current
+      // authoring state before applying the allowlisted historic values.
+      const changedFields = changedFieldNames(current, { ...validInput.data, publishedAtCorrection: false }, null);
+      await snapshotCurrent(current, changedFields);
+      const updated = await update({
+        title: validInput.data.title,
+        summary: validInput.data.summary,
+        coverUrl: validInput.data.coverUrl,
+        slug: validInput.data.slug,
+        markdown: validInput.data.markdown,
+        publishedAt: null,
+        seoDescription: validInput.data.seoDescription,
+        categoryId: validInput.data.categoryId,
+        coverMediaId: validInput.data.coverMedia?.id ?? null,
+        coverAlt: validInput.data.coverMedia?.alt ?? "",
+        coverDecorative: validInput.data.coverMedia?.decorative ?? false,
+        status: "draft",
+        scheduledAt: null,
+        scheduledByAdministratorId: null,
+        legacyMediaReview: "clear",
+        updatedAt: nextVersion(current, transactionNow),
+      }, validInput.data.tagIds);
+      // Deliberately content-free. The selected revision id, state transition,
+      // and changed field names provide durable recovery evidence without
+      // copying article text into the audit log.
+      await audit("article.revision.restored", {
+        revisionId,
+        previousStatus: statusOf(current),
+        status: "draft",
+        changedFields,
+      });
+      return { ok: true, post: serialize(updated) };
+    }); } catch (error) {
+      if (error instanceof MissingMediaReferenceError) return { ok: false, detail: { error: "validation_failed", fields: { markdown: ["图片不存在或已删除"], coverMedia: ["封面图片不存在或已删除"] } } };
+      throw error;
+    }
+    return result ?? { ok: false, detail: { error: "not_found" } };
+  }
+
   async function transition(id: string, action: ArticleAction, actorAdministratorId: string): Promise<ArticleServiceResult | DeleteServiceResult> {
     const result = await repository.transactRetained<ArticleServiceResult | DeleteServiceResult>(id, actorAdministratorId, async (current, update, audit, transactionNow) => {
       const status = statusOf(current);
@@ -368,7 +426,7 @@ export function createArticleService(repository: AdminPostRepository) {
     return result ?? { ok: false, detail: { error: "not_found" } };
   }
 
-  return { createDraft, getDraft, listDrafts, listDeleted, listRevisions, revisionDetail, restoreDeleted, updateDraft, transition, schedule, cancelSchedule };
+  return { createDraft, getDraft, listDrafts, listDeleted, listRevisions, revisionDetail, restoreRevision, restoreDeleted, updateDraft, transition, schedule, cancelSchedule };
 }
 
 export type ArticleService = ReturnType<typeof createArticleService>;

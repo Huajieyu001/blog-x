@@ -29,6 +29,7 @@ const expectedTarget: Record<AuditEventName, AuditTargetType> = {
   "media.deleted": "media",
   "article.created": "article",
   "article.updated": "article",
+  "article.revision.restored": "article",
   "article.published": "article",
   "article.unpublished": "article",
   "article.republished": "article",

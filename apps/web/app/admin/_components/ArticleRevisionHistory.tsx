@@ -44,6 +44,9 @@ export default function ArticleRevisionHistory({
   unavailable: boolean;
 }) {
   const [detail, setDetail] = useState<DetailState>({ kind: "idle" });
+  const [confirmingRestore, setConfirmingRestore] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(false);
 
   async function inspect(revision: ArticleRevisionSummary) {
     setDetail({ kind: "loading", id: revision.id });
@@ -57,6 +60,30 @@ export default function ArticleRevisionHistory({
       setDetail({ kind: "loaded", detail: parsed.data });
     } catch {
       setDetail({ kind: "error", id: revision.id });
+    }
+  }
+
+  async function restore(revisionId: string) {
+    setRestoring(true);
+    setRestoreError(null);
+    try {
+      const response = await fetch(`/api/admin/posts/${encodeURIComponent(article.id)}/revisions/${encodeURIComponent(revisionId)}/restore`, {
+        method: "POST",
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ version: article.version }),
+      });
+      if (response.status === 409) throw new Error("stale");
+      if (!response.ok) throw new Error("restore_failed");
+      window.location.reload();
+    } catch (error) {
+      setConfirmingRestore(null);
+      setRestoreError(error instanceof Error && error.message === "stale"
+        ? "文章已被其他保存更新，请刷新后重新选择历史版本。"
+        : "恢复失败，当前内容未被更改。请稍后重试。");
+    } finally {
+      setRestoring(false);
     }
   }
 
@@ -103,8 +130,20 @@ export default function ArticleRevisionHistory({
               {detail.detail.changedFields.map((field) => <RevisionValue key={field} label={fieldLabels[field] ?? field} value={detail.detail.current[field]} />)}
             </article>
           </div>
+          <div className={styles.revisionRestore}>
+            {confirmingRestore === detail.detail.revision.id ? (
+              <div className={styles.restoreDialog} role="dialog" aria-modal="true" aria-labelledby="revision-restore-confirmation">
+                <p id="revision-restore-confirmation">确认恢复此历史版本吗？当前内容会先保存为新的历史版本，恢复后的文章将回到草稿。</p>
+                <div className={styles.restoreDialogActions}>
+                  <button type="button" className={styles.restoreConfirm} disabled={restoring} onClick={() => void restore(detail.detail.revision.id)}>{restoring ? "正在恢复…" : "确认恢复"}</button>
+                  <button type="button" disabled={restoring} onClick={() => setConfirmingRestore(null)}>取消</button>
+                </div>
+              </div>
+            ) : <button className={styles.restoreButton} type="button" onClick={() => setConfirmingRestore(detail.detail.revision.id)}>恢复此版本</button>}
+          </div>
         </section>
       ) : null}
+      {restoreError ? <p className={styles.revisionError} role="alert">{restoreError}</p> : null}
     </section>
   );
 }
