@@ -227,13 +227,13 @@ test("single administrator sessions are opaque, rotated, revocable, and do not l
 
   const auditJson = JSON.stringify(audit.rows);
   assert.doesNotMatch(auditJson, /credential-that-must-not-appear|replacement-password/);
-  assert.doesNotMatch(auditJson, new RegExp(replacementHash));
+  assert.equal(auditJson.includes(replacementHash), false);
 
   const finalLogs = logs.join("");
-  assert.doesNotMatch(finalLogs, new RegExp(password));
-  assert.doesNotMatch(finalLogs, new RegExp(firstCookie));
-  assert.doesNotMatch(finalLogs, new RegExp(secondCookie));
-  assert.doesNotMatch(finalLogs, new RegExp(thirdCookie));
-  assert.doesNotMatch(finalLogs, new RegExp(replacementPassword));
-  assert.doesNotMatch(finalLogs, new RegExp(replacementHash));
+  assert.equal(finalLogs.includes(password), false);
+  assert.equal(finalLogs.includes(firstCookie), false);
+  assert.equal(finalLogs.includes(secondCookie), false);
+  assert.equal(finalLogs.includes(thirdCookie), false);
+  assert.equal(finalLogs.includes(replacementPassword), false);
+  assert.equal(finalLogs.includes(replacementHash), false);
 });
