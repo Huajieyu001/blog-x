@@ -16,7 +16,9 @@ test("administrator compares and restores a bounded article history without rend
   await page.getByLabel("用户名").fill(username);
   await page.getByLabel("密码").fill(password);
   await page.getByRole("button", { name: "登录" }).click();
+  await expect(page).toHaveURL(`${webOrigin}/admin`);
   await page.goto(`${webOrigin}/admin/new`);
+  await expect(page.getByLabel("标题")).toBeVisible();
   const slug = `revision-${runId}`;
   await page.getByLabel("标题").fill("历史标题");
   await page.getByLabel("Slug").fill(slug);
