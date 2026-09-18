@@ -336,16 +336,18 @@ async function seed(db: RuntimeResources["db"], administrator: { username: strin
   await seedAdministrator(db, administrator);
 }
 async function schemaVerify(pool: Pool) {
-  const result = await pool.query("select tablename from pg_tables where schemaname = 'public' and tablename = any($1)", [["administrators", "sessions", "articles", "article_daily_views", "categories", "tags", "article_tags", "site_pages", "media", "audit_events"]]);
-  if (result.rowCount !== 10) throw new Error("view aggregate schema is not active; run pnpm db:migrate first");
+  const result = await pool.query("select tablename from pg_tables where schemaname = 'public' and tablename = any($1)", [["administrators", "sessions", "articles", "article_daily_views", "categories", "tags", "article_tags", "site_pages", "site_settings", "media", "audit_events"]]);
+  if (result.rowCount !== 11) throw new Error("site settings schema is not active; run pnpm db:migrate first");
   const ledger = await pool.query("select migration_count from blog_x_schema_ledger where scope = 'phase1'");
-  if (ledger.rowCount !== 1 || Number(ledger.rows[0]?.migration_count) !== 13) throw new Error("managed media migration ledger is incomplete; run pnpm db:migrate first");
-  const indices = await pool.query("select indexname from pg_indexes where schemaname = 'public' and indexname = any($1)", [["taxonomy_category_slug_unique", "taxonomy_tag_slug_unique", "article_tags_article_tag_unique", "articles_category_public_index", "site_pages_key_unique", "media_source_key_unique", "media_derivative_key_unique", "media_catalog_retained_index", "articles_cover_media_index", "audit_events_newest_index", "articles_schedule_due_index", "article_daily_views_day_index"]]);
-  if (indices.rowCount !== 12) throw new Error("required indexes are incomplete; run pnpm db:migrate first");
+  if (ledger.rowCount !== 1 || Number(ledger.rows[0]?.migration_count) !== 14) throw new Error("site settings migration ledger is incomplete; run pnpm db:migrate first");
+  const indices = await pool.query("select indexname from pg_indexes where schemaname = 'public' and indexname = any($1)", [["taxonomy_category_slug_unique", "taxonomy_tag_slug_unique", "article_tags_article_tag_unique", "articles_category_public_index", "site_pages_key_unique", "site_settings_singleton_unique", "media_source_key_unique", "media_derivative_key_unique", "media_catalog_retained_index", "articles_cover_media_index", "audit_events_newest_index", "articles_schedule_due_index", "article_daily_views_day_index"]]);
+  if (indices.rowCount !== 13) throw new Error("required indexes are incomplete; run pnpm db:migrate first");
   const viewConstraints = await pool.query("select conname from pg_constraint where conrelid = 'article_daily_views'::regclass and conname = any($1)", [["article_daily_views_pkey", "article_daily_views_article_id_articles_id_fk", "article_daily_views_counters_nonnegative_check", "article_daily_views_total_matches_sources_check"]]);
   if (viewConstraints.rowCount !== 4) throw new Error("view aggregate constraints are incomplete; run pnpm db:migrate first");
   const constraints = await pool.query("select conname from pg_constraint where conrelid = 'site_pages'::regclass and conname = any($1)", [["site_pages_key_about_check", "site_pages_status_check"]]);
   if (constraints.rowCount !== 2) throw new Error("site_pages singleton constraints are incomplete; run pnpm db:migrate first");
+  const siteSettingsConstraints = await pool.query("select conname from pg_constraint where conrelid = 'site_settings'::regclass and conname = any($1)", [["site_settings_name_check", "site_settings_registration_number_check"]]);
+  if (siteSettingsConstraints.rowCount !== 2) throw new Error("site settings constraints are incomplete; run pnpm db:migrate first");
   const auditConstraints = await pool.query("select conname from pg_constraint where conrelid = 'audit_events'::regclass and conname = any($1)", [["audit_events_event_check", "audit_events_target_check", "audit_events_metadata_check"]]);
   if (auditConstraints.rowCount !== 3) throw new Error("audit constraints are incomplete; run pnpm db:migrate first");
   const mediaConstraints = await pool.query("select conname from pg_constraint where conname = any($1)", [["media_source_mime_check", "media_derivative_mime_check", "media_dimensions_check", "media_bytes_check", "articles_cover_alt_check", "articles_cover_media_id_media_id_fk"]]);
@@ -361,8 +363,8 @@ async function schemaVerify(pool: Pool) {
   const auditConstraintDefinitions = await pool.query<{ conname: string; definition: string }>("select conname, pg_get_constraintdef(oid) as definition from pg_constraint where conrelid = 'audit_events'::regclass and conname = any($1)", [["audit_events_event_check", "audit_events_target_check"]]);
   const auditDefinitionByName = new Map(auditConstraintDefinitions.rows.map((row) => [row.conname, row.definition]));
   if (![
-    ["audit_events_event_check", "article.scheduled", "article.rescheduled", "article.schedule_cancelled", "article.scheduled_published", "auth.password.changed", "media.deleted"],
-    ["audit_events_target_check", "auth.password.changed", "administrator", "actor_administrator_id"],
+    ["audit_events_event_check", "article.scheduled", "article.rescheduled", "article.schedule_cancelled", "article.scheduled_published", "auth.password.changed", "media.deleted", "site_settings.updated"],
+    ["audit_events_target_check", "auth.password.changed", "administrator", "actor_administrator_id", "site_settings"],
   ].every(([name, ...required]) => required.every((term) => auditDefinitionByName.get(name)?.includes(term)))) {
     throw new Error("managed-media audit constraints are incomplete; run pnpm db:migrate first");
   }
