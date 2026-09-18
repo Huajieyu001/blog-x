@@ -79,6 +79,11 @@ export function canonicalIntegrationSelection() {
     || Object.keys(groups).some((owner) => !Object.hasOwn(expectedOwners, owner))) {
     throw new Error("canonical integration inventory ownership is incomplete or duplicated");
   }
+  const databasePaths = groups.database ?? [];
+  if (databasePaths.some((path) => !canonicalDatabaseEnvironment[path])
+    || Object.keys(canonicalDatabaseEnvironment).some((path) => !databasePaths.includes(path))) {
+    throw new Error("canonical database integration ownership is unmapped or stale");
+  }
   return Object.freeze({
     paths: Object.freeze(paths),
     groups,
@@ -1856,7 +1861,7 @@ async function runPhase12DataChecks(context) {
   return record;
 }
 
-const canonicalDatabaseEnvironment = Object.freeze({
+export const canonicalDatabaseEnvironment = Object.freeze({
   "apps/api/test/admin-analytics.test.ts": "ADMIN_ANALYTICS_TEST_DATABASE_URL",
   "apps/api/test/article-draft-preview.test.ts": "ARTICLE_TEST_DATABASE_URL",
   "apps/api/test/article-lifecycle.test.ts": "LIFECYCLE_TEST_DATABASE_URL",
@@ -1868,6 +1873,7 @@ const canonicalDatabaseEnvironment = Object.freeze({
   "apps/api/test/public-distribution.test.ts": "PHASE3_TEST_DATABASE_URL",
   "apps/api/test/public-list.test.ts": "PUBLIC_LIST_TEST_DATABASE_URL",
   "apps/api/test/public-visibility.test.ts": "PUBLIC_VISIBILITY_TEST_DATABASE_URL",
+  "apps/api/test/site-settings.test.ts": "AUTH_TEST_DATABASE_URL",
   "apps/api/test/taxonomy.test.ts": "AUTH_TEST_DATABASE_URL",
 });
 

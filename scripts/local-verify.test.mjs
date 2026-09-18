@@ -10,6 +10,7 @@ import { verifyPhase5Receipt } from "./phase5-receipt.mjs";
 import {
   assertSemanticTap,
   assertPlaywrightJourney,
+  canonicalDatabaseEnvironment,
   canonicalIntegrationSelection,
   createGeneratedIntegrationResult,
   generatedPrivateNetwork,
@@ -83,6 +84,8 @@ test("canonical integration selection owns exact non-Phase-7 inventory once by f
   assert.equal(selection.paths.filter((path) => path.startsWith("apps/api/")).length, 15);
   assert.equal(selection.paths.filter((path) => path.startsWith("apps/web/e2e/")).length, 17);
   assert.equal(selection.paths.includes("apps/web/e2e/public-discovery.spec.ts"), false);
+  assert.equal(canonicalDatabaseEnvironment["apps/api/test/site-settings.test.ts"], "AUTH_TEST_DATABASE_URL");
+  assert.deepEqual(Object.keys(canonicalDatabaseEnvironment).sort(), selection.groups.database);
   assert.match(selection.manifestSha256, /^[a-f0-9]{64}$/);
 });
 
