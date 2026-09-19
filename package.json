@@ -6,6 +6,7 @@
   "packageManager": "pnpm@11.20.0",
   "engines": { "node": ">=24.15.0" },
   "scripts": {
+    "docker:retention": "node scripts/ops/docker-image-retention.mjs",
     "dev:api": "corepack pnpm --filter @blog-x/api dev",
     "dev:web": "corepack pnpm --filter @blog-x/web dev",
     "build": "corepack pnpm -r build",
