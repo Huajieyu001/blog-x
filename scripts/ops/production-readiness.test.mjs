@@ -113,6 +113,15 @@ test("expect-stop changes only the exit code for a valid STOP", async () => {
   assert.deepEqual(JSON.parse(output.join("")), result.report);
 });
 
+test("CLI accepts package-manager argument separator only in its leading position", async () => {
+  const result = await runProductionReadinessCli({ argv: ["--", "--expect-stop"], output: { write() {} }, collect: async () => finishFixtureStop() });
+  assert.equal(result.exitCode, 0);
+});
+
+function finishFixtureStop() {
+  return { format: "blog-x-production-rollout-readiness", version: 1, decision: "STOP", repository: { branch: "refs/heads/dev", branchMatched: true, head: sha("b"), clean: true }, localDelivery: { receipt: null, receiptSha256: null, implementationRevision: null, implementationAncestor: false, targets: { api: null, web: null } }, deployArtifacts: { files: [], manifestSha256: null, changedSinceImplementation: false }, productionEvidence: { source: "canonical", sha256: null, status: "BLOCKED", reasons: [] }, prerequisites: { backupRestore: { status: "PENDING", unresolved: [] }, rollback: { status: "PENDING", unresolved: [] } }, reasons: [] };
+}
+
 test("validated external readiness can produce GO while unsafe bundles fail closed", async (context) => {
   const root = await readyBundle(context);
   const ready = await collectProductionReadiness({ ...baseOptions(), bundleRoot: root, evidencePath: "evidence.json", now: () => now });

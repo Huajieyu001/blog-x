@@ -149,7 +149,8 @@ export async function collectProductionReadiness({ root = rootDirectory, run = d
 export function formatProductionReadinessReport(report) { return JSON.stringify(report); }
 function parseArguments(argv) {
   const values = new Map(); let expectStop = false;
-  for (const arg of argv) {
+  for (const [index, arg] of argv.entries()) {
+    if (arg === "--" && index === 0) continue;
     if (arg === "--expect-stop") { if (expectStop) throw new Error("invocation.duplicate"); expectStop = true; continue; }
     const match = /^--(bundle-root|evidence)=(.+)$/.exec(arg);
     if (!match || values.has(match[1])) throw new Error("invocation.invalid");
