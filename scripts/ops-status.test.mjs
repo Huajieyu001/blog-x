@@ -187,6 +187,8 @@ test("validated TLS evidence keeps only its expiry for fail-closed canonical thr
   const withinWindow = await collect(evidence("2026-08-23T09:59:59.999Z"));
   assert.equal(evaluateCanonicalStatus(atBoundary, { role: "edge", now, policy }).checks.find((item) => item.id === "tls")?.status, "PASS");
   assert.equal(evaluateCanonicalStatus(withinWindow, { role: "edge", now, policy }).checks.find((item) => item.id === "tls")?.status, "FAIL");
+  assert.equal(evaluateCanonicalStatus(atBoundary, { role: "local", now, policy }).checks.find((item) => item.id === "tls")?.status, "PASS");
+  assert.equal(evaluateCanonicalStatus(withinWindow, { role: "local", now, policy }).checks.find((item) => item.id === "tls")?.status, "FAIL");
   for (const validUntil of [undefined, "not-a-timestamp"]) {
     const result = evaluateCanonicalStatus(cleanFacts({ tls: { status: "PASS", validUntil } }), { role: "edge", now, policy });
     assert.equal(result.checks.find((item) => item.id === "tls")?.status, "FAIL");
