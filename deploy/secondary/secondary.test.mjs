@@ -105,3 +105,31 @@ test("root retention command remains bounded and calls the API CLI without a sch
   assert.equal(packageJson.scripts.retention, "corepack pnpm --filter @blog-x/api retention --views-limit=100 --sessions-limit=100");
   assert.doesNotMatch(packageJson.scripts.retention, /enable|install|systemctl/i);
 });
+
+test("immutable secondary deployment resolves a revision tag once and uses only its inspected image ID", async () => {
+  const [dockerfile, compose, deploy] = await Promise.all([
+    read("../../apps/api/Dockerfile"), read("./compose.yaml"), read("./deploy.sh"),
+  ]);
+  assert.match(dockerfile, /^ARG BLOG_X_REVISION$/m);
+  assert.match(dockerfile, /^LABEL org\.opencontainers\.image\.revision=\$\{?BLOG_X_REVISION\}?$/m);
+  assert.match(compose, /args:\n\s+BLOG_X_REVISION: \$\{BLOG_X_REVISION\}/);
+  assert.match(compose, /image: \$\{BLOG_X_API_IMAGE:-blog-x-api-secondary:\$\{BLOG_X_REVISION\}\}/);
+  assert.match(deploy, /readonly DEPLOYMENTS_DIR=\/var\/lib\/blog-x\/deployments/);
+  assert.match(deploy, /docker image inspect --format '\{\{\.Id\}\}' "\$candidate_tag"/);
+  assert.match(deploy, /org\.opencontainers\.image\.revision/);
+  assert.match(deploy, /BLOG_X_API_IMAGE="\$candidate_image_id"/);
+  assert.match(deploy, /run --rm --no-build api corepack pnpm --filter @blog-x\/api db:migrate/);
+  assert.match(deploy, /run --rm --no-build api corepack pnpm --filter @blog-x\/api db:schema:verify/);
+  assert.match(deploy, /up -d --no-build api/);
+  assert.match(deploy, /rollback\.env/);
+  assert.match(deploy, /current\.env/);
+  assert.doesNotMatch(deploy, /source .*rollback|\. .*rollback|eval /i);
+  const firstMigration = deploy.indexOf("db:migrate");
+  for (const gate of ["candidate_image_id", "rollback.env", "mv -f -- \"$state_tmp\" \"$ROLLBACK_RECORD\""]) {
+    assert.ok(deploy.indexOf(gate) >= 0 && deploy.indexOf(gate) < firstMigration, `${gate} must precede migration`);
+  }
+  const timerEnableIndex = deploy.indexOf("systemctl enable --now");
+  for (const gate of ["db:migrate", "db:schema:verify", "BLOG_X_API_IMAGE", "current.env", "API listener is not loopback-only"]) {
+    assert.ok(timerEnableIndex > deploy.lastIndexOf(gate), `timer activation must follow ${gate}`);
+  }
+});
