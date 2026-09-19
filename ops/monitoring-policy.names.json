@@ -1,0 +1,7 @@
+{
+  "format": "blog-x-monitoring-policy-names",
+  "version": 1,
+  "roles": ["local", "edge", "data"],
+  "thresholds": ["backupFreshnessHours", "jobFreshnessHours", "tlsMinimumDays", "maximumLoadPerCore", "minimumFreeMemoryBytes", "minimumFreeDiskBytes", "minimumFreeInodes", "maximumContainerCpuPercent", "maximumContainerMemoryBytes", "maximumRestartCount"],
+  "environmentVariableNames": ["BLOG_X_NOTIFY_WEBHOOK_URL", "BLOG_X_NOTIFY_WEBHOOK_AUTHORIZATION"]
+}

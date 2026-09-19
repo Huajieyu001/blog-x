@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { lstat, mkdir, open, rename, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, rename, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 
@@ -120,4 +120,33 @@ export async function recordAlertOutcome(authority, value) {
   const outcome = { format: "blog-x-production-alert-outcome", version: 1, setId: value.setId, status: value.status, createdAt: value.createdAt };
   await appendAtomic(root.root, `alert-${value.setId}.json`, outcome);
   return outcome;
+}
+
+/** Bounded, non-link reader for redacted production terminal evidence. */
+export async function readLatestProductionBackupEvidence(root, { now = new Date(), freshnessHours = 30, list = readdir, read = readFile, stat = lstat } = {}) {
+  try {
+    const entries = await list(root, { withFileTypes: true });
+    if (entries.length > 512) return { status: "malformed" };
+    const terminal = [];
+    for (const entry of entries) {
+      if (!entry.isFile() || entry.isSymbolicLink() || !/^(result|attempt)-[a-z0-9][a-z0-9-]{7,80}\.json$/i.test(entry.name)) continue;
+      const path = resolve(root, entry.name);
+      const info = await stat(path);
+      if (!info.isFile() || info.isSymbolicLink()) return { status: "malformed" };
+      const value = JSON.parse(await read(path, "utf8"));
+      if (entry.name.startsWith("result-")) {
+        productionBackupResultSchema.parse(value);
+        terminal.push({ status: "succeeded", at: Date.parse(value.createdAt), id: value.setId });
+      } else {
+        productionBackupFailureSchema.parse(value);
+        terminal.push({ status: "failed", at: Date.parse(value.observedAt), id: value.runId });
+      }
+    }
+    if (!terminal.length) return { status: "missing" };
+    terminal.sort((left, right) => right.at - left.at || right.id.localeCompare(left.id));
+    const newest = terminal[0];
+    if (newest.status !== "succeeded") return { status: "failed" };
+    if (newest.at > now.getTime() || now.getTime() - newest.at > freshnessHours * 60 * 60 * 1000) return { status: "stale" };
+    return { status: "current" };
+  } catch { return { status: "malformed" }; }
 }

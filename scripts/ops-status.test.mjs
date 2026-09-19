@@ -3,11 +3,15 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   collectLocalStatus,
+  evaluateCanonicalStatus,
   evaluateStatus,
+  formatStatusJson,
   formatStatus,
+  readLatestJobReceipt,
   validateLocalProject,
   validateStatusOrigin,
 } from "./ops-status.mjs";
+import { parseStatusPolicy, parseStatusRole } from "./ops/status-policy.mjs";
 
 const composeConfig = {
   services: {
@@ -28,7 +32,7 @@ function cleanFacts(overrides = {}) {
     webHealth: { ok: true, status: 200 },
     cpu: { load1: 0.25, cores: 4 },
     memory: { availableBytes: 2_000_000_000, totalBytes: 4_000_000_000 },
-    filesystem: { availableBytes: 20_000_000_000, totalBytes: 40_000_000_000, availableInodes: 1000, totalInodes: 2000 },
+    filesystem: { availableBytes: 20_000_000_000, totalBytes: 40_000_000_000, availableInodes: 20_000, totalInodes: 40_000 },
     containers: { known: true, count: 3, maximumCpuPercent: 4.5, maximumMemoryBytes: 200_000_000 },
     volumes: { known: true, count: 2, bytes: 100_000_000 },
     tls: { status: "NOT_EVALUATED", detail: "authorized evidence absent" },
@@ -61,6 +65,18 @@ test("project and status origin validators accept only local generated authority
   for (const value of ["", "blogxrestore_a1b2c3d4", "blogxverify_bad;id", "production"]) assert.throws(() => validateLocalProject(value), /project/i);
   assert.equal(validateStatusOrigin("http://127.0.0.1:3199"), "http://127.0.0.1:3199");
   for (const value of ["https://example.test", "http://localhost:3199", "http://127.0.0.1:3199/path"]) assert.throws(() => validateStatusOrigin(value), /loopback/i);
+});
+
+test("monitoring policy and canonical projection fail closed without leaking raw facts", async () => {
+  assert.equal(parseStatusRole("data"), "data");
+  assert.throws(() => parseStatusRole("prod"), /role/i);
+  assert.throws(() => parseStatusPolicy({ jobFreshnessHours: 0 }), /policy/i);
+  const now = new Date("2032-01-02T00:00:00.000Z");
+  const result = evaluateCanonicalStatus(cleanFacts({ tls: { status: "PASS" } }), { role: "edge", now, policy: parseStatusPolicy() });
+  assert.deepEqual(Object.keys(result).sort(), ["checks", "format", "observedAt", "scope", "status", "version"]);
+  assert.equal(result.status, "PASS");
+  const serialized = formatStatusJson(result);
+  assert.doesNotMatch(serialized, /postgres|fixture|https?:\/\//i);
 });
 
 test("clean local facts pass while TLS remains explicitly not evaluated", () => {
