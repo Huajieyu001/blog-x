@@ -100,14 +100,36 @@ export function createSessionService(db: Database) {
       )
       SELECT
         (SELECT count(*)::int FROM deleted) AS "deleted",
-        (SELECT observed_at FROM cutoff) AS "observedAt",
-        (SELECT revoked_before FROM cutoff) AS "revokedBefore"
+        floor(EXTRACT(EPOCH FROM cutoff.observed_at) * 1000)::float8 AS "observedAtEpochMs",
+        floor(EXTRACT(EPOCH FROM cutoff.revoked_before) * 1000)::float8 AS "revokedBeforeEpochMs"
+      FROM cutoff
     `);
-    const row = result.rows[0] as { deleted?: unknown; observedAt?: unknown; revokedBefore?: unknown } | undefined;
-    if (!row || typeof row.deleted !== "number" || !(row.observedAt instanceof Date) || !(row.revokedBefore instanceof Date)) {
+    const row = result.rows[0] as {
+      deleted?: unknown;
+      observedAtEpochMs?: unknown;
+      revokedBeforeEpochMs?: unknown;
+    } | undefined;
+    if (
+      result.rows.length !== 1
+      || !row
+      || !Number.isSafeInteger(row.deleted)
+      || (row.deleted as number) < 0
+      || (row.deleted as number) > limit
+      || !Number.isSafeInteger(row.observedAtEpochMs)
+      || !Number.isSafeInteger(row.revokedBeforeEpochMs)
+    ) {
       throw new Error("session cleanup result malformed");
     }
-    return { deleted: row.deleted, observedAt: row.observedAt, revokedBefore: row.revokedBefore };
+    const observedAt = new Date(row.observedAtEpochMs as number);
+    const revokedBefore = new Date(row.revokedBeforeEpochMs as number);
+    if (
+      Number.isNaN(observedAt.getTime())
+      || Number.isNaN(revokedBefore.getTime())
+      || observedAt.getTime() - revokedBefore.getTime() !== revokedSessionRetentionDays * 24 * 60 * 60 * 1000
+    ) {
+      throw new Error("session cleanup result malformed");
+    }
+    return { deleted: row.deleted as number, observedAt, revokedBefore };
   }
 
   return { administratorIdForToken, issue, revoke, cleanupExpiredSessions };
