@@ -40,9 +40,12 @@ function safeScalarScan(value) {
   }
 }
 
-function parseArtifact(value, expectedType) {
-  strictObject(value, ["details", "format", "observedAt", "outcome", "version"], "artifact");
-  if (value.format !== expectedType || value.version !== 1 || !["pass", "fail"].includes(value.outcome) || !isIso(value.observedAt)) throw new Error("artifact.format");
+export function parseReleaseArtifact(value, expectedType, now = Date.now()) {
+  strictObject(value, ["details", "format", "observedAt", "outcome", "validUntil", "version"], "artifact");
+  if (value.format !== expectedType || value.version !== 1 || !["pass", "fail"].includes(value.outcome) || !isIso(value.observedAt) || !isIso(value.validUntil)) throw new Error("artifact.format");
+  const observed = Date.parse(value.observedAt);
+  const until = Date.parse(value.validUntil);
+  if (observed > now || until <= observed || until <= now) throw new Error("artifact.time");
   safeScalarScan(value);
   const d = value.details;
   if (expectedType === "blog-x-release-authorization") {
@@ -120,8 +123,8 @@ async function loadReference(root, reference, expectedType, now, expectedFiles) 
   const loaded = await readEvidenceArtifact(root, reference.artifact);
   expectedFiles.add(reference.artifact);
   if (sha(loaded.bytes) !== reference.sha256) throw new Error("reference.hash");
-  const value = parseArtifact(JSON.parse(loaded.bytes.toString("utf8")), expectedType);
-  if (value.observedAt !== reference.observedAt || value.outcome !== reference.outcome) throw new Error("reference.binding");
+  const value = parseReleaseArtifact(JSON.parse(loaded.bytes.toString("utf8")), expectedType, now);
+  if (value.observedAt !== reference.observedAt || value.validUntil !== reference.validUntil || value.outcome !== reference.outcome) throw new Error("reference.binding");
   return { bytes: loaded.bytes, value };
 }
 

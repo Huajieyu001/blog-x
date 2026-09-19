@@ -15,7 +15,7 @@ const validUntil = "2026-08-10T18:00:00.000Z";
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 const image = (value) => `sha256:${value.repeat(64)}`;
 
-function artifact(format, details) { return { format, version: 1, outcome: "pass", observedAt, details }; }
+function artifact(format, details) { return { format, version: 1, outcome: "pass", observedAt, validUntil, details }; }
 function reference(name, value, text) { return { id: name.slice(0, -5), artifact: name, type: value.format, sha256: digest(text), observedAt, validUntil, outcome: "pass" }; }
 async function readyBundle(context, { scope = "service-production-pipeline", extra = false } = {}) {
   const root = await mkdtemp(join(tmpdir(), "blog-x-release-evidence-")); context.after(() => rm(root, { recursive: true, force: true }));

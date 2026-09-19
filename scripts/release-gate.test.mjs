@@ -15,7 +15,7 @@ const sha = (value) => createHash("sha256").update(value).digest("hex");
 const digest = (letter) => `sha256:${letter.repeat(64)}`;
 
 function artifact(format, details, outcome = "pass") {
-  return { format, version: 1, outcome, observedAt, details };
+  return { format, version: 1, outcome, observedAt, validUntil, details };
 }
 
 function reference(name, value, text) {
