@@ -162,4 +162,13 @@ test("concurrent evidence creation and final source mutation fail without partia
   });
   assert.equal(result.status, "INVALID");
   await assert.rejects(lstat(join(changed.root, "evidence.json")));
+
+  const throwing = await makeBundle(context);
+  const thrown = await assemblePreReleaseEvidence({
+    bundleRoot: throwing.root,
+    now: () => now,
+    beforeFinalEvaluation: async () => { throw new Error("test-only finalization fault"); },
+  });
+  assert.equal(thrown.status, "INVALID");
+  await assert.rejects(lstat(join(throwing.root, "evidence.json")));
 });

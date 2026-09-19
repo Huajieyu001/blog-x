@@ -98,6 +98,7 @@ export async function assemblePreReleaseEvidence({ bundleRoot, now = () => new D
   let candidate;
   let candidateInode;
   let published = false;
+  let keepPublished = false;
   try {
     root = validateEvidenceBundleRoot(bundleRoot);
     await enumerateSources(root);
@@ -125,12 +126,13 @@ export async function assemblePreReleaseEvidence({ bundleRoot, now = () => new D
       published = false;
       return safeDecision(finalDecision);
     }
+    keepPublished = true;
     return finalDecision;
   } catch (error) {
     return invalid(error?.message === "evidence.collision" ? "evidence.collision" : "evidence.invalid");
   } finally {
     if (candidate) await unlinkOwned(root, candidate, candidateInode);
-    if (published === false) await unlinkOwned(root, candidate, candidateInode);
+    if (published && !keepPublished) await unlinkOwned(root, "evidence.json", candidateInode);
   }
 }
 
