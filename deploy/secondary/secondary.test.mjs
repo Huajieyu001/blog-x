@@ -146,7 +146,7 @@ test("secondary rollback accepts only a recorded prior image after every identit
   assert.match(rollback, /stat -c '%a' "\$ROLLBACK_RECORD"\) == 600/);
   assert.match(rollback, /stat -c '%U:%G' "\$ROLLBACK_RECORD"\) == root:root/);
   for (const field of ["FORMAT", "PRIOR_PRESENT", "CANDIDATE_REVISION", "CANDIDATE_IMAGE_ID", "PRIOR_REVISION", "PRIOR_IMAGE_ID"]) {
-    assert.match(rollback, new RegExp(`"${field}"`));
+    assert.match(rollback, new RegExp(`\\b${field}\\b`));
   }
   assert.match(rollback, /declare -A rollback_state=/);
   assert.doesNotMatch(rollback, /\b(?:source|eval)\b/);

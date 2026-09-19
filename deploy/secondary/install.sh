@@ -6,6 +6,7 @@ readonly APP_ROOT=/opt/blog-x
 readonly CONFIG_DIR=/etc/blog-x
 readonly MEDIA_DIR=/var/lib/blog-x/media
 readonly BACKUP_DIR=/var/backups/blog-x
+readonly DEPLOYMENTS_DIR=/var/lib/blog-x/deployments
 readonly ENV_FILE="$CONFIG_DIR/secondary.env"
 
 if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
@@ -25,6 +26,7 @@ apt-get install -y --no-install-recommends docker.io docker-compose-v2 ca-certif
 systemctl enable --now docker
 
 install -d -m 0750 "$APP_ROOT" "$CONFIG_DIR" "$MEDIA_DIR" "$BACKUP_DIR"
+install -d -m 0700 -o root -g root "$DEPLOYMENTS_DIR"
 if [[ ! -f $ENV_FILE ]]; then
   db_password=$(openssl rand -hex 32)
   ingress_secret=$(openssl rand -hex 32)
