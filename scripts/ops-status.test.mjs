@@ -74,7 +74,7 @@ test("monitoring policy and canonical projection fail closed without leaking raw
   const now = new Date("2032-01-02T00:00:00.000Z");
   const result = evaluateCanonicalStatus(cleanFacts({ tls: { status: "PASS" } }), { role: "edge", now, policy: parseStatusPolicy() });
   assert.deepEqual(Object.keys(result).sort(), ["checks", "format", "observedAt", "scope", "status", "version"]);
-  assert.equal(result.status, "PASS");
+  assert.equal(result.status, "FAIL");
   const serialized = formatStatusJson(result);
   assert.doesNotMatch(serialized, /postgres|fixture|https?:\/\//i);
 });
@@ -138,4 +138,73 @@ test("collector rejects stale or malformed TLS evidence and never formats raw se
   const diagnostic = ["postgres://fixture_user", "fixture_value@node/db Cookie: blog_x_session=fixture_session"].join(":");
   const output = formatStatus(evaluateStatus({ ...stale, diagnostic }));
   assert.doesNotMatch(output, /fixture_value|fixture_session|postgres:\/\//i);
+});
+
+test("validated TLS evidence keeps only its expiry for fail-closed canonical threshold enforcement", async () => {
+  const now = new Date("2026-08-09T10:00:00.000Z");
+  const commands = async (name, args) => {
+    const key = `${name} ${args.join(" ")}`;
+    if (key.includes("config --format json")) return { stdout: JSON.stringify(composeConfig) };
+    if (key.includes("ps --format json")) return { stdout: JSON.stringify([
+      { Service: "postgres", Health: "healthy", ID: "pg-id" },
+      { Service: "api", Health: "healthy", ID: "api-id" },
+      { Service: "web", Health: "healthy", ID: "web-id" },
+    ]) };
+    if (name === "docker" && args[0] === "inspect") return { stdout: "postgres|0\napi|1\nweb|0\n" };
+    if (name === "docker" && args[0] === "stats") return { stdout: '{"CPUPerc":"1.5%","MemUsage":"10MiB / 1GiB"}\n' };
+    if (name === "docker" && args[0] === "system") return { stdout: '{"Type":"Local Volumes","TotalCount":"2","Size":"12MB"}\n' };
+    throw new Error(`unexpected command ${name}`);
+  };
+  const deps = {
+    run: commands,
+    fetch: async () => ({ ok: true, status: 200 }),
+    host: { loadavg: () => [0.5], cpus: () => [{}, {}], freemem: () => 100, totalmem: () => 200 },
+    statfs: async () => ({ bavail: 10n, blocks: 20n, bsize: 4096n, ffree: 10n, files: 20n }),
+    now: () => now,
+  };
+  const collect = async (evidence) => collectLocalStatus({
+    project: "blogxverify_a1b2c3d4",
+    webOrigin: "http://127.0.0.1:3199",
+    tlsEvidencePath: "/fixture/tls.json",
+  }, { ...deps, readFile: async () => JSON.stringify(evidence) });
+  const evidence = (validUntil, observedAt = "2026-08-09T00:00:00.000Z") => ({
+    format: "blog-x-tls-evidence",
+    version: 1,
+    observedAt,
+    validUntil,
+    status: "pass",
+  });
+  const policy = parseStatusPolicy({ tlsMinimumDays: 14 });
+  const longLived = await collect(evidence("2026-08-24T00:00:00.001Z"));
+  assert.deepEqual(longLived.tls, {
+    status: "PASS",
+    detail: "authorized evidence is current",
+    validUntil: "2026-08-24T00:00:00.001Z",
+  });
+  assert.equal(evaluateCanonicalStatus(longLived, { role: "edge", now, policy }).checks.find((item) => item.id === "tls")?.status, "PASS");
+
+  const atBoundary = await collect(evidence("2026-08-23T10:00:00.000Z"));
+  const withinWindow = await collect(evidence("2026-08-23T09:59:59.999Z"));
+  assert.equal(evaluateCanonicalStatus(atBoundary, { role: "edge", now, policy }).checks.find((item) => item.id === "tls")?.status, "PASS");
+  assert.equal(evaluateCanonicalStatus(withinWindow, { role: "edge", now, policy }).checks.find((item) => item.id === "tls")?.status, "FAIL");
+  for (const validUntil of [undefined, "not-a-timestamp"]) {
+    const result = evaluateCanonicalStatus(cleanFacts({ tls: { status: "PASS", validUntil } }), { role: "edge", now, policy });
+    assert.equal(result.checks.find((item) => item.id === "tls")?.status, "FAIL");
+  }
+
+  for (const invalid of [
+    { ...evidence("2026-08-24T00:00:00.001Z"), unexpected: true },
+    evidence("not-a-timestamp"),
+    evidence("2026-08-24T00:00:00.001Z", "2026-08-08T09:59:59.999Z"),
+    evidence("2026-08-24T00:00:00.001Z", "2026-08-09T10:00:00.001Z"),
+    evidence("2026-08-09T10:00:00.000Z"),
+  ]) {
+    assert.equal((await collect(invalid)).tls.status, "FAIL");
+  }
+
+  const output = evaluateCanonicalStatus(withinWindow, { role: "edge", now, policy });
+  const parsed = JSON.parse(formatStatusJson(output));
+  assert.deepEqual(Object.keys(parsed).sort(), ["checks", "format", "observedAt", "scope", "status", "version"]);
+  for (const item of parsed.checks) assert.deepEqual(Object.keys(item).sort(), ["id", "status"]);
+  assert.doesNotMatch(JSON.stringify(parsed), /2026-08-23|authorized evidence|fixture/i);
 });

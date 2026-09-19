@@ -73,7 +73,7 @@ function strictTlsEvidence(value, now) {
     || now.getTime() - observedAt > 24 * 60 * 60 * 1000 || validUntil <= now.getTime()) {
     return { status: "FAIL", detail: "authorized TLS evidence is stale" };
   }
-  return { status: "PASS", detail: "authorized evidence is current" };
+  return { status: "PASS", detail: "authorized evidence is current", validUntil: value.validUntil };
 }
 
 export function validateEffectiveCompose(config) {
@@ -265,7 +265,10 @@ export function evaluateCanonicalStatus(facts, { role = "local", policy = {}, no
     ["restarts", Array.isArray(facts?.services) && facts.services.every((item) => item.restartCount <= policy.maximumRestartCount)],
   ];
   for (const [id, passes] of resources) if (!passes) set(id, "FAIL");
-  if (facts?.tls?.status === "PASS" && safeTimestamp(facts.tls.validUntil) !== null && safeTimestamp(facts.tls.validUntil) - now.getTime() < policy.tlsMinimumDays * 24 * 60 * 60 * 1000) set("tls", "FAIL");
+  if (facts?.tls?.status === "PASS") {
+    const validUntil = safeTimestamp(facts.tls.validUntil);
+    if (validUntil === null || validUntil - now.getTime() < policy.tlsMinimumDays * 24 * 60 * 60 * 1000) set("tls", "FAIL");
+  }
   for (const id of ["backup", "retention", "publish-due"]) {
     const evidence = facts?.evidence?.[id]?.status;
     set(id, required.has(id) ? (evidence === "current" ? "PASS" : "FAIL") : "NOT_EVALUATED");
