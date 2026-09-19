@@ -1,0 +1,30 @@
+[Unit]
+Description=Blog X secondary bounded operational retention
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=blog-x
+SupplementaryGroups=docker
+UMask=0077
+WorkingDirectory=/opt/blog-x
+StateDirectory=blog-x/ops-results
+ExecStart=/usr/bin/node /opt/blog-x/scripts/ops/run-secondary-job.mjs retention --results-root=/var/lib/blog-x/ops-results
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateNetwork=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_UNIX
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/blog-x/ops-results /run/docker.sock

@@ -60,9 +60,10 @@ test("install and deployment scripts use fixed safe authorities without secret o
 });
 
 test("systemd jobs use fixed local runners and leave failures visible in the journal", async () => {
-  const [backupService, backupTimer, publishService, publishTimer] = await Promise.all([
+  const [backupService, backupTimer, publishService, publishTimer, retentionService, retentionTimer] = await Promise.all([
     "./systemd/blog-x-secondary-backup.service", "./systemd/blog-x-secondary-backup.timer",
     "./systemd/blog-x-secondary-publish-due.service", "./systemd/blog-x-secondary-publish-due.timer",
+    "./systemd/blog-x-secondary-retention.service", "./systemd/blog-x-secondary-retention.timer",
   ].map(read));
   assert.match(backupService, /ExecStart=\/opt\/blog-x\/deploy\/secondary\/backup-local\.sh/);
   assert.match(backupService, /StandardError=journal/);
@@ -70,4 +71,21 @@ test("systemd jobs use fixed local runners and leave failures visible in the jou
   assert.match(publishService, /StateDirectory=blog-x\/ops-results/);
   assert.match(publishService, /ExecStart=\/usr\/bin\/node \/opt\/blog-x\/scripts\/ops\/run-secondary-job\.mjs publish-due --results-root=\/var\/lib\/blog-x\/ops-results/);
   assert.match(publishTimer, /OnCalendar=\*:\*:\d\d/);
+  assert.match(retentionService, /User=blog-x/);
+  assert.match(retentionService, /SupplementaryGroups=docker/);
+  assert.match(retentionService, /ExecStart=\/usr\/bin\/node \/opt\/blog-x\/scripts\/ops\/run-secondary-job\.mjs retention --results-root=\/var\/lib\/blog-x\/ops-results/);
+  assert.match(retentionService, /ProtectSystem=strict/);
+  assert.match(retentionService, /RestrictAddressFamilies=AF_UNIX/);
+  assert.match(retentionService, /ReadWritePaths=\/var\/lib\/blog-x\/ops-results \/run\/docker\.sock/);
+  assert.doesNotMatch(retentionService, /EnvironmentFile|systemctl\s+enable|apt(?:-get)?\s+install/i);
+  assert.match(retentionTimer, /OnCalendar=daily/);
+  assert.match(retentionTimer, /Persistent=true/);
+  assert.match(retentionTimer, /RandomizedDelaySec=20m/);
+  assert.doesNotMatch(`${retentionService}\n${retentionTimer}`, /systemctl\s+enable|apt(?:-get)?\s+install|deploy\.sh/i);
+});
+
+test("root retention command remains bounded and calls the API CLI without a scheduler", async () => {
+  const packageJson = JSON.parse(await read("../../package.json"));
+  assert.equal(packageJson.scripts.retention, "corepack pnpm --filter @blog-x/api retention --views-limit=100 --sessions-limit=100");
+  assert.doesNotMatch(packageJson.scripts.retention, /enable|install|systemctl/i);
 });

@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Blog X secondary operational retention
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=20m
+Unit=blog-x-secondary-retention.service
+
+[Install]
+WantedBy=timers.target
