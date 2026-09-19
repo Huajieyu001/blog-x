@@ -26,6 +26,7 @@
     "ops:status": "node scripts/ops-status.mjs",
     "ops:monitor": "node scripts/ops-monitor.mjs",
     "maintenance:retention": "corepack pnpm --filter @blog-x/api retention --views-limit=100 --sessions-limit=100",
+    "test:ops:phase17": "node scripts/ops/phase17-acceptance.mjs",
     "test:e2e": "corepack pnpm --filter @blog-x/web test:e2e",
     "test:e2e:auth": "corepack pnpm --filter @blog-x/web test:e2e:auth",
     "backup:hexo": "node scripts/backup/hexo-content.mjs",
