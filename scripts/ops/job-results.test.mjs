@@ -67,6 +67,10 @@ test("all terminal failures receive receipts and collisions fail closed", async 
   const first = { format: "blog-x-job-receipt", version: 1, job: "retention", runId: collisionId, observedAt: "2032-01-01T00:00:00.000Z", completedAt: "2032-01-01T00:00:01.000Z", status: "failed", code: "timeout", counts: {} };
   await writeJobReceipt(root, first);
   await assert.rejects(() => writeJobReceipt(root, first), /receipt target already exists/);
+  const racing = { ...first, runId: "00000000-0000-4000-8000-000000000019" };
+  const concurrent = await Promise.allSettled([writeJobReceipt(root, racing), writeJobReceipt(root, racing)]);
+  assert.equal(concurrent.filter((result) => result.status === "fulfilled").length, 1);
+  assert.equal(concurrent.filter((result) => result.status === "rejected").length, 1);
 });
 
 test("unsafe result roots fail closed", async () => {

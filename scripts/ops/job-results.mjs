@@ -1,4 +1,4 @@
-import { lstat, open, rename, unlink } from "node:fs/promises";
+import { link, lstat, open, unlink } from "node:fs/promises";
 import { basename, isAbsolute, join } from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -51,11 +51,10 @@ export async function writeJobReceipt(resultRoot, receipt, { createRunId = rando
     await handle.sync();
     await handle.close();
     handle = undefined;
-    // The collision check happens before a same-filesystem atomic rename. Run IDs
-    // are UUIDs and the dedicated directory has one owner, so an unexpected file
-    // at this target is treated as a failed run rather than replacing evidence.
-    if (await lstat(target).then(() => true).catch(() => false)) throw new Error("receipt target already exists");
-    await rename(temporary, target);
+    // link(2) is an atomic no-replace publication step. Unlike rename(2), it
+    // cannot overwrite a receipt if a UUID collision races this process.
+    await link(temporary, target);
+    await unlink(temporary);
     const directory = await open(resultRoot, "r");
     try { await directory.sync(); } finally { await directory.close(); }
     return target;
