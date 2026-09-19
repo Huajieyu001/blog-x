@@ -133,3 +133,32 @@ test("immutable secondary deployment resolves a revision tag once and uses only 
     assert.ok(timerEnableIndex > deploy.lastIndexOf(gate), `timer activation must follow ${gate}`);
   }
 });
+
+test("secondary rollback accepts only a recorded prior image after every identity and topology gate", async () => {
+  const [install, rollback] = await Promise.all([read("./install.sh"), read("./rollback.sh")]);
+  assert.match(install, /readonly DEPLOYMENTS_DIR=\/var\/lib\/blog-x\/deployments/);
+  assert.match(install, /install -d -m 0700 -o root -g root "\$DEPLOYMENTS_DIR"/);
+  assert.match(rollback, /^set -euo pipefail$/m);
+  assert.match(rollback, /^umask 077$/m);
+  assert.match(rollback, /\[\[ \$# -eq 2 \]\]/);
+  assert.match(rollback, /--ack-migrations-compatible-with=/);
+  assert.match(rollback, /\[\[ ! -L \$ROLLBACK_RECORD && -f \$ROLLBACK_RECORD \]\]/);
+  assert.match(rollback, /stat -c '%a' "\$ROLLBACK_RECORD"\) == 600/);
+  assert.match(rollback, /stat -c '%U:%G' "\$ROLLBACK_RECORD"\) == root:root/);
+  for (const field of ["FORMAT", "PRIOR_PRESENT", "CANDIDATE_REVISION", "CANDIDATE_IMAGE_ID", "PRIOR_REVISION", "PRIOR_IMAGE_ID"]) {
+    assert.match(rollback, new RegExp(`"${field}"`));
+  }
+  assert.match(rollback, /declare -A rollback_state=/);
+  assert.doesNotMatch(rollback, /\b(?:source|eval)\b/);
+  assert.match(rollback, /"BLOG_X_API_IMAGE=\$prior_image_id"/);
+  assert.match(rollback, /up -d --no-build --no-deps api/);
+  assert.match(rollback, /last-rollback\.env/);
+  assert.match(rollback, /current\.env/);
+  assert.doesNotMatch(rollback, /db:(?:migrate|schema)|pg_(?:dump|restore)|systemctl|secondary\.env.*(?:cat|source|\.)/i);
+  const firstMutation = rollback.indexOf("up -d --no-build --no-deps api");
+  assert.ok(firstMutation >= 0, "rollback must contain one API-only mutation");
+  for (const gate of [
+    "target_revision", "ack_candidate_revision", "ROLLBACK_RECORD", "PRIOR_PRESENT", "prior_image_id",
+    "candidate_image_id", "current_api", "current_postgres", "docker port \"$current_postgres\" 5432", "port api 3001",
+  ]) assert.ok(rollback.indexOf(gate) >= 0 && rollback.indexOf(gate) < firstMutation, `${gate} must precede rollback mutation`);
+});
