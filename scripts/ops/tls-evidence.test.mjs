@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { randomBytes, X509Certificate } from "node:crypto";
-import { chmod, copyFile, link, lstat, mkdtemp, mkdir, open, readFile, realpath, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { X509Certificate } from "node:crypto";
+import { chmod, copyFile, link, lstat, mkdtemp, mkdir, open, readFile, realpath, readdir, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { collectLocalStatus, evaluateStatus } from "../ops-status.mjs";
@@ -16,7 +16,7 @@ const fixtureText = await readFile(fixture, "utf8");
 const sensitiveMarker = "TLS_EVIDENCE_SYNTHETIC_SECRET_MARKER";
 
 async function withRoot(run) {
-  const root = await mkdtemp(join(tmpdir(), "blog-x-tls-evidence-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "blog-x-tls-evidence-")));
   await chmod(root, 0o700);
   try { return await run(root); } finally { await rm(root, { recursive: true, force: true }); }
 }
@@ -24,7 +24,7 @@ async function withRoot(run) {
 function errorsWithoutAuthority(run) {
   return assert.rejects(run, (error) => {
     assert.match(error.message, /^tls evidence (arguments|certificate|output|publish) rejected$/);
-    assert.doesNotMatch(error.message, /BEGIN|Certificate|fixture|secret|path|\/|\\/i);
+    assert.doesNotMatch(error.message, /BEGIN|fixture|secret|path|\/|\\/i);
     return true;
   });
 }
@@ -66,7 +66,7 @@ test("synthetic fixture is exactly one public certificate with a fixed test-only
 test("argument grammar accepts exactly two non-empty absolute local authorities", () => {
   assert.deepEqual(parseTlsEvidenceArgs(["--certificate=/tmp/cert.pem", "--output=/tmp/evidence.json"]), { certificatePath: "/tmp/cert.pem", outputPath: "/tmp/evidence.json" });
   for (const argv of [[], ["--certificate=/tmp/a"], ["--output=/tmp/b"], ["--certificate=", "--output=/tmp/b"], ["--certificate=cert.pem", "--output=/tmp/b"], ["--certificate=https://invalid", "--output=/tmp/b"], ["--certificate=/tmp/a", "--output=/tmp/b", "extra"], ["--certificate=/tmp/a", "--certificate=/tmp/b", "--output=/tmp/c"], ["--certificate=/tmp/a", "--output=/tmp/b", "--output=/tmp/c"]]) {
-    assert.throws(() => parseTlsEvidenceArgs(argv), /^tls evidence arguments rejected$/);
+    assert.throws(() => parseTlsEvidenceArgs(argv), (error) => error.message === "tls evidence arguments rejected");
   }
 });
 
@@ -115,11 +115,15 @@ test("untrusted certificate and output filesystem authorities fail closed", asyn
     await errorsWithoutAuthority(() => produceTlsEvidence(options, { now: () => observedAt }));
   }
   await copyFile(fixture, certificatePath); await chmod(certificatePath, 0o600);
+  await errorsWithoutAuthority(() => produceTlsEvidence({ certificatePath: root, outputPath }, { now: () => observedAt }));
   await writeFile(outputPath, "previous\n", { mode: 0o644 }); await chmod(outputPath, 0o644);
   await errorsWithoutAuthority(() => produceTlsEvidence({ certificatePath, outputPath }, { now: () => observedAt }));
   assert.equal(await readFile(outputPath, "utf8"), "previous\n");
   const outputLink = join(root, "tls-linked.json"); await symlink(outputPath, outputLink);
   await errorsWithoutAuthority(() => produceTlsEvidence({ certificatePath, outputPath: outputLink }, { now: () => observedAt }));
+  await unlink(outputPath); await writeFile(outputPath, "previous\n", { mode: 0o600 }); await chmod(outputPath, 0o600);
+  const outputHardLink = join(root, "tls-hardlinked.json"); await link(outputPath, outputHardLink);
+  await errorsWithoutAuthority(() => produceTlsEvidence({ certificatePath, outputPath: outputHardLink }, { now: () => observedAt }));
 }));
 
 test("foreign ownership shape, publication faults, and CLI failures do not disclose authority or corrupt the target", async () => withRoot(async (root) => {
@@ -129,15 +133,32 @@ test("foreign ownership shape, publication faults, and CLI failures do not discl
   await copyFile(fixture, certificatePath); await chmod(certificatePath, 0o600);
   await writeFile(outputPath, previous, { mode: 0o600 }); await chmod(outputPath, 0o600);
   const actualLstat = lstat;
-  await errorsWithoutAuthority(() => produceTlsEvidence({ certificatePath, outputPath }, { now: () => observedAt, fs: defaultFs({ lstat: async (path) => ({ ...(await actualLstat(path)), uid: process.getuid() + 1 }) }) }));
+  await errorsWithoutAuthority(() => produceTlsEvidence({ certificatePath, outputPath }, { now: () => observedAt, fs: defaultFs({ lstat: async (path) => new Proxy(await actualLstat(path), { get(target, key, receiver) { return key === "uid" ? process.getuid() + 1 : Reflect.get(target, key, receiver); } }) }) }));
   assert.equal(await readFile(outputPath, "utf8"), previous);
-  await errorsWithoutAuthority(() => produceTlsEvidence({ certificatePath, outputPath }, { now: () => observedAt, fs: defaultFs({ rename: async () => { throw new Error(`rename ${sensitiveMarker}`); } }) }));
-  assert.equal(await readFile(outputPath, "utf8"), previous);
-  const leftovers = (await (await import("node:fs/promises")).readdir(root)).filter((name) => name.startsWith(".tls-evidence-"));
+  for (const brokenOperation of ["write", "sync", "rename"]) {
+    const fs = defaultFs({
+      open: async (...args) => {
+        const handle = await open(...args);
+        if (args[1] !== "wx") return handle;
+        return new Proxy(handle, { get(target, key, receiver) {
+          if ((brokenOperation === "write" && key === "writeFile") || (brokenOperation === "sync" && key === "sync")) return async () => { throw new Error(`${brokenOperation} ${sensitiveMarker}`); };
+          return Reflect.get(target, key, receiver);
+        } });
+      },
+      rename: brokenOperation === "rename" ? async () => { throw new Error(`rename ${sensitiveMarker}`); } : rename,
+    });
+    await errorsWithoutAuthority(() => produceTlsEvidence({ certificatePath, outputPath }, { now: () => observedAt, fs }));
+    assert.equal(await readFile(outputPath, "utf8"), previous);
+  }
+  const leftovers = (await readdir(root)).filter((name) => name.startsWith(".tls-evidence-"));
   assert.deepEqual(leftovers, []);
   const failure = spawnSync(process.execPath, [script, `--certificate=${join(root, `${sensitiveMarker}.pem`)}`, `--output=${join(root, "out.json")}`], { encoding: "utf8" });
   assert.equal(failure.status, 1);
   assert.equal(failure.stdout, "BLOG X TLS EVIDENCE FAIL\n");
   assert.equal(failure.stderr, "");
   assert.doesNotMatch(`${failure.stdout}${failure.stderr}`, new RegExp(sensitiveMarker));
+  const success = spawnSync(process.execPath, [script, `--certificate=${certificatePath}`, `--output=${outputPath}`], { encoding: "utf8" });
+  assert.equal(success.status, 0);
+  assert.equal(success.stdout, "BLOG X TLS EVIDENCE PASS\n");
+  assert.equal(success.stderr, "");
 }));

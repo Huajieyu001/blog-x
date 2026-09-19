@@ -14,6 +14,7 @@ const serverAddresses = [
 const frozenAddress = serverAddresses[0];
 const legacyAuditSha256 = "9b6191dd45837f5e7f5045ef865460a16f714287b5825e5a1f8cc98af4d9b2d8";
 const legacyReceiptSha256 = "9c0aa9943017604ce4b25a25546355890afbbc0a0a8ba5289a7055918df79ee4";
+const syntheticPublicCertificateFixture = "scripts/ops/fixtures/tls-public-certificate.pem";
 
 function operationalSurface(path) {
   return path === "README.md"
@@ -183,7 +184,7 @@ export async function auditFiles(root, files) {
     if (/(^|\/)\.env(?:\.|$)/.test(relativePath) && relativePath !== ".env.example") {
       issues.push(issue("tracked_secret_file", relativePath, "tracked environment files are forbidden"));
     }
-    if (/(^|\/)(?:id_(?:rsa|dsa|ecdsa|ed25519)|[^/]+\.(?:pem|p12|key))$/i.test(relativePath)) {
+    if (relativePath !== syntheticPublicCertificateFixture && /(^|\/)(?:id_(?:rsa|dsa|ecdsa|ed25519)|[^/]+\.(?:pem|p12|key))$/i.test(relativePath)) {
       issues.push(issue("tracked_secret_file", relativePath, "tracked private key material is forbidden"));
     }
 

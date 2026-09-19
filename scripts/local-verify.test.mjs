@@ -989,6 +989,7 @@ test("boundary audit rejects database/media ownership, forbidden public origins,
   context.after(async () => { await rm(fixtureRoot, { recursive: true, force: true }); });
   await mkdir(join(fixtureRoot, "apps/web/app"), { recursive: true });
   await mkdir(join(fixtureRoot, "apps/web/app/api/diagnostic"), { recursive: true });
+  await mkdir(join(fixtureRoot, "scripts/ops/fixtures"), { recursive: true });
   await mkdir(join(fixtureRoot, "scripts"), { recursive: true });
   const frozenAddress = [47, 99, 80, 8].join(".");
   const secondaryAddress = [124, 222, 91, 230].join(".");
@@ -1002,6 +1003,8 @@ test("boundary audit rejects database/media ownership, forbidden public origins,
     "apps/web/app/production-host.ts",
     "apps/web/app/api/diagnostic/route.ts",
     "scripts/deploy.sh",
+    "scripts/ops/fixtures/tls-public-certificate.pem",
+    "scripts/unsafe.pem",
     ".env.production",
   ];
   await writeFile(join(fixtureRoot, files[0]), 'import { Pool } from "pg";\n');
@@ -1013,7 +1016,9 @@ test("boundary audit rejects database/media ownership, forbidden public origins,
   await writeFile(join(fixtureRoot, files[6]), 'export const host = "https://huajieyu001.top";\n');
   await writeFile(join(fixtureRoot, files[7]), 'export async function GET() { return Response.json({ diagnostic: true }); }\n');
   await writeFile(join(fixtureRoot, files[8]), `ssh root@${frozenAddress} true\n`);
-  await writeFile(join(fixtureRoot, files[9]), "ADMIN_PASSWORD=committed-secret\n");
+  await writeFile(join(fixtureRoot, files[9]), "-----BEGIN CERTIFICATE-----\nsynthetic\n-----END CERTIFICATE-----\n");
+  await writeFile(join(fixtureRoot, files[10]), "not-a-secret-but-forbidden-file-shape\n");
+  await writeFile(join(fixtureRoot, files[11]), "ADMIN_PASSWORD=committed-secret\n");
 
   const issues = await auditFiles(fixtureRoot, files);
   assert.equal(issues.some((issue) => issue.code === "web_database_ownership"), true);
@@ -1027,6 +1032,7 @@ test("boundary audit rejects database/media ownership, forbidden public origins,
   assert.equal(issues.some((issue) => issue.code === "browser_server_address"), true);
   assert.equal(issues.some((issue) => issue.code === "frozen_host_command"), true);
   assert.equal(issues.some((issue) => issue.code === "tracked_secret_file"), true);
+  assert.equal(issues.some((issue) => issue.path === "scripts/ops/fixtures/tls-public-certificate.pem" && issue.code === "tracked_secret_file"), false);
 });
 
 test("release artifact audit rejects automatic remote capability, tracked READY, public data planes, address leakage, and false live claims", async (context) => {
