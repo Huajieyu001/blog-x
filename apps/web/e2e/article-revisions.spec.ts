@@ -24,6 +24,8 @@ test("administrator compares and restores a bounded article history without rend
   await page.getByLabel("Slug").fill(slug);
   await page.getByLabel("Markdown").fill("# 原始内容\n\n<script>alert(1)</script>");
   await page.getByRole("button", { name: "保存草稿" }).click();
+  await expect(page).toHaveURL(/\/admin\/posts\/[0-9a-f-]+$/);
+  await expect(page.getByRole("status").filter({ hasText: "草稿已保存" })).toBeVisible();
   await page.getByLabel("标题").fill("当前标题");
   await page.getByLabel("Markdown").fill(`# 当前内容\n\n${"很长的内容 ".repeat(900)}`);
   await page.getByRole("button", { name: "保存更改" }).click();

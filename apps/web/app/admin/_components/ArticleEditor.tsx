@@ -405,7 +405,7 @@ export default function ArticleEditor({
       if (confirmSlugChange) window.requestAnimationFrame(() => saveButtonRef.current?.focus());
       setRecoveryBaseVersion(saved.data.version);
       setAllowStaleOverwrite(false);
-      setMessage(editsContinued ? "提交时的内容已保存；之后的编辑仍保留" : (wasExisting ? "更改已保存" : "草稿已保存"));
+      setMessage(editsContinued ? "提交时的内容已保存；之后的编辑仍保留" : (wasExisting ? "更改已保存" : "草稿已保存，正在打开编辑页…"));
       const storage = getEditorRecoveryStorage();
       if (storage) {
         removeEditorRecoverySnapshot(storage, previousTarget);
