@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { lstat, open, readFile, rename, unlink } from "node:fs/promises";
-import { dirname, isAbsolute, join } from "node:path";
+import { lstat, open, readFile, readdir, rename, unlink } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { collectLocalStatus, evaluateCanonicalStatus, validateLocalProject, validateStatusOrigin } from "./ops-status.mjs";
 import { notifyStatus } from "./ops/notify.mjs";
 
 const policyKeys = "collection,format,provider,resultRoot,role,stateRoot,version";
 const canonicalWebhookUrlEnv = "BLOG_X_NOTIFY_WEBHOOK_URL";
 const canonicalWebhookAuthorizationEnv = "BLOG_X_NOTIFY_WEBHOOK_AUTHORIZATION";
+const maximumMonitorOutcomeFiles = 2_016;
+const canonicalOutcomeName = /^outcome-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.json$/i;
 
 function invalidPolicy() { throw new Error("monitor policy is invalid"); }
 
@@ -106,8 +108,49 @@ async function record(root, value) {
   }
 }
 
+function isVanished(error) {
+  return error && typeof error === "object" && error.code === "ENOENT";
+}
+
+async function pruneMonitorOutcomes(root, publishedTarget, operations = {}) {
+  const listDirectory = operations.readdir ?? readdir;
+  const inspect = operations.lstat ?? lstat;
+  const remove = operations.unlink ?? unlink;
+  const publishedName = basename(publishedTarget);
+  try {
+    await safeRoot(root);
+    const entries = await listDirectory(root, { withFileTypes: true });
+    if (!Array.isArray(entries)) throw new Error("directory listing is invalid");
+    const candidates = [];
+    for (const entry of entries) {
+      if (!entry.isFile() || entry.isSymbolicLink() || !canonicalOutcomeName.test(entry.name)) continue;
+      const candidate = join(root, entry.name);
+      let info;
+      try { info = await inspect(candidate); } catch (error) {
+        if (isVanished(error)) continue;
+        throw error;
+      }
+      if (!info.isFile() || info.isSymbolicLink()) continue;
+      candidates.push({ name: entry.name, modifiedAt: info.mtimeMs });
+    }
+    candidates.sort((left, right) => right.modifiedAt - left.modifiedAt || right.name.localeCompare(left.name));
+    const retained = new Set([publishedName]);
+    for (const candidate of candidates) {
+      if (candidate.name !== publishedName && retained.size < maximumMonitorOutcomeFiles) retained.add(candidate.name);
+    }
+    for (const candidate of candidates) {
+      if (retained.has(candidate.name)) continue;
+      try { await remove(join(root, candidate.name)); } catch (error) {
+        if (!isVanished(error)) throw error;
+      }
+    }
+  } catch {
+    throw new Error("monitor outcome retention failed");
+  }
+}
+
 /** Collect, evaluate, notify, and record one strict monitor-policy run. */
-export async function runMonitor({ policy, now = () => new Date(), collect = collectLocalStatus, evaluate = evaluateCanonicalStatus, notify = notifyStatus, write = () => {} }) {
+export async function runMonitor({ policy, now = () => new Date(), collect = collectLocalStatus, evaluate = evaluateCanonicalStatus, notify = notifyStatus, write = () => {}, retentionOperations = {} }) {
   const parsed = strictPolicy(policy);
   await authorizePolicy(parsed);
   const observed = now();
@@ -124,7 +167,8 @@ export async function runMonitor({ policy, now = () => new Date(), collect = col
     notificationOutcome = result.suppressed ? "suppressed" : "sent";
   } catch { notificationOutcome = "failed"; }
   const terminal = outcome(status, notificationOutcome, observed);
-  await record(parsed.resultRoot, terminal);
+  const publishedTarget = await record(parsed.resultRoot, terminal);
+  await pruneMonitorOutcomes(parsed.resultRoot, publishedTarget, retentionOperations);
   write(`${JSON.stringify(terminal)}\n`);
   return { exitCode: notificationOutcome === "failed" || status.status !== "PASS" ? 1 : 0, outcome: terminal };
 }

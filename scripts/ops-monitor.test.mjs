@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, lstat, mkdtemp, readFile, readdir, symlink, utimes, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, symlink, unlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -51,7 +51,7 @@ function canonicalMonitorOutcomeName(name) {
 }
 
 async function seedOutcomes(root, count) {
-  const old = new Date("2031-01-01T00:00:00.000Z");
+  const old = new Date("2001-01-01T00:00:00.000Z");
   await Promise.all(Array.from({ length: count }, async (_, index) => {
     const file = join(root, outcomeName(index));
     await writeFile(file, `private-outcome-${index}`, { mode: 0o600 });
@@ -215,7 +215,7 @@ test("outcome retention leaves unrelated entries and symbolic links untouched", 
   await writeFile(nearMiss, "near-miss-private-sentinel", { mode: 0o600 });
   await writeFile(externalTarget, "external-private-sentinel", { mode: 0o600 });
   await symlink(externalTarget, canonicalLookingLink);
-  await (await import("node:fs/promises")).mkdir(directory, { mode: 0o700 });
+  await mkdir(directory, { mode: 0o700 });
 
   await runMonitor({
     policy: edgePolicy(roots), collect: async () => ({}), evaluate: (_facts, { role }) => status(role),
@@ -267,8 +267,8 @@ test("outcome retention treats only a vanished old candidate as a benign race", 
     policy: edgePolicy(roots), collect: async () => ({}), evaluate: (_facts, { role }) => status(role), notify: async () => ({ sent: true }), now: fixedNow, write: () => {},
     retentionOperations: {
       unlink: async (path) => {
-        if (!removed) { removed = true; await (await import("node:fs/promises")).unlink(path); }
-        return (await import("node:fs/promises")).unlink(path);
+        if (!removed) { removed = true; await unlink(path); }
+        return unlink(path);
       },
     },
   });
