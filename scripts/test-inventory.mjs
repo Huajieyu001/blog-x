@@ -31,6 +31,7 @@ const entries = [
   { path: "apps/api/test/backup-restore.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "backup-restore" },
   { path: "apps/api/test/distribution-export.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
   { path: "apps/api/test/media.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "media" },
+  { path: "apps/api/test/operational-retention.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
   { path: "apps/api/test/pages-archive.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
   { path: "apps/api/test/phase2-public-visibility.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
   { path: "apps/api/test/public-discovery.test.ts", kind: "api-unit", scope: "integration", fixtureOwner: "database" },
