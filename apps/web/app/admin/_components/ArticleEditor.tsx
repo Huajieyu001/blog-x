@@ -29,13 +29,21 @@ type EditorFields = EditorRecoveryFields;
 
 const articleStatusLabels = { draft: "草稿", published: "已发布", unpublished: "已下线" } as const;
 const firstSaveFlashPrefix = "blog-x:editor:first-save:";
+const firstSaveFlashMemory = new Map<string, "草稿已保存">();
 
 function firstSaveFlashKey(id: string) { return `${firstSaveFlashPrefix}${id}`; }
 function writeFirstSaveFlash(id: string) {
+  firstSaveFlashMemory.set(id, "草稿已保存");
   try { window.sessionStorage.setItem(firstSaveFlashKey(id), JSON.stringify({ id, message: "草稿已保存" })); } catch { /* navigation remains safe */ }
 }
 function consumeFirstSaveFlash(id: string) {
+  const volatile = firstSaveFlashMemory.get(id);
+  firstSaveFlashMemory.delete(id);
   const key = firstSaveFlashKey(id);
+  if (volatile) {
+    try { window.sessionStorage.removeItem(key); } catch {}
+    return volatile;
+  }
   try {
     const raw = window.sessionStorage.getItem(key);
     window.sessionStorage.removeItem(key);
