@@ -1,0 +1,17 @@
+[Unit]
+Description=Blog X one-shot monitor (%i)
+
+[Service]
+Type=oneshot
+User=blog-x
+UMask=0077
+WorkingDirectory=/opt/blog-x
+EnvironmentFile=-/etc/blog-x/monitor-%i.env
+ExecStart=/usr/bin/node /opt/blog-x/scripts/ops-monitor.mjs --policy=/etc/blog-x/monitor-%i.json
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/blog-x/monitor
+StandardOutput=journal
+StandardError=journal
