@@ -31,7 +31,7 @@ export default function Pagination({
   return (
     <nav className={styles.pagination} aria-label={ariaLabel}>
       {page > 1
-        ? <Link className={styles.direction} href={href(page - 1)}>上一页</Link>
+        ? <Link className={styles.direction} href={href(page - 1)} prefetch={false}>上一页</Link>
         : <span className={styles.direction} aria-disabled="true">上一页</span>}
       <ol>
         {pages.map((number, index) => (
@@ -39,6 +39,7 @@ export default function Pagination({
             {index > 0 && pages[index - 1] !== number - 1 ? <span className={styles.ellipsis} aria-hidden="true">…</span> : null}
             <Link
               href={href(number)}
+              prefetch={false}
               aria-label={`第 ${number} 页`}
               aria-current={number === page ? "page" : undefined}
             >
@@ -48,7 +49,7 @@ export default function Pagination({
         ))}
       </ol>
       {page < totalPages
-        ? <Link className={styles.direction} href={href(page + 1)}>下一页</Link>
+        ? <Link className={styles.direction} href={href(page + 1)} prefetch={false}>下一页</Link>
         : <span className={styles.direction} aria-disabled="true">下一页</span>}
     </nav>
   );

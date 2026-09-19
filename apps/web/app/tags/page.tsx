@@ -17,7 +17,7 @@ export default async function TagsPage() {
           <div className={styles.termGrid}>
             {result.data.items.map((term) => (
               <article className={styles.termCard} key={term.slug}>
-                <h2><Link href={`/tags/${encodeURIComponent(term.slug)}`}>#{term.name}</Link></h2>
+                <h2><Link href={`/tags/${encodeURIComponent(term.slug)}`} prefetch={false}>#{term.name}</Link></h2>
                 <p>{term.articleCount} 篇已发布文章</p>
               </article>
             ))}

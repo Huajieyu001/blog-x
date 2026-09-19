@@ -10,7 +10,7 @@ export default function ServiceUnavailable({ onRetry }: { onRetry: () => void })
         <p>服务似乎暂时不可用，请重试或返回首页。</p>
         <div className={styles.recoveryActions}>
           <button type="button" onClick={onRetry}>重试</button>
-          <Link href="/">返回首页</Link>
+          <Link href="/" prefetch={false}>返回首页</Link>
         </div>
       </section>
     </main>

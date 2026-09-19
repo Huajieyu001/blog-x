@@ -28,13 +28,13 @@ export default function PostCard({ post, position = 1, variant = "default" }: Po
           {!compact ? <span className={styles.status}><span aria-hidden="true" />已发布</span> : null}
           <time dateTime={post.publishedAt}>{dateFormatter.format(new Date(post.publishedAt))}</time>
         </div>
-        <h3><Link href={`/posts/${encodeURIComponent(post.slug)}`}>{post.title}</Link></h3>
+        <h3><Link href={`/posts/${encodeURIComponent(post.slug)}`} prefetch={false}>{post.title}</Link></h3>
         <p className={styles.summary}>{post.summary || "暂无摘要"}</p>
         {post.category || post.tags.length ? <div className={styles.taxonomy} aria-label="文章分类和标签">
-          {post.category ? <Link href={`/categories/${encodeURIComponent(post.category.slug)}`}>分类：{post.category.name}</Link> : null}
-          {post.tags.map((tag) => <Link key={tag.slug} href={`/tags/${encodeURIComponent(tag.slug)}`}>#{tag.name}</Link>)}
+          {post.category ? <Link href={`/categories/${encodeURIComponent(post.category.slug)}`} prefetch={false}>分类：{post.category.name}</Link> : null}
+          {post.tags.map((tag) => <Link key={tag.slug} href={`/tags/${encodeURIComponent(tag.slug)}`} prefetch={false}>#{tag.name}</Link>)}
         </div> : null}
-        <Link className={styles.readLink} href={`/posts/${encodeURIComponent(post.slug)}`} aria-label={`阅读《${post.title}》`}>
+        <Link className={styles.readLink} href={`/posts/${encodeURIComponent(post.slug)}`} prefetch={false} aria-label={`阅读《${post.title}》`}>
           阅读文章 <span aria-hidden="true">→</span>
         </Link>
       </div>
@@ -42,6 +42,7 @@ export default function PostCard({ post, position = 1, variant = "default" }: Po
         <Link
           className={styles.cardCover}
           href={`/posts/${encodeURIComponent(post.slug)}`}
+          prefetch={false}
           aria-hidden="true"
           tabIndex={-1}
         >

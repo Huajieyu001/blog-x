@@ -40,8 +40,8 @@ export default async function PublicArticlePage({ params }: { params: Promise<{ 
           <p className={styles.eyebrow}>Published note</p>
           {article.category || article.tags.length > 0 ? (
             <div className={styles.articleTaxonomy} aria-label="文章分类与标签">
-              {article.category ? <Link href={`/categories/${encodeURIComponent(article.category.slug)}`}>{article.category.name}</Link> : null}
-              {article.tags.map((tag) => <Link href={`/tags/${encodeURIComponent(tag.slug)}`} key={tag.slug}>#{tag.name}</Link>)}
+              {article.category ? <Link href={`/categories/${encodeURIComponent(article.category.slug)}`} prefetch={false}>{article.category.name}</Link> : null}
+              {article.tags.map((tag) => <Link href={`/tags/${encodeURIComponent(tag.slug)}`} prefetch={false} key={tag.slug}>#{tag.name}</Link>)}
             </div>
           ) : null}
           <h1 id="article-title">{article.title}</h1>
@@ -78,7 +78,7 @@ export default async function PublicArticlePage({ params }: { params: Promise<{ 
           <aside className={styles.relatedRecovery} data-testid="related-recovery" aria-labelledby="related-recovery-heading">
             <h2 id="related-recovery-heading">相关文章暂时不可用</h2>
             <p>文章内容不受影响，你可以继续阅读或返回最新文章。</p>
-            <Link href="/">返回最新文章</Link>
+            <Link href="/" prefetch={false}>返回最新文章</Link>
           </aside>
         ) : null}
       </article>

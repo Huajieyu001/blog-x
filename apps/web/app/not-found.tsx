@@ -7,7 +7,7 @@ export default function NotFound() {
       <section className={styles.recovery}>
         <h1>没有找到这个页面</h1>
         <p>它可能已被移动，或尚未发布。</p>
-        <Link href="/">返回首页</Link>
+        <Link href="/" prefetch={false}>返回首页</Link>
       </section>
     </main>
   );

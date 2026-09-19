@@ -56,7 +56,7 @@ function EmptyState({ kind }: { kind: "invalid" | "empty-blog" | "empty-page" })
     <div className={styles.empty}>
       <h3>{invalid ? "页码无效" : "这一页还没有文章"}</h3>
       <p>{invalid ? "请使用大于零的整数页码。" : "可以返回最新文章继续阅读。"}</p>
-      <Link href="/">返回最新文章</Link>
+      <Link href="/" prefetch={false}>返回最新文章</Link>
     </div>
   );
 }

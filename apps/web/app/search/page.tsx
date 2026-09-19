@@ -24,7 +24,7 @@ function StatePanel({ heading, body, actions }: { heading: string; body: string;
       <h2>{heading}</h2>
       <p>{body}</p>
       <div className={styles.searchActions}>
-        {actions.map((action) => <Link href={action.href} key={`${action.href}-${action.label}`}>{action.label}</Link>)}
+        {actions.map((action) => <Link href={action.href} prefetch={false} key={`${action.href}-${action.label}`}>{action.label}</Link>)}
       </div>
     </section>
   );
@@ -107,8 +107,8 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
             hrefForPage={(page) => searchHref(outcome.query, page)}
           />
           <div className={styles.searchActions}>
-            <Link href="/search">清除搜索</Link>
-            <Link href="/">返回最新文章</Link>
+            <Link href="/search" prefetch={false}>清除搜索</Link>
+            <Link href="/" prefetch={false}>返回最新文章</Link>
           </div>
         </section>
       )}

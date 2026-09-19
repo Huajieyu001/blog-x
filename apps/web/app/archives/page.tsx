@@ -20,7 +20,7 @@ export default async function ArchivesPage() {
                 {year.months.map((month) => (
                   <section key={month.month} className={styles.archiveMonth}>
                     <h2>{year.year} 年 {month.month} 月</h2>
-                    <ul>{month.items.map((item) => <li key={item.slug}><time dateTime={item.publishedAt}>{new Date(item.publishedAt).getDate()} 日</time><Link href={`/posts/${encodeURIComponent(item.slug)}`}>{item.title}</Link></li>)}</ul>
+                    <ul>{month.items.map((item) => <li key={item.slug}><time dateTime={item.publishedAt}>{new Date(item.publishedAt).getDate()} 日</time><Link href={`/posts/${encodeURIComponent(item.slug)}`} prefetch={false}>{item.title}</Link></li>)}</ul>
                   </section>
                 ))}
               </details>
