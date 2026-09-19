@@ -134,6 +134,31 @@ test("immutable secondary deployment resolves a revision tag once and uses only 
   }
 });
 
+test("secondary deployment safely derives a sha256-configured prior revision from labels or current state", async () => {
+  const deploy = await read("./deploy.sh");
+  assert.match(deploy, /load_current_record\(\)/);
+  assert.match(deploy, /declare -A current_state=\(\)/);
+  assert.match(deploy, /\[\[ ! -L \$CURRENT_RECORD && -f \$CURRENT_RECORD \]\]/);
+  assert.match(deploy, /stat -c '%a' "\$CURRENT_RECORD"\) == 600/);
+  assert.match(deploy, /stat -c '%U:%G' "\$CURRENT_RECORD"\) == root:root/);
+  assert.doesNotMatch(deploy, /\b(?:source|eval)\b/);
+  assert.match(deploy, /prior_config_image="\$\(docker inspect --format '\{\{\.Config\.Image\}\}' "\$prior_container"\)"/);
+  assert.match(deploy, /is_revision "\$prior_label" \|\|/);
+  assert.match(deploy, /prior_revision="\$prior_label"/);
+  assert.match(deploy, /prior_revision="\$current_revision"/);
+  assert.match(deploy, /\[\[ \$current_image_id == "\$prior_image_id" \]\]/);
+  assert.match(deploy, /\[\[ \$prior_config_image =~ \^blog-x-api-secondary:/);
+  assert.match(deploy, /prior_image_id=''\nload_current_record\nprior_container=/);
+  const stateFallback = deploy.indexOf("elif [[ $current_record_present -eq 1 ]]");
+  const legacyTagFallback = deploy.indexOf("[[ $prior_config_image =~ ^blog-x-api-secondary:");
+  assert.ok(stateFallback >= 0 && stateFallback < legacyTagFallback, "validated current state must support exact-ID containers before legacy tag fallback");
+  const priorCapture = deploy.indexOf("prior_container=");
+  const build = deploy.indexOf('"${compose[@]}" build api');
+  for (const gate of ["prior_label", "prior_config_image", "prior_revision"]) {
+    assert.ok(deploy.indexOf(gate, priorCapture) >= priorCapture && deploy.indexOf(gate, priorCapture) < build, `${gate} must resolve before candidate build`);
+  }
+});
+
 test("secondary rollback accepts only a recorded prior image after every identity and topology gate", async () => {
   const [install, rollback] = await Promise.all([read("./install.sh"), read("./rollback.sh")]);
   assert.match(install, /readonly DEPLOYMENTS_DIR=\/var\/lib\/blog-x\/deployments/);

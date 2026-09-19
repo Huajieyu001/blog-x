@@ -74,11 +74,11 @@ while IFS= read -r line || [[ -n $line ]]; do
     FORMAT|PRIOR_PRESENT|CANDIDATE_REVISION|CANDIDATE_IMAGE_ID|PRIOR_REVISION|PRIOR_IMAGE_ID) ;;
     *) fail 'rollback state contains an unknown field' ;;
   esac
-  [[ ! -v "rollback_state[$field]" ]] || fail 'rollback state contains a duplicate field'
+  [[ -z ${rollback_state[$field]+present} ]] || fail 'rollback state contains a duplicate field'
   rollback_state["$field"]=$value
 done < "$ROLLBACK_RECORD"
 for field in FORMAT PRIOR_PRESENT CANDIDATE_REVISION CANDIDATE_IMAGE_ID PRIOR_REVISION PRIOR_IMAGE_ID; do
-  [[ -v "rollback_state[$field]" ]] || fail 'rollback state is incomplete'
+  [[ -n ${rollback_state[$field]+present} ]] || fail 'rollback state is incomplete'
 done
 [[ ${#rollback_state[@]} -eq 6 ]] || fail 'rollback state field count is invalid'
 

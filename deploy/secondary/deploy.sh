@@ -20,6 +20,42 @@ single_running_api() {
   [[ ${#api_containers[@]} -eq 1 ]] && printf '%s\n' "${api_containers[0]}"
 }
 
+load_current_record() {
+  current_record_present=0
+  current_revision=''
+  current_image_id=''
+  [[ ! -e $CURRENT_RECORD && ! -L $CURRENT_RECORD ]] && return
+  [[ -d $DEPLOYMENTS_DIR && ! -L $DEPLOYMENTS_DIR ]] || { printf '%s\n' 'deployment state directory is invalid' >&2; exit 1; }
+  [[ $(stat -c '%a' "$DEPLOYMENTS_DIR") == 700 ]] || { printf '%s\n' 'deployment state directory must be mode 0700' >&2; exit 1; }
+  [[ $(stat -c '%U:%G' "$DEPLOYMENTS_DIR") == root:root ]] || { printf '%s\n' 'deployment state directory must be owned by root:root' >&2; exit 1; }
+  [[ ! -L $CURRENT_RECORD && -f $CURRENT_RECORD ]] || { printf '%s\n' 'current deployment state is missing or unsafe' >&2; exit 1; }
+  [[ $(stat -c '%a' "$CURRENT_RECORD") == 600 ]] || { printf '%s\n' 'current deployment state must be mode 0600' >&2; exit 1; }
+  [[ $(stat -c '%U:%G' "$CURRENT_RECORD") == root:root ]] || { printf '%s\n' 'current deployment state must be owned by root:root' >&2; exit 1; }
+
+  declare -A current_state=()
+  while IFS= read -r line || [[ -n $line ]]; do
+    [[ $line =~ ^([A-Z_]+)=(.*)$ ]] || { printf '%s\n' 'current deployment state format is invalid' >&2; exit 1; }
+    field="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+    case "$field" in
+      FORMAT|CURRENT_REVISION|CURRENT_IMAGE_ID) ;;
+      *) printf '%s\n' 'current deployment state contains an unknown field' >&2; exit 1 ;;
+    esac
+    [[ -z ${current_state[$field]+present} ]] || { printf '%s\n' 'current deployment state contains a duplicate field' >&2; exit 1; }
+    current_state["$field"]=$value
+  done < "$CURRENT_RECORD"
+  for field in FORMAT CURRENT_REVISION CURRENT_IMAGE_ID; do
+    [[ -n ${current_state[$field]+present} ]] || { printf '%s\n' 'current deployment state is incomplete' >&2; exit 1; }
+  done
+  [[ ${#current_state[@]} -eq 3 ]] || { printf '%s\n' 'current deployment state field count is invalid' >&2; exit 1; }
+  [[ ${current_state[FORMAT]} == blog-x-secondary-current-v1 ]] || { printf '%s\n' 'current deployment state version is invalid' >&2; exit 1; }
+  current_revision=${current_state[CURRENT_REVISION]}
+  current_image_id=${current_state[CURRENT_IMAGE_ID]}
+  is_revision "$current_revision" || { printf '%s\n' 'current deployment state revision is invalid' >&2; exit 1; }
+  is_image_id "$current_image_id" || { printf '%s\n' 'current deployment state image ID is invalid' >&2; exit 1; }
+  current_record_present=1
+}
+
 write_rollback_record() {
   local state_tmp="$DEPLOYMENTS_DIR/.rollback.env.$$"
   install -d -m 0700 -o root -g root "$DEPLOYMENTS_DIR"
@@ -65,16 +101,28 @@ is_revision "$revision" || { printf '%s\n' 'deployment revision is invalid' >&2;
 prior_present=0
 prior_revision=''
 prior_image_id=''
+load_current_record
 prior_container="$(single_running_api)"
 if [[ -n $prior_container ]]; then
   prior_image_id="$(docker inspect --format '{{.Image}}' "$prior_container")"
   is_image_id "$prior_image_id" || { printf '%s\n' 'running API image ID is invalid' >&2; exit 1; }
-  prior_tag="$(docker inspect --format '{{.Config.Image}}' "$prior_container")"
-  [[ $prior_tag =~ ^blog-x-api-secondary:([a-f0-9]{40})$ ]] || { printf '%s\n' 'running API revision tag is invalid' >&2; exit 1; }
-  prior_revision="${BASH_REMATCH[1]}"
-  [[ "$(docker image inspect --format '{{.Id}}' "$prior_tag")" == "$prior_image_id" ]] || { printf '%s\n' 'running API revision tag does not resolve to its image ID' >&2; exit 1; }
+  prior_config_image="$(docker inspect --format '{{.Config.Image}}' "$prior_container")"
   prior_label="$(docker image inspect --format '{{ index .Config.Labels \"org.opencontainers.image.revision\" }}' "$prior_image_id")"
-  [[ -z $prior_label || $prior_label == "$prior_revision" ]] || { printf '%s\n' 'running API revision label conflicts with its tag' >&2; exit 1; }
+  if [[ -n $prior_label && $prior_label != '<no value>' ]]; then
+    is_revision "$prior_label" || { printf '%s\n' 'running API revision label is invalid' >&2; exit 1; }
+    prior_revision="$prior_label"
+    if [[ $current_record_present -eq 1 ]]; then
+      [[ $current_image_id == "$prior_image_id" ]] || { printf '%s\n' 'current deployment state image does not match running API' >&2; exit 1; }
+      [[ $current_revision == "$prior_revision" ]] || { printf '%s\n' 'current deployment state revision conflicts with running API' >&2; exit 1; }
+    fi
+  elif [[ $current_record_present -eq 1 ]]; then
+    [[ $current_image_id == "$prior_image_id" ]] || { printf '%s\n' 'current deployment state image does not match running API' >&2; exit 1; }
+    prior_revision="$current_revision"
+  else
+    [[ $prior_config_image =~ ^blog-x-api-secondary:([a-f0-9]{40})$ ]] || { printf '%s\n' 'running legacy API revision tag is invalid' >&2; exit 1; }
+    prior_revision="${BASH_REMATCH[1]}"
+    [[ "$(docker image inspect --format '{{.Id}}' "$prior_config_image")" == "$prior_image_id" ]] || { printf '%s\n' 'running legacy API revision tag does not resolve to its image ID' >&2; exit 1; }
+  fi
   prior_present=1
 fi
 
