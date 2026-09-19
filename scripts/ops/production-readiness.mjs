@@ -14,7 +14,7 @@ const rootDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const SHA = /^[a-f0-9]{40}$/;
 const DIGEST = /^[a-f0-9]{64}$/;
 const IMAGE = /^sha256:[a-f0-9]{64}$/;
-const SAFE_CODE = /^[a-z][a-z0-9_.-]*$/;
+const SAFE_CODE = /^[A-Za-z][A-Za-z0-9_.-]*$/;
 const DEPLOY_PATHS = ["deploy/primary", "deploy/secondary"];
 const CANONICAL_EVIDENCE = "ops/release-evidence.blocked.json";
 const MAX_OUTPUT = 256 * 1024;
@@ -75,7 +75,8 @@ async function localFacts({ root, run, readFile, lstat }) {
     git(run, root, ["symbolic-ref", "--quiet", "HEAD"]), git(run, root, ["rev-parse", "HEAD"]), git(run, root, ["status", "--porcelain"]),
     git(run, root, ["log", "--format=%H", "--diff-filter=A", "--name-only", "--", "ops/local-deliveries"]),
   ]);
-  const branch = branchRaw === "refs/heads/dev" ? branchRaw : "refs/heads/dev";
+  const observedBranch = branchRaw?.trim();
+  const branch = observedBranch === "refs/heads/dev" ? observedBranch : "refs/heads/dev";
   const head = headRaw && SHA.test(headRaw.trim()) ? headRaw.trim() : null;
   const clean = statusRaw === "";
   const receipt = newestReceiptFromLog(receiptHistory);
@@ -105,22 +106,22 @@ async function localFacts({ root, run, readFile, lstat }) {
   let deployChanged = true;
   try { await git(run, root, ["diff", "--quiet", `${evidence.implementationRevision}..HEAD`, "--", ...DEPLOY_PATHS]); deployChanged = false; } catch { deployChanged = true; }
   return {
-    repository: { branch, branchMatched: branchRaw === "refs/heads/dev", head, clean },
+    repository: { branch, branchMatched: observedBranch === "refs/heads/dev", head, clean },
     localDelivery: { receipt, receiptSha256: sha256(receiptBytes), implementationRevision: evidence.implementationRevision, implementationAncestor, targets: { api: evidence.targets.api.id, web: evidence.targets.web.id } },
     deployArtifacts: { files, manifestSha256: sha256(JSON.stringify(files)), changedSinceImplementation: deployChanged },
   };
 }
-async function evidenceFacts({ root, source, evidencePath, bundleRoot, readFile }) {
+async function evidenceFacts({ root, source, evidencePath, bundleRoot, readFile, now }) {
   const bytes = source === "canonical" ? await readFile(resolve(root, evidencePath)) : (await readEvidenceArtifact(bundleRoot, evidencePath)).bytes;
   const value = JSON.parse(Buffer.from(bytes).toString("utf8"));
   const evidence = releaseEvidenceSchema.parse(value);
-  const decision = await evaluatePreReleaseReadiness(evidence, { bundleRoot: source === "canonical" ? root : bundleRoot, evidencePath });
+  const decision = await evaluatePreReleaseReadiness(evidence, { bundleRoot: source === "canonical" ? root : bundleRoot, evidencePath, now });
   const projection = (name) => evidence[name].status === "ready"
     ? { status: "READY", unresolved: [] }
     : { status: "PENDING", unresolved: safeCodes(evidence[name].unresolved) };
   return { source, sha256: sha256(bytes), status: decision.status, reasons: safeCodes(decision.reasons), prerequisites: { backupRestore: projection("backupRestore"), rollback: projection("rollback") } };
 }
-export async function collectProductionReadiness({ root = rootDirectory, run = defaultRun, readFile = nodeReadFile, lstat = nodeLstat, bundleRoot, evidencePath } = {}) {
+export async function collectProductionReadiness({ root = rootDirectory, run = defaultRun, readFile = nodeReadFile, lstat = nodeLstat, bundleRoot, evidencePath, now } = {}) {
   const report = currentReport();
   try {
     const selectedExternal = bundleRoot !== undefined || evidencePath !== undefined;
@@ -128,7 +129,7 @@ export async function collectProductionReadiness({ root = rootDirectory, run = d
     const source = selectedExternal ? "external" : "canonical";
     const bundle = selectedExternal ? validateEvidenceBundleRoot(bundleRoot) : root;
     const evidence = selectedExternal ? evidencePath : CANONICAL_EVIDENCE;
-    const [local, production] = await Promise.all([localFacts({ root, run, readFile, lstat }), evidenceFacts({ root, source, evidencePath: evidence, bundleRoot: bundle, readFile })]);
+    const [local, production] = await Promise.all([localFacts({ root, run, readFile, lstat }), evidenceFacts({ root, source, evidencePath: evidence, bundleRoot: bundle, readFile, now })]);
     Object.assign(report, local);
     report.productionEvidence = { source: production.source, sha256: production.sha256, status: production.status, reasons: production.reasons };
     report.prerequisites = production.prerequisites;
@@ -140,7 +141,7 @@ export async function collectProductionReadiness({ root = rootDirectory, run = d
     if (report.deployArtifacts.changedSinceImplementation) reasons.push("deploy.changed_since_delivery");
     const go = source === "external" && production.status === "PRE_RELEASE_READY" && reasons.length === 0;
     report.decision = go ? "GO" : "STOP";
-    return finish(report, reasons, go ? 0 : 1);
+    return finish(report, reasons, go ? 0 : production.status === "INVALID" ? 2 : 1);
   } catch (error) {
     return finish(report, [stableError(error instanceof Error ? error.message : "local.untrusted")], 2);
   }
