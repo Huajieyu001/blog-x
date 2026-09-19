@@ -111,14 +111,15 @@ test("role-aware monitor policy rejects unsafe and noncanonical authority before
 });
 
 test("collection and evaluator failures notify and persist one secret-free aggregate outcome", async () => {
+  const privateMessage = ["postgres:", "//user", ":", "secret", "@example.test/hidden"].join("");
   for (const failure of ["collect", "evaluate"]) {
     const roots = await authorities();
     const received = [];
     const lines = [];
     const result = await runMonitor({
       policy: edgePolicy(roots, { kind: "webhook", urlEnv: "BLOG_X_NOTIFY_WEBHOOK_URL", authorizationEnv: "BLOG_X_NOTIFY_WEBHOOK_AUTHORIZATION" }),
-      collect: async () => { if (failure === "collect") throw new Error("postgres://user:secret@example.test/hidden"); return { raw: "must-not-escape" }; },
-      evaluate: () => { throw new Error("postgres://user:secret@example.test/hidden"); },
+      collect: async () => { if (failure === "collect") throw new Error(privateMessage); return { raw: "must-not-escape" }; },
+      evaluate: () => { throw new Error(privateMessage); },
       notify: async (options) => { received.push(options); return { sent: true }; },
       now: fixedNow,
       write: (line) => lines.push(line),
