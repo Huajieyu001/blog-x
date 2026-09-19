@@ -942,7 +942,7 @@ function assertProjectionSchema(value, label, { routeContract = "final" } = {}) 
   exactKeys(value.topology, ["containersHealthy", "fixedPortsExact", "portOwnerExact", "project", "servicesExact"], `${label} topology`);
   if (value.releaseState !== "BLOCKED" || value.topology.project !== PROJECT || [value.topology.containersHealthy, value.topology.fixedPortsExact, value.topology.portOwnerExact, value.topology.servicesExact].some((item) => item !== true)) fail(`${label} authority is not exact`);
 }
-function assertEvidenceSchema(evidence, expectedAuthority = deliveryAuthorityForRevision(evidence?.implementationRevision)) {
+export function assertLocalDeliveryEvidenceSchema(evidence, expectedAuthority = deliveryAuthorityForRevision(evidence?.implementationRevision)) {
   exactKeys(evidence, EVIDENCE_KEYS, "evidence");
   if (evidence.format !== LOCAL_DELIVERY_FORMAT || evidence.version !== LOCAL_DELIVERY_VERSION || evidence.releaseState !== "BLOCKED" || !validRevision(evidence.implementationRevision) || !validDigest(evidence.lockfileSha256)) fail("evidence is not a strict blocked v1.1 local delivery record");
   exactKeys(evidence.attemptClaim, ["authority", "evidencePath", "implementationRevision", "sha256"], "evidence claim");
@@ -1014,7 +1014,7 @@ export async function verifyRawRefreshEvidence(path, { claimStore, fs, runArgv, 
   const authority = deliveryAuthorityForRevision(revision);
   if (resolve(path) !== resolve(root, authority.evidencePath)) fail("raw evidence verification accepts only exact revision-addressed receipt authority");
   const before = await readSecureRawEvidence(path, fs, identity);
-  const evidence = parseJson(before, "evidence"); assertEvidenceSchema(evidence, authority);
+  const evidence = parseJson(before, "evidence"); assertLocalDeliveryEvidenceSchema(evidence, authority);
   if (evidence.implementationRevision !== revision) fail("evidence filename SHA and implementation revision mismatch");
   const claim = await claimStore.assertPresent(evidence.implementationRevision);
   if (claim.authority !== authority.authority || claim.evidencePath !== authority.evidencePath
