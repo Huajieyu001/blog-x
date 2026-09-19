@@ -21,6 +21,20 @@ test("deleted rows fail closed when content fields are present", async (context)
   assert.deepEqual(await getAdminDeletedPostsResult("cookie"), { kind: "upstream_error" });
 });
 
+test("deleted rows distinguish empty, minimal valid, and unavailable upstream results", async (context) => {
+  const deletedRow = { id: "00000000-0000-4000-8000-000000000002", title: "minimal deleted post", slug: "minimal-deleted-post", statusBeforeDeletion: "unpublished", deletedAt: "2026-01-02T00:00:00.000Z", version: "2026-01-02T00:00:00.000Z" };
+  const outcomes = [
+    new Response(JSON.stringify([]), { status: 200 }),
+    new Response(JSON.stringify([deletedRow]), { status: 200 }),
+    new Response("upstream unavailable", { status: 503 }),
+  ];
+  context.after(installFetch(async () => outcomes.shift()!));
+
+  assert.deepEqual(await getAdminDeletedPostsResult("cookie"), { kind: "ok", data: [] });
+  assert.deepEqual(await getAdminDeletedPostsResult("cookie"), { kind: "ok", data: [deletedRow] });
+  assert.deepEqual(await getAdminDeletedPostsResult("cookie"), { kind: "upstream_error" });
+});
+
 test("audit reads distinguish a genuine empty log from invalid upstream data", async (context) => {
   const outcomes = [
     new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
