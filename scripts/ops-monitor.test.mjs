@@ -84,8 +84,12 @@ test("role-aware monitor policy routes only data evidence authorities", async ()
 test("role-aware monitor policy rejects unsafe and noncanonical authority before collection", async () => {
   const roots = await authorities();
   const invalidPolicies = [
+    { ...edgePolicy(roots), ignored: true },
+    { ...edgePolicy(roots), collection: { project: "blogxlocal", webOrigin: "http://127.0.0.1:3199" } },
     { ...edgePolicy(roots), collection: { ...edgePolicy(roots).collection, composeFile: "/tmp/compose.yaml" } },
+    { ...edgePolicy(roots), collection: { ...edgePolicy(roots).collection, jobResultsRoot: roots.jobResultsRoot } },
     { ...edgePolicy(roots), collection: { ...edgePolicy(roots).collection, webOrigin: "http://localhost:3199" } },
+    { ...edgePolicy(roots), collection: { ...edgePolicy(roots).collection, webOrigin: "http://user:password@127.0.0.1:3199" } },
     { ...edgePolicy(roots), collection: { ...edgePolicy(roots).collection, project: "production" } },
     { ...edgePolicy(roots), provider: { kind: "webhook", urlEnv: "BLOG_X_OTHER_URL" } },
     { ...edgePolicy(roots), provider: { kind: "file", spoolRoot: "relative" } },
@@ -102,24 +106,45 @@ test("role-aware monitor policy rejects unsafe and noncanonical authority before
   await symlink(roots.evidenceRoot, linkedEvidence);
   const linkedPolicy = { ...edgePolicy(roots), collection: { ...edgePolicy(roots).collection, tlsEvidencePath: join(linkedEvidence, "tls.json") } };
   await assert.rejects(() => runMonitor({ policy: linkedPolicy }), /unsafe/i);
+  await chmod(roots.spoolRoot, 0o755);
+  await assert.rejects(() => runMonitor({ policy: edgePolicy(roots, { kind: "file", spoolRoot: roots.spoolRoot }) }), /unsafe/i);
 });
 
-test("collection failures notify and persist one secret-free aggregate outcome", async () => {
+test("collection and evaluator failures notify and persist one secret-free aggregate outcome", async () => {
+  for (const failure of ["collect", "evaluate"]) {
+    const roots = await authorities();
+    const received = [];
+    const lines = [];
+    const result = await runMonitor({
+      policy: edgePolicy(roots, { kind: "webhook", urlEnv: "BLOG_X_NOTIFY_WEBHOOK_URL", authorizationEnv: "BLOG_X_NOTIFY_WEBHOOK_AUTHORIZATION" }),
+      collect: async () => { if (failure === "collect") throw new Error("postgres://user:secret@example.test/hidden"); return { raw: "must-not-escape" }; },
+      evaluate: () => { throw new Error("postgres://user:secret@example.test/hidden"); },
+      notify: async (options) => { received.push(options); return { sent: true }; },
+      now: fixedNow,
+      write: (line) => lines.push(line),
+    });
+    assert.equal(result.exitCode, 1);
+    assert.deepEqual(received[0].provider, { kind: "webhook", urlEnv: "BLOG_X_NOTIFY_WEBHOOK_URL", authorizationEnv: "BLOG_X_NOTIFY_WEBHOOK_AUTHORIZATION" });
+    assert.deepEqual(received[0].status.checks, [{ id: "collection", status: "FAIL" }]);
+    const terminal = JSON.parse(lines[0]);
+    assert.deepEqual(terminal.failingCheckIds, ["collection"]);
+    assert.doesNotMatch(JSON.stringify({ terminal, notified: received[0].status }), /secret|postgres|example\.test|must-not-escape/i);
+    assert.doesNotMatch(await readFile(join(roots.resultRoot, `outcome-${terminal.runId}.json`), "utf8"), /secret|postgres|example\.test/i);
+  }
+});
+
+test("notification failure remains terminal without running a provider", async () => {
   const roots = await authorities();
-  const received = [];
   const lines = [];
   const result = await runMonitor({
-    policy: edgePolicy(roots, { kind: "webhook", urlEnv: "BLOG_X_NOTIFY_WEBHOOK_URL", authorizationEnv: "BLOG_X_NOTIFY_WEBHOOK_AUTHORIZATION" }),
-    collect: async () => { throw new Error("postgres://user:secret@example.test/hidden"); },
-    notify: async (options) => { received.push(options); return { sent: true }; },
+    policy: edgePolicy(roots),
+    collect: async () => ({}),
+    evaluate: (_facts, { role }) => status(role),
+    notify: async () => { throw new Error("webhook token=must-not-escape"); },
     now: fixedNow,
     write: (line) => lines.push(line),
   });
   assert.equal(result.exitCode, 1);
-  assert.deepEqual(received[0].provider, { kind: "webhook", urlEnv: "BLOG_X_NOTIFY_WEBHOOK_URL", authorizationEnv: "BLOG_X_NOTIFY_WEBHOOK_AUTHORIZATION" });
-  assert.deepEqual(received[0].status.checks, [{ id: "collection", status: "FAIL" }]);
-  const terminal = JSON.parse(lines[0]);
-  assert.deepEqual(terminal.failingCheckIds, ["collection"]);
-  assert.doesNotMatch(JSON.stringify({ terminal, notified: received[0].status }), /secret|postgres|example\.test/i);
-  assert.doesNotMatch(await readFile(join(roots.resultRoot, `outcome-${terminal.runId}.json`), "utf8"), /secret|postgres|example\.test/i);
+  assert.equal(JSON.parse(lines[0]).notificationOutcome, "failed");
+  assert.doesNotMatch(lines.join(""), /token|webhook/i);
 });
