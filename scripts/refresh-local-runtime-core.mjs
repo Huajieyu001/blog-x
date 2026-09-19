@@ -1107,7 +1107,7 @@ export async function runRefreshCliBoundary({ argv, resolveRevision, attemptStor
       output.write(`LOCAL DOCKER CAPACITY PASSED required_bytes=${result.requiredBytes} available_bytes=${result.availableBytes} available_inodes=${result.availableInodes}\n`);
       return result;
     } catch (cause) {
-      output.write("LOCAL DOCKER CAPACITY FAILED\nRECOVERY Reclaim only unused local Docker build artifacts, rerun this preflight on the same clean revision, and do not start delivery until it passes.\n");
+      output.write("LOCAL DOCKER CAPACITY FAILED\nRECOVERY Run corepack pnpm docker:retention to report only unused Blog X local-delivery images.\nRECOVERY If the report is correct, run corepack pnpm docker:retention -- --apply to request non-forced removal of exactly those IDs.\nRECOVERY Rerun corepack pnpm local:deliver:preflight on the same clean revision, and do not start delivery until it passes.\n");
       const reported = new Error("local Docker capacity preflight failed", { cause });
       Object.defineProperty(reported, "refreshFailureReported", { value: true });
       throw reported;

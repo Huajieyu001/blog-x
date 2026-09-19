@@ -615,13 +615,18 @@ test("Docker capacity preflight is retryable, exact, claim-free, and rejects ins
   assert.equal(fixture.runtime.adapterConstructionCount(), adapterConstructions);
 
   const failed = [];
+  const callsBeforeFailure = fixture.runtime.calls.length;
   await assert.rejects(fixture.runtime.runCli({
     argv: ["--check-docker-capacity"],
     output: { write(value) { failed.push(value); } },
     checkDockerCapacity: async () => { throw new Error("raw Docker path and output"); },
   }), /capacity preflight/i);
   assert.match(failed.join(""), /LOCAL DOCKER CAPACITY FAILED/);
+  assert.match(failed.join(""), /corepack pnpm docker:retention/);
+  assert.match(failed.join(""), /corepack pnpm docker:retention -- --apply/);
+  assert.match(failed.join(""), /corepack pnpm local:deliver:preflight/);
   assert.doesNotMatch(failed.join(""), /raw Docker path|\/Users\//);
+  assert.deepEqual(fixture.runtime.calls.slice(callsBeforeFailure), [], "capacity failure must not construct or execute any cleanup process");
   await fixture.runtime.createAttemptStore().assertAbsent(fixture.revision);
   await assert.rejects(fixture.runtime.runCli({ argv: ["--check-docker-capacity", "extra"] }), /option is not exact/i);
 });
