@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { createSessionService } from "../src/auth/sessions.js";
@@ -51,12 +52,35 @@ test("session retention uses database time, bounded ordered batches, and converg
       ($1, 'recent-revoked', CURRENT_TIMESTAMP + interval '1 day', CURRENT_TIMESTAMP - interval '13 days'),
       ($1, 'active', CURRENT_TIMESTAMP + interval '1 day', NULL)
   `, [administratorId]);
+  const rawProbe = await db.execute(sql`
+    SELECT
+      count(*)::int AS "deleted",
+      CURRENT_TIMESTAMP AS "observedAt",
+      CURRENT_TIMESTAMP - INTERVAL '14 days' AS "revokedBefore"
+    FROM "sessions"
+  `);
+  const rawRow = rawProbe.rows[0] as { deleted?: unknown; observedAt?: unknown; revokedBefore?: unknown } | undefined;
+  assert.equal(rawProbe.rows.length, 1);
+  assert.deepEqual(Object.keys(rawRow ?? {}).sort(), ["deleted", "observedAt", "revokedBefore"]);
+  assert.equal(typeof rawRow?.deleted, "number");
+  assert.equal(typeof rawRow?.observedAt, "string");
+  assert.equal(typeof rawRow?.revokedBefore, "string");
   const service = createSessionService(db);
   const concurrent = await Promise.all([service.cleanupExpiredSessions(2), service.cleanupExpiredSessions(2)]);
+  for (const result of concurrent) {
+    assert.ok(Number.isSafeInteger(result.deleted));
+    assert.ok(result.deleted >= 0 && result.deleted <= 2);
+    assert.ok(result.observedAt instanceof Date);
+    assert.ok(result.revokedBefore instanceof Date);
+    assert.equal(result.observedAt.getTime() - result.revokedBefore.getTime(), 14 * 24 * 60 * 60 * 1000);
+  }
   assert.equal(concurrent.reduce((total, result) => total + result.deleted, 0), 3);
   const converged = await service.cleanupExpiredSessions(2);
   assert.equal(converged.deleted, 0);
+  assert.ok(Number.isSafeInteger(converged.deleted));
+  assert.ok(converged.deleted >= 0 && converged.deleted <= 2);
   assert.ok(converged.observedAt instanceof Date);
+  assert.ok(converged.revokedBefore instanceof Date);
   assert.equal(converged.observedAt.getTime() - converged.revokedBefore.getTime(), 14 * 24 * 60 * 60 * 1000);
   const retained = await pool.query<{ token_digest: string }>("select token_digest from sessions order by token_digest");
   assert.deepEqual(retained.rows.map((row) => row.token_digest), ["active", "recent-revoked"]);
