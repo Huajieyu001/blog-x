@@ -59,7 +59,7 @@ test("install and deployment scripts use fixed safe authorities without secret o
   assert.equal(publishCommand?.includes("publish:due -- --limit="), false);
 });
 
-test("systemd jobs call fixed local scripts and leave failures visible in the journal", async () => {
+test("systemd jobs use fixed local runners and leave failures visible in the journal", async () => {
   const [backupService, backupTimer, publishService, publishTimer] = await Promise.all([
     "./systemd/blog-x-secondary-backup.service", "./systemd/blog-x-secondary-backup.timer",
     "./systemd/blog-x-secondary-publish-due.service", "./systemd/blog-x-secondary-publish-due.timer",
@@ -67,6 +67,7 @@ test("systemd jobs call fixed local scripts and leave failures visible in the jo
   assert.match(backupService, /ExecStart=\/opt\/blog-x\/deploy\/secondary\/backup-local\.sh/);
   assert.match(backupService, /StandardError=journal/);
   assert.match(backupTimer, /OnCalendar=daily/);
-  assert.match(publishService, /ExecStart=\/opt\/blog-x\/deploy\/secondary\/publish-due\.sh/);
+  assert.match(publishService, /StateDirectory=blog-x\/ops-results/);
+  assert.match(publishService, /ExecStart=\/usr\/bin\/node \/opt\/blog-x\/scripts\/ops\/run-secondary-job\.mjs publish-due --results-root=\/var\/lib\/blog-x\/ops-results/);
   assert.match(publishTimer, /OnCalendar=\*:\*:\d\d/);
 });

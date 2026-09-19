@@ -8,7 +8,8 @@ Type=oneshot
 User=root
 UMask=0077
 WorkingDirectory=/opt/blog-x
-ExecStart=/opt/blog-x/deploy/secondary/publish-due.sh
+StateDirectory=blog-x/ops-results
+ExecStart=/usr/bin/node /opt/blog-x/scripts/ops/run-secondary-job.mjs publish-due --results-root=/var/lib/blog-x/ops-results
 StandardOutput=journal
 StandardError=journal
 NoNewPrivileges=true
