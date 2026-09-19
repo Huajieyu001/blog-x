@@ -48,7 +48,7 @@ function assertGitArgs(args) {
   ];
   if (permitted.includes(joined)) return;
   if (args.length === 3 && args[0] === "ls-files" && args[1] === "--error-unmatch" && /^ops\/local-deliveries\/[a-f0-9]{40}\.json$/.test(args[2])) return;
-  if (args.length === 3 && args[0] === "merge-base" && args[1] === "--is-ancestor" && SHA.test(args[2])) return;
+  if (args.length === 4 && args[0] === "merge-base" && args[1] === "--is-ancestor" && SHA.test(args[2]) && args[3] === "HEAD") return;
   if (args.length === 6 && args[0] === "diff" && args[1] === "--quiet" && SHA.test(args[2].split("..")[0]) && args[2].endsWith("..HEAD")
     && args[3] === "--" && args[4] === "deploy/primary" && args[5] === "deploy/secondary") return;
   if (args.length === 5 && args[0] === "ls-files" && args[1] === "-z" && args[2] === "--" && DEPLOY_PATHS.includes(args[3]) && DEPLOY_PATHS.includes(args[4])) return;
@@ -90,7 +90,7 @@ async function localFacts({ root, run, readFile, lstat }) {
   assertLocalDeliveryEvidenceSchema(evidence);
   if (evidence.implementationRevision !== receiptRevision) throw new Error("local.receipt_revision");
   let implementationAncestor = false;
-  try { await git(run, root, ["merge-base", "--is-ancestor", evidence.implementationRevision]); implementationAncestor = true; } catch { implementationAncestor = false; }
+  try { await git(run, root, ["merge-base", "--is-ancestor", evidence.implementationRevision, "HEAD"]); implementationAncestor = true; } catch { implementationAncestor = false; }
   const pathsRaw = await git(run, root, ["ls-files", "-z", "--", ...DEPLOY_PATHS]);
   if (pathsRaw === null) throw new Error("local.git_output");
   const paths = pathsRaw.split("\0").filter(Boolean).sort();
