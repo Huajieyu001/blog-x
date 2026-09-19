@@ -44,6 +44,7 @@ import { appendAuditEvent, createAuditRepository } from "./audit/audit-repositor
 import { adminAuditRoutes } from "./routes/admin-audit.js";
 import { createViewAggregationRepository, type ViewAggregationRepository } from "./content/view-aggregation-repository.js";
 import { formatCleanupViewsFailure, formatCleanupViewsResult, parseCleanupViewsArguments, runViewRetention } from "./content/view-retention.js";
+import { formatOperationalRetentionFailure, formatOperationalRetentionResult, parseOperationalRetentionArguments, runOperationalRetention } from "./content/operational-retention.js";
 import { publicViewRoutes } from "./routes/public-views.js";
 import { createAdminAnalyticsRepository, type AdminAnalyticsRepository } from "./content/admin-analytics-repository.js";
 import { adminAnalyticsRoutes } from "./routes/admin-analytics.js";
@@ -380,6 +381,28 @@ async function schemaVerify(pool: Pool) {
 }
 async function main() {
   const command = process.argv[2];
+  if (command === "retention") {
+    const parsed = parseOperationalRetentionArguments(process.argv.slice(3));
+    if (!parsed.ok) {
+      console.error(formatOperationalRetentionFailure(parsed.code));
+      process.exitCode = 1;
+      return;
+    }
+    let resources: RuntimeResources | undefined;
+    try {
+      resources = createRuntimeResources(parseApiRuntimeConfig(process.env, "retention"));
+      console.log(formatOperationalRetentionResult(await runOperationalRetention({
+        ...createViewAggregationRepository(resources.db),
+        ...createSessionService(resources.db),
+      }, parsed)));
+    } catch {
+      console.error(formatOperationalRetentionFailure(resources ? "cleanup_failed" : "configuration_failed"));
+      process.exitCode = 1;
+    } finally {
+      await resources?.pool.end().catch(() => undefined);
+    }
+    return;
+  }
   if (command === "cleanup-views") {
     const parsed = parseCleanupViewsArguments(process.argv.slice(3));
     if (!parsed.ok) {

@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { appendAuditEvent } from "../audit/audit-repository.js";
 import * as schema from "../db/schema.js";
@@ -8,6 +8,7 @@ type Database = NodePgDatabase<typeof schema>;
 
 export const sessionCookieName = process.env.NODE_ENV === "production" ? "__Host-blog_x_session" : "blog_x_session";
 export const sessionLifetimeSeconds = 60 * 60 * 24 * 14;
+export const revokedSessionRetentionDays = 14;
 
 function digest(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -76,7 +77,40 @@ export function createSessionService(db: Database) {
     });
   }
 
-  return { administratorIdForToken, issue, revoke };
+  async function cleanupExpiredSessions(limit: number) {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 10_000) throw new Error("invalid cleanup limit");
+    const result = await db.execute(sql`
+      WITH cutoff AS (
+        SELECT CURRENT_TIMESTAMP AS observed_at,
+          CURRENT_TIMESTAMP - INTERVAL '14 days' AS revoked_before
+      ), candidates AS (
+        SELECT session."id"
+        FROM "sessions" AS session
+        CROSS JOIN cutoff
+        WHERE session."expires_at" <= cutoff.observed_at
+          OR (session."revoked_at" IS NOT NULL AND session."revoked_at" < cutoff.revoked_before)
+        ORDER BY session."id"
+        LIMIT ${limit}
+        FOR UPDATE SKIP LOCKED
+      ), deleted AS (
+        DELETE FROM "sessions" AS session
+        USING candidates
+        WHERE session."id" = candidates."id"
+        RETURNING 1
+      )
+      SELECT
+        (SELECT count(*)::int FROM deleted) AS "deleted",
+        (SELECT observed_at FROM cutoff) AS "observedAt",
+        (SELECT revoked_before FROM cutoff) AS "revokedBefore"
+    `);
+    const row = result.rows[0] as { deleted?: unknown; observedAt?: unknown; revokedBefore?: unknown } | undefined;
+    if (!row || typeof row.deleted !== "number" || !(row.observedAt instanceof Date) || !(row.revokedBefore instanceof Date)) {
+      throw new Error("session cleanup result malformed");
+    }
+    return { deleted: row.deleted, observedAt: row.observedAt, revokedBefore: row.revokedBefore };
+  }
+
+  return { administratorIdForToken, issue, revoke, cleanupExpiredSessions };
 }
 
 export type SessionService = ReturnType<typeof createSessionService>;

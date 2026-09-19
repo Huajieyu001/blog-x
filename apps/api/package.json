@@ -13,6 +13,7 @@
     "db:seed": "tsx src/app.ts seed",
     "db:schema:verify": "tsx src/app.ts schema:verify",
     "publish:due": "tsx src/app.ts publish-due",
+    "retention": "tsx src/app.ts retention",
     "cleanup:views": "tsx src/app.ts cleanup-views"
   },
   "dependencies": {

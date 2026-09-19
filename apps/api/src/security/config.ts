@@ -1,7 +1,7 @@
 import { isIP } from "node:net";
 import { isAbsolute } from "node:path";
 
-export type ApiCommand = "serve" | "migrate" | "seed" | "schema:verify" | "portable-export" | "publish-due" | "cleanup-views";
+export type ApiCommand = "serve" | "migrate" | "seed" | "schema:verify" | "portable-export" | "publish-due" | "cleanup-views" | "retention";
 
 export type RateLimitConfig = {
   login: { limit: number; windowMs: number };
