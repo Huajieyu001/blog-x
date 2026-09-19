@@ -35,6 +35,7 @@ async function enumerateSources(root) {
   if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw new Error("bundle.root");
   assertOwnerPrivate(rootInfo, "bundle.root");
   const entries = await readdir(root, { withFileTypes: true });
+  if (entries.some((entry) => entry.name === "evidence.json")) throw new Error("evidence.collision");
   if (entries.length !== sourceNames.size || entries.some((entry) => !sourceNames.has(entry.name) || !entry.isFile() || entry.isSymbolicLink())) throw new Error("bundle.members");
   for (const name of sourceNames) {
     const info = await lstat(join(root, name));
@@ -92,7 +93,7 @@ async function unlinkOwned(root, name, inode) {
   } catch { /* Best-effort cleanup only for the inode created by this invocation. */ }
 }
 
-export async function assemblePreReleaseEvidence({ bundleRoot, now = () => new Date() } = {}) {
+export async function assemblePreReleaseEvidence({ bundleRoot, now = () => new Date(), beforeCandidateEvaluation, beforePublish, beforeFinalEvaluation } = {}) {
   let root;
   let candidate;
   let candidateInode;
@@ -104,9 +105,11 @@ export async function assemblePreReleaseEvidence({ bundleRoot, now = () => new D
     const evidence = await buildEvidence(root, clock);
     candidate = await writePrivateCandidate(root, evidence);
     candidateInode = (await lstat(join(root, candidate))).ino;
+    await beforeCandidateEvaluation?.({ candidate, evidence, root });
     const candidateDecision = await evaluatePreReleaseReadiness(evidence, { bundleRoot: root, evidencePath: candidate, enforceExactFiles: false, now });
     if (candidateDecision.status !== "PRE_RELEASE_READY") return safeDecision(candidateDecision);
     try {
+      await beforePublish?.({ candidate, evidence, root });
       await link(join(root, candidate), join(root, "evidence.json"));
       published = true;
     } catch (error) {
@@ -115,6 +118,7 @@ export async function assemblePreReleaseEvidence({ bundleRoot, now = () => new D
     }
     await unlinkOwned(root, candidate, candidateInode);
     candidate = undefined;
+    await beforeFinalEvaluation?.({ evidence, root });
     const finalDecision = await evaluatePreReleaseReadiness(evidence, { bundleRoot: root, evidencePath: "evidence.json", enforceExactFiles: true, now });
     if (finalDecision.status !== "PRE_RELEASE_READY") {
       await unlinkOwned(root, "evidence.json", candidateInode);
@@ -122,8 +126,8 @@ export async function assemblePreReleaseEvidence({ bundleRoot, now = () => new D
       return safeDecision(finalDecision);
     }
     return finalDecision;
-  } catch {
-    return invalid();
+  } catch (error) {
+    return invalid(error?.message === "evidence.collision" ? "evidence.collision" : "evidence.invalid");
   } finally {
     if (candidate) await unlinkOwned(root, candidate, candidateInode);
     if (published === false) await unlinkOwned(root, candidate, candidateInode);

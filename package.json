@@ -8,6 +8,7 @@
   "scripts": {
     "docker:retention": "node scripts/ops/docker-image-retention.mjs",
     "production:readiness": "node scripts/ops/production-readiness.mjs",
+    "production:evidence:assemble": "node scripts/release-gate/assemble.mjs",
     "dev:api": "corepack pnpm --filter @blog-x/api dev",
     "dev:web": "corepack pnpm --filter @blog-x/web dev",
     "build": "corepack pnpm -r build",

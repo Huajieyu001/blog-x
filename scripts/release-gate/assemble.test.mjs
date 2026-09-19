@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { lstat, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdtemp, readFile, readdir, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { assemblePreReleaseEvidence } from "./assemble.mjs";
 
@@ -65,6 +66,26 @@ test("valid evidence bundle is assembled only after the existing gate is ready",
   assert.equal(await readFile(join(bundle.root, "authorization.json"), "utf8"), bundle.raw["authorization.json"]);
 });
 
+test("offline package command emits only the gate decision", async (context) => {
+  const bundle = await makeBundle(context);
+  const currentObserved = new Date(Date.now() - 120_000).toISOString();
+  const currentValidUntil = new Date(Date.now() + 3_600_000).toISOString();
+  const currentCollector = new Date(Date.now() - 300_000).toISOString();
+  for (const [name, value] of Object.entries(bundle.values)) {
+    value.observedAt = currentObserved;
+    value.validUntil = currentValidUntil;
+    if (name === "backup.json") {
+      value.details.collector.collectedAt = currentCollector;
+      value.details.productionResult.createdAt = currentCollector;
+    }
+    await writeFile(join(bundle.root, name), `${JSON.stringify(value)}\n`, { mode: 0o600 });
+  }
+  const result = spawnSync("corepack", ["pnpm", "production:evidence:assemble", "--", `--bundle-root=${bundle.root}`], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, "RELEASE PRE_RELEASE_READY\n");
+  assert.match(result.stderr, /^\$ node scripts\/release-gate\/assemble\.mjs -- --bundle-root=/);
+});
+
 test("artifact validity window and exact source binding fail closed", async (context) => {
   const bundle = await makeBundle(context);
   const stale = { ...bundle.values["authorization.json"], validUntil: "2026-08-10T11:30:00.000Z" };
@@ -72,4 +93,73 @@ test("artifact validity window and exact source binding fail closed", async (con
   const result = await assemblePreReleaseEvidence({ bundleRoot: bundle.root, now: () => now });
   assert.equal(result.status, "INVALID");
   await assert.rejects(lstat(join(bundle.root, "evidence.json")));
+});
+
+test("missing, extra, linked, unsafe, malformed, failed, and oversized facts fail closed", async (context) => {
+  const cases = [
+    async (bundle) => unlink(join(bundle.root, "network.json")),
+    async (bundle) => writeFile(join(bundle.root, "extra.json"), "{}\n", { mode: 0o600 }),
+    async (bundle) => { await unlink(join(bundle.root, "network.json")); await symlink("authorization.json", join(bundle.root, "network.json")); },
+    async (bundle) => chmod(join(bundle.root, "network.json"), 0o644),
+    async (bundle) => writeFile(join(bundle.root, "network.json"), "{\n", { mode: 0o600 }),
+    async (bundle) => writeFile(join(bundle.root, "network.json"), `${JSON.stringify({ ...bundle.values["network.json"], outcome: "fail" })}\n`, { mode: 0o600 }),
+    async (bundle) => writeFile(join(bundle.root, "network.json"), " ".repeat(256 * 1024 + 1), { mode: 0o600 }),
+  ];
+  for (const prepare of cases) {
+    const bundle = await makeBundle(context);
+    await prepare(bundle);
+    const result = await assemblePreReleaseEvidence({ bundleRoot: bundle.root, now: () => now });
+    assert.notEqual(result.status, "PRE_RELEASE_READY");
+    await assert.rejects(lstat(join(bundle.root, "evidence.json")));
+    assert.deepEqual((await readdir(bundle.root)).filter((name) => name.startsWith("candidate-evidence-")), []);
+  }
+});
+
+test("non-private generated bundle roots are rejected before any candidate is written", async (context) => {
+  const bundle = await makeBundle(context);
+  await chmod(bundle.root, 0o755);
+  const result = await assemblePreReleaseEvidence({ bundleRoot: bundle.root, now: () => now });
+  assert.equal(result.status, "INVALID");
+  await assert.rejects(lstat(join(bundle.root, "evidence.json")));
+  await chmod(bundle.root, 0o700);
+});
+
+test("tampering and output collisions preserve existing bytes and cannot return ready", async (context) => {
+  const tampered = await makeBundle(context);
+  const tamper = await assemblePreReleaseEvidence({
+    bundleRoot: tampered.root,
+    now: () => now,
+    beforeCandidateEvaluation: async () => writeFile(join(tampered.root, "authorization.json"), "{}\n", { mode: 0o600 }),
+  });
+  assert.equal(tamper.status, "INVALID");
+  await assert.rejects(lstat(join(tampered.root, "evidence.json")));
+
+  const collision = await makeBundle(context);
+  const preserved = "operator-owned-content\n";
+  await writeFile(join(collision.root, "evidence.json"), preserved, { mode: 0o600 });
+  const result = await assemblePreReleaseEvidence({ bundleRoot: collision.root, now: () => now });
+  assert.equal(result.status, "INVALID");
+  assert.equal(await readFile(join(collision.root, "evidence.json"), "utf8"), preserved);
+});
+
+test("concurrent evidence creation and final source mutation fail without partial publication", async (context) => {
+  const collision = await makeBundle(context);
+  const preserved = "concurrent-owner-output\n";
+  const collided = await assemblePreReleaseEvidence({
+    bundleRoot: collision.root,
+    now: () => now,
+    beforePublish: async ({ root }) => writeFile(join(root, "evidence.json"), preserved, { mode: 0o600 }),
+  });
+  assert.equal(collided.status, "INVALID");
+  assert.equal(await readFile(join(collision.root, "evidence.json"), "utf8"), preserved);
+  assert.deepEqual((await readdir(collision.root)).filter((name) => name.startsWith("candidate-evidence-")), []);
+
+  const changed = await makeBundle(context);
+  const result = await assemblePreReleaseEvidence({
+    bundleRoot: changed.root,
+    now: () => now,
+    beforeFinalEvaluation: async ({ root }) => writeFile(join(root, "network.json"), "{}\n", { mode: 0o600 }),
+  });
+  assert.equal(result.status, "INVALID");
+  await assert.rejects(lstat(join(changed.root, "evidence.json")));
 });
