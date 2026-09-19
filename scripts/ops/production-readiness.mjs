@@ -19,10 +19,20 @@ const DEPLOY_PATHS = ["deploy/primary", "deploy/secondary"];
 const CANONICAL_EVIDENCE = "ops/release-evidence.blocked.json";
 const MAX_OUTPUT = 256 * 1024;
 const MAX_DEPLOY_BYTES = 4 * 1024 * 1024;
+const SAFE_ERROR_CODES = new Set([
+  "local.command_policy",
+  "local.deploy_member",
+  "local.deploy_paths",
+  "local.git_output",
+  "local.receipt_missing",
+  "local.receipt_revision",
+  "local.receipt_unsafe",
+  "local.untrusted",
+]);
 
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function safeCodes(values) { return [...new Set((Array.isArray(values) ? values : []).filter((value) => typeof value === "string" && SAFE_CODE.test(value)))].sort(); }
-function stableError(code) { return SAFE_CODE.test(code) ? code : "local.untrusted"; }
+function stableError(code) { return SAFE_ERROR_CODES.has(code) ? code : "local.untrusted"; }
 function normalized(stdout) { return typeof stdout === "string" && Buffer.byteLength(stdout) <= MAX_OUTPUT ? stdout.replace(/\r\n/g, "\n") : null; }
 function currentReport() {
   return {

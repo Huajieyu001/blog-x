@@ -106,6 +106,17 @@ test("local readiness fails closed without falling back to an older receipt", as
   assert.doesNotMatch(JSON.stringify(report), /hostile-secret/);
 });
 
+test("unexpected boundary errors collapse to a fixed non-disclosing reason", async () => {
+  const report = await collectProductionReadiness({
+    ...baseOptions(),
+    readFile: async () => { throw new Error("SensitiveTokenABC"); },
+  });
+  assert.equal(report.decision, "STOP");
+  assert.equal(report.__exitCode, 2);
+  assert.deepEqual(report.reasons, ["local.untrusted"]);
+  assert.doesNotMatch(JSON.stringify(report), /SensitiveTokenABC/);
+});
+
 test("expect-stop changes only the exit code for a valid STOP", async () => {
   const output = [];
   const result = await runProductionReadinessCli({ argv: ["--expect-stop"], output: { write: (line) => output.push(line) }, collect: async () => ({ format: "blog-x-production-rollout-readiness", version: 1, decision: "STOP", repository: { branch: "refs/heads/dev", branchMatched: true, head: sha("b"), clean: true }, localDelivery: { receipt: `ops/local-deliveries/${sha("a")}.json`, receiptSha256: "c".repeat(64), implementationRevision: sha("a"), implementationAncestor: true, targets: { api: "sha256:" + "a".repeat(64), web: "sha256:" + "b".repeat(64) } }, deployArtifacts: { files: [], manifestSha256: "d".repeat(64), changedSinceImplementation: false }, productionEvidence: { source: "canonical", sha256: "e".repeat(64), status: "BLOCKED", reasons: ["authorization.change_window"] }, prerequisites: { backupRestore: { status: "PENDING", unresolved: ["backup.collector"] }, rollback: { status: "PENDING", unresolved: ["rollback.owner"] } }, reasons: ["authorization.change_window"] }) });
