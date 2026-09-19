@@ -149,11 +149,14 @@ test("secondary deployment safely derives a sha256-configured prior revision fro
   assert.match(deploy, /\[\[ \$current_image_id == "\$prior_image_id" \]\]/);
   assert.match(deploy, /\[\[ \$prior_config_image =~ \^blog-x-api-secondary:/);
   assert.match(deploy, /prior_image_id=''\nload_current_record\nprior_container=/);
+  assert.match(deploy, /\[\[ \$current_record_present -eq 0 \|\| -n \$prior_container \]\]/);
   const stateFallback = deploy.indexOf("elif [[ $current_record_present -eq 1 ]]");
   const legacyTagFallback = deploy.indexOf("[[ $prior_config_image =~ ^blog-x-api-secondary:");
   assert.ok(stateFallback >= 0 && stateFallback < legacyTagFallback, "validated current state must support exact-ID containers before legacy tag fallback");
   const priorCapture = deploy.indexOf("prior_container=");
   const build = deploy.indexOf('"${compose[@]}" build api');
+  const staleCurrentGuard = deploy.indexOf("[[ $current_record_present -eq 0 || -n $prior_container ]]");
+  assert.ok(staleCurrentGuard > priorCapture && staleCurrentGuard < build, "a current record without a running API must stop before candidate build");
   for (const gate of ["prior_label", "prior_config_image", "prior_revision"]) {
     assert.ok(deploy.indexOf(gate, priorCapture) >= priorCapture && deploy.indexOf(gate, priorCapture) < build, `${gate} must resolve before candidate build`);
   }

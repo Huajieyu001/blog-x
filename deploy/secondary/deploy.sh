@@ -103,6 +103,7 @@ prior_revision=''
 prior_image_id=''
 load_current_record
 prior_container="$(single_running_api)"
+[[ $current_record_present -eq 0 || -n $prior_container ]] || { printf '%s\n' 'current deployment state exists but no running API is available' >&2; exit 1; }
 if [[ -n $prior_container ]]; then
   prior_image_id="$(docker inspect --format '{{.Image}}' "$prior_container")"
   is_image_id "$prior_image_id" || { printf '%s\n' 'running API image ID is invalid' >&2; exit 1; }
