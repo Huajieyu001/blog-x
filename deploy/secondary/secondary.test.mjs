@@ -41,14 +41,26 @@ test("install and deployment scripts use fixed safe authorities without secret o
   assert.match(install, /docker\.io docker-compose-v2/);
   assert.doesNotMatch(install, /dist-upgrade|full-upgrade|echo .*password/i);
   assert.match(install, /chmod 0600 "\$ENV_FILE"/);
+  assert.match(install, /chown root:root "\$ENV_FILE"/);
   assert.match(install, /openssl rand -hex 32/);
   assert.doesNotMatch(install, /enable --now blog-x-secondary-backup\.timer/);
+  for (const unit of ["blog-x-secondary-retention.service", "blog-x-secondary-retention.timer"]) {
+    const placement = new RegExp(`install -m 0644.*${unit.replace(".", "\\.")}`);
+    assert.match(install, placement);
+    assert.ok(install.indexOf(unit) < install.indexOf("systemctl daemon-reload"));
+  }
+  assert.doesNotMatch(install, /systemctl\s+(?:enable|start)[^\n]*blog-x-secondary-retention/i);
   assert.match(deploy, /readonly ENV_FILE=\/etc\/blog-x\/secondary\.env/);
+  assert.match(deploy, /stat -c '%U:%G' "\$ENV_FILE"\) == root:root/);
   assert.match(deploy, /db:migrate/);
   assert.match(deploy, /db:schema:verify/);
   assert.doesNotMatch(deploy, /db:seed|0\.0\.0\.0:3001/);
-  assert.match(deploy, /systemctl enable --now blog-x-secondary-backup\.timer blog-x-secondary-publish-due\.timer/);
-  assert.ok(deploy.indexOf("systemctl enable --now") > deploy.indexOf('port api 3001'));
+  assert.match(deploy, /systemctl enable --now blog-x-secondary-backup\.timer blog-x-secondary-publish-due\.timer blog-x-secondary-retention\.timer/);
+  const retentionEnableIndex = deploy.indexOf("systemctl enable --now");
+  for (const gate of ["db:migrate", "db:schema:verify", "curl --fail --silent --show-error --max-time 3 http://127.0.0.1:3001/health >/dev/null", "port api 3001", "docker ps --format"]) {
+    assert.ok(retentionEnableIndex > deploy.lastIndexOf(gate), `retention activation must follow ${gate}`);
+  }
+  assert.doesNotMatch(`${install}\n${deploy}`, /ops\/systemd\/blog-x-monitor@|off-host/i);
   assert.match(backup, /same-host-not-off-host-disaster-recovery/);
   assert.match(backup, /pg_dump/);
   assert.match(backup, /sha256sum -c SHA256SUMS/);
@@ -71,12 +83,16 @@ test("systemd jobs use fixed local runners and leave failures visible in the jou
   assert.match(publishService, /StateDirectory=blog-x\/ops-results/);
   assert.match(publishService, /ExecStart=\/usr\/bin\/node \/opt\/blog-x\/scripts\/ops\/run-secondary-job\.mjs publish-due --results-root=\/var\/lib\/blog-x\/ops-results/);
   assert.match(publishTimer, /OnCalendar=\*:\*:\d\d/);
-  assert.match(retentionService, /User=blog-x/);
-  assert.match(retentionService, /SupplementaryGroups=docker/);
+  assert.match(retentionService, /^User=root$/m);
+  assert.doesNotMatch(retentionService, /^SupplementaryGroups=/m);
   assert.match(retentionService, /ExecStart=\/usr\/bin\/node \/opt\/blog-x\/scripts\/ops\/run-secondary-job\.mjs retention --results-root=\/var\/lib\/blog-x\/ops-results/);
-  assert.match(retentionService, /ProtectSystem=strict/);
-  assert.match(retentionService, /RestrictAddressFamilies=AF_UNIX/);
-  assert.match(retentionService, /ReadWritePaths=\/var\/lib\/blog-x\/ops-results \/run\/docker\.sock/);
+  for (const hardening of [
+    "NoNewPrivileges=true", "PrivateTmp=true", "PrivateNetwork=true", "ProtectHome=true", "ProtectSystem=strict",
+    "ProtectControlGroups=true", "ProtectKernelTunables=true", "ProtectKernelModules=true", "ProtectClock=true",
+    "ProtectHostname=true", "RestrictAddressFamilies=AF_UNIX", "RestrictSUIDSGID=true", "LockPersonality=true",
+    "SystemCallArchitectures=native",
+  ]) assert.match(retentionService, new RegExp(`^${hardening}$`, "m"));
+  assert.match(retentionService, /^ReadWritePaths=\/var\/lib\/blog-x\/ops-results \/run\/docker\.sock$/m);
   assert.doesNotMatch(retentionService, /EnvironmentFile|systemctl\s+enable|apt(?:-get)?\s+install/i);
   assert.match(retentionTimer, /OnCalendar=daily/);
   assert.match(retentionTimer, /Persistent=true/);

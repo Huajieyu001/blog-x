@@ -43,5 +43,7 @@ install -m 0644 "$(dirname "$0")/systemd/blog-x-secondary-backup.service" /etc/s
 install -m 0644 "$(dirname "$0")/systemd/blog-x-secondary-backup.timer" /etc/systemd/system/blog-x-secondary-backup.timer
 install -m 0644 "$(dirname "$0")/systemd/blog-x-secondary-publish-due.service" /etc/systemd/system/blog-x-secondary-publish-due.service
 install -m 0644 "$(dirname "$0")/systemd/blog-x-secondary-publish-due.timer" /etc/systemd/system/blog-x-secondary-publish-due.timer
+install -m 0644 "$(dirname "$0")/systemd/blog-x-secondary-retention.service" /etc/systemd/system/blog-x-secondary-retention.service
+install -m 0644 "$(dirname "$0")/systemd/blog-x-secondary-retention.timer" /etc/systemd/system/blog-x-secondary-retention.timer
 systemctl daemon-reload
 printf '%s\n' 'Blog X secondary prerequisites ready; deploy after the runtime health check to enable timers.'

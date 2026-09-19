@@ -5,8 +5,7 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
-User=blog-x
-SupplementaryGroups=docker
+User=root
 UMask=0077
 WorkingDirectory=/opt/blog-x
 StateDirectory=blog-x/ops-results

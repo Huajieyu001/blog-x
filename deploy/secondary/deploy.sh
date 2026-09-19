@@ -13,6 +13,7 @@ if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
 fi
 [[ -f $ENV_FILE ]] || { printf '%s\n' 'secondary environment is missing' >&2; exit 1; }
 [[ $(stat -c '%a' "$ENV_FILE") == 600 ]] || { printf '%s\n' 'secondary environment must be mode 0600' >&2; exit 1; }
+[[ $(stat -c '%U:%G' "$ENV_FILE") == root:root ]] || { printf '%s\n' 'secondary environment must be owned by root:root' >&2; exit 1; }
 [[ -f $COMPOSE_FILE ]] || { printf '%s\n' 'secondary compose bundle is missing' >&2; exit 1; }
 
 if [[ -d $APP_ROOT/.git ]]; then
@@ -42,5 +43,5 @@ if docker ps --format '{{.Ports}}' | grep -Eq '(^|[, ])(0\.0\.0\.0|\[::\]):5432'
   printf '%s\n' 'PostgreSQL must not publish a host port' >&2
   exit 1
 fi
-systemctl enable --now blog-x-secondary-backup.timer blog-x-secondary-publish-due.timer
+systemctl enable --now blog-x-secondary-backup.timer blog-x-secondary-publish-due.timer blog-x-secondary-retention.timer
 printf 'Blog X secondary deployment healthy at revision %s\n' "$revision"
