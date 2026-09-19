@@ -20,7 +20,7 @@ function absolutePath(value) {
 }
 
 function strictProvider(value) {
-  if (!exactKeys(value, "kind") && !exactKeys(value, "kind,spoolRoot") && !exactKeys(value, "authorizationEnv,kind,urlEnv")) invalidPolicy();
+  if (!exactKeys(value, "kind") && !exactKeys(value, "kind,spoolRoot") && !exactKeys(value, "kind,urlEnv") && !exactKeys(value, "authorizationEnv,kind,urlEnv")) invalidPolicy();
   if (value.kind === "stdout" && exactKeys(value, "kind")) return { kind: "stdout" };
   if (value.kind === "file" && exactKeys(value, "kind,spoolRoot")) return { kind: "file", spoolRoot: absolutePath(value.spoolRoot) };
   if (value.kind === "webhook" && (exactKeys(value, "kind,urlEnv") || exactKeys(value, "authorizationEnv,kind,urlEnv"))

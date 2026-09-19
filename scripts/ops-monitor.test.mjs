@@ -149,3 +149,18 @@ test("notification failure remains terminal without running a provider", async (
   assert.equal(JSON.parse(lines[0]).notificationOutcome, "failed");
   assert.doesNotMatch(lines.join(""), /token|webhook/i);
 });
+
+test("webhook provider accepts canonical URL metadata without authorization", async () => {
+  const roots = await authorities();
+  const notifications = [];
+  const result = await runMonitor({
+    policy: edgePolicy(roots, { kind: "webhook", urlEnv: "BLOG_X_NOTIFY_WEBHOOK_URL" }),
+    collect: async () => ({}),
+    evaluate: (_facts, { role }) => status(role),
+    notify: async (options) => { notifications.push(options); return { sent: true }; },
+    now: fixedNow,
+    write: () => {},
+  });
+  assert.equal(result.exitCode, 0);
+  assert.deepEqual(notifications[0].provider, { kind: "webhook", urlEnv: "BLOG_X_NOTIFY_WEBHOOK_URL" });
+});
