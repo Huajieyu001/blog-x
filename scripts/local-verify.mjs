@@ -71,9 +71,9 @@ export function canonicalIntegrationSelection() {
     .sort((left, right) => left.path.localeCompare(right.path));
   const paths = entries.map((entry) => entry.path);
   const groups = frozenGroups(entries);
-  const expectedOwners = { database: 15, "backup-restore": 1, media: 1, "main-browser": 16, "error-browser": 1, "restore-browser": 1 };
-  if (entries.length !== 35 || new Set(paths).size !== entries.length
-    || paths.filter((path) => path.startsWith("apps/api/")).length !== 17
+  const expectedOwners = { database: 16, "backup-restore": 1, media: 1, "main-browser": 16, "error-browser": 1, "restore-browser": 1 };
+  if (entries.length !== 36 || new Set(paths).size !== entries.length
+    || paths.filter((path) => path.startsWith("apps/api/")).length !== 18
     || paths.filter((path) => path.startsWith("apps/web/e2e/")).length !== 18
     || Object.entries(expectedOwners).some(([owner, count]) => groups[owner]?.length !== count)
     || Object.keys(groups).some((owner) => !Object.hasOwn(expectedOwners, owner))) {
@@ -1869,6 +1869,7 @@ export const canonicalDatabaseEnvironment = Object.freeze({
   "apps/api/test/article-revisions.test.ts": "LIFECYCLE_TEST_DATABASE_URL",
   "apps/api/test/auth-session.test.ts": "AUTH_TEST_DATABASE_URL",
   "apps/api/test/distribution-export.test.ts": "PHASE3_TEST_DATABASE_URL",
+  "apps/api/test/operational-retention.test.ts": "OPERATIONAL_RETENTION_TEST_DATABASE_URL",
   "apps/api/test/pages-archive.test.ts": "AUTH_TEST_DATABASE_URL",
   "apps/api/test/phase2-public-visibility.test.ts": "PHASE2_TEST_DATABASE_URL",
   "apps/api/test/public-discovery.test.ts": "PUBLIC_DISCOVERY_TEST_DATABASE_URL",
