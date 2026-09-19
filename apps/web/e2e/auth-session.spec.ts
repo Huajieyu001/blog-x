@@ -88,13 +88,23 @@ test("login, refresh, expiry, logout, and revoked-token reuse stay server-author
 test("password change requires a fresh sign-in and restores the generated fixture credential", async ({ page, context }) => {
   const replacementPassword = `temporary-password-${runId}-change`;
   let passwordChanged = false;
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${webOrigin}/admin`);
   await expect(page).toHaveURL(`${webOrigin}/login`);
   expect((await login(page, password)).status()).toBe(200);
   await expect(page).toHaveURL(`${webOrigin}/admin`);
 
   try {
+    await page.goto(`${webOrigin}/admin/security`);
+    await expect(page).toHaveURL(`${webOrigin}/admin/security`);
+    await expect(page.getByRole("heading", { name: "账户安全" })).toBeVisible();
+    await expect(page.getByLabel("当前密码")).toHaveAttribute("autocomplete", "current-password");
+    await expect(page.getByLabel("新密码", { exact: true })).toHaveAttribute("autocomplete", "new-password");
+    await expect(page.getByLabel("确认新密码")).toHaveAttribute("autocomplete", "new-password");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${webOrigin}/admin`);
     await page.getByRole("button", { name: "打开后台导航" }).click();
     await page.getByRole("link", { name: "账户安全" }).click();
     await expect(page).toHaveURL(`${webOrigin}/admin/security`);
@@ -113,9 +123,13 @@ test("password change requires a fresh sign-in and restores the generated fixtur
     await expect(page.locator("form").getByRole("alert")).toContainText("当前密码错误");
     expect(await page.evaluate(() => fetch("/api/auth/session").then((response) => response.status))).toBe(200);
 
+    const resetBeforeRedirect = page.evaluate(() => new Promise<void>((resolve) => {
+      document.querySelector("form")?.addEventListener("reset", () => resolve(), { once: true });
+    }));
     const changedResponse = await changePassword(page, password, replacementPassword);
     passwordChanged = changedResponse.status() === 200;
     expect(changedResponse.status()).toBe(200);
+    await resetBeforeRedirect;
     await expect(page).toHaveURL(`${webOrigin}/login`);
     expect((await login(page, password)).status()).toBe(401);
     await expect(page.locator('#login-error[role="alert"]')).toContainText("用户名或密码错误。");

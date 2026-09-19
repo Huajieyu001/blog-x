@@ -151,6 +151,42 @@ test("single administrator sessions are opaque, rotated, revocable, and do not l
   const secondActiveDigest = createHash("sha256").update(`second-active-${Date.now()}`).digest("hex");
   await pool.query("insert into sessions (administrator_id, token_digest, expires_at) values ($1, $2, now() + interval '1 day')", [seeded[0]!.id, secondActiveDigest]);
   assert.equal((await pool.query("select count(*)::int as count from sessions where revoked_at is null and expires_at > now()")).rows[0].count, 2);
+  const boundaryCurrentPassword = `boundary-current-${Date.now()}-must-not-leak`;
+  const boundaryNewPassword = `boundary-new-${Date.now()}-must-not-leak`;
+  const auditBeforePasswordBoundaries = (await pool.query("select count(*)::int as count from audit_events")).rows[0].count;
+  const noSessionPasswordChange = await app.inject({
+    method: "POST",
+    url: "/auth/password",
+    headers: { origin: "https://untrusted.invalid", "content-type": "text/plain" },
+    payload: JSON.stringify({ currentPassword: boundaryCurrentPassword, newPassword: boundaryNewPassword }),
+  });
+  assert.equal(noSessionPasswordChange.statusCode, 401);
+  const foreignOriginPasswordChange = await app.inject({
+    method: "POST",
+    url: "/auth/password",
+    headers: { ...headers, origin: "https://untrusted.invalid", cookie: `blog_x_session=${thirdCookie}` },
+    payload: { currentPassword: boundaryCurrentPassword, newPassword: boundaryNewPassword },
+  });
+  assert.equal(foreignOriginPasswordChange.statusCode, 403);
+  const wrongContentTypePasswordChange = await app.inject({
+    method: "POST",
+    url: "/auth/password",
+    headers: { origin: publicOrigin, "content-type": "text/plain", cookie: `blog_x_session=${thirdCookie}` },
+    payload: JSON.stringify({ currentPassword: boundaryCurrentPassword, newPassword: boundaryNewPassword }),
+  });
+  assert.equal(wrongContentTypePasswordChange.statusCode, 415);
+  const extraFieldPasswordChange = await app.inject({
+    method: "POST",
+    url: "/auth/password",
+    headers: { ...headers, cookie: `blog_x_session=${thirdCookie}` },
+    payload: { currentPassword: boundaryCurrentPassword, newPassword: boundaryNewPassword, unexpected: "rejected" },
+  });
+  assert.equal(extraFieldPasswordChange.statusCode, 400);
+  for (const response of [noSessionPasswordChange, foreignOriginPasswordChange, wrongContentTypePasswordChange, extraFieldPasswordChange]) {
+    assert.doesNotMatch(response.body, /boundary-current-|boundary-new-/);
+  }
+  assert.equal((await app.inject({ method: "GET", url: "/auth/session", headers: { cookie: `blog_x_session=${thirdCookie}` } })).statusCode, 200);
+  assert.equal((await pool.query("select count(*)::int as count from audit_events")).rows[0].count, auditBeforePasswordBoundaries);
   const replacementPassword = "replacement-password-that-must-not-leak";
   const passwordBeforeInvalidChange = (await db.select({ passwordHash: administrators.passwordHash }).from(administrators).limit(1))[0]!.passwordHash;
   const auditBeforeInvalidChange = (await pool.query("select count(*)::int as count from audit_events")).rows[0].count;
@@ -236,4 +272,6 @@ test("single administrator sessions are opaque, rotated, revocable, and do not l
   assert.equal(finalLogs.includes(thirdCookie), false);
   assert.equal(finalLogs.includes(replacementPassword), false);
   assert.equal(finalLogs.includes(replacementHash), false);
+  assert.equal(finalLogs.includes(boundaryCurrentPassword), false);
+  assert.equal(finalLogs.includes(boundaryNewPassword), false);
 });
