@@ -1,5 +1,8 @@
 FROM node:24.15.0-alpine
 
+ARG BLOG_X_REVISION
+LABEL org.opencontainers.image.revision=${BLOG_X_REVISION}
+
 WORKDIR /workspace
 RUN corepack enable
 

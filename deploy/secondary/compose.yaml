@@ -30,7 +30,9 @@ services:
     build:
       context: ../..
       dockerfile: apps/api/Dockerfile
-    image: blog-x-api-secondary:${BLOG_X_REVISION}
+      args:
+        BLOG_X_REVISION: ${BLOG_X_REVISION}
+    image: ${BLOG_X_API_IMAGE:-blog-x-api-secondary:${BLOG_X_REVISION}}
     restart: unless-stopped
     logging:
       driver: local
