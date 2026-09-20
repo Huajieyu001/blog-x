@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { restoredArticleSchema, type DeletedPost } from "@blog-x/contracts";
 import styles from "../admin.module.css";
 
@@ -10,6 +10,48 @@ export default function DeletedPostList({ initial }: { initial: DeletedPost[] })
   const [message, setMessage] = useState("");
   const [restored, setRestored] = useState<{ id: string; title: string } | null>(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
+  const dialog = useRef<HTMLDivElement | null>(null);
+  const cancelAction = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!confirming) return;
+    const frame = window.requestAnimationFrame(() => cancelAction.current?.focus());
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !pending) {
+        event.preventDefault();
+        closeRestoreDialog();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const buttons = Array.from(dialog.current?.querySelectorAll<HTMLButtonElement>("button:not([disabled])") ?? []);
+      if (!buttons.length) {
+        event.preventDefault();
+        return;
+      }
+      const first = buttons[0];
+      const last = buttons.at(-1)!;
+      if (!dialog.current?.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [confirming, pending]);
+
+  function closeRestoreDialog() {
+    setConfirming(null);
+    window.requestAnimationFrame(() => trigger.current?.focus());
+  }
 
   async function restore() {
     if (!confirming || pending) return;
@@ -30,14 +72,14 @@ export default function DeletedPostList({ initial }: { initial: DeletedPost[] })
       setConfirming(null);
     } catch {
       setMessage("恢复失败，请重试。");
+      closeRestoreDialog();
     } finally {
       setPending(false);
     }
   }
 
   function cancel() {
-    setConfirming(null);
-    requestAnimationFrame(() => trigger.current?.focus());
+    if (!pending) closeRestoreDialog();
   }
 
   if (!items.length && !restored) return <section className={styles.emptyPanel}><h2>回收站为空</h2><p>删除的文章会显示在这里。</p></section>;
@@ -61,11 +103,11 @@ export default function DeletedPostList({ initial }: { initial: DeletedPost[] })
             onClick={(event) => { trigger.current = event.currentTarget; setConfirming(item); }}
           >恢复为草稿</button>
           {confirming?.id === item.id ? (
-            <div id={`restore-dialog-${item.id}`} className={styles.restoreDialog} role="dialog" aria-modal="true" aria-labelledby={`restore-dialog-label-${item.id}`}>
+            <div ref={dialog} id={`restore-dialog-${item.id}`} className={styles.restoreDialog} role="dialog" aria-modal="true" aria-labelledby={`restore-dialog-label-${item.id}`}>
               <p id={`restore-dialog-label-${item.id}`}>确认恢复为未公开草稿？文章不会自动发布。</p>
               <div className={styles.restoreDialogActions}>
                 <button className={styles.restoreConfirm} disabled={pending} onClick={() => void restore()}>确认恢复</button>
-                <button disabled={pending} onClick={cancel}>取消</button>
+                <button ref={cancelAction} disabled={pending} onClick={cancel}>取消</button>
               </div>
             </div>
           ) : null}
