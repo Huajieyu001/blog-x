@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { defaultSiteSettings } from "@blog-x/contracts";
 import PublicHeader from "./_components/PublicHeader";
+import SkipToContentLink from "./_components/SkipToContentLink";
 import { getPublicSiteSettings } from "./lib/api";
 import { publicOrigin } from "./lib/site-metadata";
 import styles from "./layout.module.css";
@@ -26,8 +27,9 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     <html lang="zh-CN" suppressHydrationWarning>
       <head><script dangerouslySetInnerHTML={{ __html: themeBootstrap }} /></head>
       <body>
+        <SkipToContentLink />
         <PublicHeader siteName={site.name} />
-        {children}
+        <div id="main-content" tabIndex={-1}>{children}</div>
         <footer className={styles.icpFooter}>
           {site.publicInfo ? <p>{site.publicInfo}</p> : null}
           <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">{site.registrationNumber}</a>

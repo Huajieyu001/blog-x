@@ -74,7 +74,7 @@ export default function LoginPage() {
         <div className={styles.card}>
           <header><p className={styles.eyebrow}>欢迎回来</p><h2>进入管理后台</h2><p>请输入为 Blog X 配置的管理员账号。</p></header>
           <form aria-busy={pending} onSubmit={(event) => { event.preventDefault(); void submit(new FormData(event.currentTarget)); }}>
-            <label>用户名<input name="username" autoComplete="username" required autoFocus disabled={pending} aria-invalid={Boolean(error?.credentials)} aria-describedby={error ? "login-error" : undefined} onChange={() => { if (error) setError(null); }} /></label>
+            <label>用户名<input name="username" autoComplete="username" required disabled={pending} aria-invalid={Boolean(error?.credentials)} aria-describedby={error ? "login-error" : undefined} onChange={() => { if (error) setError(null); }} /></label>
             <label>密码<input name="password" type="password" autoComplete="current-password" required disabled={pending} aria-invalid={Boolean(error?.credentials)} aria-describedby={error ? "login-error" : undefined} onChange={() => { if (error) setError(null); }} /></label>
             {error ? <p ref={errorRef} tabIndex={-1} id="login-error" className={styles.error} role="alert">{error.message}</p> : <p className={styles.hint}>登录状态仅通过安全 Cookie 保存，不会把密码存入浏览器。</p>}
             <button type="submit" disabled={pending}>{pending ? "登录中…" : "登录"}</button>

@@ -1,3 +1,23 @@
+.skipLink {
+  position: fixed;
+  z-index: 100;
+  top: 10px;
+  left: 10px;
+  translate: 0 -160%;
+  padding: 10px 14px;
+  border-radius: 6px;
+  color: #17201d;
+  background: #d7eee5;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.skipLink:focus-visible {
+  translate: 0;
+  outline: 3px solid #17201d;
+  outline-offset: 3px;
+}
+
 .icpFooter {
   box-sizing: border-box;
   width: min(100%, 72rem);
