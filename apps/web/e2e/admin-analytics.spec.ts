@@ -167,14 +167,52 @@ test("analytics remains keyboard-accessible, bounded, and document-width-safe ac
 
 test("site settings workspace remains responsive with its fixed ICP guidance", async ({ page }) => {
   await login(page);
-  for (const width of [390, 768, 1280]) {
+  for (const width of [390, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`${webOrigin}/admin/settings`);
     await expect(page.getByRole("heading", { name: "站点设置" })).toBeVisible();
     await expect(page.getByText("备案号固定保留为“黔ICP备2023015906号”，并始终链接至工信部备案查询页面。", { exact: true })).toBeVisible();
+    const name = page.getByLabel("站点名称");
+    const description = page.getByLabel("站点简介");
+    const publicInfo = page.getByLabel("公开展示信息");
+    await expect(name).toHaveAttribute("maxlength", "120");
+    await expect(description).toHaveAttribute("maxlength", "320");
+    await expect(publicInfo).toHaveAttribute("maxlength", "1000");
+    await expect(page.getByText(`已输入 ${(await name.inputValue()).length}/120 个字符`, { exact: true })).toBeVisible();
+    await expect(page.getByText(`已输入 ${(await description.inputValue()).length}/320 个字符`, { exact: true })).toBeVisible();
+    await expect(page.getByText(`已输入 ${(await publicInfo.inputValue()).length}/1000 个字符`, { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "保存站点设置" })).toBeDisabled();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   }
+
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.goto(`${webOrigin}/admin/settings`);
+  const name = page.getByLabel("站点名称");
+  const initialName = await name.inputValue();
+  await name.fill(`${initialName} 更新`);
+  await expect(page.getByText(`已输入 ${(initialName + " 更新").length}/120 个字符`, { exact: true })).toBeVisible();
+  await expect(page.getByText("有未保存更改", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => {
+    const event = new Event("beforeunload", { cancelable: true });
+    return { dispatched: window.dispatchEvent(event), prevented: event.defaultPrevented };
+  })).toEqual({ dispatched: false, prevented: true });
+
+  await name.fill(initialName);
+  await expect(page.getByText("有未保存更改", { exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => {
+    const event = new Event("beforeunload", { cancelable: true });
+    return { dispatched: window.dispatchEvent(event), prevented: event.defaultPrevented };
+  })).toEqual({ dispatched: true, prevented: false });
+
+  let settingsRequests = 0;
+  page.on("request", (request) => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/admin/site-settings") settingsRequests += 1; });
+  await name.fill("   ");
+  await page.getByRole("button", { name: "保存站点设置" }).click();
+  await expect(page.getByText("站点名称不能为空。", { exact: true })).toBeVisible();
+  await expect(name).toHaveAttribute("aria-invalid", "true");
+  await expect(name).toBeFocused();
+  expect(settingsRequests).toBe(0);
 });
 
 test("administrator shell is private, responsive, compact, and theme-aware", async ({ page }) => {

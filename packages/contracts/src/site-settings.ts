@@ -8,10 +8,16 @@ export const defaultSiteSettings = {
   registrationUrl: "https://beian.miit.gov.cn/",
 } as const;
 
+export const siteSettingsLimits = Object.freeze({
+  name: 120,
+  description: 320,
+  publicInfo: 1_000,
+});
+
 const siteSettingsFieldsSchema = z.object({
-  name: z.string().trim().min(1).max(120),
-  description: z.string().trim().max(320),
-  publicInfo: z.string().trim().max(1_000),
+  name: z.string().trim().min(1).max(siteSettingsLimits.name),
+  description: z.string().trim().max(siteSettingsLimits.description),
+  publicInfo: z.string().trim().max(siteSettingsLimits.publicInfo),
 }).strict();
 
 export const siteSettingsInputSchema = siteSettingsFieldsSchema.extend({

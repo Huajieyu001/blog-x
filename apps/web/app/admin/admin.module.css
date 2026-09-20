@@ -233,6 +233,10 @@
 .primaryLink, .workspace a, .analyticsPage a { color: var(--ink); text-underline-offset: 3px; }
 .primaryLink { display: inline-flex; min-width: 44px; min-height: 44px; align-items: center; justify-content: center; border: 1px solid var(--ink); border-radius: 999px; padding: 0 20px; color: var(--paper) !important; background: var(--ink); text-decoration: none; white-space: nowrap; }
 .workspaceSection { margin-top: 48px; min-width: 0; }
+.settingsField { min-width: 0; }
+.fieldCounter { color: var(--muted); font: 500 .75rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; text-align: right; }
+.fieldError { margin-top: -2px; color: var(--danger); font: 650 .78rem/1.45 ui-sans-serif, system-ui, sans-serif; letter-spacing: 0; }
+.settingsField input[aria-invalid="true"], .settingsField textarea[aria-invalid="true"] { border-color: var(--danger); box-shadow: inset 0 0 0 1px var(--danger); }
 .workspaceSection > h2, .analyticsPage h2 { margin: 0 0 16px; font: 500 clamp(1.35rem, 2vw, 1.8rem)/1.2 ui-serif, Georgia, "Noto Serif SC", serif; }
 .overviewCards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .overviewCard, .focusCard, .analyticsSummary, .dailyTrend, .sourcePanel, .topPanel, .analyticsDisclosure, .zeroPanel, .errorPanel, .emptyPanel { min-width: 0; border: 1px solid var(--line); border-radius: 5px; padding: 24px; background: var(--surface); }
