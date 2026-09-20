@@ -329,6 +329,49 @@
   letter-spacing: .04em;
 }
 
+.articleMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+
+.copyArticleLink { display: none; }
+
+:global(html[data-js="true"]) .copyArticleLink {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 280px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.copyArticleButton {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--surface);
+  background: var(--accent);
+  font: 700 .78rem/1.4 ui-sans-serif, system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.copyArticleButton:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+
+.copyArticleStatus {
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  font: 600 .76rem/1.5 ui-sans-serif, system-ui, sans-serif;
+}
+
 .articleTaxonomy {
   display: flex;
   flex-wrap: wrap;

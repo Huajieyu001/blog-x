@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
 import ArticleBody from "../../_components/ArticleBody";
 import ArticleToc from "../../_components/ArticleToc";
+import CopyArticleLink from "../../_components/CopyArticleLink";
 import PostCard from "../../_components/PostCard";
 import ViewBeacon from "./ViewBeacon";
 import { getPublicPost, getPublicRelatedPosts } from "../../lib/api";
@@ -16,12 +17,13 @@ export default async function PublicArticlePage({ params }: { params: Promise<{ 
   if (result.kind === "not_found") notFound();
   if (result.kind === "upstream_error") throw new Error("public content unavailable");
   const article = result.data;
-  const jsonLd = serializeJsonLd(buildBlogPosting({
+  const blogPosting = buildBlogPosting({
     title: article.title,
     summary: article.summary,
     slug: article.slug,
     publishedAt: article.publishedAt,
-  }));
+  });
+  const jsonLd = serializeJsonLd(blogPosting);
   const relatedResult = await getPublicRelatedPosts(slug);
   const seenSlugs = new Set([article.slug]);
   const relatedItems = relatedResult.kind === "ok"
@@ -46,9 +48,12 @@ export default async function PublicArticlePage({ params }: { params: Promise<{ 
           ) : null}
           <h1 id="article-title">{article.title}</h1>
           <p className={`${styles.articleSummary} articleSummary`}>{article.summary}</p>
-          <time dateTime={article.publishedAt}>
-            {new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeZone: "Asia/Shanghai" }).format(new Date(article.publishedAt))}
-          </time>
+          <div className={styles.articleMeta}>
+            <time dateTime={article.publishedAt}>
+              {new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeZone: "Asia/Shanghai" }).format(new Date(article.publishedAt))}
+            </time>
+            <CopyArticleLink canonicalUrl={blogPosting.url} />
+          </div>
         </header>
         {article.cover ? (
           <img
