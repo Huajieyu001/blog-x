@@ -120,6 +120,100 @@ test("published permalink is a safe focused technical reading surface and every 
   const canonicalHref = await page.locator('link[rel="canonical"]').getAttribute("href");
   expect(posting.mainEntityOfPage).toBe(canonicalHref);
   expect(posting.url).toBe(canonicalHref);
+  expect(canonicalHref).toBeTruthy();
+  const copyButton = page.getByRole("button", { name: "复制文章链接", exact: true });
+  const copyStatus = page.getByRole("status", { name: "复制文章链接状态" });
+  await expect(copyButton).toHaveCount(1);
+  await expect(copyStatus).toHaveCount(1);
+  await copyButton.focus();
+  const copyButtonFocus = await copyButton.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      height: element.getBoundingClientRect().height,
+      focusVisible: element.matches(":focus-visible"),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: Number.parseFloat(style.outlineWidth),
+    };
+  });
+  expect(copyButtonFocus.height).toBeGreaterThanOrEqual(44);
+  expect(copyButtonFocus.focusVisible).toBe(true);
+  expect(copyButtonFocus.outlineStyle).not.toBe("none");
+  expect(copyButtonFocus.outlineWidth).toBeGreaterThanOrEqual(2);
+
+  await page.evaluate(() => {
+    const view = window as typeof window & {
+      copyArticleLinkClipboardDescriptor?: PropertyDescriptor;
+      copyArticleLinkExecCommand?: typeof Document.prototype.execCommand;
+      copyArticleLinkCalls?: string[];
+      copyArticleLinkFallbacks?: string[];
+    };
+    view.copyArticleLinkClipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    view.copyArticleLinkExecCommand = Document.prototype.execCommand;
+    view.copyArticleLinkCalls = [];
+    view.copyArticleLinkFallbacks = [];
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText(value: string) {
+          view.copyArticleLinkCalls?.push(value);
+          return Promise.resolve();
+        },
+      },
+    });
+  });
+  await copyButton.click();
+  await expect(copyStatus).toHaveText("文章链接已复制。");
+  expect(await page.evaluate(() => (window as typeof window & { copyArticleLinkCalls?: string[] }).copyArticleLinkCalls)).toEqual([canonicalHref]);
+
+  await page.evaluate(() => {
+    const view = window as typeof window & { copyArticleLinkFallbacks?: string[] };
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => Promise.reject(new Error("clipboard denied")) },
+    });
+    Document.prototype.execCommand = (command) => {
+      view.copyArticleLinkFallbacks?.push(document.querySelector<HTMLTextAreaElement>("[data-copy-article-link-fallback]")?.value ?? "");
+      return command === "copy";
+    };
+  });
+  await copyButton.click();
+  await expect(copyStatus).toHaveText("文章链接已复制。");
+  expect(await page.evaluate(() => (window as typeof window & { copyArticleLinkFallbacks?: string[] }).copyArticleLinkFallbacks)).toEqual([canonicalHref]);
+  await expect(page.locator("[data-copy-article-link-fallback]")).toHaveCount(0);
+
+  await page.evaluate(() => {
+    Document.prototype.execCommand = () => false;
+  });
+  await copyButton.click();
+  await expect(copyStatus).toHaveText("复制失败，请手动复制浏览器地址栏中的链接。");
+  await expect(page.locator("[data-copy-article-link-fallback]")).toHaveCount(0);
+
+  await page.evaluate(() => {
+    Document.prototype.execCommand = () => {
+      throw new Error("copy unavailable");
+    };
+  });
+  await copyButton.click();
+  await expect(copyStatus).toHaveText("复制失败，请手动复制浏览器地址栏中的链接。");
+  await expect(page.locator("[data-copy-article-link-fallback]")).toHaveCount(0);
+  await page.evaluate(() => {
+    const view = window as typeof window & {
+      copyArticleLinkClipboardDescriptor?: PropertyDescriptor;
+      copyArticleLinkExecCommand?: typeof Document.prototype.execCommand;
+      copyArticleLinkCalls?: string[];
+      copyArticleLinkFallbacks?: string[];
+    };
+    if (view.copyArticleLinkClipboardDescriptor) {
+      Object.defineProperty(navigator, "clipboard", view.copyArticleLinkClipboardDescriptor);
+    } else {
+      Reflect.deleteProperty(navigator, "clipboard");
+    }
+    if (view.copyArticleLinkExecCommand) Document.prototype.execCommand = view.copyArticleLinkExecCommand;
+    delete view.copyArticleLinkClipboardDescriptor;
+    delete view.copyArticleLinkExecCommand;
+    delete view.copyArticleLinkCalls;
+    delete view.copyArticleLinkFallbacks;
+  });
   const body = page.getByTestId("article-body");
   await expect(body.getByRole("heading", { level: 2, name: "Reliable rendering" })).toBeVisible();
   await expect(body.locator("blockquote")).toBeVisible();
@@ -159,6 +253,12 @@ test("published permalink is a safe focused technical reading surface and every 
   await page.goto(`${webOrigin}/posts/${slugs.published}`);
   await expect.poll(() => beacons.filter((beacon) => beacon.slug === slugs.published).length).toBe(2);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await expect(copyButton).toBeVisible();
+  expect(await copyButton.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+  const copyButtonBox = await copyButton.boundingBox();
+  expect(copyButtonBox).not.toBeNull();
+  expect(copyButtonBox!.x).toBeGreaterThanOrEqual(0);
+  expect(copyButtonBox!.x + copyButtonBox!.width).toBeLessThanOrEqual(390);
   const articleBox = await primaryArticle.boundingBox();
   expect(articleBox).not.toBeNull();
   expect(articleBox!.x).toBeGreaterThanOrEqual(0);
