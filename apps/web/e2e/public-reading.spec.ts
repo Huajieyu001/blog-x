@@ -265,7 +265,7 @@ test("published permalink is a safe focused technical reading surface and every 
   await expect(body.locator("pre.shiki").last()).toBeVisible();
   await expect(body.locator("script, style, [data-hostile], [onerror], [onclick]")).toHaveCount(0);
   await expect(body.getByText("Unsafe destination")).not.toHaveAttribute("href", /^(?:javascript|data):/i);
-  await expect.poll(() => beacons.length).toBe(1);
+  await expect.poll(() => beacons.length).toBe(2);
   await firstBeaconStarted;
   expect(beacons[0]).toMatchObject({ slug: slugs.published, method: "POST", url: `${webOrigin}${firstBeaconPath}`, body: "{}" });
   await expect(page.locator("[data-testid='view-beacon']")).toHaveCount(0);
