@@ -320,7 +320,7 @@ test("published permalink is a safe focused technical reading surface and every 
   expect(narrowCodeCopyButton.focusVisible).toBe(true);
   expect(narrowCodeCopyButton.outlineStyle).not.toBe("none");
   expect(narrowCodeCopyButton.outlineWidth).toBeGreaterThanOrEqual(2);
-  expect(await body.locator("pre").evaluate((element) => element.scrollWidth >= element.clientWidth)).toBe(true);
+  expect(await body.locator("pre").first().evaluate((element) => element.scrollWidth >= element.clientWidth)).toBe(true);
   expect(await body.locator("table").evaluate((element) => element.scrollWidth >= element.clientWidth)).toBe(true);
 
   const unavailableBodies: string[] = [];
