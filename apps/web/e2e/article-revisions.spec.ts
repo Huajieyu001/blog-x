@@ -60,7 +60,7 @@ test("administrator compares and restores a bounded article history without rend
   });
   await restoreButton.click();
   await restoreConfirm.click();
-  await expect(page.getByRole("alert")).toHaveText("文章已被其他保存更新，请刷新后重新选择历史版本。");
+  await expect(page.getByTestId("article-revision-history").getByRole("alert")).toHaveText("文章已被其他保存更新，请刷新后重新选择历史版本。");
   await expect(restoreButton).toBeFocused();
   await page.unroute("**/api/admin/posts/*/revisions/*/restore");
   let releaseRestore: (() => void) | undefined;
