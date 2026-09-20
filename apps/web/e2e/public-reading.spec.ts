@@ -260,7 +260,9 @@ test("published permalink is a safe focused technical reading surface and every 
   await expect(body.locator("blockquote")).toBeVisible();
   await expect(body.locator("table")).toBeVisible();
   await expect(body.getByRole("link", { name: "Safe documentation" })).toHaveAttribute("href", "https://example.com/docs");
-  await expect(body.locator("pre.shiki")).toBeVisible();
+  await expect(body.locator("pre.shiki")).toHaveCount(2);
+  await expect(body.locator("pre.shiki").first()).toBeVisible();
+  await expect(body.locator("pre.shiki").last()).toBeVisible();
   await expect(body.locator("script, style, [data-hostile], [onerror], [onclick]")).toHaveCount(0);
   await expect(body.getByText("Unsafe destination")).not.toHaveAttribute("href", /^(?:javascript|data):/i);
   await expect.poll(() => beacons.length).toBe(1);
