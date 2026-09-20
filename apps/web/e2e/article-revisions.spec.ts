@@ -39,10 +39,49 @@ test("administrator compares and restores a bounded article history without rend
     await page.setViewportSize(viewport);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   }
-  await page.getByRole("button", { name: "恢复此版本" }).click();
+  const restoreButton = page.getByRole("button", { name: "恢复此版本" });
+  await restoreButton.click();
   const dialog = page.getByRole("dialog", { name: /确认恢复此历史版本/ });
   await expect(dialog).toContainText("当前内容会先保存为新的历史版本");
-  await dialog.getByRole("button", { name: "确认恢复" }).click();
+  const restoreConfirm = dialog.getByRole("button", { name: "确认恢复" });
+  const restoreCancel = dialog.getByRole("button", { name: "取消" });
+  await expect(restoreCancel).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(restoreConfirm).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(restoreCancel).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(restoreButton).toBeFocused();
+  await restoreButton.click();
+  await restoreCancel.click();
+  await expect(restoreButton).toBeFocused();
+  await page.route("**/api/admin/posts/*/revisions/*/restore", async (route) => {
+    await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "stale" }) });
+  });
+  await restoreButton.click();
+  await restoreConfirm.click();
+  await expect(page.getByRole("alert")).toHaveText("文章已被其他保存更新，请刷新后重新选择历史版本。");
+  await expect(restoreButton).toBeFocused();
+  await page.unroute("**/api/admin/posts/*/revisions/*/restore");
+  let releaseRestore: (() => void) | undefined;
+  let markRestoreRequestStarted: (() => void) | undefined;
+  const restoreRequestStarted = new Promise<void>((resolve) => {
+    markRestoreRequestStarted = resolve;
+  });
+  await page.route("**/api/admin/posts/*/revisions/*/restore", async (route) => {
+    markRestoreRequestStarted?.();
+    await new Promise<void>((release) => { releaseRestore = release; });
+    await route.continue();
+  });
+  await restoreButton.click();
+  await restoreConfirm.click();
+  await restoreRequestStarted;
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Tab");
+  await expect(dialog).toBeVisible();
+  releaseRestore?.();
+  await page.unroute("**/api/admin/posts/*/revisions/*/restore");
   await expect(page.getByLabel("标题")).toHaveValue("历史标题");
   await expect(page.getByLabel("Markdown")).toHaveValue(/<script>alert\(1\)<\/script>/);
   await expect(page.getByText("状态：草稿")).toBeVisible();
