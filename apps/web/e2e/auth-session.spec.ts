@@ -85,16 +85,22 @@ test("login, refresh, expiry, logout, and revoked-token reuse stay server-author
   await expect(page).toHaveURL(`${webOrigin}/login`);
 });
 
-test("authenticated admin routes expose their first-focus skip path at desktop and narrow widths", async ({ page }) => {
+test("authenticated admin routes expose a visible first-focus skip path at desktop and narrow widths", async ({ page }) => {
   await page.goto(`${webOrigin}/login`);
   expect((await login(page, password)).status()).toBe(200);
   await expect(page).toHaveURL(`${webOrigin}/admin`);
 
-  for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+  for (const [viewport, theme] of [
+    [{ width: 1280, height: 900 }, "light"],
+    [{ width: 390, height: 844 }, "dark"],
+  ] as const) {
     await page.setViewportSize(viewport);
     await page.goto(`${webOrigin}/admin`);
     const skipLink = page.getByRole("link", { name: "跳到管理内容" });
     const content = page.locator("#admin-content");
+    await page.evaluate((nextTheme) => { document.documentElement.dataset.theme = nextTheme; }, theme);
+    const dimensionsBefore = await content.evaluate((element) => ({ width: element.offsetWidth, height: element.offsetHeight }));
+    const noOverflowBefore = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
     expect(await skipLink.evaluate((element) => {
       const box = element.getBoundingClientRect();
       return box.bottom <= 0 || box.right <= 0 || box.left >= window.innerWidth || box.top >= window.innerHeight;
@@ -105,7 +111,19 @@ test("authenticated admin routes expose their first-focus skip path at desktop a
     expect(await skipLink.evaluate((element) => element.getBoundingClientRect().top >= 0)).toBe(true);
     await page.keyboard.press("Enter");
     await expect(content).toBeFocused();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    const focusState = await content.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        active: document.activeElement === element,
+        visibleOutline: style.outlineStyle !== "none" && Number.parseFloat(style.outlineWidth) > 0,
+        visibleInsetShadow: style.boxShadow !== "none" && /\binset\b/.test(style.boxShadow),
+      };
+    });
+    expect(focusState.active).toBe(true);
+    expect(focusState.visibleOutline || focusState.visibleInsetShadow).toBe(true);
+    expect(await content.evaluate((element) => ({ width: element.offsetWidth, height: element.offsetHeight }))).toEqual(dimensionsBefore);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(noOverflowBefore);
+    expect(noOverflowBefore).toBe(true);
   }
 
   await page.setViewportSize({ width: 1280, height: 900 });

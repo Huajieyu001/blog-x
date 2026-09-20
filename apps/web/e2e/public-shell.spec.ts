@@ -62,13 +62,19 @@ test("public shell does not fan out navigation prefetches", async ({ page }) => 
   expect(prefetches).toEqual([]);
 });
 
-test("public and login routes expose a first-focus skip path without responsive overflow", async ({ page }) => {
-  for (const viewport of [{ width: 1280, height: 900 }, { width: 375, height: 812 }]) {
+test("public and login routes expose a visible first-focus skip path without responsive overflow", async ({ page }) => {
+  for (const [viewport, theme] of [
+    [{ width: 1280, height: 900 }, "light"],
+    [{ width: 375, height: 812 }, "dark"],
+  ] as const) {
     await page.setViewportSize(viewport);
     for (const path of ["/", "/login"]) {
       await page.goto(`${webOrigin}${path}`);
       const skipLink = page.getByRole("link", { name: "跳到正文" });
       const content = page.locator("#main-content");
+      await page.evaluate((nextTheme) => { document.documentElement.dataset.theme = nextTheme; }, theme);
+      const dimensionsBefore = await content.evaluate((element) => ({ width: element.offsetWidth, height: element.offsetHeight }));
+      const noOverflowBefore = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
       expect(await skipLink.evaluate((element) => {
         const box = element.getBoundingClientRect();
         return box.bottom <= 0 || box.right <= 0 || box.left >= window.innerWidth || box.top >= window.innerHeight;
@@ -79,7 +85,19 @@ test("public and login routes expose a first-focus skip path without responsive 
       expect(await skipLink.evaluate((element) => element.getBoundingClientRect().top >= 0)).toBe(true);
       await page.keyboard.press("Enter");
       await expect(content).toBeFocused();
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+      const focusState = await content.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          active: document.activeElement === element,
+          visibleOutline: style.outlineStyle !== "none" && Number.parseFloat(style.outlineWidth) > 0,
+          visibleInsetShadow: style.boxShadow !== "none" && /\binset\b/.test(style.boxShadow),
+        };
+      });
+      expect(focusState.active).toBe(true);
+      expect(focusState.visibleOutline || focusState.visibleInsetShadow).toBe(true);
+      expect(await content.evaluate((element) => ({ width: element.offsetWidth, height: element.offsetHeight }))).toEqual(dimensionsBefore);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(noOverflowBefore);
+      expect(noOverflowBefore).toBe(true);
     }
   }
 });

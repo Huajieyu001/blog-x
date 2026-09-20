@@ -5,9 +5,10 @@ import test from "node:test";
 const read = (file) => readFile(new URL(file, import.meta.url), "utf8");
 
 test("root layout renders a responsive ICP footer and keyboard skip target for every route", async () => {
-  const [layout, css, contracts, skipLink, login, adminShell] = await Promise.all([
+  const [layout, css, adminCss, contracts, skipLink, login, adminShell] = await Promise.all([
     read("./layout.tsx"),
     read("./layout.module.css"),
+    read("./admin/admin-shell.module.css"),
     read("../../../packages/contracts/src/site-settings.ts"),
     read("./_components/SkipToContentLink.tsx"),
     read("./login/page.tsx"),
@@ -15,7 +16,7 @@ test("root layout renders a responsive ICP footer and keyboard skip target for e
   ]);
   assert.match(layout, /<footer className=\{styles\.icpFooter\}>/);
   assert.match(layout, /<a href="https:\/\/beian\.miit\.gov\.cn\/" target="_blank" rel="noopener noreferrer">\{site\.registrationNumber\}<\/a>/);
-  assert.match(layout, /<SkipToContentLink \/>\s*<PublicHeader siteName=\{site\.name\} \/>\s*<div id="main-content" tabIndex=\{-1\}>\{children\}<\/div>\s*<footer/s);
+  assert.match(layout, /<SkipToContentLink \/>\s*<PublicHeader siteName=\{site\.name\} \/>\s*<div id="main-content" className=\{styles\.mainContent\} tabIndex=\{-1\}>\{children\}<\/div>\s*<footer/s);
   assert.match(layout, /result\.kind === "ok" \? result\.data : defaultSiteSettings/);
   assert.match(skipLink, /usePathname/);
   assert.match(skipLink, /pathname\.startsWith\("\/admin"\)\) return null/);
@@ -30,6 +31,9 @@ test("root layout renders a responsive ICP footer and keyboard skip target for e
   assert.match(css, /:focus-visible/);
   assert.match(css, /\.skipLink \{[\s\S]*position: fixed;[\s\S]*z-index: 100;[\s\S]*translate: 0 -160%/);
   assert.match(css, /\.skipLink:focus-visible \{[\s\S]*translate: 0;[\s\S]*outline: 3px solid #17201d/);
+  assert.match(css, /\.mainContent:focus-visible \{[\s\S]*outline: 3px solid var\(--accent, #2d5e52\);[\s\S]*outline-offset: -3px/);
+  assert.match(adminCss, /\.content:focus-visible \{[\s\S]*outline: 3px solid var\(--accent, #2d5e52\);[\s\S]*outline-offset: -3px/);
+  assert.doesNotMatch(adminCss, /\.content:focus \{\s*outline: none;\s*\}/);
 });
 
 test("Next security headers retain only the required development CSP exception", async () => {

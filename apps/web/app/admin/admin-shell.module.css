@@ -78,7 +78,10 @@
 
 .mainColumn, .content { min-width: 0; }
 .content { min-height: 100vh; }
-.content:focus { outline: none; }
+.content:focus-visible {
+  outline: 3px solid var(--accent, #2d5e52);
+  outline-offset: -3px;
+}
 .mobileHeader, .backdrop { display: none; }
 
 @media (max-width: 1023px) {

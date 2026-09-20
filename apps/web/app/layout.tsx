@@ -29,7 +29,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
       <body>
         <SkipToContentLink />
         <PublicHeader siteName={site.name} />
-        <div id="main-content" tabIndex={-1}>{children}</div>
+        <div id="main-content" className={styles.mainContent} tabIndex={-1}>{children}</div>
         <footer className={styles.icpFooter}>
           {site.publicInfo ? <p>{site.publicInfo}</p> : null}
           <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">{site.registrationNumber}</a>

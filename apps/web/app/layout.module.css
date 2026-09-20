@@ -18,6 +18,11 @@
   outline-offset: 3px;
 }
 
+.mainContent:focus-visible {
+  outline: 3px solid var(--accent, #2d5e52);
+  outline-offset: -3px;
+}
+
 .icpFooter {
   box-sizing: border-box;
   width: min(100%, 72rem);
