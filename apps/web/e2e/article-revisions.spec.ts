@@ -81,8 +81,8 @@ test("administrator compares and restores a bounded article history without rend
   await page.keyboard.press("Tab");
   await expect(dialog).toBeVisible();
   releaseRestore?.();
-  await page.unroute("**/api/admin/posts/*/revisions/*/restore");
   await expect(page.getByLabel("标题")).toHaveValue("历史标题");
   await expect(page.getByLabel("Markdown")).toHaveValue(/<script>alert\(1\)<\/script>/);
   await expect(page.getByText("状态：草稿")).toBeVisible();
+  await page.unroute("**/api/admin/posts/*/revisions/*/restore");
 });
