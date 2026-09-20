@@ -85,6 +85,32 @@ test("login, refresh, expiry, logout, and revoked-token reuse stay server-author
   await expect(page).toHaveURL(`${webOrigin}/login`);
 });
 
+test("authenticated admin routes expose their first-focus skip path at desktop and narrow widths", async ({ page }) => {
+  await page.goto(`${webOrigin}/login`);
+  expect((await login(page, password)).status()).toBe(200);
+  await expect(page).toHaveURL(`${webOrigin}/admin`);
+
+  for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`${webOrigin}/admin`);
+    const skipLink = page.getByRole("link", { name: "跳到管理内容" });
+    const content = page.locator("#admin-content");
+    expect(await skipLink.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return box.bottom <= 0 || box.right <= 0 || box.left >= window.innerWidth || box.top >= window.innerHeight;
+    })).toBe(true);
+
+    await page.keyboard.press("Tab");
+    await expect(skipLink).toBeFocused();
+    expect(await skipLink.evaluate((element) => element.getBoundingClientRect().top >= 0)).toBe(true);
+    await page.keyboard.press("Enter");
+    await expect(content).toBeFocused();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  }
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+});
+
 test("password change requires a fresh sign-in and restores the generated fixture credential", async ({ page, context }) => {
   const replacementPassword = `temporary-password-${runId}-change`;
   let passwordChanged = false;

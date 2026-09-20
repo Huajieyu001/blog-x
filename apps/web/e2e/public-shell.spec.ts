@@ -62,6 +62,28 @@ test("public shell does not fan out navigation prefetches", async ({ page }) => 
   expect(prefetches).toEqual([]);
 });
 
+test("public and login routes expose a first-focus skip path without responsive overflow", async ({ page }) => {
+  for (const viewport of [{ width: 1280, height: 900 }, { width: 375, height: 812 }]) {
+    await page.setViewportSize(viewport);
+    for (const path of ["/", "/login"]) {
+      await page.goto(`${webOrigin}${path}`);
+      const skipLink = page.getByRole("link", { name: "跳到正文" });
+      const content = page.locator("#main-content");
+      expect(await skipLink.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        return box.bottom <= 0 || box.right <= 0 || box.left >= window.innerWidth || box.top >= window.innerHeight;
+      })).toBe(true);
+
+      await page.keyboard.press("Tab");
+      await expect(skipLink).toBeFocused();
+      expect(await skipLink.evaluate((element) => element.getBoundingClientRect().top >= 0)).toBe(true);
+      await page.keyboard.press("Enter");
+      await expect(content).toBeFocused();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    }
+  }
+});
+
 test("shared public shell preserves ordered navigation, theme preference, and responsive keyboard access", async ({ page, browser }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${webOrigin}/`);

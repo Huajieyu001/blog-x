@@ -18,8 +18,13 @@
   color: #17201d;
   background: #d7eee5;
   font-weight: 700;
+  text-decoration: none;
 }
-.skipLink:focus { translate: 0; }
+.skipLink:focus-visible {
+  translate: 0;
+  outline: 3px solid #fff;
+  outline-offset: 3px;
+}
 
 .sidebar {
   position: sticky;
