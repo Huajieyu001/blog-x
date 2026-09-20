@@ -6,7 +6,7 @@ import {
   type ArticleRevisionDetail,
   type ArticleRevisionSummary,
 } from "@blog-x/contracts";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import styles from "../admin.module.css";
 
 type DetailState =
@@ -47,6 +47,49 @@ export default function ArticleRevisionHistory({
   const [confirmingRestore, setConfirmingRestore] = useState<string | null>(null);
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const restoreTrigger = useRef<HTMLButtonElement | null>(null);
+  const restoreDialog = useRef<HTMLDivElement | null>(null);
+  const cancelRestoreAction = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!confirmingRestore) return;
+    const frame = window.requestAnimationFrame(() => cancelRestoreAction.current?.focus());
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !restoring) {
+        event.preventDefault();
+        closeRestoreDialog();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const buttons = Array.from(restoreDialog.current?.querySelectorAll<HTMLButtonElement>("button:not([disabled])") ?? []);
+      if (!buttons.length) {
+        event.preventDefault();
+        return;
+      }
+      const first = buttons[0];
+      const last = buttons.at(-1)!;
+      if (!restoreDialog.current?.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [confirmingRestore, restoring]);
+
+  function closeRestoreDialog() {
+    setConfirmingRestore(null);
+    window.requestAnimationFrame(() => restoreTrigger.current?.focus());
+  }
 
   async function inspect(revision: ArticleRevisionSummary) {
     setDetail({ kind: "loading", id: revision.id });
@@ -78,10 +121,10 @@ export default function ArticleRevisionHistory({
       if (!response.ok) throw new Error("restore_failed");
       window.location.reload();
     } catch (error) {
-      setConfirmingRestore(null);
       setRestoreError(error instanceof Error && error.message === "stale"
         ? "文章已被其他保存更新，请刷新后重新选择历史版本。"
         : "恢复失败，当前内容未被更改。请稍后重试。");
+      closeRestoreDialog();
     } finally {
       setRestoring(false);
     }
@@ -132,14 +175,14 @@ export default function ArticleRevisionHistory({
           </div>
           <div className={styles.revisionRestore}>
             {confirmingRestore === detail.detail.revision.id ? (
-              <div className={styles.restoreDialog} role="dialog" aria-modal="true" aria-labelledby="revision-restore-confirmation">
+              <div ref={restoreDialog} className={styles.restoreDialog} role="dialog" aria-modal="true" aria-labelledby="revision-restore-confirmation">
                 <p id="revision-restore-confirmation">确认恢复此历史版本吗？当前内容会先保存为新的历史版本，恢复后的文章将回到草稿。</p>
                 <div className={styles.restoreDialogActions}>
                   <button type="button" className={styles.restoreConfirm} disabled={restoring} onClick={() => void restore(detail.detail.revision.id)}>{restoring ? "正在恢复…" : "确认恢复"}</button>
-                  <button type="button" disabled={restoring} onClick={() => setConfirmingRestore(null)}>取消</button>
+                  <button ref={cancelRestoreAction} type="button" disabled={restoring} onClick={closeRestoreDialog}>取消</button>
                 </div>
               </div>
-            ) : <button className={styles.restoreButton} type="button" onClick={() => setConfirmingRestore(detail.detail.revision.id)}>恢复此版本</button>}
+            ) : <button ref={restoreTrigger} className={styles.restoreButton} type="button" onClick={(event) => { restoreTrigger.current = event.currentTarget; setConfirmingRestore(detail.detail.revision.id); }}>恢复此版本</button>}
           </div>
         </section>
       ) : null}
