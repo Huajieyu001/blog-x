@@ -69,7 +69,7 @@ export default async function PublicArticlePage({ params }: { params: Promise<{ 
           data-testid="article-content"
         >
           <ArticleToc entries={article.toc} />
-          <ArticleBody renderedHtml={article.renderedHtml} />
+          <ArticleBody renderedHtml={article.renderedHtml} enableCodeCopy />
         </div>
         {relatedResult.kind === "ok" && relatedItems.length > 0 ? (
           <section className={styles.relatedSection} data-testid="related-reading" aria-labelledby="related-heading">
