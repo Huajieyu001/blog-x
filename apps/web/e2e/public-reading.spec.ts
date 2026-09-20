@@ -56,6 +56,10 @@ test("published permalink is a safe focused technical reading surface and every 
     "console.log(intentionallyLongValue);",
     "```",
     "",
+    "```bash",
+    "printf 'second fenced block'",
+    "```",
+    "",
     "<script data-hostile=\"true\">window.hostile = true</script>",
     "<style>body { display: none }</style>",
     "[Unsafe destination](javascript:alert(1))",
@@ -72,6 +76,9 @@ test("published permalink is a safe focused technical reading surface and every 
   await expect(categories.getByRole("status")).toHaveText("分类已创建。");
 
   await createDraft(page, { title: publishedTitle, summary: "A concise introduction to the reading surface.", slug: slugs.published, markdown, category: categoryName });
+  const editorPreview = page.getByTestId("markdown-preview");
+  await expect(editorPreview.locator("pre")).toHaveCount(2);
+  await expect(editorPreview.getByRole("button", { name: /复制代码块/ })).toHaveCount(0);
   await page.getByRole("button", { name: "发布" }).click();
   await expect(page.getByText("状态：已发布")).toBeVisible();
 
@@ -125,6 +132,23 @@ test("published permalink is a safe focused technical reading surface and every 
   const copyStatus = page.getByRole("status", { name: "复制文章链接状态" });
   await expect(copyButton).toHaveCount(1);
   await expect(copyStatus).toHaveCount(1);
+  const body = page.getByTestId("article-body");
+  const codeCopyButtons = body.getByRole("button", { name: /^复制代码块 [12]$/ });
+  const codeCopyStatuses = body.getByRole("status", { name: /^代码块 [12] 复制状态$/ });
+  await expect(body.locator("[data-code-copy-block]")).toHaveCount(2);
+  await expect(codeCopyButtons).toHaveCount(2);
+  await expect(codeCopyStatuses).toHaveCount(2);
+  const codeTexts = await body.locator("pre").evaluateAll((blocks) => blocks.map((block) => block.textContent ?? ""));
+  expect(codeTexts).toHaveLength(2);
+  await codeCopyButtons.first().focus();
+  const desktopCodeCopyButton = await codeCopyButtons.first().evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { height: element.getBoundingClientRect().height, focusVisible: element.matches(":focus-visible"), outlineStyle: style.outlineStyle, outlineWidth: Number.parseFloat(style.outlineWidth) };
+  });
+  expect(desktopCodeCopyButton.height).toBeGreaterThanOrEqual(44);
+  expect(desktopCodeCopyButton.focusVisible).toBe(true);
+  expect(desktopCodeCopyButton.outlineStyle).not.toBe("none");
+  expect(desktopCodeCopyButton.outlineWidth).toBeGreaterThanOrEqual(2);
   await copyButton.focus();
   const copyButtonFocus = await copyButton.evaluate((element) => {
     const style = getComputedStyle(element);
@@ -164,6 +188,9 @@ test("published permalink is a safe focused technical reading surface and every 
   await copyButton.click();
   await expect(copyStatus).toHaveText("文章链接已复制。");
   expect(await page.evaluate(() => (window as typeof window & { copyArticleLinkCalls?: string[] }).copyArticleLinkCalls)).toEqual([canonicalHref]);
+  await codeCopyButtons.nth(1).click();
+  await expect(codeCopyStatuses.nth(1)).toHaveText("代码已复制。");
+  expect(await page.evaluate(() => (window as typeof window & { copyArticleLinkCalls?: string[] }).copyArticleLinkCalls)).toEqual([canonicalHref, codeTexts[1]]);
 
   await page.evaluate(() => {
     const view = window as typeof window & { copyArticleLinkFallbacks?: string[] };
@@ -172,21 +199,28 @@ test("published permalink is a safe focused technical reading surface and every 
       value: { writeText: () => Promise.reject(new Error("clipboard denied")) },
     });
     Document.prototype.execCommand = (command) => {
-      view.copyArticleLinkFallbacks?.push(document.querySelector<HTMLTextAreaElement>("[data-copy-article-link-fallback]")?.value ?? "");
+      view.copyArticleLinkFallbacks?.push(document.querySelector<HTMLTextAreaElement>("[data-clipboard-fallback]")?.value ?? "");
       return command === "copy";
     };
   });
   await copyButton.click();
   await expect(copyStatus).toHaveText("文章链接已复制。");
   expect(await page.evaluate(() => (window as typeof window & { copyArticleLinkFallbacks?: string[] }).copyArticleLinkFallbacks)).toEqual([canonicalHref]);
-  await expect(page.locator("[data-copy-article-link-fallback]")).toHaveCount(0);
+  await expect(page.locator("[data-clipboard-fallback]")).toHaveCount(0);
+  await codeCopyButtons.first().click();
+  await expect(codeCopyStatuses.first()).toHaveText("代码已复制。");
+  expect(await page.evaluate(() => (window as typeof window & { copyArticleLinkFallbacks?: string[] }).copyArticleLinkFallbacks)).toEqual([canonicalHref, codeTexts[0]]);
+  await expect(page.locator("[data-clipboard-fallback]")).toHaveCount(0);
 
   await page.evaluate(() => {
     Document.prototype.execCommand = () => false;
   });
   await copyButton.click();
   await expect(copyStatus).toHaveText("复制失败，请手动复制浏览器地址栏中的链接。");
-  await expect(page.locator("[data-copy-article-link-fallback]")).toHaveCount(0);
+  await expect(page.locator("[data-clipboard-fallback]")).toHaveCount(0);
+  await codeCopyButtons.first().click();
+  await expect(codeCopyStatuses.first()).toHaveText("复制失败，请手动选择代码并复制。");
+  await expect(page.locator("[data-clipboard-fallback]")).toHaveCount(0);
 
   await page.evaluate(() => {
     Document.prototype.execCommand = () => {
@@ -195,7 +229,10 @@ test("published permalink is a safe focused technical reading surface and every 
   });
   await copyButton.click();
   await expect(copyStatus).toHaveText("复制失败，请手动复制浏览器地址栏中的链接。");
-  await expect(page.locator("[data-copy-article-link-fallback]")).toHaveCount(0);
+  await expect(page.locator("[data-clipboard-fallback]")).toHaveCount(0);
+  await codeCopyButtons.nth(1).click();
+  await expect(codeCopyStatuses.nth(1)).toHaveText("复制失败，请手动选择代码并复制。");
+  await expect(page.locator("[data-clipboard-fallback]")).toHaveCount(0);
   await page.evaluate(() => {
     const view = window as typeof window & {
       copyArticleLinkClipboardDescriptor?: PropertyDescriptor;
@@ -214,7 +251,11 @@ test("published permalink is a safe focused technical reading surface and every 
     delete view.copyArticleLinkCalls;
     delete view.copyArticleLinkFallbacks;
   });
-  const body = page.getByTestId("article-body");
+  await page.goto(`${webOrigin}/about`);
+  await expect(page.locator("[data-code-copy-block], [data-clipboard-fallback]")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /复制代码块/ })).toHaveCount(0);
+  await page.goto(`${webOrigin}/posts/${slugs.published}`);
+  await expect(body.locator("[data-code-copy-block]")).toHaveCount(2);
   await expect(body.getByRole("heading", { level: 2, name: "Reliable rendering" })).toBeVisible();
   await expect(body.locator("blockquote")).toBeVisible();
   await expect(body.locator("table")).toBeVisible();
@@ -237,7 +278,7 @@ test("published permalink is a safe focused technical reading surface and every 
   await expect(page).toHaveURL(`${webOrigin}/posts/${slugs.related}`);
   await expect(page.getByRole("heading", { level: 1, name: relatedTitle })).toBeVisible();
   await expect.poll(() => beacons.filter((beacon) => beacon.slug === slugs.related).length).toBe(1);
-  expect(beacons.filter((beacon) => beacon.slug === slugs.published)).toHaveLength(1);
+  expect(beacons.filter((beacon) => beacon.slug === slugs.published)).toHaveLength(2);
   const firstBeaconResponse = await firstBeaconResponsePromise;
   const firstBeaconHeaders = await firstBeaconResponse.request().allHeaders();
   expect(firstBeaconHeaders.cookie).toBeUndefined();
@@ -251,7 +292,7 @@ test("published permalink is a safe focused technical reading surface and every 
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${webOrigin}/posts/${slugs.published}`);
-  await expect.poll(() => beacons.filter((beacon) => beacon.slug === slugs.published).length).toBe(2);
+  await expect.poll(() => beacons.filter((beacon) => beacon.slug === slugs.published).length).toBe(3);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await expect(copyButton).toBeVisible();
   expect(await copyButton.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
@@ -263,6 +304,20 @@ test("published permalink is a safe focused technical reading surface and every 
   expect(articleBox).not.toBeNull();
   expect(articleBox!.x).toBeGreaterThanOrEqual(0);
   expect(articleBox!.x + articleBox!.width).toBeLessThanOrEqual(390);
+  const narrowCodeCopyButtons = body.getByRole("button", { name: /^复制代码块 [12]$/ });
+  await expect(narrowCodeCopyButtons).toHaveCount(2);
+  await narrowCodeCopyButtons.first().focus();
+  const narrowCodeCopyButton = await narrowCodeCopyButtons.first().evaluate((element) => {
+    const style = getComputedStyle(element);
+    const box = element.getBoundingClientRect();
+    return { height: box.height, x: box.x, right: box.right, focusVisible: element.matches(":focus-visible"), outlineStyle: style.outlineStyle, outlineWidth: Number.parseFloat(style.outlineWidth) };
+  });
+  expect(narrowCodeCopyButton.height).toBeGreaterThanOrEqual(44);
+  expect(narrowCodeCopyButton.x).toBeGreaterThanOrEqual(0);
+  expect(narrowCodeCopyButton.right).toBeLessThanOrEqual(390);
+  expect(narrowCodeCopyButton.focusVisible).toBe(true);
+  expect(narrowCodeCopyButton.outlineStyle).not.toBe("none");
+  expect(narrowCodeCopyButton.outlineWidth).toBeGreaterThanOrEqual(2);
   expect(await body.locator("pre").evaluate((element) => element.scrollWidth >= element.clientWidth)).toBe(true);
   expect(await body.locator("table").evaluate((element) => element.scrollWidth >= element.clientWidth)).toBe(true);
 
@@ -273,6 +328,6 @@ test("published permalink is a safe focused technical reading surface and every 
     await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(0);
     unavailableBodies.push((await page.locator("body").innerText()).replace(/\s+/g, " ").trim());
   }
-  expect(beacons).toHaveLength(3);
+  expect(beacons).toHaveLength(4);
   expect(new Set(unavailableBodies).size).toBe(1);
 });
