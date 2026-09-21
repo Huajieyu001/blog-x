@@ -126,6 +126,7 @@ test("dashboard keeps its authoring hierarchy and visible static actions", async
   await expect.poll(() => page.url()).toBe(`${webOrigin}/admin?status=published&sort=title#articles`);
   await expect(articleSearch).toHaveValue("");
   await expect(articleSearch).toBeFocused();
+  await expect(page.getByRole("link", { name: /已发布.*查看文章/ })).toHaveAttribute("href", "/admin?status=published&sort=title#articles");
 
   await articleSearch.fill(normalizedQuery);
   await expect.poll(() => page.url()).toBe(`${webOrigin}/admin?q=${encodedQuery}&status=published&sort=title#articles`);

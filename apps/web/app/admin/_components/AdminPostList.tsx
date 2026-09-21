@@ -1,6 +1,7 @@
 "use client";
 
 import type { AdminPost } from "@blog-x/contracts";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "../admin.module.css";
 import ArticleActions from "./ArticleActions";
@@ -26,6 +27,57 @@ const queryMaximumLength = 160;
 
 function canonicalQuery(value: string) {
   return value.normalize("NFC").trim().slice(0, queryMaximumLength);
+}
+
+function parseFilter(values: string[]) {
+  return values.length === 1 && ["published", "draft", "unpublished", "scheduled"].includes(values[0]) ? values[0] as PostFilter : "all";
+}
+
+function parseSort(values: string[]) {
+  return values.length === 1 && ["oldest", "title"].includes(values[0]) ? values[0] as PostSort : "recent";
+}
+
+function parseQuery(values: string[]) {
+  return values.length === 1 ? canonicalQuery(values[0]) : "";
+}
+
+function adminListHref(nextQuery: string, nextFilter: PostFilter, nextSort: PostSort) {
+  const parameters = new URLSearchParams();
+  const normalizedQuery = canonicalQuery(nextQuery);
+  if (normalizedQuery) parameters.set("q", normalizedQuery);
+  if (nextFilter !== "all") parameters.set("status", nextFilter);
+  if (nextSort !== "recent") parameters.set("sort", nextSort);
+  const queryString = parameters.toString();
+  return `/admin${queryString ? `?${queryString}` : ""}#articles`;
+}
+
+export function AdminOverviewCards({
+  publishedCount,
+  draftCount,
+  unpublishedCount,
+  scheduledCount,
+  initialFilter,
+  initialSort,
+  initialQuery,
+}: {
+  publishedCount: number;
+  draftCount: number;
+  unpublishedCount: number;
+  scheduledCount: number;
+  initialFilter: PostFilter;
+  initialSort: PostSort;
+  initialQuery: string;
+}) {
+  const parameters = useSearchParams();
+  const filter = parameters ? parseFilter(parameters.getAll("status")) : initialFilter;
+  const sort = parameters ? parseSort(parameters.getAll("sort")) : initialSort;
+  const query = parameters ? parseQuery(parameters.getAll("q")) : initialQuery;
+
+  return <div className={styles.overviewCards}>
+    <a className={styles.overviewCard} href={adminListHref(query, "published", sort)} aria-current={filter === "published" ? "true" : undefined}><h3>已发布</h3><strong>{publishedCount}</strong><p>当前对访客可见</p><span>查看文章 →</span></a>
+    <a className={styles.overviewCard} href={adminListHref(query, "draft", sort)} aria-current={filter === "draft" ? "true" : undefined}><h3>草稿</h3><strong>{draftCount}</strong><p>{scheduledCount > 0 ? `其中 ${scheduledCount} 篇已预约` : "等待继续编辑"}</p><span>继续整理 →</span></a>
+    <a className={styles.overviewCard} href={adminListHref(query, "unpublished", sort)} aria-current={filter === "unpublished" ? "true" : undefined}><h3>已下线</h3><strong>{unpublishedCount}</strong><p>保留内容，暂不公开</p><span>查看文章 →</span></a>
+  </div>;
 }
 
 export default function AdminPostList({ posts, initialFilter = "all", initialSort = "recent", initialQuery = "" }: { posts: AdminPost[]; initialFilter?: PostFilter; initialSort?: PostSort; initialQuery?: string }) {
@@ -74,13 +126,7 @@ export default function AdminPostList({ posts, initialFilter = "all", initialSor
   }, [filter, query, records, sort]);
 
   function listHref(nextQuery: string, nextFilter: PostFilter, nextSort: PostSort) {
-    const parameters = new URLSearchParams();
-    const normalizedQuery = canonicalQuery(nextQuery);
-    if (normalizedQuery) parameters.set("q", normalizedQuery);
-    if (nextFilter !== "all") parameters.set("status", nextFilter);
-    if (nextSort !== "recent") parameters.set("sort", nextSort);
-    const queryString = parameters.toString();
-    return `/admin${queryString ? `?${queryString}` : ""}#articles`;
+    return adminListHref(nextQuery, nextFilter, nextSort);
   }
 
   function cancelQueryUpdate() {
