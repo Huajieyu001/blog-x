@@ -31,27 +31,39 @@ test("site settings preserve the fixed ICP default, authenticate mutations, audi
   assert.equal(defaultPublic.statusCode, 200);
   assert.deepEqual(defaultPublic.json(), { name: "Blog X", description: "记录代码、系统与长期实践。", publicInfo: "", registrationNumber: "黔ICP备2023015906号", registrationUrl: "https://beian.miit.gov.cn/" });
   assert.equal((await app.inject({ method: "GET", url: "/admin/site-settings" })).statusCode, 401);
+  const anonymousMutation = await app.inject({ method: "POST", url: "/admin/site-settings", headers: { origin, "content-type": "application/json" }, payload: { name: "anonymous", description: "", publicInfo: "", version: null } });
+  assert.equal(anonymousMutation.statusCode, 401);
   const login = await app.inject({ method: "POST", url: "/auth/login", headers: { origin }, payload: { username, password } });
   const headers = { origin, cookie: sessionCookie(String(login.headers["set-cookie"])), "content-type": "application/json" };
   const blocked = await app.inject({ method: "POST", url: "/admin/site-settings", headers: { ...headers, origin: "https://wrong.invalid" }, payload: { name: "Wrong", description: "", publicInfo: "", version: null } });
   assert.equal(blocked.statusCode, 403);
+  const invalidContentType = await app.inject({ method: "POST", url: "/admin/site-settings", headers: { origin, cookie: headers.cookie, "content-type": "text/plain" }, payload: "not-json" });
+  assert.equal(invalidContentType.statusCode, 415);
   const saved = await app.inject({ method: "POST", url: "/admin/site-settings", headers, payload: { name: "我的博客", description: "可靠的公开阅读", publicInfo: "长期维护", version: null } });
   assert.equal(saved.statusCode, 200, saved.body);
-  assert.equal(saved.json().registrationNumber, "黔ICP备2023015906号");
-  assert.equal(saved.json().registrationUrl, "https://beian.miit.gov.cn/");
+  const savedSettings = saved.json();
+  assert.deepEqual(Object.keys(savedSettings).sort(), ["description", "id", "name", "publicInfo", "registrationNumber", "registrationUrl", "version"]);
+  assert.equal(savedSettings.registrationNumber, "黔ICP备2023015906号");
+  assert.equal(savedSettings.registrationUrl, "https://beian.miit.gov.cn/");
+  const updatedPublic = await app.inject({ method: "GET", url: "/public/site-settings" });
+  assert.equal(updatedPublic.statusCode, 200);
+  assert.equal(updatedPublic.headers["cache-control"], "no-store");
+  assert.deepEqual(updatedPublic.json(), { name: "我的博客", description: "可靠的公开阅读", publicInfo: "长期维护", registrationNumber: "黔ICP备2023015906号", registrationUrl: "https://beian.miit.gov.cn/" });
   const missingMedia = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
   const rejectedMediaReference = await app.inject({
     method: "POST",
     url: "/admin/site-settings",
     headers,
-    payload: { name: "我的博客", description: "可靠的公开阅读", publicInfo: `/media/${missingMedia}`, version: saved.json().version },
+    payload: { name: "我的博客", description: "可靠的公开阅读", publicInfo: `/media/${missingMedia}`, version: savedSettings.version },
   });
   assert.ok(rejectedMediaReference.statusCode >= 400, rejectedMediaReference.body);
   assert.equal((await app.inject({ method: "GET", url: "/admin/site-settings", headers: { cookie: headers.cookie } })).json().publicInfo, "长期维护");
   const stale = await app.inject({ method: "POST", url: "/admin/site-settings", headers, payload: { name: "stale", description: "", publicInfo: "", version: null } });
   assert.equal(stale.statusCode, 409);
-  const injectedRegistration = await app.inject({ method: "POST", url: "/admin/site-settings", headers, payload: { name: "我的博客", description: "可靠的公开阅读", publicInfo: "长期维护", version: saved.json().version, registrationNumber: "remove-me" } });
+  const injectedRegistration = await app.inject({ method: "POST", url: "/admin/site-settings", headers, payload: { name: "我的博客", description: "可靠的公开阅读", publicInfo: "长期维护", version: savedSettings.version, registrationNumber: "remove-me" } });
   assert.equal(injectedRegistration.statusCode, 400);
+  const injectedRegistrationUrl = await app.inject({ method: "POST", url: "/admin/site-settings", headers, payload: { name: "我的博客", description: "可靠的公开阅读", publicInfo: "长期维护", version: savedSettings.version, registrationUrl: "https://wrong.invalid/" } });
+  assert.equal(injectedRegistrationUrl.statusCode, 400);
   const audit = await pool.query<{ event: string; target_type: string; metadata: Record<string, unknown> }>("select event, target_type, metadata from audit_events where event = 'site_settings.updated'");
   assert.deepEqual(audit.rows, [{ event: "site_settings.updated", target_type: "site_settings", metadata: { changedFields: ["name", "description", "publicInfo"] } }]);
   assert.equal(JSON.stringify(audit.rows).includes("我的博客"), false);
