@@ -633,7 +633,7 @@ export default function ArticleEditor({
         <div className={styles.editorHeaderActions}>
           <Link className={styles.secondaryLink} href="/admin#articles">返回文章管理</Link>
           <button ref={saveButtonRef} className={styles.primaryButton} type="button" disabled={saving || Boolean(pendingRecovery)} aria-keyshortcuts="Control+S Meta+S" aria-describedby="editor-save-shortcut" onClick={() => { void save(); }}>{saving ? "保存中…" : (postId ? "保存更改" : "保存草稿")}</button>
-          <span id="editor-save-shortcut" className={styles.saveShortcutHint}>快捷键：Cmd/Ctrl + S</span>
+          <span id="editor-save-shortcut" className={styles.saveShortcutHint}>快捷键：<kbd>Cmd/Ctrl</kbd> + <kbd>S</kbd></span>
         </div>
       </div>
       <div className={styles.editorFeedback}>
