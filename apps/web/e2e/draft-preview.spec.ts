@@ -25,7 +25,7 @@ test("administrator saves, recovers, and responsively previews a complete Markdo
   await page.getByLabel("标题").fill(immediateTitle);
   await page.getByLabel("Markdown").fill(immediateMarkdown);
   await page.getByRole("link", { name: "返回文章管理" }).click();
-  await expect(page).toHaveURL(`${webOrigin}/admin`);
+  await expect(page).toHaveURL(`${webOrigin}/admin#articles`);
   await page.goto(`${webOrigin}/admin/new`);
   const immediateRecovery = page.getByTestId("editor-recovery-notice");
   await expect(immediateRecovery.getByRole("heading", { name: "发现未保存的内容" })).toBeVisible();
@@ -38,13 +38,13 @@ test("administrator saves, recovers, and responsively previews a complete Markdo
   await page.getByLabel("标题").fill("将被放弃的立即恢复标题");
   await page.getByLabel("Markdown").fill("# 将被放弃的立即恢复正文");
   await page.getByRole("link", { name: "返回文章管理" }).click();
-  await expect(page).toHaveURL(`${webOrigin}/admin`);
+  await expect(page).toHaveURL(`${webOrigin}/admin#articles`);
   await page.goto(`${webOrigin}/admin/new`);
   await expect(immediateRecovery).toBeVisible();
   await immediateRecovery.getByRole("button", { name: "放弃副本" }).click();
   await expect(immediateRecovery).toHaveCount(0);
   await page.getByRole("link", { name: "返回文章管理" }).click();
-  await expect(page).toHaveURL(`${webOrigin}/admin`);
+  await expect(page).toHaveURL(`${webOrigin}/admin#articles`);
   await page.goto(`${webOrigin}/admin/new`);
   await expect(page.getByTestId("editor-recovery-notice")).toHaveCount(0);
 
