@@ -12,6 +12,7 @@ export async function applySafeRetention({ transport, retentionPolicyId, minimum
     if (!item?.receipt || item.receipt.destinationProfileId !== transport.destinationProfileId || !item.receipt.ciphertextSha256 || !item.receiptSha256) fail("catalog receipt is ambiguous");
   }
   const sorted = [...catalog].sort((left, right) => left.setId.localeCompare(right.setId));
+  if (sorted.length < minimumKnownGood) fail("catalog is below the minimum known-good set count");
   const deletions = sorted.slice(0, Math.max(0, sorted.length - maximumSets));
   const deletedSetIds = [];
   for (const entry of deletions) {

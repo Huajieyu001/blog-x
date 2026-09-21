@@ -396,6 +396,7 @@ test("encrypted mounted read-back authenticates before staging and restores only
 test("receipt-gated retention preserves the minimum known-good ciphertext and deletes nothing on catalog ambiguity", async (context) => {
   const input = await adapterFixture(context, "i1b2c3d4");
   const transport = await createMountedDirectoryTransport(input.destination, { inspectMount: async (root) => ({ isMountPoint: true, root }) });
+  await assert.rejects(applySafeRetention({ transport, retentionPolicyId: "daily-v1", minimumKnownGood: 1, maximumSets: 2 }), /minimum known-good/i);
   const transfer = async (setId) => {
     const ciphertext = Buffer.from(`ciphertext-${setId}`);
     const digest = sha(ciphertext);
@@ -436,8 +437,8 @@ test("pipeline loads only a protected external profile and rejects unsafe profil
 });
 
 test("pipeline unit contract remains dormant, strict, collect-then-adapt, and prohibition-fixture controlled", async () => {
-  const service = await readFile(new URL("../../ops/systemd/blog-x-backup.service", import.meta.url), "utf8");
-  const timer = await readFile(new URL("../../ops/systemd/blog-x-backup.timer", import.meta.url), "utf8");
+  const service = await readFile(new URL("../ops/blog-x-backup.service", import.meta.url), "utf8");
+  const timer = await readFile(new URL("../ops/blog-x-backup.timer", import.meta.url), "utf8");
   const names = JSON.parse(await readFile(new URL("../../ops/backup-policy.names.json", import.meta.url), "utf8"));
   assert.match(service, /production-pipeline\.mjs/);
   assert.match(service, /ConditionPathIsMountPoint=/);

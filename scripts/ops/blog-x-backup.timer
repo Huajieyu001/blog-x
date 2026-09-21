@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Blog X complete backup schedule
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=15m
+Unit=blog-x-backup.service
+
+[Install]
+WantedBy=timers.target
