@@ -292,6 +292,15 @@ test("site settings workspace remains responsive with its fixed ICP guidance", a
     await expect(footer.getByRole("link", { name: "黔ICP备2023015906号", exact: true })).toHaveAttribute("href", "https://beian.miit.gov.cn/");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   }
+
+  // Keep the generated shared browser authority deterministic for later
+  // metadata suites by restoring the public identity through the same UI.
+  await page.goto(`${webOrigin}/admin/settings`);
+  await page.getByLabel("站点名称").fill("Blog X");
+  await page.getByLabel("站点简介").fill("记录代码、系统与长期实践。");
+  await page.getByLabel("公开展示信息").fill("");
+  await page.getByRole("button", { name: "保存站点设置" }).click();
+  await expect(page.getByLabel("站点设置状态")).toHaveText("站点设置已保存。");
 });
 
 test("administrator shell is private, responsive, compact, and theme-aware", async ({ page }) => {
