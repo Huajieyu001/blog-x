@@ -4,6 +4,7 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "../db/schema.js";
 import { appendAuditEvent } from "../audit/audit-repository.js";
 import { publicPredicate } from "./public-repository.js";
+import { extractArticleMediaIds, lockRetainedMediaReferences } from "./media-reference-policy.js";
 type Database = NodePgDatabase<typeof schema>;
 export function createPageRepository(db: Database) {
   const about = () => db.select().from(schema.sitePages).where(eq(schema.sitePages.key, "about")).limit(1);
@@ -12,6 +13,7 @@ export function createPageRepository(db: Database) {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('blog-x-about'))`);
       const current = (await tx.select().from(schema.sitePages).where(eq(schema.sitePages.key, "about")).limit(1).for("update"))[0];
       if ((!current && input.version) || (current && input.version !== current.version.toISOString())) return { stale: true as const };
+      await lockRetainedMediaReferences(tx as Database, extractArticleMediaIds(input.markdown));
       const now = new Date(Math.max(Date.now(), (current?.version.getTime() ?? 0) + 1));
       const row = current
         ? (await tx.update(schema.sitePages).set({ title: input.title, markdown: input.markdown, status: "draft", version: now, updatedAt: now }).where(eq(schema.sitePages.id, current.id)).returning())[0]!

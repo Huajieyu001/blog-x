@@ -39,6 +39,15 @@ test("site settings preserve the fixed ICP default, authenticate mutations, audi
   assert.equal(saved.statusCode, 200, saved.body);
   assert.equal(saved.json().registrationNumber, "黔ICP备2023015906号");
   assert.equal(saved.json().registrationUrl, "https://beian.miit.gov.cn/");
+  const missingMedia = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const rejectedMediaReference = await app.inject({
+    method: "POST",
+    url: "/admin/site-settings",
+    headers,
+    payload: { name: "我的博客", description: "可靠的公开阅读", publicInfo: `/media/${missingMedia}`, version: saved.json().version },
+  });
+  assert.ok(rejectedMediaReference.statusCode >= 400, rejectedMediaReference.body);
+  assert.equal((await app.inject({ method: "GET", url: "/admin/site-settings", headers: { cookie: headers.cookie } })).json().publicInfo, "长期维护");
   const stale = await app.inject({ method: "POST", url: "/admin/site-settings", headers, payload: { name: "stale", description: "", publicInfo: "", version: null } });
   assert.equal(stale.statusCode, 409);
   const injectedRegistration = await app.inject({ method: "POST", url: "/admin/site-settings", headers, payload: { name: "我的博客", description: "可靠的公开阅读", publicInfo: "长期维护", version: saved.json().version, registrationNumber: "remove-me" } });

@@ -101,9 +101,9 @@ test("authenticated upload stores protected source and serves only the immutable
   const mediaRoot = await mkdtemp(join(tmpdir(), "blog-x-media-api-"));
   const pool = new Pool({ connectionString: databaseUrl });
   const db = drizzle({ client: pool, schema: { administrators, media, sessions } });
-  await pool.query("truncate table sessions, article_tags, articles, media, administrators cascade");
+  await pool.query("truncate table audit_events, sessions, article_tags, articles, media, site_pages, site_settings, administrators cascade");
   context.after(async () => {
-    await pool.query("truncate table sessions, article_tags, articles, media, administrators cascade");
+    await pool.query("truncate table audit_events, sessions, article_tags, articles, media, site_pages, site_settings, administrators cascade");
     await pool.end();
     await new LocalMediaStorage(mediaRoot).removeRoot();
   });
@@ -136,6 +136,8 @@ test("authenticated upload stores protected source and serves only the immutable
   const catalog = await app.inject({ method: "GET", url: `/admin/media?page=1&q=${uploaded.json().id.slice(0, 12)}`, headers: { cookie } });
   assert.equal(catalog.statusCode, 200, catalog.body);
   assert.deepEqual(catalog.json().items.map((item: { id: string }) => item.id), [uploaded.json().id], "partial UUID search is parameterized against the UUID text value");
+  assert.deepEqual(Object.keys(catalog.json().items[0]).sort(), ["createdAt", "height", "id", "mimeType", "referenceCount", "referenced", "url", "width"]);
+  assert.doesNotMatch(JSON.stringify(catalog.json()), /sourceKey|derivativeKey|private-name|mediaRoot/i);
   const exactCatalog = await app.inject({ method: "GET", url: `/admin/media?page=1&q=${uploaded.json().id}`, headers: { cookie } });
   assert.equal(exactCatalog.statusCode, 200);
   assert.deepEqual(exactCatalog.json().items.map((item: { id: string }) => item.id), [uploaded.json().id]);
@@ -188,6 +190,30 @@ test("authenticated upload stores protected source and serves only the immutable
     derivativeFiles: (await readdir(join(mediaRoot, "derivative"))).length,
   }, validBaseline, "invalid uploads leave the valid database and exact-file baseline unchanged");
 
+  const referencedId = uploaded.json().id as string;
+  await pool.query(
+    "insert into articles (title, summary, slug, markdown, status, deleted_at, cover_media_id, legacy_media_review) values ($1, '', $2, $3, 'draft', now(), $4, 'clear')",
+    ["private deleted owner", `retained-media-${Date.now()}`, `![same](/media/${referencedId})\n![again](/media/${referencedId})`, referencedId],
+  );
+  const about = await app.inject({
+    method: "POST",
+    url: "/admin/about",
+    headers: { origin, cookie, "content-type": "application/json" },
+    payload: { title: "About media owner", markdown: `![same](/media/${referencedId})`, version: null },
+  });
+  assert.equal(about.statusCode, 200, about.body);
+  const settings = await app.inject({
+    method: "POST",
+    url: "/admin/site-settings",
+    headers: { origin, cookie, "content-type": "application/json" },
+    payload: { name: "Media owner", description: "", publicInfo: `/media/${referencedId}`, version: null },
+  });
+  assert.equal(settings.statusCode, 200, settings.body);
+  const blockedDelete = await app.inject({ method: "DELETE", url: `/admin/media/${referencedId}`, headers: { origin, cookie } });
+  assert.equal(blockedDelete.statusCode, 409, blockedDelete.body);
+  assert.deepEqual(blockedDelete.json(), { error: "media_in_use", referenceCount: 3 });
+  assert.doesNotMatch(blockedDelete.body, /private deleted owner|About media owner|source\/|derivative\//i);
+
   const secondRecord = (await pool.query("select source_key, derivative_key from media where id = $1", [secondUpload.json().id])).rows[0];
   assert.ok(secondRecord, "the unreferenced second upload has durable storage authority before deletion");
   const deleted = await app.inject({ method: "DELETE", url: `/admin/media/${secondUpload.json().id}`, headers: { origin, cookie } });
@@ -229,7 +255,7 @@ test("media reference extraction counts only real Markdown image nodes once", ()
   assert.deepEqual([...ids].sort(), [first, second]);
 });
 
-test("settings references require an exact lower-case media path", () => {
+test("settings references conservatively retain exact lower-case root media paths", () => {
   const first = "00000000-0000-4000-8000-000000000001";
   const second = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
   const ids = extractSettingsMediaIds([
@@ -241,5 +267,5 @@ test("settings references require an exact lower-case media path", () => {
     `/media/${second.toUpperCase()}`,
     `/media/${second}?variant=large`,
   ]);
-  assert.deepEqual([...ids], [first]);
+  assert.deepEqual([...ids].sort(), [first, second]);
 });

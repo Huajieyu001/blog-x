@@ -3,6 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { appendAuditEvent } from "../audit/audit-repository.js";
 import * as schema from "../db/schema.js";
+import { extractSettingsMediaIds, lockRetainedMediaReferences } from "./media-reference-policy.js";
 
 type Database = NodePgDatabase<typeof schema>;
 type SiteSettingsInput = { name: string; description: string; publicInfo: string; version?: string | null };
@@ -15,6 +16,7 @@ export function createSiteSettingsRepository(db: Database) {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('blog-x-site-settings'))`);
       const current = (await tx.select().from(schema.siteSettings).where(eq(schema.siteSettings.singleton, true)).limit(1).for("update"))[0];
       if ((!current && input.version) || (current && input.version !== current.version.toISOString())) return { stale: true as const };
+      await lockRetainedMediaReferences(tx as Database, extractSettingsMediaIds([input.name, input.description, input.publicInfo]));
       const now = new Date(Math.max(Date.now(), (current?.version.getTime() ?? 0) + 1));
       const row = current
         ? (await tx.update(schema.siteSettings).set({ name: input.name, description: input.description, publicInfo: input.publicInfo, version: now, updatedAt: now }).where(eq(schema.siteSettings.id, current.id)).returning())[0]!
