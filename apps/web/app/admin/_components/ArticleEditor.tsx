@@ -134,6 +134,7 @@ export default function ArticleEditor({
   const previewSequence = useRef(0);
   const editSequence = useRef(0);
   const saveInFlight = useRef(false);
+  const saveRef = useRef<(confirmSlugChange?: boolean) => Promise<void>>(async () => {});
   const suppressRecoveryWrites = useRef(false);
   const fieldsRef = useRef(fields);
   const publishedAtCorrectionRef = useRef(publishedAtCorrection);
@@ -466,6 +467,18 @@ export default function ArticleEditor({
     }
   }
 
+  saveRef.current = save;
+
+  useEffect(() => {
+    const saveFromShortcut = (event: globalThis.KeyboardEvent) => {
+      if (event.isComposing || event.altKey || !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") return;
+      event.preventDefault();
+      void saveRef.current();
+    };
+    window.addEventListener("keydown", saveFromShortcut);
+    return () => window.removeEventListener("keydown", saveFromShortcut);
+  }, []);
+
   function lifecycleChanged(nextPost: AdminPost) {
     if (JSON.stringify(fieldsRef.current) !== baselineFields.current || publishedAtCorrectionRef.current) {
       setCurrentPost(nextPost);
@@ -618,7 +631,8 @@ export default function ArticleEditor({
         </div>
         <div className={styles.editorHeaderActions}>
           <Link className={styles.secondaryLink} href="/admin#articles">返回文章管理</Link>
-          <button ref={saveButtonRef} className={styles.primaryButton} type="button" disabled={saving || Boolean(pendingRecovery)} onClick={() => { void save(); }}>{saving ? "保存中…" : (postId ? "保存更改" : "保存草稿")}</button>
+          <button ref={saveButtonRef} className={styles.primaryButton} type="button" disabled={saving || Boolean(pendingRecovery)} aria-keyshortcuts="Control+S Meta+S" aria-describedby="editor-save-shortcut" onClick={() => { void save(); }}>{saving ? "保存中…" : (postId ? "保存更改" : "保存草稿")}</button>
+          <span id="editor-save-shortcut" className={styles.saveShortcutHint}>快捷键：Cmd/Ctrl + S</span>
         </div>
       </div>
       <div className={styles.editorFeedback}>

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 function requiredRunnerFact(name: string) {
   const value = process.env[name];
@@ -10,6 +10,22 @@ const username = requiredRunnerFact("E2E_ADMIN_USERNAME");
 const password = requiredRunnerFact("E2E_ADMIN_PASSWORD");
 const runId = requiredRunnerFact("E2E_RUN_ID");
 const webOrigin = requiredRunnerFact("E2E_WEB_ORIGIN");
+const saveShortcut = process.platform === "darwin" ? "Meta+S" : "Control+S";
+
+async function pressSaveShortcut(page: Page) {
+  await page.evaluate(() => {
+    delete document.body.dataset.saveShortcutDefaultPrevented;
+    const confirmDefaultWasPrevented = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "s") {
+        document.body.dataset.saveShortcutDefaultPrevented = String(event.defaultPrevented);
+        window.removeEventListener("keydown", confirmDefaultWasPrevented);
+      }
+    };
+    window.addEventListener("keydown", confirmDefaultWasPrevented);
+  });
+  await page.keyboard.press(saveShortcut);
+  await expect(page.locator("body")).toHaveAttribute("data-save-shortcut-default-prevented", "true");
+}
 
 test("administrator saves, recovers, and responsively previews a complete Markdown draft", async ({ page, context }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -57,6 +73,8 @@ test("administrator saves, recovers, and responsively previews a complete Markdo
   const recovery = page.getByTestId("editor-recovery-notice");
   await expect(recovery.getByRole("heading", { name: "发现未保存的内容" })).toBeVisible();
   await expect(page.locator("main button").filter({ hasText: "保存草稿" })).toBeDisabled();
+  await pressSaveShortcut(page);
+  await expect(recovery).toBeVisible();
   await expect(page.locator("#admin-content > main")).toHaveAttribute("inert", "");
   await expect(page.getByRole("button", { name: "退出登录" })).toHaveCount(0);
   await expect(recovery.getByRole("button", { name: "恢复内容" })).toBeFocused();
@@ -91,7 +109,11 @@ test("administrator saves, recovers, and responsively previews a complete Markdo
   await expect(page.getByTestId("editor-source")).toBeVisible();
   await expect(page.getByTestId("editor-preview-pane")).toBeVisible();
 
-  await page.getByRole("button", { name: "保存草稿" }).click();
+  const saveButton = page.getByRole("button", { name: "保存草稿" });
+  await expect(saveButton).toHaveAttribute("aria-keyshortcuts", "Control+S Meta+S");
+  await expect(saveButton).toHaveAttribute("aria-describedby", "editor-save-shortcut");
+  await expect(page.locator("#editor-save-shortcut")).toHaveText("快捷键：Cmd/Ctrl + S");
+  await pressSaveShortcut(page);
   await expect(page).toHaveURL(/\/admin\/posts\/[0-9a-f-]+$/);
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("草稿已保存");
   await page.reload();
@@ -102,22 +124,33 @@ test("administrator saves, recovers, and responsively previews a complete Markdo
   await expect(page.getByText("首次公开发布时间会在成功发布时由系统记录；预约发布时间请在下方“文章生命周期”中单独设置。")).toBeVisible();
   await expect(page.getByLabel("首次发布时间更正", { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("SEO 描述")).toHaveValue("完整元数据 SEO 描述");
+  await page.getByLabel("摘要").fill("通过快捷键保存的完整元数据摘要");
+  await pressSaveShortcut(page);
+  await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("更改已保存");
 
   let releaseSave!: () => void;
   let markSaveIntercepted!: () => void;
+  let saveRequestCount = 0;
   const saveGate = new Promise<void>((resolve) => { releaseSave = resolve; });
   const saveIntercepted = new Promise<void>((resolve) => { markSaveIntercepted = resolve; });
   const articleId = page.url().split("/").at(-1);
   await page.route(`${webOrigin}/api/admin/posts/${articleId}`, async (route) => {
+    saveRequestCount += 1;
+    if (saveRequestCount > 1) {
+      await route.abort();
+      return;
+    }
     markSaveIntercepted();
     await saveGate;
     await route.continue();
-  }, { times: 1 });
+  });
   try {
     await page.getByLabel("标题").fill("提交请求中的标题");
-    await page.getByRole("button", { name: "保存更改" }).click();
+    await pressSaveShortcut(page);
     await saveIntercepted;
     await expect(page.getByRole("button", { name: "保存中…" })).toBeDisabled();
+    await pressSaveShortcut(page);
+    await expect.poll(() => saveRequestCount).toBe(1);
     await page.getByLabel("标题").fill("请求期间继续输入的标题");
     releaseSave();
     await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("提交时的内容已保存；之后的编辑仍保留");
@@ -147,6 +180,11 @@ test("administrator saves, recovers, and responsively previews a complete Markdo
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("button", { name: "编辑" })).toBeVisible();
   await expect(page.getByRole("button", { name: "预览" })).toBeVisible();
+  await expect(page.locator("#editor-save-shortcut")).toHaveCSS("position", "absolute");
+  const mobileSaveButton = page.getByRole("button", { name: "保存更改" });
+  const mobileSaveBounds = await mobileSaveButton.boundingBox();
+  expect(mobileSaveBounds).not.toBeNull();
+  expect((mobileSaveBounds?.x ?? 0) + (mobileSaveBounds?.width ?? 0)).toBeLessThanOrEqual(390);
   const unsavedMarkdown = "# 尚未保存但不能丢失";
   await page.getByLabel("Markdown").fill(unsavedMarkdown);
   await expect(page.getByRole("status", { name: "恢复副本状态" })).toHaveText("未保存的更改已保存到本机恢复副本");
@@ -160,7 +198,7 @@ test("administrator saves, recovers, and responsively previews a complete Markdo
   await page.getByTestId("editor-recovery-notice").getByRole("button", { name: "恢复内容" }).click();
   await expect(page.getByLabel("Markdown")).toHaveValue(unsavedMarkdown);
   await page.getByLabel("标题").fill("");
-  await page.getByRole("button", { name: "保存更改" }).click();
+  await pressSaveShortcut(page);
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("请修正标记的字段");
   await expect(page.getByLabel("Markdown")).toHaveValue(unsavedMarkdown);
 
@@ -185,7 +223,7 @@ test("administrator saves, recovers, and responsively previews a complete Markdo
   await staleRecovery.getByRole("button", { name: "恢复内容" }).click();
   await expect(page.getByLabel("Markdown")).toHaveValue("# 本机未保存的旧版本正文");
   await expect(page.getByRole("heading", { name: "恢复内容基于较旧的服务器版本" })).toBeVisible();
-  await page.getByRole("button", { name: "保存更改" }).click();
+  await pressSaveShortcut(page);
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("恢复副本基于较旧版本；请先确认是否覆盖服务器版本");
   await page.getByRole("button", { name: "使用服务器版本" }).click();
   await expect(page.getByLabel("Markdown")).toHaveValue(unsavedMarkdown);
