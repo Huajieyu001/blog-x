@@ -52,11 +52,13 @@ Plans:
 **Goal:** 站点身份可维护，旧文章链接持续可用，误改内容可通过服务端版本历史恢复。
 **Requirements**: SITE-01, LINK-01, CONT-10
 **Depends on:** Phase 15
-**Plans:** 0 plans
+**Plans:** 3/3 plans complete
 
 Plans:
 
-- [ ] TBD (run $gsd-plan-phase 16 to break down)
+- [x] 16-01-PLAN.md
+- [x] 16-02-PLAN.md
+- [x] 16-03-PLAN.md
 
 ### Phase 17: Operational Monitoring and Retention
 

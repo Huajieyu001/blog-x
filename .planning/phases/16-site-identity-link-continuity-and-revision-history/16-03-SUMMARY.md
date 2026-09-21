@@ -44,7 +44,8 @@ The existing repository/service/route implementation already meets CONT-10: row-
 - Passed: `PUBLIC_ORIGIN=http://127.0.0.1:3100 corepack pnpm --filter @blog-x/web build`
 - Passed: `node scripts/check-boundaries.mjs` (`702` files, `0` findings)
 - Passed: Playwright list/spec-load with generated-fixture variable names.
-- Not run: `/tmp/blog-x-lifecycle-e2e-run.sh` is absent; no broad replacement harness or preview refresh was started.
+- Passed after root integration: canonical generated database/browser gate 97/97, including five revision API tests and the revision browser scenario.
+- Formal fixed-preview delivery passed 114/114 at `231f97c6fb40ef49b4142c73d2812acda9ec0d69`; it was warranted by the Phase 16 site-identity product fix.
 
 ## Deviations from Plan
 
@@ -53,7 +54,8 @@ The required disposable database and sealed browser runner are unavailable local
 ## Commits
 
 - `77df692` — `test(16-03): cover bounded revision recovery`
-- Pending root commit: `apps/web/e2e/article-revisions.spec.ts` could not be committed because the shared Git index denied creation of `.git/index.lock`.
+- `97a0cfb` — `test(16-03): cover revision recovery errors`
+- `871a012`, `24b4a49` — correct generated version-authority and rollback assertions found by the canonical gate.
 
 ## Self-Check: PASSED
 
