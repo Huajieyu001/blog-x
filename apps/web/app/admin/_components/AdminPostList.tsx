@@ -91,7 +91,9 @@ export default function AdminPostList({ posts, initialFilter = "all", initialSor
   }
 
   function replaceList(nextQuery: string, nextFilter: PostFilter, nextSort: PostSort) {
-    router.replace(listHref(nextQuery, nextFilter, nextSort), { scroll: false });
+    const destination = new URL(listHref(nextQuery, nextFilter, nextSort), window.location.origin);
+    destination.hash = "articles";
+    router.replace(`${destination.pathname}${destination.search}${destination.hash}`, { scroll: false });
   }
 
   function updateQuery(value: string) {
