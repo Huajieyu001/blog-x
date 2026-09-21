@@ -1,11 +1,14 @@
 import { execFile } from "node:child_process";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { recordBackupFailure, runProductionBackup } from "./production/adapter.mjs";
 import { randomBytes } from "node:crypto";
 import { collectProductionBackupSet } from "./production/collector.mjs";
-import { parseProductionPipelinePolicy } from "./production/policy.mjs";
+import { loadProductionPipelinePolicy, parseProductionPipelinePolicy } from "./production/policy.mjs";
+import { readProductionDataKey } from "./production/encryption.mjs";
+import { validateMountedDestination } from "./production/mounted-directory.mjs";
+import { validateAlertAuthority, validateResultAuthority } from "./production/results.mjs";
 import { validateProductionSourceBase, verifyProductionBackupSource } from "./production/source-authority.mjs";
 
 function fail(message) {
@@ -25,6 +28,16 @@ export async function runProductionPipeline(value, dependencies = {}) {
   const policy = parseProductionPipelinePolicy(value);
   const runId = `attempt-${randomBytes(8).toString("hex")}`;
   try {
+    // Do not collect a new source set until every operator-owned authority is
+    // syntactically and filesystem-valid. This keeps bad profile/key/mount
+    // configuration from consuming or changing backup source state.
+    const inspectMount = dependencies.inspectMount ?? inspectLocalMount;
+    await Promise.all([
+      validateMountedDestination(policy.destination, inspectMount),
+      validateResultAuthority(policy.resultAuthority),
+      validateAlertAuthority(policy.alertAuthority),
+      Promise.resolve().then(() => readProductionDataKey(policy.keyAuthority)),
+    ]);
     const authority = validateProductionSourceBase(policy.sourceAuthority);
     const existing = await readdir(authority.sourceBase);
     if (existing.some((entry) => entry.startsWith(".") && entry.includes(".incomplete-"))) fail("source staging authority is not empty");
@@ -38,7 +51,7 @@ export async function runProductionPipeline(value, dependencies = {}) {
       destination: policy.destination, retention: policy.retention, resultAuthority: policy.resultAuthority,
       alertAuthority: policy.alertAuthority, createdAt,
     };
-    const result = await runProductionBackup(input, { inspectMount: dependencies.inspectMount ?? inspectLocalMount, ...dependencies });
+    const result = await runProductionBackup(input, { inspectMount, ...dependencies });
     if (policy.sourceAuthority.kind === "generated-test" && result.scope === "generated-mounted-fixture") return { ...result, scope: "generated-production-pipeline" };
     return result;
   } catch (error) {
@@ -58,7 +71,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
     process.stderr.write("PRODUCTION BACKUP PIPELINE FAILED invalid arguments\n");
     process.exitCode = 1;
   } else {
-    readFile(policyPath, "utf8").then(JSON.parse).then((policy) => runProductionPipeline(policy)).then((result) => {
+    loadProductionPipelinePolicy(policyPath).then((policy) => runProductionPipeline(policy)).then((result) => {
       process.stdout.write(`PRODUCTION BACKUP PIPELINE COMPLETE ${result.setId}\n`);
     }).catch((error) => {
       const failure = error?.backupFailure;

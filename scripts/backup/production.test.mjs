@@ -15,7 +15,7 @@ import { applySafeRetention } from "./production/retention.mjs";
 import { generatedRecoveryDrillInput, runRecoveryDrill } from "./recovery-drill.mjs";
 import { createGeneratedFakeTransport } from "./production/transport.mjs";
 import { parseProductionReleaseEvidence, recordProductionFailure } from "./production/results.mjs";
-import { parseProductionBackupPolicy } from "./production/policy.mjs";
+import { loadProductionPipelinePolicy, parseProductionBackupPolicy } from "./production/policy.mjs";
 import { validateProductionBackupSource, verifyProductionBackupSource } from "./production/source-authority.mjs";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -419,6 +419,20 @@ test("pipeline creates and verifies a fresh set before the concrete mounted adap
   const sourceEntries = await readdir(policy.sourceAuthority.sourceBase);
   assert.equal(sourceEntries.filter((name) => /^\d{8}T\d{6}Z-/.test(name)).length, 1);
   await assert.rejects(runProductionPipeline({ ...policy, sourceRoot: "/manual-set" }, { ...collectorDependencies(), inspectMount: async (root) => ({ isMountPoint: true, root }) }), /production backup policy/i);
+});
+
+test("pipeline loads only a protected external profile and rejects unsafe profile paths before collection", async (context) => {
+  const policy = await pipelineFixture(context, "k1b2c3d4");
+  const profileRoot = await mkdtemp(join(tmpdir(), "blog-x-production-profile-"));
+  context.after(async () => { await rm(profileRoot, { recursive: true, force: true }); });
+  await chmod(profileRoot, 0o700);
+  const profilePath = join(profileRoot, "policy.json");
+  await writeFile(profilePath, JSON.stringify(policy), { mode: 0o600 });
+  assert.deepEqual(await loadProductionPipelinePolicy(profilePath), policy);
+  await chmod(profilePath, 0o644);
+  await assert.rejects(loadProductionPipelinePolicy(profilePath), /production backup policy/i);
+  await chmod(profilePath, 0o600);
+  await assert.rejects(loadProductionPipelinePolicy(join(profileRoot, "..", "policy.json")), /production backup policy/i);
 });
 
 test("pipeline unit contract remains dormant, strict, collect-then-adapt, and prohibition-fixture controlled", async () => {
