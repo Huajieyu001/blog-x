@@ -34,10 +34,10 @@ The deterministic Phase 17 local gate now covers bounded aggregated-view/session
 
 ## Verification
 
-- Passed: `node --test scripts/ops/phase17-acceptance.test.mjs` (2 tests)
-- Passed: `node scripts/ops/phase17-acceptance.mjs` (41 static operational tests plus 1 retention argument/output test; 1 disposable database retention test skipped because `OPERATIONAL_RETENTION_TEST_DATABASE_URL` is absent)
-- Passed: `corepack pnpm --filter @blog-x/api typecheck`
-- Passed: `node scripts/check-boundaries.mjs` (707 files, 0 findings)
+- Passed: Phase 17 acceptance-manifest tests (2 tests)
+- Passed: Phase 17 generated acceptance gate (41 static operational tests plus 1 retention argument/output test; 1 disposable database retention test skipped because `OPERATIONAL_RETENTION_TEST_DATABASE_URL` is absent)
+- Passed: API typecheck
+- Passed: repository boundary scan (707 files, 0 findings)
 
 ## Deviations from Plan
 

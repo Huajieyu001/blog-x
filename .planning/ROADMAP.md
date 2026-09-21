@@ -65,8 +65,8 @@ Plans:
 **Goal:** 数据保留任务自动执行，关键服务、备份、证书与资源异常可被及时发现。
 **Requirements**: OPS-07
 **Depends on:** Phase 16
-**Plans:** 0 plans
+**Plans:** 1/1 plans complete
 
 Plans:
 
-- [ ] TBD (run $gsd-plan-phase 17 to break down)
+- [x] 17-01-PLAN.md
