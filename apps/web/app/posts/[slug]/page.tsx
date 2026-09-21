@@ -5,6 +5,7 @@ import ArticleBody from "../../_components/ArticleBody";
 import ArticleToc from "../../_components/ArticleToc";
 import CopyArticleLink from "../../_components/CopyArticleLink";
 import PostCard from "../../_components/PostCard";
+import ReadingProgress from "../../_components/ReadingProgress";
 import ViewBeacon from "./ViewBeacon";
 import { getPublicPost, getPublicRelatedPosts } from "../../lib/api";
 import { buildBlogPosting, pageMetadata, serializeJsonLd } from "../../lib/site-metadata";
@@ -37,7 +38,8 @@ export default async function PublicArticlePage({ params }: { params: Promise<{ 
     <main className={styles.page}>
       <ViewBeacon slug={article.slug} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd }} />
-      <article className={styles.articleShell} aria-labelledby="article-title">
+      <ReadingProgress targetId="reading-progress-target" />
+      <article id="reading-progress-target" className={styles.articleShell} aria-labelledby="article-title">
         <header className={styles.articleHeader}>
           <p className={styles.eyebrow}>Published note</p>
           {article.category || article.tags.length > 0 ? (

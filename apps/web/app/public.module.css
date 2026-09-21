@@ -372,6 +372,27 @@
   font: 600 .76rem/1.5 ui-sans-serif, system-ui, sans-serif;
 }
 
+.readingProgress { display: none; }
+
+:global(html[data-js="true"]) .readingProgress {
+  position: fixed;
+  z-index: 20;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 4px;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--line);
+}
+
+.readingProgressValue {
+  display: block;
+  width: var(--reading-progress);
+  height: 100%;
+  background: var(--accent);
+}
+
 .articleTaxonomy {
   display: flex;
   flex-wrap: wrap;
@@ -608,4 +629,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .page *, .publicHeader * { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+
+@media print {
+  .readingProgress { display: none !important; }
 }

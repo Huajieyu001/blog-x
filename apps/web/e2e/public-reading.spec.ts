@@ -23,7 +23,7 @@ async function createDraft(page: Page, input: { title: string; summary: string; 
   return page.url();
 }
 
-test("published permalink is a safe focused technical reading surface and every unavailable state is one 404", async ({ page }) => {
+test("published permalink is a safe focused technical reading surface and every unavailable state is one 404", async ({ page, browser }) => {
   test.setTimeout(120_000);
 
   await page.goto(`${webOrigin}/login`);
@@ -59,6 +59,8 @@ test("published permalink is a safe focused technical reading surface and every 
     "```bash",
     "printf 'second fenced block'",
     "```",
+    "",
+    ...Array.from({ length: 28 }, (_, index) => `Progress reading paragraph ${index + 1}: a deliberately retained line of technical context keeps this public article longer than one viewport.`),
     "",
     "<script data-hostile=\"true\">window.hostile = true</script>",
     "<style>body { display: none }</style>",
@@ -115,6 +117,25 @@ test("published permalink is a safe focused technical reading surface and every 
   await expect(page.getByRole("heading", { level: 1, name: publishedTitle })).toBeVisible();
   await expect(page.getByText("A concise introduction to the reading surface.")).toBeVisible();
   const primaryArticle = page.getByRole("article", { name: publishedTitle });
+  const readingProgress = page.getByRole("progressbar", { name: "阅读进度" });
+  await expect(readingProgress).toHaveCount(1);
+  await expect(readingProgress).toBeVisible();
+  await expect(readingProgress).toHaveAttribute("aria-valuemin", "0");
+  await expect(readingProgress).toHaveAttribute("aria-valuemax", "100");
+  await expect(readingProgress).not.toHaveAttribute("aria-live");
+  await expect(readingProgress).not.toHaveAttribute("tabindex");
+  const initialReadingProgress = Number(await readingProgress.getAttribute("aria-valuenow"));
+  expect(initialReadingProgress).toBeGreaterThanOrEqual(0);
+  expect(initialReadingProgress).toBeLessThanOrEqual(100);
+  expect(await readingProgress.evaluate((element) => {
+    (element as HTMLElement).focus();
+    return document.activeElement === element;
+  })).toBe(false);
+  await primaryArticle.evaluate((article) => {
+    const top = window.scrollY + article.getBoundingClientRect().top;
+    window.scrollTo({ top: top + article.getBoundingClientRect().height - window.innerHeight });
+  });
+  await expect.poll(async () => Number(await readingProgress.getAttribute("aria-valuenow"))).toBe(100);
   const primaryPublishedTime = primaryArticle.locator(":scope > header time");
   await expect(primaryPublishedTime).toHaveAttribute("datetime", /^\d{4}-\d{2}-\d{2}T/);
   const script = page.locator('script[type="application/ld+json"]');
@@ -306,6 +327,13 @@ test("published permalink is a safe focused technical reading surface and every 
   expect(articleBox).not.toBeNull();
   expect(articleBox!.x).toBeGreaterThanOrEqual(0);
   expect(articleBox!.x + articleBox!.width).toBeLessThanOrEqual(390);
+  const narrowReadingProgress = page.getByRole("progressbar", { name: "阅读进度" });
+  await expect(narrowReadingProgress).toHaveCount(1);
+  await expect(narrowReadingProgress).toBeVisible();
+  const narrowReadingProgressBox = await narrowReadingProgress.boundingBox();
+  expect(narrowReadingProgressBox).not.toBeNull();
+  expect(narrowReadingProgressBox!.x).toBeGreaterThanOrEqual(0);
+  expect(narrowReadingProgressBox!.x + narrowReadingProgressBox!.width).toBeLessThanOrEqual(390);
   const narrowCodeCopyButtons = body.getByRole("button", { name: /^复制代码块 [12]$/ });
   await expect(narrowCodeCopyButtons).toHaveCount(2);
   await narrowCodeCopyButtons.first().focus();
@@ -322,6 +350,22 @@ test("published permalink is a safe focused technical reading surface and every 
   expect(narrowCodeCopyButton.outlineWidth).toBeGreaterThanOrEqual(2);
   expect(await body.locator("pre").first().evaluate((element) => element.scrollWidth >= element.clientWidth)).toBe(true);
   expect(await body.locator("table").evaluate((element) => element.scrollWidth >= element.clientWidth)).toBe(true);
+
+  await page.emulateMedia({ media: "print" });
+  await expect(narrowReadingProgress).toBeHidden();
+  await expect(body.getByRole("heading", { level: 2, name: "Reliable rendering" })).toBeVisible();
+  await page.emulateMedia({ media: "screen" });
+
+  const noJsContext = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
+  try {
+    const noJsPage = await noJsContext.newPage();
+    await noJsPage.goto(`${webOrigin}/posts/${slugs.published}`);
+    await expect(noJsPage.getByRole("progressbar", { name: "阅读进度" })).toBeHidden();
+    await expect(noJsPage.getByRole("heading", { level: 1, name: publishedTitle })).toBeVisible();
+    await expect(noJsPage.getByTestId("article-body").getByRole("heading", { level: 2, name: "Reliable rendering" })).toBeVisible();
+  } finally {
+    await noJsContext.close();
+  }
 
   const unavailableBodies: string[] = [];
   for (const slug of [slugs.draft, slugs.unpublished, slugs.deleted, `unknown-${suffix}`]) {
