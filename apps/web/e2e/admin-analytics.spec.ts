@@ -83,6 +83,61 @@ test("dashboard keeps its authoring hierarchy and visible static actions", async
   await expect(page.getByRole("link", { name: /已发布.*查看文章/ })).toHaveAttribute("href", "/admin?status=published&sort=title#articles");
   await page.goto(`${webOrigin}/admin?sort=oldest&sort=title#articles`);
   await expect(page.getByLabel("文章排序")).toHaveValue("recent");
+
+  const articleSearch = page.getByLabel("搜索文章");
+  const normalizedQuery = analyticsTitle.normalize("NFC");
+  const encodedQuery = new URLSearchParams({ q: normalizedQuery }).toString().slice(2);
+  await page.goto(`${webOrigin}/admin?q=%20${encodeURIComponent(normalizedQuery)}%20&status=published&sort=title#articles`);
+  await expect(articleSearch).toHaveValue(normalizedQuery);
+  await expect(page.getByRole("button", { name: /已发布/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("文章排序")).toHaveValue("title");
+  await expect(page.getByTestId(/admin-post-/).filter({ hasText: normalizedQuery })).toHaveCount(1);
+  await page.goto(`${webOrigin}/admin?q=one&q=two#articles`);
+  await expect(articleSearch).toHaveValue("");
+  await page.goto(`${webOrigin}/admin?q=${"x".repeat(200)}#articles`);
+  await expect(articleSearch).toHaveValue("x".repeat(160));
+
+  await page.goto(`${webOrigin}/admin?status=published&sort=title#articles`);
+  await articleSearch.pressSequentially(normalizedQuery);
+  expect(page.url()).toBe(`${webOrigin}/admin?status=published&sort=title#articles`);
+  await expect.poll(() => page.url()).toBe(`${webOrigin}/admin?q=${encodedQuery}&status=published&sort=title#articles`);
+  await expect(page.getByTestId(/admin-post-/).filter({ hasText: normalizedQuery })).toHaveCount(1);
+  await page.getByRole("button", { name: /草稿/ }).click();
+  await expect(page).toHaveURL(`${webOrigin}/admin?q=${encodedQuery}&status=draft&sort=title#articles`);
+  await page.getByRole("button", { name: /已发布/ }).click();
+  await expect(page).toHaveURL(`${webOrigin}/admin?q=${encodedQuery}&status=published&sort=title#articles`);
+  await expect(page.getByRole("link", { name: /已发布.*查看文章/ })).toHaveAttribute("href", `/admin?q=${encodedQuery}&status=published&sort=title#articles`);
+  await page.reload();
+  await expect(articleSearch).toHaveValue(normalizedQuery);
+  await expect(page.getByRole("button", { name: /已发布/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("文章排序")).toHaveValue("title");
+  await expect(page.getByTestId(/admin-post-/).filter({ hasText: normalizedQuery })).toHaveCount(1);
+  await page.getByTestId(/admin-post-/).filter({ hasText: normalizedQuery }).getByRole("link", { name: "编辑文章" }).click();
+  await expect(page).toHaveURL(/\/admin\/posts\//);
+  await page.goBack();
+  await expect(page).toHaveURL(`${webOrigin}/admin?q=${encodedQuery}&status=published&sort=title#articles`);
+  await expect(articleSearch).toHaveValue(normalizedQuery);
+
+  const clearSearch = page.getByRole("button", { name: "清除文章搜索" });
+  await expect(clearSearch).toBeVisible();
+  const desktopClearBox = await clearSearch.boundingBox();
+  expect(desktopClearBox?.height).toBeGreaterThanOrEqual(44);
+  await clearSearch.click();
+  await expect(page).toHaveURL(`${webOrigin}/admin?status=published&sort=title#articles`);
+  await expect(articleSearch).toHaveValue("");
+  await expect(articleSearch).toBeFocused();
+
+  await articleSearch.fill(normalizedQuery);
+  await expect.poll(() => page.url()).toBe(`${webOrigin}/admin?q=${encodedQuery}&status=published&sort=title#articles`);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const narrowClearSearch = page.getByRole("button", { name: "清除文章搜索" });
+  await expect(narrowClearSearch).toBeVisible();
+  const narrowClearBox = await narrowClearSearch.boundingBox();
+  expect(narrowClearBox?.height).toBeGreaterThanOrEqual(44);
+  await narrowClearSearch.click();
+  await expect(page).toHaveURL(`${webOrigin}/admin?status=published&sort=title#articles`);
+  await expect(articleSearch).toBeFocused();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
 test("dashboard keeps content and analytics failures independent", async ({ page, request }) => {

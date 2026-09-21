@@ -2,7 +2,7 @@
 
 import type { AdminPost } from "@blog-x/contracts";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "../admin.module.css";
 import ArticleActions from "./ArticleActions";
 
@@ -23,16 +23,32 @@ const sortLabels: Array<{ value: PostSort; label: string }> = [
   { value: "title", label: "标题排序" },
 ];
 
-export default function AdminPostList({ posts, initialFilter = "all", initialSort = "recent" }: { posts: AdminPost[]; initialFilter?: PostFilter; initialSort?: PostSort }) {
+const queryMaximumLength = 160;
+
+function canonicalQuery(value: string) {
+  return value.normalize("NFC").trim().slice(0, queryMaximumLength);
+}
+
+export default function AdminPostList({ posts, initialFilter = "all", initialSort = "recent", initialQuery = "" }: { posts: AdminPost[]; initialFilter?: PostFilter; initialSort?: PostSort; initialQuery?: string }) {
   const router = useRouter();
   const [records, setRecords] = useState(posts);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [filter, setFilter] = useState<PostFilter>(initialFilter);
   const [sort, setSort] = useState<PostSort>(initialSort);
+  const queryTimer = useRef<number | null>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => setRecords(posts), [posts]);
+  useEffect(() => {
+    if (queryTimer.current !== null) window.clearTimeout(queryTimer.current);
+    queryTimer.current = null;
+    setQuery(initialQuery);
+  }, [initialQuery]);
   useEffect(() => setFilter(initialFilter), [initialFilter]);
   useEffect(() => setSort(initialSort), [initialSort]);
+  useEffect(() => () => {
+    if (queryTimer.current !== null) window.clearTimeout(queryTimer.current);
+  }, []);
 
   const counts = useMemo(() => ({
     all: records.length,
@@ -59,29 +75,66 @@ export default function AdminPostList({ posts, initialFilter = "all", initialSor
     });
   }, [filter, query, records, sort]);
 
-  function listHref(nextFilter: PostFilter, nextSort: PostSort) {
+  function listHref(nextQuery: string, nextFilter: PostFilter, nextSort: PostSort) {
     const parameters = new URLSearchParams();
+    const normalizedQuery = canonicalQuery(nextQuery);
+    if (normalizedQuery) parameters.set("q", normalizedQuery);
     if (nextFilter !== "all") parameters.set("status", nextFilter);
     if (nextSort !== "recent") parameters.set("sort", nextSort);
     const queryString = parameters.toString();
     return `/admin${queryString ? `?${queryString}` : ""}#articles`;
   }
 
+  function cancelQueryUpdate() {
+    if (queryTimer.current !== null) window.clearTimeout(queryTimer.current);
+    queryTimer.current = null;
+  }
+
+  function replaceList(nextQuery: string, nextFilter: PostFilter, nextSort: PostSort) {
+    router.replace(listHref(nextQuery, nextFilter, nextSort), { scroll: false });
+  }
+
+  function updateQuery(value: string) {
+    const boundedValue = value.normalize("NFC").slice(0, queryMaximumLength);
+    setQuery(boundedValue);
+    cancelQueryUpdate();
+    queryTimer.current = window.setTimeout(() => {
+      const normalizedQuery = canonicalQuery(boundedValue);
+      setQuery(normalizedQuery);
+      replaceList(normalizedQuery, filter, sort);
+      queryTimer.current = null;
+    }, 350);
+  }
+
   function selectFilter(nextFilter: PostFilter) {
+    cancelQueryUpdate();
+    const normalizedQuery = canonicalQuery(query);
+    setQuery(normalizedQuery);
     setFilter(nextFilter);
-    router.replace(listHref(nextFilter, sort), { scroll: false });
+    replaceList(normalizedQuery, nextFilter, sort);
   }
 
   function selectSort(nextSort: PostSort) {
+    cancelQueryUpdate();
+    const normalizedQuery = canonicalQuery(query);
+    setQuery(normalizedQuery);
     setSort(nextSort);
-    router.replace(listHref(filter, nextSort), { scroll: false });
+    replaceList(normalizedQuery, filter, nextSort);
+  }
+
+  function clearQuery() {
+    cancelQueryUpdate();
+    setQuery("");
+    replaceList("", filter, sort);
+    window.requestAnimationFrame(() => searchInput.current?.focus());
   }
 
   function resetFilters() {
+    cancelQueryUpdate();
     setQuery("");
     setFilter("all");
     setSort("recent");
-    router.replace("/admin#articles", { scroll: false });
+    replaceList("", "all", "recent");
   }
 
   function updatePost(nextPost: AdminPost) {
@@ -101,12 +154,17 @@ export default function AdminPostList({ posts, initialFilter = "all", initialSor
       <div className={styles.postListToolbar}>
         <label className={styles.postSearch}>
           <span>搜索文章</span>
-          <input
-            type="search"
-            value={query}
-            placeholder="输入标题、Slug 或摘要"
-            onChange={(event) => setQuery(event.target.value)}
-          />
+          <span className={styles.postSearchInputWrap}>
+            <input
+              ref={searchInput}
+              type="search"
+              value={query}
+              maxLength={queryMaximumLength}
+              placeholder="输入标题、Slug 或摘要"
+              onChange={(event) => updateQuery(event.target.value)}
+            />
+            {query ? <button className={styles.clearPostSearch} type="button" onClick={clearQuery}>清除文章搜索</button> : null}
+          </span>
         </label>
         <label className={styles.postSort}>
           <span>文章排序</span>
