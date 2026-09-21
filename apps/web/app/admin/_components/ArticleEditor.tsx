@@ -227,7 +227,7 @@ export default function ArticleEditor({
       errorFocusPending.current = false;
       return;
     }
-    const invalidControl = editorRef.current?.querySelector<HTMLElement>("input[aria-invalid=\"true\"], textarea[aria-invalid=\"true\"], select[aria-invalid=\"true\"]");
+    const invalidControl = editorRef.current?.querySelector<HTMLElement>("input[aria-invalid=\"true\"]:not([disabled]), textarea[aria-invalid=\"true\"]:not([disabled]), select[aria-invalid=\"true\"]:not([disabled])");
     if (!invalidControl) {
       errorFocusPending.current = false;
       return;
