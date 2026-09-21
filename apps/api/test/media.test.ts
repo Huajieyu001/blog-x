@@ -192,8 +192,8 @@ test("authenticated upload stores protected source and serves only the immutable
 
   const referencedId = uploaded.json().id as string;
   await pool.query(
-    "insert into articles (title, summary, slug, markdown, status, deleted_at, cover_media_id, legacy_media_review) values ($1, '', $2, $3, 'draft', now(), $4, 'clear')",
-    ["private deleted owner", `retained-media-${Date.now()}`, `![same](/media/${referencedId})\n![again](/media/${referencedId})`, referencedId],
+    "insert into articles (title, summary, slug, markdown, status, deleted_at, cover_media_id, cover_alt, legacy_media_review) values ($1, '', $2, $3, 'draft', now(), $4, $5, 'clear')",
+    ["private deleted owner", `retained-media-${Date.now()}`, `![same](/media/${referencedId})\n![again](/media/${referencedId})`, referencedId, "Retained cover"],
   );
   const about = await app.inject({
     method: "POST",
