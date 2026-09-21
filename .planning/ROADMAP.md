@@ -39,7 +39,7 @@ Plans:
 **Goal:** 管理员可复用与安全清理媒体，生产内容备份可安全同步到可配置异地目的地并完成恢复验证。
 **Requirements**: MEDIA-02, OPS-06
 **Depends on:** Phase 14
-**Plans:** 0 plans
+**Plans:** 3/3 plans complete
 
 Plans:
 

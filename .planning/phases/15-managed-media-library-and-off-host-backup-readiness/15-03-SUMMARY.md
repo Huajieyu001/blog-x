@@ -21,22 +21,22 @@ decisions:
   - "A catalogue below its configured minimum known-good count is a failed retention state, never a successful backup outcome."
 metrics:
   completed: "2026-09-22"
-status: partial
+status: complete
 actuals:
   tokens: 3318
   tasks: 3
-  commits: 4
+  commits: 7
 ---
 
 # Phase 15 Plan 03: Configurable Off-host Backup Readiness Summary
 
-Backup readiness is sealed around encrypted mounted-directory transfers, protected external profiles, bounded known-good retention, and generated-only restore authority; the one permitted formal refresh failed before delivery while preserving the prior fixed preview.
+Backup readiness is sealed around encrypted mounted-directory transfers, protected external profiles, bounded known-good retention, and generated-only restore authority; the corrected clean revision passed formal local delivery and now powers the fixed preview.
 
 ## Completed Tasks
 
 1. Audited the existing encrypted mounted transfer/profile/result implementation and added a restrictive runtime profile loader plus pre-collection authority validation. (`c6927cd`)
 2. Enforced minimum known-good catalogue preservation and audited the existing inert, credential-free templates under the canonical `ops/systemd/` authority. (`44cac01`, corrected by `17f0f7c`)
-3. Audited the existing recovery drill and Phase 15 generated local-verifier path; it already requires encrypted complete sets and exact generated restore database/media/browser authorities. The required single formal refresh was started only after a clean SHA and reached a recorded failed terminal outcome.
+3. Audited the existing recovery drill and Phase 15 generated local-verifier path; it already requires encrypted complete sets and exact generated restore database/media/browser authorities. The first clean-SHA attempt exposed a test-fixture constraint error; after a one-line fixture correction, the new clean revision passed formal delivery.
 
 ## Verification
 
@@ -48,6 +48,8 @@ Backup readiness is sealed around encrypted mounted-directory transfers, protect
 - Formal refresh: exactly once at clean revision `44cac012129e559da2742d4eba4e64ad2c08ac05`; failed at `accept-v1.1` with `generated_child_exit`. Failure evidence: `/private/tmp/blog-x-refresh-attempts-v1.1/44cac012129e559da2742d4eba4e64ad2c08ac05.failure.json`.
   - Baseline: applicable; recollection: collected; preservation: proved.
   - No delivery receipt was created. Fixed local preview stayed healthy on its prior revision. No retry was run and production remains `BLOCKED`.
+- Diagnosis reproduced the exact child failure: the new deleted-draft media fixture set `cover_media_id` without the required non-empty `cover_alt`, violating `articles_cover_alt_check`. Commit `d447a3a` corrected only that generated test row.
+- A new formal attempt for clean corrected revision `d447a3a3c0af5dccbc119b5d81ee23b19490f3fc` passed: generated integration 96/96, Phase 7 browser 17/17, total 113/113; home and health routes return 200. Receipt: `ops/local-deliveries/d447a3a3c0af5dccbc119b5d81ee23b19490f3fc.json`. Production remains `BLOCKED`.
 
 ## Deviations from Plan
 
@@ -73,7 +75,7 @@ Backup readiness is sealed around encrypted mounted-directory transfers, protect
 
 ## Operator Gate
 
-No real off-host credential, mount, provider profile, or destination was configured or contacted. An operator must provision those external authorities separately. Before another delivery attempt on a new clean SHA, diagnose the recorded generated child failure; do not treat this failed refresh as a delivered version.
+No real off-host credential, mount, provider profile, or destination was configured or contacted. An operator must provision those external authorities separately; local readiness and recovery verification are complete.
 
 ## Security Closure
 
@@ -86,4 +88,4 @@ No real off-host credential, mount, provider profile, or destination was configu
 
 - `15-03-SUMMARY.md` exists.
 - Commits `c6927cd`, `44cac01`, and `17f0f7c` exist.
-- The formal refresh failure record exists and confirms preservation rather than delivery.
+- Fixture correction `d447a3a` and its formal delivery receipt exist; the fixed preview is healthy on that implementation revision.
