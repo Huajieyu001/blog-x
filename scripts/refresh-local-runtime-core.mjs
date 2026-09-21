@@ -30,7 +30,7 @@ export const LOCAL_DELIVERY_REFRESH_KIND = "v1.1-offline-local-delivery";
 export const SEED_PREREQUISITE_KINDS = Object.freeze(["missing", "stale", "incompatible", "lock-drifted", "incomplete-store"]);
 const ROLLBACK_FAILURE_CLASSES = Object.freeze(["runtime_rollback_error", "runtime_rollback_and_evidence_cleanup_error", "evidence_cleanup_error_after_verified_rollback"]);
 export const REFRESH_FAILURE_CLASSES = Object.freeze(["error", ...ACCEPTANCE_FAILURE_CLASSES, ...ROLLBACK_FAILURE_CLASSES]);
-export const REFRESH_TERMINAL_STAGES = Object.freeze(["cli_validation", "source_authority", "attempt_claim_preflight", "attempt_claim_publication", "adapter_construction", "claim_attachment", "lockfile_plan_materialization", "local_docker_authority", "preflight_collection", "seed-prerequisites", "build-api", "build-web", "inspect-target-images", "accept-v1.1", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence", "evidence_verification", "final_output", "rollback-api-web", "verify-rollback", "failure_recollection", "failure_report_publication"]);
+export const REFRESH_TERMINAL_STAGES = Object.freeze(["cli_validation", "source_authority", "attempt_claim_preflight", "attempt_claim_publication", "adapter_construction", "claim_attachment", "lockfile_plan_materialization", "local_docker_authority", "preflight_collection", "seed-prerequisites", "accept-v1.1", "post-accept-source-authority", "build-api", "build-web", "inspect-target-images", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence", "evidence_verification", "final_output", "rollback-api-web", "verify-rollback", "failure_recollection", "failure_report_publication"]);
 export const SAFE_RECOVERY_BY_STAGE = Object.freeze({
   cli_validation: "Correct the fixed invocation, commit the correction, and begin one new clean revision attempt.",
   source_authority: "Restore a clean attached branch revision, commit any correction, and begin one new revision attempt.",
@@ -42,10 +42,11 @@ export const SAFE_RECOVERY_BY_STAGE = Object.freeze({
   local_docker_authority: "Restore only the approved local Docker authority and inspect canonical facts read-only.",
   preflight_collection: "Restore exact canonical local facts without changing retained data, then create a new revision.",
   "seed-prerequisites": "Repair committed offline seed inputs and create a new clean revision after the fixed probe passes.",
+  "accept-v1.1": "Repair only the generated complete acceptance path, commit it, and begin a new revision attempt.",
+  "post-accept-source-authority": "Restore the claimed clean branch revision and lockfile, then begin a new revision attempt.",
   "build-api": "Repair committed API offline inputs and create a new clean revision without retrieval fallback.",
   "build-web": "Repair committed Web offline inputs and create a new clean revision without retrieval fallback.",
   "inspect-target-images": "Repair committed target provenance and create a new clean revision after read-only inspection.",
-  "accept-v1.1": "Repair only the generated complete acceptance path, commit it, and begin a new revision attempt.",
   migrate: "Apply a forward-only committed migration correction and begin a new clean revision attempt.",
   "schema-verify": "Apply a forward-only committed schema correction and begin a new clean revision attempt.",
   "cutover-api-web": "Inspect rollback and current facts read-only, preserve all artifacts, and stop automatic retry.",
@@ -802,6 +803,13 @@ export function createRawRefreshRuntime({ runArgv, claimStore, fetch, root, evid
         catch { fail("acceptance result record is invalid JSON"); }
         const record = parseLocalDeliveryAcceptanceRecord(decoded);
         state.acceptance = { record: structuredClone(record), sha256: digest(JSON.stringify(record)) };
+        return;
+      }
+      if (phase === "post-accept-source-authority") {
+        const authority = await sources.git();
+        if (authority.clean !== true || !validBranchRef(authority.ref) || authority.implementationRevision !== plan.revision || authority.lockfileSha256 !== plan.lockSha256) {
+          fail("post-accept source authority does not match the claimed plan");
+        }
         return;
       }
       if (phase === "migrate") {

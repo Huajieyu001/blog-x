@@ -490,7 +490,7 @@ test("refresh plan has one fixed local authority and offline two-image barrier b
     "blog-x-web-local:aaaaaaaaaaaa",
   ]);
   assert.ok(plan.preMutation.every((command) => command.args.includes("--network=none") || command.args.includes("--pull=false") || command.readOnly));
-  assert.deepEqual(plan.phases.slice(plan.phases.indexOf("inspect-target-images"), plan.phases.indexOf("schema-verify") + 1), ["inspect-target-images", "accept-v1.1", "migrate", "schema-verify"]);
+  assert.deepEqual(plan.phases, ["preflight", "seed-prerequisites", "accept-v1.1", "post-accept-source-authority", "build-api", "build-web", "inspect-target-images", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence"]);
   assert.ok(plan.phases.indexOf("migrate") < plan.phases.indexOf("cutover-api-web"));
 });
 
@@ -522,7 +522,7 @@ test("a post-start failure rolls back only api and web and suppresses evidence",
       },
     },
   }), /route contract failed/);
-  assert.deepEqual(events, ["preflight", "seed-prerequisites", "build-api", "build-web", "inspect-target-images", "accept-v1.1", "migrate", "schema-verify", "cutover-api-web", "routes", "rollback-api-web", "verify-rollback"]);
+  assert.deepEqual(events, ["preflight", "seed-prerequisites", "accept-v1.1", "post-accept-source-authority", "build-api", "build-web", "inspect-target-images", "migrate", "schema-verify", "cutover-api-web", "routes", "rollback-api-web", "verify-rollback"]);
   assert.equal(events.includes("write-evidence"), false);
   assert.equal(events.some((event) => /postgres|volume|down/.test(event)), false);
 });
@@ -530,7 +530,7 @@ test("a post-start failure rolls back only api and web and suppresses evidence",
 test("successful refresh writes sanitized evidence only after route and BLOCKED checks", async () => {
   const events = [];
   const evidence = await runLocalRefresh({ adapter: { async execute(step) { events.push(step); } } });
-  assert.deepEqual(events, ["preflight", "seed-prerequisites", "build-api", "build-web", "inspect-target-images", "accept-v1.1", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence"]);
+  assert.deepEqual(events, ["preflight", "seed-prerequisites", "accept-v1.1", "post-accept-source-authority", "build-api", "build-web", "inspect-target-images", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence"]);
   assert.equal(evidence.releaseState, "BLOCKED");
   assert.equal("credentials" in evidence, false);
 });
@@ -1103,7 +1103,7 @@ function targetImage(app, id, revision, lock, seedId) {
   return { Id: id, Config: { Image: `blog-x-${app}-local:${revision.slice(0, 12)}`, WorkingDir: "/refresh-workspace", Cmd: ["corepack", "pnpm", "--filter", `@blog-x/${app}`, "start"], Labels: { "org.opencontainers.image.revision": revision, "io.blog-x.lockfile-sha256": lock, "io.blog-x.seed-image-id": seedId, "io.blog-x.application": app, "io.blog-x.public-origin": "http://127.0.0.1:3100", "io.blog-x.refresh-kind": "v1.1-offline-local-delivery" } } };
 }
 
-function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, rollbackCutoverFault = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, withdrawalFault, seedPrerequisite, moveSeedTagsAfterPreflight = false, acceptanceStdout = acceptanceOutput, acceptanceFailureClass, acceptanceFailureSecret = "", verificationChangedPaths, verificationTouchedPaths = verificationChangedPaths, identity = { uid: TEST_UID }, revision = TEST_REVISION, artifactFs, oldImages = { api: SHA("a"), web: SHA("b") }, targetIds = { api: SHA("e"), web: SHA("f") }, migrationUpgrade = false } = {}) {
+function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, rollbackRouteDrift = false, rollbackCutoverFault = false, stalePostCutover = false, recollectionFault = false, stageFaults = [], atomicFault, withdrawalFault, seedPrerequisite, moveSeedTagsAfterPreflight = false, acceptanceStdout = acceptanceOutput, acceptanceFailureClass, acceptanceFailureSecret = "", postAcceptanceSourceDrift, verificationChangedPaths, verificationTouchedPaths = verificationChangedPaths, identity = { uid: TEST_UID }, revision = TEST_REVISION, artifactFs, oldImages = { api: SHA("a"), web: SHA("b") }, targetIds = { api: SHA("e"), web: SHA("f") }, migrationUpgrade = false } = {}) {
   const lock = createHash("sha256").update("raw-lock\n").digest("hex");
   const old = structuredClone(oldImages);
   const movedSeeds = { api: SHA("c"), web: SHA("d") };
@@ -1112,7 +1112,7 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
   const touchedPaths = verificationTouchedPaths ?? changedPaths;
   const plan = createRefreshPlan({ revision, lockSha256: lock, apiSeedId: old.api, webSeedId: old.web });
   const targets = { api: targetImage("api", targetIds.api, revision, lock, old.api), web: targetImage("web", targetIds.web, revision, lock, old.web) };
-  const calls = []; const routeFetches = []; let snapshot = 0; let rolledBack = false; let verificationMode = false; let staleVerification = false;
+  const calls = []; const routeFetches = []; let snapshot = 0; let rolledBack = false; let verificationMode = false; let staleVerification = false; let acceptanceFinished = false;
   let evidenceBaseFs;
   const runner = async (command, args, options = {}) => {
     calls.push({ command, args: [...args], options: structuredClone(options) });
@@ -1158,9 +1158,9 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
       if (args.includes("api") && args.includes("node") && args.includes("-e")) return { stdout: JSON.stringify(failPostCutover && snapshot === 3 ? [{ relativePath: "asset", bytes: 8, sha256: "9".repeat(64) }] : [{ relativePath: "asset", bytes: 7, sha256: "8".repeat(64) }]) };
       return { stdout: "" };
     }
-    if (command === "git" && args[0] === "status") return { stdout: !verificationMode && evidenceBaseFs?.entries.has(`/virtual-workspace/${evidencePath}`) ? `?? ${evidencePath}\n` : "" };
+    if (command === "git" && args[0] === "status") return { stdout: postAcceptanceSourceDrift === "dirty" && acceptanceFinished ? " M scripts/refresh-local.mjs\n" : !verificationMode && evidenceBaseFs?.entries.has(`/virtual-workspace/${evidencePath}`) ? `?? ${evidencePath}\n` : "" };
     if (command === "git" && args[0] === "symbolic-ref") return { stdout: "refs/heads/dev\n" };
-    if (command === "git" && args[0] === "rev-parse") return { stdout: `${verificationMode ? "c".repeat(40) : revision}\n` };
+    if (command === "git" && args[0] === "rev-parse") return { stdout: `${verificationMode ? "c".repeat(40) : postAcceptanceSourceDrift === "revision" && acceptanceFinished ? "d".repeat(40) : revision}\n` };
     if (command === "git" && args[0] === "ls-files") return { stdout: "" };
     if (command === "git" && args[0] === "show") return { stdout: "raw-lock\n" };
     if (command === "git" && args[0] === "merge-base") return { stdout: "" };
@@ -1172,6 +1172,8 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
         Object.defineProperty(error, "acceptanceFailureClass", { value: acceptanceFailureClass });
         throw error;
       }
+      acceptanceFinished = true;
+      if (postAcceptanceSourceDrift === "lock") evidenceBaseFs.entries.get("/virtual-workspace/pnpm-lock.yaml").bytes = "post-acceptance lock drift\n";
       return { stdout: acceptanceStdout };
     }
     if (command === "node") return { stdout: "" };
@@ -1207,18 +1209,48 @@ function liveFixture({ failPostCutover = false, preCutoverRouteDrift = false, ro
 
 test("full isolated acceptance is one strict pre-cutover barrier and failure leaves canonical runtime untouched", async () => {
   const good = liveFixture();
-  await runLocalRefresh({ adapter: good.adapter, plan: good.plan });
+  const progress = [];
+  await runLocalRefresh({ adapter: good.adapter, plan: good.plan, onStage(record) { progress.push(record); } });
   const acceptanceCall = good.calls.findIndex((call) => call.command === "node" && call.args.join(" ") === "scripts/local-delivery-acceptance.mjs");
+  const firstTargetBuild = good.calls.findIndex((call) => call.command === "docker" && call.args[0] === "build");
   const migrationCall = good.calls.findIndex((call) => call.command === "docker-compose" && call.args.includes("run"));
-  assert.ok(acceptanceCall >= 0 && acceptanceCall < migrationCall);
+  assert.ok(acceptanceCall >= 0 && acceptanceCall < firstTargetBuild && firstTargetBuild < migrationCall);
+  assert.deepEqual(progress, [
+    "LOCAL DELIVERY STAGE preflight_collection START\n", "LOCAL DELIVERY STAGE preflight_collection COMPLETE\n",
+    "LOCAL DELIVERY STAGE seed-prerequisites START\n", "LOCAL DELIVERY STAGE seed-prerequisites COMPLETE\n",
+    "LOCAL DELIVERY STAGE accept-v1.1 START\n", "LOCAL DELIVERY STAGE accept-v1.1 COMPLETE\n",
+    "LOCAL DELIVERY STAGE post-accept-source-authority START\n", "LOCAL DELIVERY STAGE post-accept-source-authority COMPLETE\n",
+    "LOCAL DELIVERY STAGE build-api START\n", "LOCAL DELIVERY STAGE build-api COMPLETE\n",
+    "LOCAL DELIVERY STAGE build-web START\n", "LOCAL DELIVERY STAGE build-web COMPLETE\n",
+    "LOCAL DELIVERY STAGE inspect-target-images START\n", "LOCAL DELIVERY STAGE inspect-target-images COMPLETE\n",
+    "LOCAL DELIVERY STAGE migrate START\n", "LOCAL DELIVERY STAGE migrate COMPLETE\n",
+    "LOCAL DELIVERY STAGE schema-verify START\n", "LOCAL DELIVERY STAGE schema-verify COMPLETE\n",
+    "LOCAL DELIVERY STAGE cutover-api-web START\n", "LOCAL DELIVERY STAGE cutover-api-web COMPLETE\n",
+    "LOCAL DELIVERY STAGE routes START\n", "LOCAL DELIVERY STAGE routes COMPLETE\n",
+    "LOCAL DELIVERY STAGE release-blocked START\n", "LOCAL DELIVERY STAGE release-blocked COMPLETE\n",
+    "LOCAL DELIVERY STAGE write-evidence START\n", "LOCAL DELIVERY STAGE write-evidence COMPLETE\n",
+  ]);
 
   for (const acceptanceStdout of ["", `${acceptanceOutput}${acceptanceOutput}`, acceptanceOutput.replace('"releaseState":"BLOCKED"', '"releaseState":"READY"'), acceptanceOutput.replace('"tests":24,"passed":24', '"tests":0,"passed":0')]) {
     const fixture = liveFixture({ acceptanceStdout });
     await assert.rejects(fixture.runtime.runCli(), /accept-v1\.1/i);
+    assert.equal(fixture.calls.some((call) => call.command === "docker" && call.args[0] === "build"), false);
+    assert.equal(fixture.calls.some((call) => call.command === "docker" && call.args[0] === "image" && call.args[1] === "inspect" && fixture.plan.targets.some((target) => call.args[2] === target.tag)), false);
     assert.equal(fixture.calls.some((call) => call.command === "docker-compose" && (call.args.includes("run") || call.args.includes("up"))), false);
     assert.equal(fixture.calls.some((call) => call.command === "docker" && call.args[0] === "rm"), false);
     const report = await fixture.runtime.createAttemptStore().assertFailureReportPresent(fixture.revision);
     assert.equal(report.report.stage, "accept-v1.1");
+  }
+
+  for (const postAcceptanceSourceDrift of ["dirty", "revision", "lock"]) {
+    const fixture = liveFixture({ postAcceptanceSourceDrift });
+    await assert.rejects(fixture.runtime.runCli(), /post-accept-source-authority/i);
+    assert.equal(fixture.calls.some((call) => call.command === "docker" && call.args[0] === "build"), false, postAcceptanceSourceDrift);
+    assert.equal(fixture.calls.some((call) => call.command === "docker" && call.args[0] === "image" && call.args[1] === "inspect" && fixture.plan.targets.some((target) => call.args[2] === target.tag)), false, postAcceptanceSourceDrift);
+    assert.equal(fixture.calls.some((call) => call.command === "docker-compose" && (call.args.includes("run") || call.args.includes("up"))), false, postAcceptanceSourceDrift);
+    assert.equal(fixture.calls.some((call) => call.command === "docker" && call.args[0] === "rm"), false, postAcceptanceSourceDrift);
+    const report = await fixture.runtime.createAttemptStore().assertFailureReportPresent(fixture.revision);
+    assert.equal(report.report.stage, "post-accept-source-authority", postAcceptanceSourceDrift);
   }
 });
 
@@ -1262,7 +1294,7 @@ test("normal delivery emits exact progress and a verified evidence-derived BLOCK
   const result = await fixture.runtime.runCli({ output: { write(value) { writes.push(value); } } });
   assert.equal(result.releaseState, "BLOCKED");
   const output = writes.join("");
-  for (const stage of ["cli_validation", "source_authority", "attempt_claim_preflight", "attempt_claim_publication", "adapter_construction", "claim_attachment", "lockfile_plan_materialization", "preflight_collection", "seed-prerequisites", "build-api", "build-web", "inspect-target-images", "accept-v1.1", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence", "evidence_verification", "final_output"]) {
+  for (const stage of ["cli_validation", "source_authority", "attempt_claim_preflight", "attempt_claim_publication", "adapter_construction", "claim_attachment", "lockfile_plan_materialization", "preflight_collection", "seed-prerequisites", "accept-v1.1", "post-accept-source-authority", "build-api", "build-web", "inspect-target-images", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence", "evidence_verification", "final_output"]) {
     assert.equal(output.split(`LOCAL DELIVERY STAGE ${stage} START\n`).length - 1, 1, `${stage} start`);
     assert.equal(output.split(`LOCAL DELIVERY STAGE ${stage} COMPLETE\n`).length - 1, 1, `${stage} complete`);
   }
@@ -1407,7 +1439,7 @@ test("two successive clean revisions publish distinct verified receipts and pres
 });
 
 test("terminal stage progress and recovery are exhaustive, exact and sanitized", () => {
-  const expected = ["cli_validation", "source_authority", "attempt_claim_preflight", "attempt_claim_publication", "adapter_construction", "claim_attachment", "lockfile_plan_materialization", "local_docker_authority", "preflight_collection", "seed-prerequisites", "build-api", "build-web", "inspect-target-images", "accept-v1.1", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence", "evidence_verification", "final_output", "rollback-api-web", "verify-rollback", "failure_recollection", "failure_report_publication"];
+  const expected = ["cli_validation", "source_authority", "attempt_claim_preflight", "attempt_claim_publication", "adapter_construction", "claim_attachment", "lockfile_plan_materialization", "local_docker_authority", "preflight_collection", "seed-prerequisites", "accept-v1.1", "post-accept-source-authority", "build-api", "build-web", "inspect-target-images", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence", "evidence_verification", "final_output", "rollback-api-web", "verify-rollback", "failure_recollection", "failure_report_publication"];
   assert.deepEqual(REFRESH_TERMINAL_STAGES, expected);
   assert.deepEqual(Object.keys(SAFE_RECOVERY_BY_STAGE), expected);
   for (const stage of expected) {
@@ -1945,7 +1977,7 @@ test("every exact post-claim terminal stage retains the canonical claim and a bo
     assert.equal(report.report.stage, stage); assert.equal(report.report.claimSha256, claim.sha256); assert.equal(report.report.preservation, "not_applicable_pre_runtime");
   }
 
-  for (const stage of ["local_docker_authority", "preflight_collection", "build-api", "build-web", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence"]) {
+  for (const stage of ["local_docker_authority", "preflight_collection", "accept-v1.1", "post-accept-source-authority", "build-api", "build-web", "migrate", "schema-verify", "cutover-api-web", "routes", "release-blocked", "write-evidence"]) {
     const fixture = liveFixture({ stageFaults: [stage] });
     await assert.rejects(fixture.runtime.runCli(), new RegExp(stage));
     const claim = await fixture.runtime.inspectClaim(fixture.revision); const report = await fixture.runtime.createAttemptStore().assertFailureReportPresent(fixture.revision);
