@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Post-launch Hardening
-current_phase: 17
-status: completed
-stopped_at: Milestone v1.3 completed and archived
-last_updated: "2026-09-21T18:18:55.697Z"
+status: Awaiting next milestone
+stopped_at: Milestone v1.4 completed and archived
+last_updated: "2026-09-21T18:25:36.993Z"
 last_activity: 2026-09-22
-last_activity_desc: Phase 17 complete
+last_activity_desc: Milestone v1.4 completed and archived
 progress:
   total_phases: 4
   completed_phases: 4
   total_plans: 10
   completed_plans: 10
+current_phase: 17
 current_phase_name: Operational Monitoring and Retention
 ---
 
@@ -23,20 +23,20 @@ current_phase_name: Operational Monitoring and Retention
 See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** 博主能够可靠地发布和保存 Markdown 内容，访客能够持续、快速地通过博客域名阅读已发布文章。
-**Current focus:** v1.4 Post-launch Hardening complete; awaiting milestone archival.
+**Current focus:** Planning the next milestone.
 
 ## Current Position
 
-Phase: 17
-Plan: 1/1 complete
-Status: All phases complete
-Last activity: 2026-09-22 — Phase 17 complete
+Phase: Milestone v1.4 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-09-22 — Milestone v1.4 completed and archived
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 62 across v1.0–v1.3
+- Total plans completed: 72 across v1.0–v1.4
 - Current milestone plans completed: 10
 
 **By Milestone:**
@@ -47,6 +47,7 @@ Last activity: 2026-09-22 — Phase 17 complete
 | v1.1 Content Discovery | 24 | Complete |
 | v1.2 Publishing Quality | 4 | Complete |
 | v1.3 Private Insights | 8/8 | All phases complete |
+| v1.4 Post-launch Hardening | 10/10 | All phases complete |
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
@@ -91,10 +92,7 @@ Decisions are logged in PROJECT.md Key Decisions table.
 
 ### Pending Todos
 
-- Phase 14: administrator password change, security headers, deleted article recovery.
-- Phase 15: managed media library and off-host backup readiness.
-- Phase 16: site identity, slug redirects and revision history.
-- Phase 17: operational monitoring and retention automation.
+- No unfinished local v1.4 implementation task remains.
 
 ### Blockers/Concerns
 

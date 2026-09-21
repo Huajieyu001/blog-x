@@ -1,5 +1,23 @@
 # Project Milestones: Blog X
 
+## v1.4 Post-launch Hardening (Shipped: 2026-09-22)
+
+**Delivered:** 管理员安全、内容恢复、媒体管理、异地备份准备、站点身份、旧链接连续性、文章版本历史和秘密安全的运维监测；生产仍保持 `BLOCKED`。
+
+**Phases completed:** 4 phases, 10 plans, 23 tasks
+
+**Key accomplishments:**
+
+- Next’s custom ingress now enforces a compatible self-only production CSP and uniform browser hardening headers without breaking same-origin pages, API, media, or theme hydration.
+- The administrator can rotate an Argon2id password through the responsive backend, atomically revoke all existing sessions, and retain only a minimal password-change audit record.
+- The protected recycle bin lists only safe deletion metadata and restores the original row atomically to a non-public draft without releasing its slug or exposing content.
+- Media tombstoning now counts every retained content owner without exposing content or storage keys, and writers serialize reference validation with deletion.
+- Saved site identity, direct slug aliases, bounded article history, retention scheduling, and secret-free operational alerts now form one locally verified continuity and operations layer.
+
+**What's next:** 由产品负责人选择下一个里程碑；生产定时任务、通知目的地、异地凭据和部署继续走独立人工门禁。
+
+---
+
 ## v1.3 Private Insights (Shipped: 2026-09-15)
 
 **Delivered:** 隐私友好的匿名 PV 趋势、清晰完整的响应式单管理员工作台，以及绑定固定 `3100` 预览的本地交付证据；生产继续保持 `BLOCKED`。
