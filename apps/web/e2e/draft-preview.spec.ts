@@ -183,6 +183,28 @@ test("administrator saves, recovers, and responsively previews a complete Markdo
     await page.unrouteAll({ behavior: "wait" });
   }
 
+  await page.route(`${webOrigin}/api/admin/posts/${articleId}`, async (route) => {
+    await route.fulfill({
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: "validation_failed",
+        fields: {
+          markdown: ["服务端正文校验失败"],
+          summary: ["服务端摘要校验失败"],
+        },
+      }),
+    });
+  }, { times: 1 });
+  await page.getByLabel("摘要").fill("保留等待服务端校验的摘要");
+  await page.getByLabel("Markdown").focus();
+  await pressSaveShortcut(page);
+  await expect(page.getByLabel("摘要")).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByLabel("Markdown")).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByLabel("摘要")).toBeFocused();
+  await expect(page.getByLabel("摘要")).toHaveValue("保留等待服务端校验的摘要");
+  await page.getByLabel("摘要").fill("服务端错误已修正的摘要");
+
   await page.route("**/api/admin/posts/preview", async (route) => {
     const submitted = route.request().postDataJSON() as { markdown: string };
     if (submitted.markdown.includes("较慢的旧预览")) await new Promise((resolve) => setTimeout(resolve, 700));
@@ -220,11 +242,21 @@ test("administrator saves, recovers, and responsively previews a complete Markdo
   await page.getByTestId("editor-recovery-notice").getByRole("button", { name: "恢复内容" }).click();
   await expect(page.getByLabel("Markdown")).toHaveValue(unsavedMarkdown);
   await page.getByLabel("标题").fill("");
+  await page.getByLabel("Markdown").focus();
   await pressSaveShortcut(page);
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("请修正标记的字段");
   await expect(page.getByLabel("Markdown")).toHaveValue(unsavedMarkdown);
+  await expect(page.getByLabel("标题")).toBeFocused();
 
   await page.getByLabel("标题").fill("恢复后的最新标题");
+  await page.getByLabel("Markdown").fill("");
+  await page.getByRole("button", { name: "预览" }).click();
+  await expect(page.getByTestId("editor-source")).toBeHidden();
+  await pressSaveShortcut(page);
+  await expect(page.getByTestId("editor-source")).toBeVisible();
+  await expect(page.getByLabel("Markdown")).toBeFocused();
+  await expect(page.getByLabel("Markdown")).toHaveAttribute("aria-invalid", "true");
+  await page.getByLabel("Markdown").fill(unsavedMarkdown);
   await page.getByRole("button", { name: "保存更改" }).click();
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("更改已保存");
   const editUrl = page.url();

@@ -117,6 +117,7 @@ export default function ArticleEditor({
   const [postId, setPostId] = useState(post?.id);
   const [currentPost, setCurrentPost] = useState(post);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
+  const [errorFocusRequest, setErrorFocusRequest] = useState(0);
   const [message, setMessage] = useState("");
   const [previewHtml, setPreviewHtml] = useState("");
   const [previewMessage, setPreviewMessage] = useState("");
@@ -135,6 +136,7 @@ export default function ArticleEditor({
   const editSequence = useRef(0);
   const saveInFlight = useRef(false);
   const saveRef = useRef<(confirmSlugChange?: boolean) => Promise<void>>(async () => {});
+  const errorFocusPending = useRef(false);
   const suppressRecoveryWrites = useRef(false);
   const fieldsRef = useRef(fields);
   const publishedAtCorrectionRef = useRef(publishedAtCorrection);
@@ -152,6 +154,7 @@ export default function ArticleEditor({
   const recoveryButtonRef = useRef<HTMLButtonElement>(null);
   const discardRecoveryButtonRef = useRef<HTMLButtonElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
+  const editorRef = useRef<HTMLElement>(null);
 
   fieldsRef.current = fields;
   publishedAtCorrectionRef.current = publishedAtCorrection;
@@ -217,6 +220,30 @@ export default function ArticleEditor({
   useEffect(() => {
     if (pendingRecovery) recoveryButtonRef.current?.focus();
   }, [pendingRecovery]);
+
+  useEffect(() => {
+    if (!errorFocusPending.current) return;
+    if (pendingRecovery) {
+      errorFocusPending.current = false;
+      return;
+    }
+    const invalidControl = editorRef.current?.querySelector<HTMLElement>("input[aria-invalid=\"true\"], textarea[aria-invalid=\"true\"], select[aria-invalid=\"true\"]");
+    if (!invalidControl) {
+      errorFocusPending.current = false;
+      return;
+    }
+    if (!invalidControl.getClientRects().length) {
+      if (invalidControl.closest('[data-testid="editor-source"]')) {
+        setMobilePane("edit");
+        return;
+      }
+      errorFocusPending.current = false;
+      return;
+    }
+    errorFocusPending.current = false;
+    invalidControl.scrollIntoView({ block: "center" });
+    invalidControl.focus({ preventScroll: true });
+  }, [errorFocusRequest, mobilePane, pendingRecovery]);
 
   useEffect(() => {
     if (!pendingSlugConfirmation) return;
@@ -358,6 +385,12 @@ export default function ArticleEditor({
       : fields.tagIds.filter((id) => id !== tagId));
   }
 
+  function showFieldErrors(nextErrors: Record<string, string[]>) {
+    errorFocusPending.current = true;
+    setErrors(nextErrors);
+    setErrorFocusRequest((current) => current + 1);
+  }
+
   async function save(confirmSlugChange = false) {
     if (saveInFlight.current || pendingRecovery) return;
     const staleRecovery = Boolean(postId && recoveryBaseVersion && currentPost && recoveryBaseVersion !== currentPost.version);
@@ -377,7 +410,7 @@ export default function ArticleEditor({
     };
     const parsed = adminPostInputSchema.safeParse(candidate);
     if (!parsed.success) {
-      setErrors(zodFieldErrors(parsed.error));
+      showFieldErrors(zodFieldErrors(parsed.error));
       setMessage("请修正标记的字段");
       return;
     }
@@ -403,7 +436,7 @@ export default function ArticleEditor({
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok) {
         const apiError = body as { fields?: Record<string, string[]>; error?: string } | null;
-        if (apiError?.fields) setErrors(apiError.fields);
+        if (apiError?.fields) showFieldErrors(apiError.fields);
         if (apiError?.error === "published_slug_confirmation_required") setMessage("文章版本已变化，请刷新后重新确认 Slug");
         else setMessage(apiError?.error === "slug_conflict" ? "Slug 已被占用" : "文章保存失败，请重试");
         return;
@@ -620,7 +653,7 @@ export default function ArticleEditor({
 
   return (
     <>
-    <main className={`${styles.page} ${styles.editorPage}`}>
+    <main ref={editorRef} className={`${styles.page} ${styles.editorPage}`}>
       <div className={styles.titleRow}>
         <div>
           <p className={styles.eyebrow}>BLOG X / 写作空间</p>
@@ -644,7 +677,7 @@ export default function ArticleEditor({
       <section className={styles.metadata} aria-label="文章元数据">
         <label>标题<input ref={titleRef} value={fields.title} onChange={(event) => updateTitle(event.target.value)} aria-invalid={Boolean(errorFor("title"))} /></label>
         {errorFor("title") && <p className={styles.error}>{errorFor("title")}</p>}
-        <label>摘要<textarea rows={3} value={fields.summary} onChange={(event) => update("summary", event.target.value)} /></label>
+        <label>摘要<textarea rows={3} value={fields.summary} onChange={(event) => update("summary", event.target.value)} aria-invalid={Boolean(errorFor("summary"))} /></label>
         {errorFor("summary") && <p className={styles.error}>{errorFor("summary")}</p>}
         <div className={styles.taxonomyFields}>
           <label>
@@ -667,6 +700,7 @@ export default function ArticleEditor({
                     type="checkbox"
                     checked={fields.tagIds.includes(tag.id)}
                     onChange={(event) => toggleTag(tag.id, event.target.checked)}
+                    aria-invalid={Boolean(errorFor("tagIds"))}
                   />
                   <span>{tag.name}</span>
                 </label>
