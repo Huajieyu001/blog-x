@@ -140,6 +140,15 @@ test("administrator saves, recovers, and responsively previews a complete Markdo
   await page.getByLabel("摘要").fill("通过快捷键保存的完整元数据摘要");
   await pressSaveShortcut(page);
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("更改已保存");
+  await page.getByLabel("摘要").fill("非英文布局也能通过物理 S 键保存");
+  expect(await page.evaluate(() => window.dispatchEvent(new KeyboardEvent("keydown", {
+    key: "ы",
+    code: "KeyS",
+    ctrlKey: true,
+    cancelable: true,
+    bubbles: true,
+  })))).toBe(false);
+  await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("更改已保存");
 
   let releaseSave!: () => void;
   let markSaveIntercepted!: () => void;
