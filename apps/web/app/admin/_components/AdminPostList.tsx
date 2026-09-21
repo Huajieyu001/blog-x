@@ -1,7 +1,6 @@
 "use client";
 
 import type { AdminPost } from "@blog-x/contracts";
-import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "../admin.module.css";
 import ArticleActions from "./ArticleActions";
@@ -24,6 +23,7 @@ const sortLabels: Array<{ value: PostSort; label: string }> = [
 ];
 
 const queryMaximumLength = 160;
+const adminListUrlChangeEvent = "blog-x:admin-list-url-change";
 
 function canonicalQuery(value: string) {
   return value.normalize("NFC").trim().slice(0, queryMaximumLength);
@@ -51,6 +51,15 @@ function adminListHref(nextQuery: string, nextFilter: PostFilter, nextSort: Post
   return `/admin${queryString ? `?${queryString}` : ""}#articles`;
 }
 
+function currentAdminListUrlState() {
+  const parameters = new URLSearchParams(window.location.search);
+  return {
+    filter: parseFilter(parameters.getAll("status")),
+    sort: parseSort(parameters.getAll("sort")),
+    query: parseQuery(parameters.getAll("q")),
+  };
+}
+
 export function AdminOverviewCards({
   publishedCount,
   draftCount,
@@ -68,15 +77,23 @@ export function AdminOverviewCards({
   initialSort: PostSort;
   initialQuery: string;
 }) {
-  const parameters = useSearchParams();
-  const filter = parameters ? parseFilter(parameters.getAll("status")) : initialFilter;
-  const sort = parameters ? parseSort(parameters.getAll("sort")) : initialSort;
-  const query = parameters ? parseQuery(parameters.getAll("q")) : initialQuery;
+  const [urlState, setUrlState] = useState({ filter: initialFilter, sort: initialSort, query: initialQuery });
+
+  useEffect(() => {
+    const synchronize = () => setUrlState(currentAdminListUrlState());
+    synchronize();
+    window.addEventListener(adminListUrlChangeEvent, synchronize);
+    window.addEventListener("popstate", synchronize);
+    return () => {
+      window.removeEventListener(adminListUrlChangeEvent, synchronize);
+      window.removeEventListener("popstate", synchronize);
+    };
+  }, []);
 
   return <div className={styles.overviewCards}>
-    <a className={styles.overviewCard} href={adminListHref(query, "published", sort)} aria-current={filter === "published" ? "true" : undefined}><h3>已发布</h3><strong>{publishedCount}</strong><p>当前对访客可见</p><span>查看文章 →</span></a>
-    <a className={styles.overviewCard} href={adminListHref(query, "draft", sort)} aria-current={filter === "draft" ? "true" : undefined}><h3>草稿</h3><strong>{draftCount}</strong><p>{scheduledCount > 0 ? `其中 ${scheduledCount} 篇已预约` : "等待继续编辑"}</p><span>继续整理 →</span></a>
-    <a className={styles.overviewCard} href={adminListHref(query, "unpublished", sort)} aria-current={filter === "unpublished" ? "true" : undefined}><h3>已下线</h3><strong>{unpublishedCount}</strong><p>保留内容，暂不公开</p><span>查看文章 →</span></a>
+    <a className={styles.overviewCard} href={adminListHref(urlState.query, "published", urlState.sort)} aria-current={urlState.filter === "published" ? "true" : undefined}><h3>已发布</h3><strong>{publishedCount}</strong><p>当前对访客可见</p><span>查看文章 →</span></a>
+    <a className={styles.overviewCard} href={adminListHref(urlState.query, "draft", urlState.sort)} aria-current={urlState.filter === "draft" ? "true" : undefined}><h3>草稿</h3><strong>{draftCount}</strong><p>{scheduledCount > 0 ? `其中 ${scheduledCount} 篇已预约` : "等待继续编辑"}</p><span>继续整理 →</span></a>
+    <a className={styles.overviewCard} href={adminListHref(urlState.query, "unpublished", urlState.sort)} aria-current={urlState.filter === "unpublished" ? "true" : undefined}><h3>已下线</h3><strong>{unpublishedCount}</strong><p>保留内容，暂不公开</p><span>查看文章 →</span></a>
   </div>;
 }
 
@@ -136,6 +153,7 @@ export default function AdminPostList({ posts, initialFilter = "all", initialSor
 
   function replaceList(nextQuery: string, nextFilter: PostFilter, nextSort: PostSort) {
     window.history.replaceState(window.history.state, "", listHref(nextQuery, nextFilter, nextSort));
+    window.dispatchEvent(new Event(adminListUrlChangeEvent));
   }
 
   function updateQuery(value: string) {
