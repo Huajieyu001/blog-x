@@ -9,7 +9,8 @@ import {
   type TaxonomyTerm,
   suggestSlug,
 } from "@blog-x/contracts";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import styles from "../admin.module.css";
 import ArticleActions from "./ArticleActions";
@@ -136,6 +137,10 @@ export default function ArticleEditor({
   const suppressRecoveryWrites = useRef(false);
   const fieldsRef = useRef(fields);
   const publishedAtCorrectionRef = useRef(publishedAtCorrection);
+  const editorReadyRef = useRef(editorReady);
+  const pendingRecoveryRef = useRef(pendingRecovery);
+  const postIdRef = useRef(postId);
+  const recoveryBaseVersionRef = useRef(recoveryBaseVersion);
   const baselineFields = useRef(JSON.stringify(initialFields(post)));
   const initialRecoveryTarget = useRef<EditorRecoveryTarget>(post ? { kind: "post", id: post.id } : { kind: "new" });
   const markdownRef = useRef<HTMLTextAreaElement>(null);
@@ -149,6 +154,40 @@ export default function ArticleEditor({
 
   fieldsRef.current = fields;
   publishedAtCorrectionRef.current = publishedAtCorrection;
+  editorReadyRef.current = editorReady;
+  pendingRecoveryRef.current = pendingRecovery;
+  postIdRef.current = postId;
+  recoveryBaseVersionRef.current = recoveryBaseVersion;
+
+  const flushRecovery = useCallback((announce: boolean) => {
+    if (!editorReadyRef.current || pendingRecoveryRef.current) return;
+    const storage = getEditorRecoveryStorage();
+    if (!storage) {
+      if (announce) setRecoveryMessage("浏览器存储不可用；请及时手动保存");
+      return;
+    }
+    const currentPostId = postIdRef.current;
+    const target: EditorRecoveryTarget = currentPostId ? { kind: "post", id: currentPostId } : { kind: "new" };
+    try {
+      if (suppressRecoveryWrites.current || JSON.stringify(fieldsRef.current) === baselineFields.current) {
+        removeEditorRecoverySnapshot(storage, target);
+        return;
+      }
+      const result = writeEditorRecoverySnapshot(storage, createEditorRecoverySnapshot({
+        target,
+        baseVersion: currentPostId ? recoveryBaseVersionRef.current : null,
+        fields: fieldsRef.current,
+        slugManuallyEdited: slugManuallyEdited.current,
+      }));
+      if (announce) {
+        setRecoveryMessage(result.ok
+          ? "未保存的更改已保存到本机恢复副本"
+          : "无法保存本机恢复副本；请及时手动保存");
+      }
+    } catch {
+      if (announce) setRecoveryMessage("内容过大，无法保存本机恢复副本；请及时手动保存");
+    }
+  }, []);
 
   useEffect(() => {
     if (post?.id) {
@@ -239,59 +278,27 @@ export default function ArticleEditor({
       return;
     }
     const timer = window.setTimeout(() => {
-      try {
-        if (suppressRecoveryWrites.current) {
-          removeEditorRecoverySnapshot(storage, target);
-          return;
-        }
-        // A save can advance the baseline while a previously scheduled debounce
-        // is waiting. Never let that stale callback recreate a recovery draft.
-        if (JSON.stringify(fieldsRef.current) === baselineFields.current) {
-          removeEditorRecoverySnapshot(storage, target);
-          return;
-        }
-        const snapshot = createEditorRecoverySnapshot({
-          target,
-          baseVersion: postId ? recoveryBaseVersion : null,
-          fields: fieldsRef.current,
-          slugManuallyEdited: slugManuallyEdited.current,
-        });
-        setRecoveryMessage(writeEditorRecoverySnapshot(storage, snapshot).ok
-          ? "未保存的更改已保存到本机恢复副本"
-          : "无法保存本机恢复副本；请及时手动保存");
-      } catch {
-        setRecoveryMessage("内容过大，无法保存本机恢复副本；请及时手动保存");
-      }
+      // Read refs at execution time so a save that advances the baseline cannot
+      // be overwritten by a stale debounce callback.
+      flushRecovery(true);
     }, 1_500);
     return () => window.clearTimeout(timer);
-  }, [editorReady, fields, pendingRecovery, postId, recoveryBaseVersion]);
+  }, [editorReady, fields, flushRecovery, pendingRecovery, postId]);
 
   useEffect(() => {
-    if (!editorReady || pendingRecovery || JSON.stringify(fields) === baselineFields.current) return;
-    const flushRecovery = () => {
-      const storage = getEditorRecoveryStorage();
-      if (!storage) return;
-      const target: EditorRecoveryTarget = postId ? { kind: "post", id: postId } : { kind: "new" };
-      try {
-        if (suppressRecoveryWrites.current) {
-          removeEditorRecoverySnapshot(storage, target);
-          return;
-        }
-        if (JSON.stringify(fieldsRef.current) === baselineFields.current) {
-          removeEditorRecoverySnapshot(storage, target);
-          return;
-        }
-        writeEditorRecoverySnapshot(storage, createEditorRecoverySnapshot({
-          target,
-          baseVersion: postId ? recoveryBaseVersion : null,
-          fields: fieldsRef.current,
-          slugManuallyEdited: slugManuallyEdited.current,
-        }));
-      } catch { /* the visible status from the debounced path remains authoritative */ }
+    const handlePageHide = () => flushRecovery(false);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") flushRecovery(false);
     };
-    window.addEventListener("pagehide", flushRecovery);
-    return () => window.removeEventListener("pagehide", flushRecovery);
-  }, [editorReady, fields, pendingRecovery, postId, recoveryBaseVersion]);
+    window.addEventListener("pagehide", handlePageHide);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      // Next.js client navigation unmounts the editor without firing pagehide.
+      flushRecovery(false);
+    };
+  }, [flushRecovery]);
 
   useEffect(() => {
     const sequence = ++previewSequence.current;
@@ -610,7 +617,7 @@ export default function ArticleEditor({
           </div>
         </div>
         <div className={styles.editorHeaderActions}>
-          <a className={styles.secondaryLink} href="/admin#articles">返回文章管理</a>
+          <Link className={styles.secondaryLink} href="/admin#articles">返回文章管理</Link>
           <button ref={saveButtonRef} className={styles.primaryButton} type="button" disabled={saving || Boolean(pendingRecovery)} onClick={() => { void save(); }}>{saving ? "保存中…" : (postId ? "保存更改" : "保存草稿")}</button>
         </div>
       </div>
