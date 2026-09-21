@@ -6,7 +6,7 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "../db/schema.js";
 
 const mediaPathPattern = /^\/media\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const settingsMediaPathPattern = /(?:^|\s)\/media\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?=$|[\s.,!;:，。！；：])/g;
+const settingsMediaPathPattern = /(?<![0-9a-z])\/media\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?![0-9a-z_-]|[?#])/g;
 
 type MarkdownNode = {
   type: string;
@@ -72,9 +72,9 @@ export function extractArticleMediaIds(markdown: string): Set<string> {
 }
 
 /**
- * Site settings are not Markdown. Treat only a standalone, lower-case media
- * path as a reference: prose UUIDs, Markdown links, and code samples remain
- * display text rather than accidental ownership claims.
+ * Site settings are not Markdown. Treat every exact lower-case root media
+ * path as a reference, including future rich-text-like values, so an unknown
+ * settings field fails closed rather than silently dropping an asset.
  */
 export function extractSettingsMediaIds(values: Iterable<string>): Set<string> {
   const ids = new Set<string>();
