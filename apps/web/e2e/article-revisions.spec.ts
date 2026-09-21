@@ -29,7 +29,10 @@ test("administrator compares and restores a bounded article history without rend
   await page.getByLabel("标题").fill("当前标题");
   await page.getByLabel("Markdown").fill(`# 当前内容\n\n${"很长的内容 ".repeat(900)}`);
   await page.getByRole("button", { name: "保存更改" }).click();
-  await expect(page.getByTestId("article-revision-history")).toContainText("标题、正文");
+  const history = page.getByTestId("article-revision-history");
+  await expect(history).toContainText("标题、正文");
+  await expect(history.getByText("1 / 20", { exact: true })).toBeVisible();
+  await expect(history).not.toContainText("# 原始内容");
   await page.getByRole("button", { name: "查看对比" }).click();
   const comparison = page.locator("#revision-comparison");
   await expect(comparison).toContainText("历史标题");
@@ -61,6 +64,14 @@ test("administrator compares and restores a bounded article history without rend
   await restoreButton.click();
   await restoreConfirm.click();
   await expect(page.getByTestId("article-revision-history").getByRole("alert")).toHaveText("文章已被其他保存更新，请刷新后重新选择历史版本。");
+  await expect(restoreButton).toBeFocused();
+  await page.unroute("**/api/admin/posts/*/revisions/*/restore");
+  await page.route("**/api/admin/posts/*/revisions/*/restore", async (route) => {
+    await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "internal" }) });
+  });
+  await restoreButton.click();
+  await restoreConfirm.click();
+  await expect(page.getByTestId("article-revision-history").getByRole("alert")).toHaveText("恢复失败，当前内容未被更改。请稍后重试。");
   await expect(restoreButton).toBeFocused();
   await page.unroute("**/api/admin/posts/*/revisions/*/restore");
   let releaseRestore: (() => void) | undefined;
