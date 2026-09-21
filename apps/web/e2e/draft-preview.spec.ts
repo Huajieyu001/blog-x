@@ -247,6 +247,8 @@ test("administrator saves, recovers, and responsively previews a complete Markdo
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("请修正标记的字段");
   await expect(page.getByLabel("Markdown")).toHaveValue(unsavedMarkdown);
   await expect(page.getByLabel("标题")).toBeFocused();
+  await expect(page.getByLabel("标题")).toHaveAttribute("aria-describedby", "article-title-error");
+  await expect(page.locator("#article-title-error")).toContainText("标题");
 
   await page.getByLabel("标题").fill("恢复后的最新标题");
   await page.getByLabel("Markdown").fill("");
@@ -256,6 +258,7 @@ test("administrator saves, recovers, and responsively previews a complete Markdo
   await expect(page.getByTestId("editor-source")).toBeVisible();
   await expect(page.getByLabel("Markdown")).toBeFocused();
   await expect(page.getByLabel("Markdown")).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByLabel("Markdown")).toHaveAttribute("aria-describedby", "article-markdown-error");
   await page.getByLabel("Markdown").fill(unsavedMarkdown);
   await page.getByRole("button", { name: "保存更改" }).click();
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("更改已保存");

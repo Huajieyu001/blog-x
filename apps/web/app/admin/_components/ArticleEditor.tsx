@@ -675,10 +675,10 @@ export default function ArticleEditor({
       </div>
 
       <section className={styles.metadata} aria-label="文章元数据">
-        <label>标题<input ref={titleRef} value={fields.title} onChange={(event) => updateTitle(event.target.value)} aria-invalid={Boolean(errorFor("title"))} /></label>
-        {errorFor("title") && <p className={styles.error}>{errorFor("title")}</p>}
-        <label>摘要<textarea rows={3} value={fields.summary} onChange={(event) => update("summary", event.target.value)} aria-invalid={Boolean(errorFor("summary"))} /></label>
-        {errorFor("summary") && <p className={styles.error}>{errorFor("summary")}</p>}
+        <label>标题<input ref={titleRef} value={fields.title} onChange={(event) => updateTitle(event.target.value)} aria-invalid={Boolean(errorFor("title"))} aria-describedby={errorFor("title") ? "article-title-error" : undefined} /></label>
+        {errorFor("title") && <p id="article-title-error" className={styles.error}>{errorFor("title")}</p>}
+        <label>摘要<textarea rows={3} value={fields.summary} onChange={(event) => update("summary", event.target.value)} aria-invalid={Boolean(errorFor("summary"))} aria-describedby={errorFor("summary") ? "article-summary-error" : undefined} /></label>
+        {errorFor("summary") && <p id="article-summary-error" className={styles.error}>{errorFor("summary")}</p>}
         <div className={styles.taxonomyFields}>
           <label>
             分类
@@ -686,6 +686,7 @@ export default function ArticleEditor({
               value={fields.categoryId ?? ""}
               onChange={(event) => update("categoryId", event.target.value || null)}
               aria-invalid={Boolean(errorFor("categoryId"))}
+              aria-describedby={errorFor("categoryId") ? "article-category-error" : undefined}
             >
               <option value="">未分类</option>
               {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
@@ -701,6 +702,7 @@ export default function ArticleEditor({
                     checked={fields.tagIds.includes(tag.id)}
                     onChange={(event) => toggleTag(tag.id, event.target.checked)}
                     aria-invalid={Boolean(errorFor("tagIds"))}
+                    aria-describedby={errorFor("tagIds") ? "article-tags-error" : undefined}
                   />
                   <span>{tag.name}</span>
                 </label>
@@ -708,21 +710,21 @@ export default function ArticleEditor({
             </div>
           </fieldset>
         </div>
-        {errorFor("categoryId") && <p className={styles.error}>{errorFor("categoryId")}</p>}
-        {errorFor("tagIds") && <p className={styles.error}>{errorFor("tagIds")}</p>}
+        {errorFor("categoryId") && <p id="article-category-error" className={styles.error}>{errorFor("categoryId")}</p>}
+        {errorFor("tagIds") && <p id="article-tags-error" className={styles.error}>{errorFor("tagIds")}</p>}
         <div className={styles.metadataGrid}>
-          <label>Slug<input value={fields.slug} onChange={(event) => { slugManuallyEdited.current = true; update("slug", event.target.value); }} aria-invalid={Boolean(errorFor("slug"))} /></label>
+          <label>Slug<input value={fields.slug} onChange={(event) => { slugManuallyEdited.current = true; update("slug", event.target.value); }} aria-invalid={Boolean(errorFor("slug"))} aria-describedby={errorFor("slug") ? "article-slug-error" : undefined} /></label>
           {!currentPost || currentPost.status === "draft" ? <p className={styles.firstPublicationNotice}>首次公开发布时间会在成功发布时由系统记录；预约发布时间请在下方“文章生命周期”中单独设置。</p> : (
-            <label>首次发布时间更正<input type="datetime-local" value={fields.publishedAt} onChange={(event) => update("publishedAt", event.target.value)} aria-invalid={Boolean(errorFor("publishedAt"))} /></label>
+            <label>首次发布时间更正<input type="datetime-local" value={fields.publishedAt} onChange={(event) => update("publishedAt", event.target.value)} aria-invalid={Boolean(errorFor("publishedAt"))} aria-describedby={errorFor("publishedAt") ? "article-published-at-error" : undefined} /></label>
           )}
-          <label>SEO 描述<input value={fields.seoDescription} onChange={(event) => update("seoDescription", event.target.value)} aria-invalid={Boolean(errorFor("seoDescription"))} /></label>
+          <label>SEO 描述<input value={fields.seoDescription} onChange={(event) => update("seoDescription", event.target.value)} aria-invalid={Boolean(errorFor("seoDescription"))} aria-describedby={errorFor("seoDescription") ? "article-seo-description-error" : undefined} /></label>
         </div>
         {currentPost && currentPost.status !== "draft" && (
           <label className={styles.correctionToggle}><input type="checkbox" checked={publishedAtCorrection} onChange={(event) => { editSequence.current += 1; setPublishedAtCorrection(event.target.checked); }} />确认将输入值作为发布时间更正</label>
         )}
-        {errorFor("slug") && <p className={styles.error}>{errorFor("slug")}</p>}
-        {errorFor("publishedAt") && <p className={styles.error}>{errorFor("publishedAt")}</p>}
-        {errorFor("seoDescription") && <p className={styles.error}>{errorFor("seoDescription")}</p>}
+        {errorFor("slug") && <p id="article-slug-error" className={styles.error}>{errorFor("slug")}</p>}
+        {errorFor("publishedAt") && <p id="article-published-at-error" className={styles.error}>{errorFor("publishedAt")}</p>}
+        {errorFor("seoDescription") && <p id="article-seo-description-error" className={styles.error}>{errorFor("seoDescription")}</p>}
       </section>
 
       <MediaPanel currentCover={fields.coverMedia ?? null} onInsert={insertMedia} onCover={selectCover} />
@@ -739,8 +741,8 @@ export default function ArticleEditor({
       <section className={styles.editor}>
         <div className={`${styles.pane} ${mobilePane === "edit" ? styles.mobileActive : styles.mobileInactive}`} data-testid="editor-source">
           <div className={styles.paneHeader}><span>Markdown 源码</span><span>{fields.markdown.length.toLocaleString("zh-CN")} 字符</span></div>
-          <label className={styles.markdownLabel}>Markdown<textarea ref={markdownRef} value={fields.markdown} onChange={(event) => update("markdown", event.target.value)} spellCheck={false} aria-invalid={Boolean(errorFor("markdown"))} /></label>
-          {errorFor("markdown") && <p className={styles.error}>{errorFor("markdown")}</p>}
+          <label className={styles.markdownLabel}>Markdown<textarea ref={markdownRef} value={fields.markdown} onChange={(event) => update("markdown", event.target.value)} spellCheck={false} aria-invalid={Boolean(errorFor("markdown"))} aria-describedby={errorFor("markdown") ? "article-markdown-error" : undefined} /></label>
+          {errorFor("markdown") && <p id="article-markdown-error" className={styles.error}>{errorFor("markdown")}</p>}
         </div>
         <div className={`${styles.pane} ${mobilePane === "preview" ? styles.mobileActive : styles.mobileInactive}`} data-testid="editor-preview-pane">
           <div className={styles.paneHeader}><span>安全预览</span><span className={styles.previewStatus}>{previewMessage}</span></div>
