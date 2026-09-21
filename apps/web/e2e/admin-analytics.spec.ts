@@ -270,6 +270,27 @@ test("site settings workspace remains responsive with its fixed ICP guidance", a
   await expect(name).toHaveAttribute("aria-invalid", "true");
   await expect(name).toBeFocused();
   expect(settingsRequests).toBe(0);
+
+  const updatedSiteName = `Blog X ${Date.now()}`;
+  const updatedDescription = "由管理员维护的公开站点简介。";
+  const updatedPublicInfo = "站点身份设置已更新。";
+  await name.fill(updatedSiteName);
+  await page.getByLabel("站点简介").fill(updatedDescription);
+  await page.getByLabel("公开展示信息").fill(updatedPublicInfo);
+  await page.getByRole("button", { name: "保存站点设置" }).click();
+  await expect(page.getByLabel("站点设置状态")).toHaveText("站点设置已保存。");
+
+  for (const width of [390, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`${webOrigin}/`);
+    await expect(page.getByTestId("public-header").getByRole("link", { name: updatedSiteName, exact: true })).toBeVisible();
+    await expect(page).toHaveTitle(updatedSiteName);
+    await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", updatedDescription);
+    const footer = page.locator("footer");
+    await expect(footer.getByText(updatedPublicInfo, { exact: true })).toBeVisible();
+    await expect(footer.getByRole("link", { name: "黔ICP备2023015906号", exact: true })).toHaveAttribute("href", "https://beian.miit.gov.cn/");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  }
 });
 
 test("administrator shell is private, responsive, compact, and theme-aware", async ({ page }) => {
