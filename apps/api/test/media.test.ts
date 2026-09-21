@@ -13,7 +13,7 @@ import { administrators, media, sessions } from "../src/db/schema.js";
 import { processMedia } from "../src/media/processor.js";
 import { LocalMediaStorage } from "../src/media/storage.js";
 import { createMediaService } from "../src/content/media-service.js";
-import { extractArticleMediaIds } from "../src/content/media-reference-policy.js";
+import { extractArticleMediaIds, extractSettingsMediaIds } from "../src/content/media-reference-policy.js";
 
 const databaseUrl = process.env.AUTH_TEST_DATABASE_URL;
 const origin = "http://127.0.0.1:3100";
@@ -216,7 +216,7 @@ test("Markdown admits only exact same-origin media UUID paths", async () => {
 
 test("media reference extraction counts only real Markdown image nodes once", () => {
   const first = "00000000-0000-4000-8000-000000000001";
-  const second = "00000000-0000-4000-8000-000000000002";
+  const second = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
   const ids = extractArticleMediaIds([
     `![direct](/media/${first})`,
     `![again](/media/${first})`,
@@ -227,4 +227,19 @@ test("media reference extraction counts only real Markdown image nodes once", ()
     `\`\`\`md\n![](/media/${second})\n\`\`\``,
   ].join("\n\n"));
   assert.deepEqual([...ids].sort(), [first, second]);
+});
+
+test("settings references require an exact lower-case media path", () => {
+  const first = "00000000-0000-4000-8000-000000000001";
+  const second = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const ids = extractSettingsMediaIds([
+    `Banner /media/${first} is retained.`,
+    `/media/${first}`,
+    `ordinary UUID ${second}`,
+    `[link](/media/${second})`,
+    `code \`/media/${second}\``,
+    `/media/${second.toUpperCase()}`,
+    `/media/${second}?variant=large`,
+  ]);
+  assert.deepEqual([...ids], [first]);
 });

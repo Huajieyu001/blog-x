@@ -5,12 +5,31 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "../db/schema.js";
 import { processMedia } from "../media/processor.js";
 import type { MediaStorage } from "../media/storage.js";
-import { extractArticleMediaIds } from "./media-reference-policy.js";
+import { articleMediaIds, extractArticleMediaIds, extractSettingsMediaIds, lockMediaReferences } from "./media-reference-policy.js";
 import { appendAuditEvent } from "../audit/audit-repository.js";
 
 type Database = NodePgDatabase<typeof schema>;
 
 export function createMediaService(db: Database, storage: MediaStorage) {
+  async function referenceCounts(executor: Database) {
+    const [articles, pages, settings] = await Promise.all([
+      executor.select({ coverMediaId: schema.articles.coverMediaId, markdown: schema.articles.markdown }).from(schema.articles),
+      executor.select({ markdown: schema.sitePages.markdown }).from(schema.sitePages),
+      executor.select({ name: schema.siteSettings.name, description: schema.siteSettings.description, publicInfo: schema.siteSettings.publicInfo }).from(schema.siteSettings),
+    ]);
+    const counts = new Map<string, number>();
+    for (const article of articles) {
+      for (const id of articleMediaIds(article)) counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    for (const page of pages) {
+      for (const id of extractArticleMediaIds(page.markdown)) counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    for (const setting of settings) {
+      for (const id of extractSettingsMediaIds([setting.name, setting.description, setting.publicInfo])) counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    return counts;
+  }
+
   async function upload(source: Buffer, declaredMime: string, usage: { alt: string; decorative: boolean } = { alt: "", decorative: false }) {
     const processed = await processMedia(source, declaredMime);
     const id = randomUUID();
@@ -73,19 +92,7 @@ export function createMediaService(db: Database, storage: MediaStorage) {
       .limit(12)
       .offset((query.page - 1) * 12);
 
-    // A personal blog has bounded retained content.  Counting from the AST
-    // avoids a brittle text search and de-duplicates each article's repeated
-    // uses of the same image.
-    const retained = await db.select({
-      coverMediaId: schema.articles.coverMediaId,
-      markdown: schema.articles.markdown,
-    }).from(schema.articles);
-    const counts = new Map<string, number>();
-    for (const article of retained) {
-      const references = extractArticleMediaIds(article.markdown);
-      if (article.coverMediaId) references.add(article.coverMediaId);
-      for (const id of references) counts.set(id, (counts.get(id) ?? 0) + 1);
-    }
+    const counts = await referenceCounts(db);
     return mediaCatalogResponseSchema.parse({
       page: query.page,
       items: rows.map((row) => {
@@ -104,44 +111,40 @@ export function createMediaService(db: Database, storage: MediaStorage) {
     });
   }
 
-  async function referenceCount(executor: Database, id: string) {
-    const retained = await executor.select({
-      coverMediaId: schema.articles.coverMediaId,
-      markdown: schema.articles.markdown,
-    }).from(schema.articles);
-    let count = 0;
-    for (const article of retained) {
-      const references = extractArticleMediaIds(article.markdown);
-      if (article.coverMediaId) references.add(article.coverMediaId);
-      if (references.has(id)) count += 1;
-    }
-    return count;
-  }
-
   async function deleteUnused(id: string, actorAdministratorId: string) {
-    const outcome = await db.transaction(async (tx) => {
-      const current = (await tx.select({
-        id: schema.media.id,
-        sourceKey: schema.media.sourceKey,
-        derivativeKey: schema.media.derivativeKey,
-        deletedAt: schema.media.deletedAt,
-      }).from(schema.media).where(eq(schema.media.id, id)).limit(1).for("update"))[0];
-      if (!current) return { kind: "not_found" } as const;
-      const references = await referenceCount(tx as Database, id);
-      if (references) return { kind: "in_use", referenceCount: references } as const;
-      if (!current.deletedAt) {
+    let outcome:
+      | { kind: "not_found" }
+      | { kind: "in_use"; referenceCount: number }
+      | { kind: "cleanup"; sourceKey: string; derivativeKey: string; alreadyDeleted: boolean }
+      | { kind: "unavailable" };
+    try {
+      outcome = await db.transaction(async (tx) => {
+        await lockMediaReferences(tx as Database, [id]);
+        const current = (await tx.select({
+          id: schema.media.id,
+          sourceKey: schema.media.sourceKey,
+          derivativeKey: schema.media.derivativeKey,
+          deletedAt: schema.media.deletedAt,
+        }).from(schema.media).where(eq(schema.media.id, id)).limit(1).for("update"))[0];
+        if (!current) return { kind: "not_found" } as const;
+        if (current.deletedAt) return { kind: "cleanup", sourceKey: current.sourceKey, derivativeKey: current.derivativeKey, alreadyDeleted: true } as const;
+        const references = (await referenceCounts(tx as Database)).get(id) ?? 0;
+        if (references) return { kind: "in_use", referenceCount: references } as const;
         const transactionNow = (await tx.execute<{ transactionNow: Date | string }>(sql`select CURRENT_TIMESTAMP as "transactionNow"`)).rows[0]?.transactionNow;
         const deletedAt = transactionNow instanceof Date ? transactionNow : new Date(String(transactionNow));
         if (Number.isNaN(deletedAt.getTime())) throw new Error("transaction timestamp is unavailable");
         await tx.update(schema.media).set({ deletedAt }).where(eq(schema.media.id, id));
         await appendAuditEvent(tx, { actorAdministratorId, event: "media.deleted", targetType: "media", targetId: id, metadata: {} });
-      }
-      return { kind: "cleanup", sourceKey: current.sourceKey, derivativeKey: current.derivativeKey } as const;
-    });
+        return { kind: "cleanup", sourceKey: current.sourceKey, derivativeKey: current.derivativeKey, alreadyDeleted: false } as const;
+      });
+    } catch {
+      return { kind: "unavailable" } as const;
+    }
     if (outcome.kind !== "cleanup") return outcome;
     try {
       await storage.removeExact(outcome.sourceKey);
       await storage.removeExact(outcome.derivativeKey);
+      if (outcome.alreadyDeleted) return { kind: "not_found" } as const;
       return { kind: "deleted", id, deleted: true } as const;
     } catch {
       // Never include storage keys or paths in a client-visible failure.

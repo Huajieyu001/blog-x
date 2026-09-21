@@ -6,6 +6,7 @@ import {
   mediaIdSchema,
   mediaInUseResponseSchema,
   mediaNotFoundResponseSchema,
+  mediaUnavailableResponseSchema,
 } from "@blog-x/contracts";
 import multipart from "@fastify/multipart";
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
@@ -42,6 +43,7 @@ export const mediaRoutes: FastifyPluginAsync<{
     const result = await options.mediaService.deleteUnused(id.data, administratorId);
     if (result.kind === "not_found") return reply.code(404).send(mediaNotFoundResponseSchema.parse({ error: "not_found" }));
     if (result.kind === "in_use") return reply.code(409).send(mediaInUseResponseSchema.parse({ error: "media_in_use", referenceCount: result.referenceCount }));
+    if (result.kind === "unavailable") return reply.code(503).send(mediaUnavailableResponseSchema.parse({ error: "media_unavailable" }));
     if (result.kind === "cleanup_pending") return reply.code(503).send(mediaCleanupPendingResponseSchema.parse({ error: "media_cleanup_pending" }));
     return reply.send(mediaDeletedResponseSchema.parse({ id: result.id, deleted: result.deleted }));
   });

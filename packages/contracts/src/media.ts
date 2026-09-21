@@ -25,7 +25,7 @@ export const mediaNotFoundResponseSchema = z.object({ error: z.literal("not_foun
 
 /** The catalog deliberately exposes only the public derivative projection. */
 export const mediaCatalogQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
+  page: z.coerce.number().int().min(1).max(1000).default(1),
   q: z.string().trim().max(100).default(""),
 }).strict();
 
@@ -50,6 +50,7 @@ export const mediaInUseResponseSchema = z.object({
   referenceCount: z.number().int().positive(),
 }).strict();
 export const mediaCleanupPendingResponseSchema = z.object({ error: z.literal("media_cleanup_pending") }).strict();
+export const mediaUnavailableResponseSchema = z.object({ error: z.literal("media_unavailable") }).strict();
 export const mediaDeletedResponseSchema = z.object({ id: mediaIdSchema, deleted: z.literal(true) }).strict();
 
 export type MediaReference = z.infer<typeof mediaReferenceSchema>;
