@@ -137,7 +137,9 @@ test("revision retention caps material edits and restore conflicts roll back wit
   const selectedRevision = revisions?.[0];
   assert.ok(selectedRevision);
   assert.equal(await service.revisionDetail(foreignArticle.id, selectedRevision.id), null);
-  assert.deepEqual(await service.restoreRevision(foreignArticle.id, selectedRevision.id, current.version, administrator.id), { ok: false, detail: { error: "not_found" } });
+  const foreignCurrent = await service.getDraft(foreignArticle.id);
+  assert.ok(foreignCurrent);
+  assert.deepEqual(await service.restoreRevision(foreignArticle.id, selectedRevision.id, foreignCurrent.version, administrator.id), { ok: false, detail: { error: "not_found" } });
 
   const concurrent = await Promise.all([
     service.restoreRevision(article.id, selectedRevision.id, current.version, administrator.id),
