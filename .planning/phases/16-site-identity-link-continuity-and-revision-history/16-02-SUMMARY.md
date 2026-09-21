@@ -32,7 +32,8 @@ Existing persisted aliases now have explicit lifecycle-browser proof that an old
 
 ## Verification
 
-- `corepack pnpm --filter @blog-x/api test -- article-slug-redirects.test.ts article-lifecycle.test.ts` — passed (the package script ran its configured focused API suite; disposable lifecycle database tests remain environment-gated).
+- `corepack pnpm --filter @blog-x/api test -- article-slug-redirects.test.ts article-lifecycle.test.ts` — passed (the package script retained its configured API suite; it does not forward these paths as the targeted test selection).
+- `corepack pnpm --filter @blog-x/api exec tsx --test test/article-slug-redirects.test.ts test/article-lifecycle.test.ts` — passed (`2` pass, `8` disposable-PostgreSQL tests skipped because `LIFECYCLE_TEST_DATABASE_URL` is unavailable).
 - `corepack pnpm --filter @blog-x/api typecheck` — passed.
 - `corepack pnpm --filter @blog-x/web typecheck` — passed.
 - `node scripts/check-boundaries.mjs` — passed (`700` files, `0` findings).
