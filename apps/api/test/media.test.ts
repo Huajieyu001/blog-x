@@ -190,6 +190,40 @@ test("authenticated upload stores protected source and serves only the immutable
     derivativeFiles: (await readdir(join(mediaRoot, "derivative"))).length,
   }, validBaseline, "invalid uploads leave the valid database and exact-file baseline unchanged");
 
+  const raceUpload = await app.inject({ method: "POST", url: "/admin/media", headers: { origin, cookie, "content-type": upload.contentType }, payload: upload.body });
+  assert.equal(raceUpload.statusCode, 201, raceUpload.body);
+  const raceId = raceUpload.json().id as string;
+  const raceSlug = `media-delete-race-${Date.now()}`;
+  const [raceSave, raceDelete] = await Promise.all([
+    app.inject({
+      method: "POST",
+      url: "/admin/posts",
+      headers: { origin, cookie, "content-type": "application/json" },
+      payload: {
+        title: "Media delete race",
+        summary: "",
+        coverUrl: "",
+        slug: raceSlug,
+        markdown: `![retained](/media/${raceId})`,
+        publishedAt: null,
+        seoDescription: "",
+      },
+    }),
+    app.inject({ method: "DELETE", url: `/admin/media/${raceId}`, headers: { origin, cookie } }),
+  ]);
+  const saveWon = raceSave.statusCode === 201 && raceDelete.statusCode === 409;
+  const deleteWon = raceSave.statusCode === 400 && raceDelete.statusCode === 200;
+  assert.ok(saveWon || deleteWon, `serialized save/delete outcome expected; save=${raceSave.statusCode} delete=${raceDelete.statusCode}`);
+  const raceArticle = (await pool.query("select id from articles where slug = $1", [raceSlug])).rows[0];
+  const raceMedia = (await pool.query("select deleted_at from media where id = $1", [raceId])).rows[0];
+  if (saveWon) {
+    assert.ok(raceArticle, "a committed reference retains its media row");
+    assert.equal(raceMedia.deleted_at, null);
+  } else {
+    assert.equal(raceArticle, undefined, "a committed deletion rejects the competing content write");
+    assert.ok(raceMedia.deleted_at, "the rejected content write cannot leave a dangling reference");
+  }
+
   const referencedId = uploaded.json().id as string;
   await pool.query(
     "insert into articles (title, summary, slug, markdown, status, deleted_at, cover_media_id, cover_alt, legacy_media_review) values ($1, '', $2, $3, 'draft', now(), $4, $5, 'clear')",
