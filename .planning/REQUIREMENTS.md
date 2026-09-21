@@ -2,9 +2,9 @@
 
 ## Security and Recovery
 
-- [ ] **SEC-04**: 管理员可在已认证后台验证当前密码并设置新密码；成功后撤销其他会话、记录审计事件，密码和哈希不出现在日志、响应或仓库中。
-- [ ] **SEC-05**: 正式入口提供合理的 HSTS、内容类型、Referrer、frame、Permissions Policy 和完整 CSP，并隐藏不必要的框架标识，不破坏现有页面、媒体和管理功能。
-- [ ] **CONT-09**: 管理员可查看软删除文章并明确恢复为非公开草稿；恢复不泄漏内容、不绕过 Slug 保留和审计边界。
+- [x] **SEC-04**: 管理员可在已认证后台验证当前密码并设置新密码；成功后撤销其他会话、记录审计事件，密码和哈希不出现在日志、响应或仓库中。
+- [x] **SEC-05**: 正式入口提供合理的 HSTS、内容类型、Referrer、frame、Permissions Policy 和完整 CSP，并隐藏不必要的框架标识，不破坏现有页面、媒体和管理功能。
+- [x] **CONT-09**: 管理员可查看软删除文章并明确恢复为非公开草稿；恢复不泄漏内容、不绕过 Slug 保留和审计边界。
 
 ## Media and Backup
 
@@ -29,7 +29,12 @@
 
 | Requirement | Phase |
 |-------------|-------|
-| SEC-04, SEC-05, CONT-09 | Phase 14 |
-| MEDIA-02, OPS-06 | Phase 15 |
-| SITE-01, LINK-01, CONT-10 | Phase 16 |
+| SEC-04 | Phase 14 |
+| SEC-05 | Phase 14 |
+| CONT-09 | Phase 14 |
+| MEDIA-02 | Phase 15 |
+| OPS-06 | Phase 15 |
+| SITE-01 | Phase 16 |
+| LINK-01 | Phase 16 |
+| CONT-10 | Phase 16 |
 | OPS-07 | Phase 17 |

@@ -26,11 +26,13 @@
 **Goal:** 管理员可安全轮换密码，正式入口获得完整响应头保护，软删除文章可从后台恢复为草稿。
 **Requirements**: SEC-04, SEC-05, CONT-09
 **Depends on:** Phase 13
-**Plans:** 0 plans
+**Plans:** 3/3 plans complete
 
 Plans:
 
-- [ ] TBD (run $gsd-plan-phase 14 to break down)
+- [x] 14-01-PLAN.md
+- [x] 14-02-PLAN.md
+- [x] 14-03-PLAN.md
 
 ### Phase 15: Managed Media Library and Off-host Backup Readiness
 
