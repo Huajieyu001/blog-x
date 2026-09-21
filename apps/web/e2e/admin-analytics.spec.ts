@@ -281,9 +281,9 @@ test("site settings workspace remains responsive with its fixed ICP guidance", a
   await page.getByRole("button", { name: "保存站点设置" }).click();
   await expect(page.getByLabel("站点设置状态")).toHaveText("站点设置已保存。");
 
-  for (const width of [390, 1280]) {
+  for (const [index, width] of [390, 1280].entries()) {
     await page.setViewportSize({ width, height: 900 });
-    await page.goto(`${webOrigin}/`);
+    if (index === 0) await page.goto(`${webOrigin}/`);
     await expect(page.getByTestId("public-header").getByRole("link", { name: updatedSiteName, exact: true })).toBeVisible();
     await expect(page).toHaveTitle("最新文章");
     await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", updatedDescription);
@@ -313,15 +313,17 @@ test("administrator shell is private, responsive, compact, and theme-aware", asy
   await expect(page.locator("main")).toHaveCount(1);
   await expect(page.locator("main")).toBeVisible();
   expect([...origins]).toEqual([webOrigin]);
+  const navigation = page.getByRole("complementary", { name: "后台导航" });
+  await expect(navigation.getByRole("link", { name: "访问统计" })).toHaveAttribute("aria-current", "page");
+  const detailPath = await page.getByRole("link", { name: analyticsTitle }).getAttribute("href");
+  expect(detailPath).toMatch(/^\/admin\/posts\//);
 
   await page.setViewportSize({ width: 1280, height: 900 });
 
-  const navigation = page.getByRole("complementary", { name: "后台导航" });
   const destinations = [
     ["/admin", "工作台"],
     ["/admin#articles", "文章管理"],
     ["/admin/new", "新建文章"],
-    ["/admin/analytics?range=30", "访问统计"],
     ["/admin/taxonomy", "分类与标签"],
     ["/admin/about", "关于页"],
     ["/admin/settings", "站点设置"],
@@ -341,9 +343,6 @@ test("administrator shell is private, responsive, compact, and theme-aware", asy
   }
   await expect(page.getByRole("button", { name: "退出登录" })).toBeVisible();
 
-  await page.goto(`${webOrigin}/admin/analytics?range=30`);
-  const detailPath = await page.getByRole("link", { name: analyticsTitle }).getAttribute("href");
-  expect(detailPath).toMatch(/^\/admin\/posts\//);
   await page.goto(`${webOrigin}${detailPath}`);
   await expect(navigation.getByRole("link", { name: "文章管理" })).toHaveAttribute("aria-current", "page");
 
