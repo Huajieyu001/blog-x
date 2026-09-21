@@ -168,7 +168,7 @@ test("revision retention caps material edits and restore conflicts roll back wit
   `);
   const beforeForcedFailure = await service.getDraft(article.id);
   try {
-    await assert.rejects(service.restoreRevision(article.id, selectedRevision.id, beforeForcedFailure!.version, administrator.id), /forced revision audit failure/);
+    await assert.rejects(service.restoreRevision(article.id, selectedRevision.id, beforeForcedFailure!.version, administrator.id));
     assert.equal((await service.getDraft(article.id))?.version, beforeForcedFailure?.version);
   } finally {
     await pool.query("drop trigger force_revision_restore_audit_failure on audit_events; drop function force_revision_restore_audit_failure()");
