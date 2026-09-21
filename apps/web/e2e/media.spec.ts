@@ -49,6 +49,19 @@ function png(width: number, height: number) {
   ]);
 }
 
+function catalogItem(id: string) {
+  return {
+    id,
+    url: `/media/${id}`,
+    width: 24,
+    height: 24,
+    mimeType: "image/png" as const,
+    createdAt: "2026-09-22T00:00:00.000Z",
+    referenceCount: 0,
+    referenced: false,
+  };
+}
+
 test("administrator uploads, reuses, protects, and safely deletes responsive media through the library", async ({ page, context }) => {
   test.setTimeout(180_000);
 
@@ -166,6 +179,18 @@ test("administrator uploads, reuses, protects, and safely deletes responsive med
   await page.keyboard.press("Escape");
   await expect(deleteButton).toBeFocused();
   await deleteButton.click();
+  await page.route(`**/api/admin/media/${unusedId}`, async (route) => {
+    if (route.request().method() !== "DELETE") return route.fallback();
+    await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "media_in_use", referenceCount: 1 }) });
+  });
+  await deleteDialog.getByRole("button", { name: "确认永久删除" }).click();
+  await expect(deleteDialog).toBeVisible();
+  await expect(deleteRegion.getByRole("status")).toHaveText("该媒体已被内容引用，无法删除。请刷新目录后重试。");
+  await expect(unusedCard).toHaveCount(1);
+  await page.unroute(`**/api/admin/media/${unusedId}`);
+  await deleteDialog.getByRole("button", { name: "取消" }).click();
+  await expect(deleteButton).toBeFocused();
+  await deleteButton.click();
   await deleteDialog.getByRole("button", { name: "确认永久删除" }).click();
   await expect(deleteRegion.getByRole("status")).toHaveText("媒体已永久删除。");
   await expect(unusedCard).toHaveCount(0);
@@ -177,6 +202,26 @@ test("administrator uploads, reuses, protects, and safely deletes responsive med
   await expect(audit).toContainText(unusedId);
   await expect(audit).not.toContainText("source/");
   await expect(audit).not.toContainText("derivative/");
+
+  const fakePageOne = Array.from({ length: 12 }, (_, index) => catalogItem(`10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`));
+  const fakePageTwo = catalogItem("20000000-0000-4000-8000-000000000001");
+  await page.route("**/api/admin/media?*", async (route) => {
+    const requested = new URL(route.request().url());
+    const requestedPage = requested.searchParams.get("page");
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ page: requestedPage === "2" ? 2 : 1, items: requestedPage === "2" ? [fakePageTwo] : fakePageOne }),
+    });
+  });
+  await page.goto(`${webOrigin}/admin/media`);
+  const pagedRegion = page.getByRole("region", { name: "媒体库" });
+  await expect(pagedRegion.getByText("第 1 页")).toBeVisible();
+  await pagedRegion.getByRole("button", { name: "下一页" }).click();
+  await expect(pagedRegion.getByText("第 2 页")).toBeVisible();
+  await expect(pagedRegion.getByText(fakePageTwo.id)).toBeVisible();
+  await pagedRegion.getByRole("button", { name: "上一页" }).click();
+  await expect(pagedRegion.getByText("第 1 页")).toBeVisible();
+  await page.unroute("**/api/admin/media?*");
 
   for (const viewport of [{ width: 390, height: 812 }, { width: 768, height: 1024 }, { width: 1280, height: 900 }]) {
     await page.setViewportSize(viewport);
