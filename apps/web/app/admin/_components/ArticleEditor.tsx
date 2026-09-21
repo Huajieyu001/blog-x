@@ -471,7 +471,7 @@ export default function ArticleEditor({
 
   useEffect(() => {
     const saveFromShortcut = (event: globalThis.KeyboardEvent) => {
-      if (event.isComposing || event.altKey || !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") return;
+      if (event.isComposing || event.repeat || event.altKey || event.shiftKey || !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") return;
       event.preventDefault();
       void saveRef.current();
     };

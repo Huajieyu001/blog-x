@@ -27,6 +27,16 @@ async function pressSaveShortcut(page: Page) {
   await expect(page.locator("body")).toHaveAttribute("data-save-shortcut-default-prevented", "true");
 }
 
+async function expectSaveShortcutVariantIgnored(page: Page, options: { repeat?: boolean; shiftKey?: boolean }) {
+  expect(await page.evaluate((eventOptions) => window.dispatchEvent(new KeyboardEvent("keydown", {
+    key: "s",
+    ctrlKey: true,
+    cancelable: true,
+    bubbles: true,
+    ...eventOptions,
+  })), options)).toBe(true);
+}
+
 test("administrator saves, recovers, and responsively previews a complete Markdown draft", async ({ page, context }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${webOrigin}/login`);
@@ -113,6 +123,9 @@ test("administrator saves, recovers, and responsively previews a complete Markdo
   await expect(saveButton).toHaveAttribute("aria-keyshortcuts", "Control+S Meta+S");
   await expect(saveButton).toHaveAttribute("aria-describedby", "editor-save-shortcut");
   await expect(page.locator("#editor-save-shortcut")).toHaveText("快捷键：Cmd/Ctrl + S");
+  await expectSaveShortcutVariantIgnored(page, { shiftKey: true });
+  await expectSaveShortcutVariantIgnored(page, { repeat: true });
+  await expect(page).toHaveURL(`${webOrigin}/admin/new`);
   await pressSaveShortcut(page);
   await expect(page).toHaveURL(/\/admin\/posts\/[0-9a-f-]+$/);
   await expect(page.getByRole("status", { name: "编辑器状态" })).toHaveText("草稿已保存");
