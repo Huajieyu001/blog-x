@@ -43,7 +43,9 @@ Plans:
 
 Plans:
 
-- [ ] TBD (run $gsd-plan-phase 15 to break down)
+- [x] 15-01-PLAN.md
+- [x] 15-02-PLAN.md
+- [x] 15-03-PLAN.md
 
 ### Phase 16: Site Identity Link Continuity and Revision History
 
