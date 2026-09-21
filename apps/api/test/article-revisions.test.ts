@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { articleRevisionDetailSchema, articleRevisionListSchema } from "@blog-x/contracts";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { createAdminPostRepository } from "../src/content/admin-repository.js";
 import { createArticleService } from "../src/content/article-service.js";
+import { createPublicRepository } from "../src/content/public-repository.js";
 import * as schema from "../src/db/schema.js";
 import { revisionFieldEqual } from "../src/content/article-service.js";
 
@@ -94,4 +96,81 @@ test("restoring a revision uses a version guard, preserves slug continuity, and 
   assert.deepEqual(Object.keys((audit?.metadata ?? {}) as Record<string, unknown>).sort(), ["changedFields", "previousStatus", "revisionId", "status"]);
   assert.equal(JSON.stringify(audit?.metadata).includes("# old"), false);
   assert.equal(JSON.stringify(audit?.metadata).includes("# new"), false);
+  const republished = await service.transition(article.id, "publish", administrator.id);
+  assert.equal(republished.ok, true);
+  assert.deepEqual(await createPublicRepository(db).findDetailBySlug("history-new"), { kind: "redirect", location: "/public/articles/history-old" });
+});
+
+test("revision retention caps material edits and restore conflicts roll back without leaking aliases or audit content", async (context) => {
+  if (!databaseUrl) {
+    context.skip("LIFECYCLE_TEST_DATABASE_URL must name a disposable migrated PostgreSQL database");
+    return;
+  }
+  const pool = new Pool({ connectionString: databaseUrl });
+  const db = drizzle({ client: pool, schema });
+  await pool.query("truncate table audit_events, article_revisions, article_slug_redirects, article_tags, articles, administrators cascade");
+  context.after(async () => { await pool.query("truncate table audit_events, article_revisions, article_slug_redirects, article_tags, articles, administrators cascade"); await pool.end(); });
+
+  const [administrator] = await db.insert(schema.administrators).values({ username: `revision-cap-${Date.now()}`, passwordHash: "test" }).returning({ id: schema.administrators.id });
+  const [article, foreignArticle] = await db.insert(schema.articles).values([
+    { title: "版本 0", summary: "", coverUrl: "", slug: "revision-cap", markdown: "# version 0", seoDescription: "", status: "draft", legacyMediaReview: "clear" },
+    { title: "其他文章", summary: "", coverUrl: "", slug: "revision-foreign", markdown: "# foreign", seoDescription: "", status: "draft", legacyMediaReview: "clear" },
+  ]).returning();
+  assert.ok(administrator && article && foreignArticle);
+  const service = createArticleService(createAdminPostRepository(db));
+  let current = await service.getDraft(article.id);
+  assert.ok(current);
+  for (let revision = 1; revision <= 21; revision += 1) {
+    const result = await service.updateDraft(article.id, {
+      title: `版本 ${revision}`, summary: "", coverUrl: "", slug: "revision-cap", markdown: `# version ${revision}`,
+      publishedAt: null, seoDescription: "", categoryId: null, tagIds: [],
+    }, administrator.id);
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    current = result.post;
+  }
+  const revisions = await service.listRevisions(article.id);
+  assert.equal(revisions?.length, 20);
+  assert.deepEqual(Object.keys(revisions?.[0] ?? {}).sort(), ["changedFields", "createdAt", "id", "sourceVersion"]);
+  assert.deepEqual((await db.select().from(schema.articleRevisions).where(eq(schema.articleRevisions.articleId, article.id))).map((row) => row.articleId), Array(20).fill(article.id));
+  assert.equal((await service.getDraft(article.id))?.title, "版本 21");
+  const selectedRevision = revisions?.[0];
+  assert.ok(selectedRevision);
+  assert.equal(await service.revisionDetail(foreignArticle.id, selectedRevision.id), null);
+  assert.deepEqual(await service.restoreRevision(foreignArticle.id, selectedRevision.id, current.version, administrator.id), { ok: false, detail: { error: "not_found" } });
+
+  const concurrent = await Promise.all([
+    service.restoreRevision(article.id, selectedRevision.id, current.version, administrator.id),
+    service.restoreRevision(article.id, selectedRevision.id, current.version, administrator.id),
+  ]);
+  assert.equal(concurrent.filter((result) => result.ok).length, 1);
+  assert.equal(concurrent.filter((result) => !result.ok && result.detail.error === "stale_version").length, 1);
+  const afterConcurrentRestore = await service.getDraft(article.id);
+  assert.equal(afterConcurrentRestore?.status, "draft");
+  assert.equal(afterConcurrentRestore?.scheduledAt, null);
+
+  const [malformed] = await db.insert(schema.articleRevisions).values({ articleId: article.id, sourceVersion: new Date("2020-01-01T00:00:00.000Z"), snapshot: {}, changedFields: [], actorAdministratorId: administrator.id }).returning({ id: schema.articleRevisions.id });
+  assert.ok(malformed);
+  const malformedRestore = await service.restoreRevision(article.id, malformed.id, afterConcurrentRestore!.version, administrator.id);
+  assert.equal(malformedRestore.ok, false);
+  if (!malformedRestore.ok) assert.equal(malformedRestore.detail.error, "validation_failed");
+
+  await pool.query(`
+    create function force_revision_restore_audit_failure() returns trigger language plpgsql as $$
+    begin
+      if new.event = 'article.revision.restored' then raise exception 'forced revision audit failure'; end if;
+      return new;
+    end;
+    $$;
+    create trigger force_revision_restore_audit_failure before insert on audit_events for each row execute function force_revision_restore_audit_failure();
+  `);
+  const beforeForcedFailure = await service.getDraft(article.id);
+  try {
+    await assert.rejects(service.restoreRevision(article.id, selectedRevision.id, beforeForcedFailure!.version, administrator.id), /forced revision audit failure/);
+    assert.equal((await service.getDraft(article.id))?.version, beforeForcedFailure?.version);
+  } finally {
+    await pool.query("drop trigger force_revision_restore_audit_failure on audit_events; drop function force_revision_restore_audit_failure()");
+  }
+  const auditPayloads = (await db.select({ metadata: schema.auditEvents.metadata }).from(schema.auditEvents)).map((event) => JSON.stringify(event.metadata));
+  assert.equal(auditPayloads.some((metadata) => metadata.includes("# version")), false);
 });
