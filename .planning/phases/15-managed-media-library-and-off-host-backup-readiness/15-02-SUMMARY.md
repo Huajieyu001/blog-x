@@ -20,6 +20,7 @@ metrics:
   duration: "~16m"
   completed: "2026-09-22"
 status: complete
+requirements-completed: [MEDIA-02]
 actuals:
   tokens: 1541
   tasks: 2

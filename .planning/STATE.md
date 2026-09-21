@@ -61,6 +61,14 @@ Last activity: 2026-09-22 — Phase 17 complete
 
 ## Accumulated Context
 
+## Deferred Items
+
+Items acknowledged and deferred at milestone close on 2026-09-22:
+
+| Category | Item | Status |
+|---|---|---|
+| quick_task | 260916-1il-blog-x-api-ssh-dev-icp-https-api | missing; production/server scope remains operator-gated |
+
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.

@@ -22,6 +22,7 @@ decisions:
 metrics:
   completed: "2026-09-22"
 status: complete
+requirements-completed: [OPS-06]
 actuals:
   tokens: 3318
   tasks: 3

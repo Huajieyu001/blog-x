@@ -24,6 +24,7 @@ metrics:
   duration: "~12m"
   completed: 2026-09-22
 status: complete
+requirements-completed: [SITE-01]
 actuals:
   tokens: 1200
   tasks: 2
