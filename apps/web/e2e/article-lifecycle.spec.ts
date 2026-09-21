@@ -81,8 +81,15 @@ test("draft completes publish, edit, slug confirmation, unpublish, republish, an
   expect(redirect.headers()["location"]).toBe(`/public/articles/${changedSlug}`);
   expect((await context.request.get(`${webOrigin}/api/public/articles/${changedSlug}`)).status()).toBe(200);
 
+  // The browser-facing route must preserve the API's one-hop alias authority
+  // without exposing its internal `/public/articles` path.
+  const publicRedirect = await context.request.get(`${webOrigin}/posts/${originalSlug}`, { maxRedirects: 0 });
+  expect(publicRedirect.status()).toBe(308);
+  expect(publicRedirect.headers()["location"]).toBe(`/posts/${changedSlug}`);
   await page.goto(`${webOrigin}/posts/${originalSlug}`);
   await expect(page).toHaveURL(`${webOrigin}/posts/${changedSlug}`);
+  await expect(page.getByRole("heading", { level: 1, name: editedTitle })).toBeVisible();
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", `${webOrigin}/posts/${changedSlug}`);
 
   await page.goto(adminArticleUrl);
   await expect(page.getByLabel("Slug")).toHaveValue(changedSlug);
