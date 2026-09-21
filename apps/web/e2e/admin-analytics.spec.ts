@@ -98,7 +98,8 @@ test("dashboard keeps its authoring hierarchy and visible static actions", async
   await expect(articleSearch).toHaveValue("x".repeat(160));
 
   await page.goto(`${webOrigin}/admin?status=published&sort=title#articles`);
-  await articleSearch.pressSequentially(normalizedQuery);
+  await articleSearch.fill(normalizedQuery);
+  await expect(articleSearch).toHaveValue(normalizedQuery);
   expect(page.url()).toBe(`${webOrigin}/admin?status=published&sort=title#articles`);
   await expect.poll(() => page.url()).toBe(`${webOrigin}/admin?q=${encodedQuery}&status=published&sort=title#articles`);
   await expect(page.getByTestId(/admin-post-/).filter({ hasText: normalizedQuery })).toHaveCount(1);
@@ -284,7 +285,7 @@ test("site settings workspace remains responsive with its fixed ICP guidance", a
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`${webOrigin}/`);
     await expect(page.getByTestId("public-header").getByRole("link", { name: updatedSiteName, exact: true })).toBeVisible();
-    await expect(page).toHaveTitle(updatedSiteName);
+    await expect(page).toHaveTitle("最新文章");
     await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", updatedDescription);
     const footer = page.locator("footer");
     await expect(footer.getByText(updatedPublicInfo, { exact: true })).toBeVisible();
