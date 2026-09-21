@@ -123,12 +123,13 @@ test("dashboard keeps its authoring hierarchy and visible static actions", async
   const desktopClearBox = await clearSearch.boundingBox();
   expect(desktopClearBox?.height).toBeGreaterThanOrEqual(44);
   await clearSearch.click();
-  await expect(page).toHaveURL(`${webOrigin}/admin?status=published&sort=title#articles`);
+  await expect.poll(() => page.url()).toBe(`${webOrigin}/admin?status=published&sort=title#articles`);
   await expect(articleSearch).toHaveValue("");
   await expect(articleSearch).toBeFocused();
 
   await articleSearch.fill(normalizedQuery);
   await expect.poll(() => page.url()).toBe(`${webOrigin}/admin?q=${encodedQuery}&status=published&sort=title#articles`);
+  expect(page.url().match(/#articles/g)).toHaveLength(1);
   await page.setViewportSize({ width: 390, height: 844 });
   const narrowClearSearch = page.getByRole("button", { name: "清除文章搜索" });
   await expect(narrowClearSearch).toBeVisible();

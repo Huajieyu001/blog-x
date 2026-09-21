@@ -1,7 +1,6 @@
 "use client";
 
 import type { AdminPost } from "@blog-x/contracts";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "../admin.module.css";
 import ArticleActions from "./ArticleActions";
@@ -30,7 +29,6 @@ function canonicalQuery(value: string) {
 }
 
 export default function AdminPostList({ posts, initialFilter = "all", initialSort = "recent", initialQuery = "" }: { posts: AdminPost[]; initialFilter?: PostFilter; initialSort?: PostSort; initialQuery?: string }) {
-  const router = useRouter();
   const [records, setRecords] = useState(posts);
   const [query, setQuery] = useState(initialQuery);
   const [filter, setFilter] = useState<PostFilter>(initialFilter);
@@ -91,9 +89,7 @@ export default function AdminPostList({ posts, initialFilter = "all", initialSor
   }
 
   function replaceList(nextQuery: string, nextFilter: PostFilter, nextSort: PostSort) {
-    const destination = new URL(listHref(nextQuery, nextFilter, nextSort), window.location.origin);
-    destination.hash = "articles";
-    router.replace(`${destination.pathname}${destination.search}${destination.hash}`, { scroll: false });
+    window.history.replaceState(window.history.state, "", listHref(nextQuery, nextFilter, nextSort));
   }
 
   function updateQuery(value: string) {
