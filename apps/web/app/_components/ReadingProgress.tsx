@@ -7,8 +7,9 @@ function readingProgress(targetId: string) {
   const target = document.getElementById(targetId);
   if (!target) return 0;
 
-  const top = window.scrollY + target.getBoundingClientRect().top;
-  const scrollableHeight = Math.max(target.getBoundingClientRect().height - window.innerHeight, 1);
+  const bounds = target.getBoundingClientRect();
+  const top = window.scrollY + bounds.top;
+  const scrollableHeight = Math.max(bounds.height - window.innerHeight, 1);
   return Math.round(Math.min(100, Math.max(0, ((window.scrollY - top) / scrollableHeight) * 100)));
 }
 
