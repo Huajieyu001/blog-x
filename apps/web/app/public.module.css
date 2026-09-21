@@ -375,6 +375,7 @@
 .readingProgress { display: none; }
 
 :global(html[data-js="true"]) .readingProgress {
+  display: block;
   position: fixed;
   z-index: 20;
   top: 0;
