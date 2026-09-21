@@ -38,28 +38,38 @@ export default function MediaLibrary({ mode = "select", onSelect }: MediaLibrary
   const [pending, setPending] = useState(false);
   const trigger = useRef<HTMLButtonElement | null>(null);
   const confirmButton = useRef<HTMLButtonElement | null>(null);
+  const catalogRequest = useRef(0);
 
   const loadCatalog = useCallback(async (requestedPage: number, requestedQuery: string, keepStatus = false) => {
+    const request = ++catalogRequest.current;
     setLoadState("loading");
     try {
       const response = await fetch(`/api/admin/media?page=${requestedPage}&q=${encodeURIComponent(requestedQuery)}`, { credentials: "same-origin" });
       const body = await response.json().catch(() => null);
       const parsed = mediaCatalogResponseSchema.safeParse(body);
       if (!response.ok || !parsed.success) throw new Error(catalogError(response.status));
+      // A slower request for a previous page/search must never overwrite the
+      // current catalogue or make a stale card look safe to delete.
+      if (request !== catalogRequest.current) return;
       if (!parsed.data.items.length && requestedPage > 1) {
         setPage(requestedPage - 1);
         return;
       }
+      setPage(parsed.data.page);
       setCatalog(parsed.data);
       setLoadState("ready");
       if (!keepStatus) setMessage(parsed.data.items.length ? "" : "没有找到匹配的媒体。");
     } catch (error) {
+      if (request !== catalogRequest.current) return;
       setLoadState("error");
       setMessage(error instanceof Error ? error.message : catalogError());
     }
   }, []);
 
-  useEffect(() => { void loadCatalog(page, appliedQuery); }, [page, appliedQuery, loadCatalog]);
+  useEffect(() => {
+    void loadCatalog(page, appliedQuery);
+    return () => { catalogRequest.current += 1; };
+  }, [page, appliedQuery, loadCatalog]);
 
   useEffect(() => {
     if (!confirming) return;
@@ -77,8 +87,13 @@ export default function MediaLibrary({ mode = "select", onSelect }: MediaLibrary
 
   function search(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const nextQuery = query.trim();
     setPage(1);
-    setAppliedQuery(query.trim());
+    if (nextQuery === appliedQuery) {
+      void loadCatalog(1, nextQuery);
+      return;
+    }
+    setAppliedQuery(nextQuery);
   }
 
   function cancelDelete() {
