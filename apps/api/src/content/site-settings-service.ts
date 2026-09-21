@@ -2,7 +2,13 @@ import { adminSiteSettingsSchema, defaultSiteSettings, publicSiteSettingsSchema 
 import type { SiteSettingsRepository } from "./site-settings-repository.js";
 
 function publicValue(row?: { name: string; description: string; publicInfo: string }) {
-  return publicSiteSettingsSchema.parse({ ...defaultSiteSettings, ...row });
+  return publicSiteSettingsSchema.parse({
+    name: row?.name ?? defaultSiteSettings.name,
+    description: row?.description ?? defaultSiteSettings.description,
+    publicInfo: row?.publicInfo ?? defaultSiteSettings.publicInfo,
+    registrationNumber: defaultSiteSettings.registrationNumber,
+    registrationUrl: defaultSiteSettings.registrationUrl,
+  });
 }
 
 export function createSiteSettingsService(repository: SiteSettingsRepository) {
