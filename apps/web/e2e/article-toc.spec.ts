@@ -35,13 +35,19 @@ test("server-owned article ToC keeps stable multilingual anchors across responsi
       "",
       "## 中文 架构",
       "",
-      "正文。",
+      ...Array.from({ length: 14 }, (_, index) => `第一节段落 ${index + 1}：用足够长的正文验证目录只反映读者已经滚动经过的服务器标题。`),
       "",
       "### API / Design",
       "",
+      ...Array.from({ length: 14 }, (_, index) => `第二节段落 ${index + 1}：目录链接和文章标题保持各自原有的精确锚点。`),
+      "",
       "## 中文 架构",
       "",
+      ...Array.from({ length: 14 }, (_, index) => `第三节段落 ${index + 1}：重复标题仍通过既有的编号 ID 精确匹配。`),
+      "",
       "## !!!",
+      "",
+      ...Array.from({ length: 14 }, (_, index) => `第四节段落 ${index + 1}：ASCII 回退锚点也可在滚动时成为当前章节。`),
       "",
       "#### 不进入目录的小节",
     ].join("\n"),
@@ -68,6 +74,18 @@ test("server-owned article ToC keeps stable multilingual anchors across responsi
   await expect(page.locator("#中文-架构")).toHaveCount(1);
   await expect(page.locator("#中文-架构-2")).toHaveCount(1);
   await expect(page.locator("#中文-架构 > .heading-permalink")).toHaveAttribute("aria-label", "链接到“中文 架构”");
+  const desktopCurrentLink = desktopToc.locator('a[aria-current="location"]');
+  await expect(desktopCurrentLink).toHaveCount(0);
+  const firstDesktopLink = desktopToc.getByTestId("toc-link").first();
+  await firstDesktopLink.focus();
+  for (const id of ["中文-架构", "api-design", "中文-架构-2", "section"]) {
+    await page.locator(`#${id}`).evaluate((heading) => heading.scrollIntoView({ block: "start" }));
+    await expect.poll(async () => await desktopCurrentLink.getAttribute("href")).toBe(`#${id}`);
+    await expect(desktopCurrentLink).toHaveCount(1);
+    await expect(desktopCurrentLink).not.toHaveAttribute("aria-live");
+    await expect(desktopCurrentLink).not.toHaveAttribute("role", "status");
+    await expect(firstDesktopLink).toBeFocused();
+  }
 
   await page.setViewportSize({ width: 375, height: 812 });
   const narrowToc = page.locator('details[data-testid="article-toc"]');
@@ -78,6 +96,11 @@ test("server-owned article ToC keeps stable multilingual anchors across responsi
   await page.keyboard.press("Enter");
   await expect(narrowToc).toHaveAttribute("open", "");
   expect(await narrowToc.evaluate((toc, body) => Boolean(toc.compareDocumentPosition(body as Node) & Node.DOCUMENT_POSITION_FOLLOWING), await page.getByTestId("article-body").elementHandle())).toBe(true);
+  await page.locator("#api-design").evaluate((heading) => heading.scrollIntoView({ block: "start" }));
+  const narrowCurrentLink = narrowToc.locator('a[aria-current="location"]');
+  await expect.poll(async () => await narrowCurrentLink.getAttribute("href")).toBe("#api-design");
+  await expect(narrowCurrentLink).toHaveCount(1);
+  await expect(narrowToc).toHaveAttribute("open", "");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
   await page.setViewportSize({ width: 768, height: 1024 });
@@ -99,6 +122,7 @@ test("server-owned article ToC keeps stable multilingual anchors across responsi
   const noJsContext = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 1280, height: 900 } });
   const noJsPage = await noJsContext.newPage();
   await noJsPage.goto(`${webOrigin}/posts/${tocSlug}`);
+  await expect(noJsPage.locator('nav[data-testid="article-toc"] a[aria-current="location"]')).toHaveCount(0);
   await noJsPage.locator('nav[data-testid="article-toc"] a[href="#api-design"]').click();
   await expect(noJsPage).toHaveURL(new RegExp(`/posts/${tocSlug}#api-design$`));
   await expect(noJsPage.locator("#api-design")).toBeVisible();
