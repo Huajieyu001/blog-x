@@ -437,8 +437,8 @@ test("pipeline loads only a protected external profile and rejects unsafe profil
 });
 
 test("pipeline unit contract remains dormant, strict, collect-then-adapt, and prohibition-fixture controlled", async () => {
-  const service = await readFile(new URL("../ops/blog-x-backup.service", import.meta.url), "utf8");
-  const timer = await readFile(new URL("../ops/blog-x-backup.timer", import.meta.url), "utf8");
+  const service = await readFile(new URL("../../ops/systemd/blog-x-backup.service", import.meta.url), "utf8");
+  const timer = await readFile(new URL("../../ops/systemd/blog-x-backup.timer", import.meta.url), "utf8");
   const names = JSON.parse(await readFile(new URL("../../ops/backup-policy.names.json", import.meta.url), "utf8"));
   assert.match(service, /production-pipeline\.mjs/);
   assert.match(service, /ConditionPathIsMountPoint=/);
