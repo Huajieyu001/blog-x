@@ -11,6 +11,7 @@ readonly ADMIN_USER=blog-x-admin
 readonly TUNNEL_SERVICE=blog-x-primary-tunnel.service
 readonly TUNNEL_RESTART_ATTEMPTS=75
 readonly TUNNEL_RESTART_INTERVAL_SECONDS=2
+readonly TUNNEL_RECOVERY_ATTEMPTS=15
 readonly ROLLBACK_SERVICE=blog-x-hardening-rollback.service
 readonly ROLLBACK_TIMER=blog-x-hardening-rollback.timer
 
@@ -279,22 +280,43 @@ loopback_api_healthy() {
 }
 
 tunnel_active_timestamp() {
-  systemctl show --property=ActiveEnterTimestampMonotonic --value "$TUNNEL_SERVICE" 2>/dev/null || true
+  local property
+  property="$(systemctl show -p ActiveEnterTimestampMonotonic "$TUNNEL_SERVICE" 2>/dev/null || true)"
+  case "$property" in
+    ActiveEnterTimestampMonotonic=[0-9]*) printf '%s\n' "${property#ActiveEnterTimestampMonotonic=}" ;;
+    *) return 1 ;;
+  esac
 }
 
 restart_tunnel_bounded() {
   if is_test; then [[ ${BLOG_X_HARDEN_TEST_TUNNEL_RESTART:-success} == success ]]; return; fi
-  local before current attempt
-  before="$(tunnel_active_timestamp)"
+  local attempts=${1:-$TUNNEL_RESTART_ATTEMPTS} before current attempt
+  [[ $attempts =~ ^[1-9][0-9]*$ ]] || return 1
+  before="$(tunnel_active_timestamp || true)"
   systemctl restart --no-block "$TUNNEL_SERVICE" || return 1
-  for attempt in $(seq 1 "$TUNNEL_RESTART_ATTEMPTS"); do
-    current="$(tunnel_active_timestamp)"
+  for attempt in $(seq 1 "$attempts"); do
+    current="$(tunnel_active_timestamp || true)"
     if [[ -n $current && $current != "$before" ]] && systemctl is-active --quiet "$TUNNEL_SERVICE" && loopback_api_healthy; then
       return 0
     fi
     sleep "$TUNNEL_RESTART_INTERVAL_SECONDS"
   done
   return 1
+}
+
+tunnel_uses_current_config() {
+  is_test && return 0
+  local user host identity
+  user="$(config_value SECONDARY_SSH_USER)"
+  host="$(config_value SECONDARY_SSH_HOST)"
+  [[ $user =~ ^[a-z_][a-z0-9_-]{0,31}$ && $host =~ ^[A-Za-z0-9._:-]+$ ]] || return 1
+  identity="$user@$host"
+  systemctl is-active --quiet "$TUNNEL_SERVICE" && loopback_api_healthy && ps -eo args= | grep -F -- "$identity" | grep -F -- '127.0.0.1:3001:127.0.0.1:3001' >/dev/null
+}
+
+restore_tunnel_after_switch() {
+  if tunnel_uses_current_config; then return 0; fi
+  restart_tunnel_bounded "$TUNNEL_RECOVERY_ATTEMPTS"
 }
 
 switch_tunnel_user() {
@@ -307,7 +329,7 @@ switch_tunnel_user() {
   fi
   if ! restart_tunnel_bounded; then
     restore_backup "$backup"
-    restart_tunnel_bounded || true
+    restore_tunnel_after_switch || true
     cancel_rollback
     fail "new tunnel account did not provide a healthy loopback API; prior state restored"
   fi

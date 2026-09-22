@@ -82,8 +82,12 @@ test("tunnel switching uses a non-blocking bounded restart and cancels rollback 
   const source = await readFile(script, "utf8");
   assert.match(source, /systemctl restart --no-block "\$TUNNEL_SERVICE"/);
   assert.match(source, /ActiveEnterTimestampMonotonic/);
-  assert.match(source, /seq 1 "\$TUNNEL_RESTART_ATTEMPTS"/);
+  assert.match(source, /systemctl show -p ActiveEnterTimestampMonotonic "\$TUNNEL_SERVICE"/);
+  assert.doesNotMatch(source, /--value/);
+  assert.match(source, /seq 1 "\$attempts"/);
   assert.match(source, /sleep "\$TUNNEL_RESTART_INTERVAL_SECONDS"/);
+  assert.match(source, /tunnel_uses_current_config/);
+  assert.match(source, /restart_tunnel_bounded "\$TUNNEL_RECOVERY_ATTEMPTS"/);
 
   const result = await runWith(root, { BLOG_X_HARDEN_TEST_TUNNEL_RESTART: "fail" }, "switch-tunnel-user", "blog-x-tunnel");
   assert.notEqual(result.code, 0);
