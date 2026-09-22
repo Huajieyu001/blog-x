@@ -21,8 +21,9 @@ async function fixture() {
   const management = createKey("management");
   const tunnel = createKey("tunnel");
   const unrelated = createKey("unrelated");
-  await writeFile(join(adminSsh, "authorized_keys"), `${await readFile(unrelated, "utf8")}${await readFile(tunnel, "utf8")}`, { mode: 0o600 });
-  return { root, management, tunnel, unrelated, adminKeys: join(adminSsh, "authorized_keys") };
+  const restrictedTunnel = `no-agent-forwarding,no-X11-forwarding,no-pty,no-user-rc,permitopen="127.0.0.1:3001" ${await readFile(tunnel, "utf8")}`;
+  await writeFile(join(adminSsh, "authorized_keys"), `${await readFile(unrelated, "utf8")}${restrictedTunnel}`, { mode: 0o600 });
+  return { root, management, tunnel, unrelated, restrictedTunnel, adminKeys: join(adminSsh, "authorized_keys") };
 }
 
 function invoke(root, ...arguments_) {
@@ -56,13 +57,24 @@ test("prepare-admin is additive and provisioned tunnel authorization is exact", 
 test("tunnel migration needs the exact fingerprint and explicit healthy-primary acknowledgement", async () => {
   const state = await fixture();
   const expected = fingerprint(state.tunnel);
+  assert.equal(invoke(state.root, "prepare-admin", `--management-key-file=${state.management}`).status, 0);
   assert.notEqual(invoke(state.root, "finalize-tunnel-migration", `--old-tunnel-key-file=${state.tunnel}`, `--expected-fingerprint=${expected}`, "--ack-primary-tunnel-health=not-yet").status, 0);
   assert.ok((await readFile(state.adminKeys, "utf8")).includes((await readFile(state.tunnel, "utf8")).split(" ")[1]));
   assert.notEqual(invoke(state.root, "finalize-tunnel-migration", `--old-tunnel-key-file=${state.tunnel}`, "--expected-fingerprint=SHA256:wrongwrongwrongwrongwrong", "--ack-primary-tunnel-health=primary-tunnel-switched-restarted-and-healthy").status, 0);
   assert.equal(invoke(state.root, "finalize-tunnel-migration", `--old-tunnel-key-file=${state.tunnel}`, `--expected-fingerprint=${expected}`, "--ack-primary-tunnel-health=primary-tunnel-switched-restarted-and-healthy").status, 0);
   const keys = await readFile(state.adminKeys, "utf8");
-  assert.ok(!keys.includes((await readFile(state.tunnel, "utf8")).split(" ")[1]));
+  assert.ok(!keys.includes(state.restrictedTunnel));
   assert.ok(keys.includes((await readFile(state.unrelated, "utf8")).split(" ")[1]));
+  assert.ok(keys.includes((await readFile(state.management, "utf8")).split(" ")[1]));
+});
+
+test("tunnel migration fails closed for duplicate restricted authorizations", async () => {
+  const state = await fixture();
+  await writeFile(state.adminKeys, `${await readFile(state.adminKeys, "utf8")}${state.restrictedTunnel}`, { mode: 0o600 });
+  const before = await readFile(state.adminKeys, "utf8");
+  const result = invoke(state.root, "finalize-tunnel-migration", `--old-tunnel-key-file=${state.tunnel}`, `--expected-fingerprint=${fingerprint(state.tunnel)}`, "--ack-primary-tunnel-health=primary-tunnel-switched-restarted-and-healthy");
+  assert.notEqual(result.status, 0);
+  assert.equal(await readFile(state.adminKeys, "utf8"), before);
 });
 
 test("invalid key material fails before it can mutate the administrator authority", async () => {

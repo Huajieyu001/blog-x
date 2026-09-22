@@ -43,20 +43,56 @@ key_file() {
   printf '%s\n' "$value"
 }
 
+key_type() { awk '{ print $1 }' "$1"; }
 key_blob() { awk '{ print $2 }' "$1"; }
 key_fingerprint() { ssh-keygen -lf "$1" -E sha256 | awk 'NF >= 2 { print $2 }' | head -n 1; }
 
 authorized_keys_for() { printf '%s/.ssh/authorized_keys\n' "$1"; }
 
+authorized_key_match_count() {
+  local target=$1 wanted_type=$2 wanted_blob=$3
+  awk -v wanted_type="$wanted_type" -v wanted_blob="$wanted_blob" '
+    function key_type(value) {
+      return value == "ssh-ed25519" || value == "sk-ssh-ed25519@openssh.com" || value == "ecdsa-sha2-nistp256" || value == "ssh-rsa"
+    }
+    # OpenSSH key options occupy the single first token, before the key type.
+    # Match only the first key-type/blob pair so comment text cannot masquerade
+    # as another authorization later on the line.
+    function matches() {
+      if (key_type($1)) return $1 == wanted_type && $2 == wanted_blob
+      return $1 !~ /^#/ && key_type($2) && $2 == wanted_type && $3 == wanted_blob
+    }
+    matches() { count++ }
+    END { print count + 0 }
+  ' "$target"
+}
+
+without_authorized_key() {
+  local target=$1 wanted_type=$2 wanted_blob=$3
+  awk -v wanted_type="$wanted_type" -v wanted_blob="$wanted_blob" '
+    function key_type(value) {
+      return value == "ssh-ed25519" || value == "sk-ssh-ed25519@openssh.com" || value == "ecdsa-sha2-nistp256" || value == "ssh-rsa"
+    }
+    function matches() {
+      if (key_type($1)) return $1 == wanted_type && $2 == wanted_blob
+      return $1 !~ /^#/ && key_type($2) && $2 == wanted_type && $3 == wanted_blob
+    }
+    !matches() { print }
+  ' "$target"
+}
+
 atomic_add_key() {
-  local target=$1 source=$2 blob temp
+  local target=$1 source=$2 type blob temp matches
+  type=$(key_type "$source")
   blob=$(key_blob "$source")
-  [[ -n $blob ]] || fail 'public key is invalid'
+  [[ -n $type && -n $blob ]] || fail 'public key is invalid'
   install -d -m 0700 "$(dirname "$target")"
   [[ -e $target && ! -f $target || -L $target ]] && fail 'authorized keys target is unsafe'
   touch "$target"
   chmod 0600 "$target"
-  if awk -v wanted="$blob" '$2 == wanted { found=1 } END { exit found ? 0 : 1 }' "$target"; then return; fi
+  matches=$(authorized_key_match_count "$target" "$type" "$blob")
+  [[ $matches =~ ^[0-9]+$ ]] || fail 'authorized key parser returned an invalid match count'
+  [[ $matches == 0 ]] || { [[ $matches == 1 ]] && return; fail 'authorized key is duplicated'; }
   temp="${target}.tmp.$$"
   { cat "$target"; cat "$source"; } > "$temp"
   chmod 0600 "$temp"
@@ -64,12 +100,14 @@ atomic_add_key() {
 }
 
 atomic_remove_key() {
-  local target=$1 source=$2 blob temp matches
+  local target=$1 source=$2 type blob temp matches
+  type=$(key_type "$source")
   blob=$(key_blob "$source")
-  matches=$(awk -v wanted="$blob" '$2 == wanted { count++ } END { print count + 0 }' "$target")
+  [[ -n $type && -n $blob ]] || fail 'public key is invalid'
+  matches=$(authorized_key_match_count "$target" "$type" "$blob")
   [[ $matches == 1 ]] || fail 'old tunnel authorization must match exactly once'
   temp="${target}.tmp.$$"
-  awk -v wanted="$blob" '$2 != wanted { print }' "$target" > "$temp"
+  without_authorized_key "$target" "$type" "$blob" > "$temp"
   chmod 0600 "$temp"
   mv -f -- "$temp" "$target"
 }
