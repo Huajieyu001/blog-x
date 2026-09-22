@@ -361,17 +361,17 @@ KbdInteractiveAuthentication no
 EOF
   set_root_permissions "$SSHD_DROPIN"
   set_mode 0600 "$SSHD_DROPIN"
-  local tmp include
-  include='Include /etc/ssh/sshd_config.d/*.conf'
+  local tmp include_line
+  include_line='Include /etc/ssh/sshd_config.d/*.conf'
   tmp="$(mktemp "$(dirname "$SSHD_CONFIG")/.sshd_config.XXXXXX")"
-  awk -v include="$include" '
+  awk -v include_line="$include_line" '
     function is_policy(line) {
       return line ~ /^[[:space:]]*(PermitRootLogin|PasswordAuthentication|KbdInteractiveAuthentication|PubkeyAuthentication)[[:space:]]+/
     }
     /^[[:space:]]*Include[[:space:]]+\/etc\/ssh\/sshd_config\.d\/\*\.conf[[:space:]]*$/ { next }
-    !inserted && is_policy($0) { print include; inserted=1 }
+    !inserted && is_policy($0) { print include_line; inserted=1 }
     { print }
-    END { if (!inserted) print include }
+    END { if (!inserted) print include_line }
   ' "$SSHD_CONFIG" > "$tmp"
   set_root_permissions "$tmp"
   set_mode 0600 "$tmp"
@@ -403,6 +403,7 @@ harden_ssh() {
   if ! sshd -t -f "$SSHD_CONFIG" || ! systemctl reload sshd || ! effective_sshd_policy_valid; then
     restore_backup "$backup"
     sshd -t -f "$SSHD_CONFIG" && systemctl reload sshd || true
+    cancel_rollback
     fail "candidate SSH policy failed validation; prior state restored"
   fi
   note "SSH policy reloaded; use confirm-ssh from a second fresh key-only session before rollback expiry"
@@ -524,13 +525,13 @@ confirm_firewall() {
 }
 
 ensure_nginx_include() {
-  local include='    include /etc/nginx/snippets/blog-x-security-headers.conf;'
-  grep -qxF "$include" "$NGINX_CONFIG" && return 0
+  local include_line='    include /etc/nginx/snippets/blog-x-security-headers.conf;'
+  grep -qxF "$include_line" "$NGINX_CONFIG" && return 0
   local tmp
   tmp="$(mktemp "$(dirname "$NGINX_CONFIG")/.blog-x.conf.XXXXXX")"
-  awk -v include="$include" '
+  awk -v include_line="$include_line" '
     { print }
-    /^[[:space:]]*server_tokens[[:space:]]+off;/ { print include; added=1 }
+    /^[[:space:]]*server_tokens[[:space:]]+off;/ { print include_line; added=1 }
     END { if (!added) exit 42 }
   ' "$NGINX_CONFIG" > "$tmp" || { rm -f -- "$tmp"; fail "known Blog X TLS include point was not found"; }
   set_root_permissions "$tmp"
@@ -574,12 +575,14 @@ apply_edge() {
   backup="$(create_backup)"
   if ! install -d -m 0755 "$(dirname "$NGINX_SNIPPET")" || ! install -m 0644 "$SNIPPET_SOURCE" "$NGINX_SNIPPET" || ! ensure_nginx_include; then
     restore_backup "$backup"
+    cancel_rollback
     fail "edge configuration could not be written; last-known-good configuration restored"
   fi
   if is_test; then return 0; fi
   if ! nginx -t || ! systemctl reload nginx || ! verify_edge_headers; then
     restore_backup "$backup"
     nginx -t && systemctl reload nginx || true
+    cancel_rollback
     fail "edge header validation failed; last-known-good Nginx configuration restored"
   fi
   note "edge headers applied and verified without an application release"

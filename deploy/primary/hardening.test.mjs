@@ -105,6 +105,8 @@ test("hardening stages are fixed, reversible, and contain no secret-bearing inte
   assert.match(source, /effective_sshd_policy_valid/);
   assert.match(source, /effective="\$\(sshd -T -f "\$SSHD_CONFIG"\)"/);
   assert.doesNotMatch(source, /sshd -T -f "\$SSHD_CONFIG" \|/);
+  assert.match(source, /awk -v include_line="\$include_line"/);
+  assert.doesNotMatch(source, /awk -v include=/);
   assert.match(source, /systemctl reload sshd/);
   assert.match(source, /systemctl disable --now "\$ROLLBACK_TIMER"/);
   assert.match(source, /systemctl reset-failed "\$ROLLBACK_TIMER" "\$ROLLBACK_SERVICE"/);
@@ -130,6 +132,16 @@ test("confirm-ssh rechecks the captured effective policy before cancelling rollb
   assert.match(confirm, /rollback remains armed/);
   assert.match(source, /challengeresponseauthentication no/);
   assert.match(source, /kbdinteractiveauthentication no/);
+});
+
+test("restored failure paths cancel the armed rollback timer", async () => {
+  const source = await readFile(script, "utf8");
+  const harden = source.slice(source.indexOf("harden_ssh()"), source.indexOf("confirm_ssh()"));
+  const failedValidation = harden.slice(harden.indexOf("if ! sshd -t"));
+  assert.ok(failedValidation.indexOf("restore_backup") < failedValidation.indexOf("cancel_rollback"));
+  assert.match(failedValidation, /prior state restored/);
+  const edge = source.slice(source.indexOf("apply_edge()"), source.indexOf("rollback_edge()"));
+  assert.equal((edge.match(/restore_backup "\$backup"[\s\S]{0,180}cancel_rollback/g) ?? []).length, 2);
 });
 
 test("SSH include precedes legacy access directives so OpenSSH evaluates the hardened first value", async (t) => {
