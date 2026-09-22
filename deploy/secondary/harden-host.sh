@@ -49,6 +49,15 @@ key_fingerprint() { ssh-keygen -lf "$1" -E sha256 | awk 'NF >= 2 { print $2 }' |
 
 authorized_keys_for() { printf '%s/.ssh/authorized_keys\n' "$1"; }
 
+secure_authorized_keys() {
+  local account=$1 home=$2 target=$3
+  # Atomic replacement runs as root; reset both modes and ownership after every
+  # account mutation so sshd continues to accept the account's public keys.
+  chmod 0700 "$home/.ssh"
+  chmod 0600 "$target"
+  if [[ -z $test_root ]]; then chown "$account:$account" "$home/.ssh" "$target"; fi
+}
+
 authorized_key_match_count() {
   local target=$1 wanted_type=$2 wanted_blob=$3
   awk -v wanted_type="$wanted_type" -v wanted_blob="$wanted_blob" '
@@ -119,7 +128,7 @@ prepare_admin() {
   target=$(authorized_keys_for "$ADMIN_HOME")
   [[ -d $ADMIN_HOME ]] || fail 'Ubuntu administrator home is unavailable'
   atomic_add_key "$target" "$source"
-  if [[ -z $test_root ]]; then chown -R "$ADMIN_USER:$ADMIN_USER" "$ADMIN_HOME/.ssh"; fi
+  secure_authorized_keys "$ADMIN_USER" "$ADMIN_HOME" "$target"
 }
 
 provision_tunnel_user() {
@@ -145,12 +154,12 @@ provision_tunnel_user() {
   printf '%s\n' "$line" > "${target}.tmp.$$"
   chmod 0600 "${target}.tmp.$$"
   mv -f -- "${target}.tmp.$$" "$target"
-  if [[ -z $test_root ]]; then chown -R "$TUNNEL_USER:$TUNNEL_USER" "$TUNNEL_HOME/.ssh"; fi
+  secure_authorized_keys "$TUNNEL_USER" "$TUNNEL_HOME" "$target"
 }
 
 finalize_tunnel_migration() {
   [[ $# -eq 3 ]] || usage
-  local old_file='' expected='' acknowledgement='' argument
+  local old_file='' expected='' acknowledgement='' argument target
   for argument in "$@"; do
     case $argument in
       --old-tunnel-key-file=*) old_file=$(key_file "$argument") ;;
@@ -162,7 +171,9 @@ finalize_tunnel_migration() {
   [[ -n $old_file && $expected =~ ^SHA256:[A-Za-z0-9+/]{20,}={0,2}$ ]] || fail 'tunnel migration fingerprint is invalid'
   require_exact "$acknowledgement" "$ACK_PRIMARY_TUNNEL_HEALTH"
   [[ $(key_fingerprint "$old_file") == "$expected" ]] || fail 'tunnel migration fingerprint does not match old key'
-  atomic_remove_key "$(authorized_keys_for "$ADMIN_HOME")" "$old_file"
+  target=$(authorized_keys_for "$ADMIN_HOME")
+  atomic_remove_key "$target" "$old_file"
+  secure_authorized_keys "$ADMIN_USER" "$ADMIN_HOME" "$target"
 }
 
 backup_dir() {

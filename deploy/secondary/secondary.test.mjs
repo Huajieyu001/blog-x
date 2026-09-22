@@ -121,6 +121,8 @@ test("secondary hardening is staged, key-acknowledged, and keeps application por
   assert.match(hardening, /openssl rand -base64 48 \| openssl passwd -6 -stdin/);
   assert.match(hardening, /usermod --shell \/usr\/sbin\/nologin --password/);
   assert.doesNotMatch(hardening, /passwd --lock/);
+  assert.match(hardening, /secure_authorized_keys\(\)/);
+  assert.match(hardening, /chown "\$account:\$account" "\$home\/\.ssh" "\$target"/);
   assert.match(hardening, /sshd -t/);
   assert.match(hardening, /reload ssh/);
   assert.match(hardening, /ufw allow 22\/tcp/);

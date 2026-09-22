@@ -108,3 +108,14 @@ test("tunnel account stays key-auth eligible while its password remains unknowab
   assert.match(source, /unset password_hash/);
   assert.doesNotMatch(source, /passwd --lock/);
 });
+
+test("authorized_keys mutations restore account ownership and strict modes after atomic replacement", async () => {
+  const source = await readFile(script, "utf8");
+  assert.match(source, /secure_authorized_keys\(\) \{/);
+  assert.match(source, /chmod 0700 "\$home\/\.ssh"/);
+  assert.match(source, /chmod 0600 "\$target"/);
+  assert.match(source, /chown "\$account:\$account" "\$home\/\.ssh" "\$target"/);
+  assert.match(source, /atomic_add_key "\$target" "\$source"\n  secure_authorized_keys "\$ADMIN_USER" "\$ADMIN_HOME" "\$target"/);
+  assert.match(source, /atomic_remove_key "\$target" "\$old_file"\n  secure_authorized_keys "\$ADMIN_USER" "\$ADMIN_HOME" "\$target"/);
+  assert.match(source, /secure_authorized_keys "\$TUNNEL_USER" "\$TUNNEL_HOME" "\$target"/);
+});
