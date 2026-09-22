@@ -102,8 +102,14 @@ test("hardening stages are fixed, reversible, and contain no secret-bearing inte
     assert.match(source, new RegExp(`\\b${stage}\\b`));
   }
   assert.match(source, /sshd -t/);
-  assert.match(source, /sshd -T -f "\$SSHD_CONFIG"/);
+  assert.match(source, /effective_sshd_policy_valid/);
+  assert.match(source, /effective="\$\(sshd -T -f "\$SSHD_CONFIG"\)"/);
+  assert.doesNotMatch(source, /sshd -T -f "\$SSHD_CONFIG" \|/);
   assert.match(source, /systemctl reload sshd/);
+  assert.match(source, /systemctl disable --now "\$ROLLBACK_TIMER"/);
+  assert.match(source, /systemctl reset-failed "\$ROLLBACK_TIMER" "\$ROLLBACK_SERVICE"/);
+  assert.match(source, /systemctl enable "\$ROLLBACK_TIMER"/);
+  assert.match(source, /systemctl start "\$ROLLBACK_TIMER"/);
   assert.match(source, /firewall-offline-cmd/);
   assert.match(source, /runtime-state\.env/);
   assert.match(source, /firewalld-config\.tar\.gz/);
@@ -115,6 +121,15 @@ test("hardening stages are fixed, reversible, and contain no secret-bearing inte
   assert.match(source, /--max-time/);
   assert.match(source, /SECONDARY_SSH_USER/);
   assert.doesNotMatch(source, /PRIVATE KEY|PASSWORD=|read -s/);
+});
+
+test("confirm-ssh rechecks the captured effective policy before cancelling rollback", async () => {
+  const source = await readFile(script, "utf8");
+  const confirm = source.slice(source.indexOf("confirm_ssh()"), source.indexOf("rpc_consumers_present()"));
+  assert.ok(confirm.indexOf("effective_sshd_policy_valid") < confirm.indexOf("cancel_rollback"));
+  assert.match(confirm, /rollback remains armed/);
+  assert.match(source, /challengeresponseauthentication no/);
+  assert.match(source, /kbdinteractiveauthentication no/);
 });
 
 test("SSH include precedes legacy access directives so OpenSSH evaluates the hardened first value", async (t) => {

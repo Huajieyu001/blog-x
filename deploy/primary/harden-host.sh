@@ -205,7 +205,11 @@ arm_rollback() {
   set_mode 0600 "$service" "$timer"
   if ! is_test; then
     systemctl daemon-reload
-    systemctl enable --now "$ROLLBACK_TIMER"
+    systemctl disable --now "$ROLLBACK_TIMER" >/dev/null 2>&1 || true
+    systemctl reset-failed "$ROLLBACK_TIMER" "$ROLLBACK_SERVICE" >/dev/null 2>&1 || true
+    systemctl enable "$ROLLBACK_TIMER"
+    systemctl start "$ROLLBACK_TIMER"
+    systemctl is-active --quiet "$ROLLBACK_TIMER" || fail "rollback timer did not start"
   fi
   printf '%s\n' "$backup" > "$STATE_DIR/.armed-backup"
   set_root_permissions "$STATE_DIR/.armed-backup"
@@ -374,6 +378,15 @@ EOF
   mv -f -- "$tmp" "$SSHD_CONFIG"
 }
 
+effective_sshd_policy_valid() {
+  local effective expected
+  effective="$(sshd -T -f "$SSHD_CONFIG")" || return 1
+  for expected in 'permitrootlogin no' 'passwordauthentication no' 'pubkeyauthentication yes'; do
+    grep -qxF "$expected" <<<"$effective" || return 1
+  done
+  grep -qxF 'kbdinteractiveauthentication no' <<<"$effective" || grep -qxF 'challengeresponseauthentication no' <<<"$effective"
+}
+
 harden_ssh() {
   [[ ${1:-} == --fresh-key-session ]] || fail "pass --fresh-key-session only from a verified new administrator session"
   acknowledge_fresh_session
@@ -387,7 +400,7 @@ harden_ssh() {
     fail "candidate SSH policy could not be written; prior state restored"
   fi
   if is_test; then return 0; fi
-  if ! sshd -t -f "$SSHD_CONFIG" || ! systemctl reload sshd || ! sshd -T -f "$SSHD_CONFIG" | grep -qx 'permitrootlogin no' || ! sshd -T -f "$SSHD_CONFIG" | grep -qx 'passwordauthentication no' || ! sshd -T -f "$SSHD_CONFIG" | grep -qx 'kbdinteractiveauthentication no' || ! sshd -T -f "$SSHD_CONFIG" | grep -qx 'pubkeyauthentication yes'; then
+  if ! sshd -t -f "$SSHD_CONFIG" || ! systemctl reload sshd || ! effective_sshd_policy_valid; then
     restore_backup "$backup"
     sshd -t -f "$SSHD_CONFIG" && systemctl reload sshd || true
     fail "candidate SSH policy failed validation; prior state restored"
@@ -399,6 +412,9 @@ confirm_ssh() {
   [[ ${1:-} == --fresh-key-session ]] || fail "pass --fresh-key-session from a second verified administrator session"
   acknowledge_fresh_session
   require_fresh_session
+  if ! is_test && ! effective_sshd_policy_valid; then
+    fail "effective SSH key-only policy is no longer valid; rollback remains armed"
+  fi
   cancel_rollback
   note "SSH rollback cancelled after second key-only session acknowledgement"
 }
