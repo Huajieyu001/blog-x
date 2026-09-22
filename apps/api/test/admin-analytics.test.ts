@@ -28,6 +28,7 @@ const validAnalytics = {
     { source: "external", totalPv: 0 },
   ],
   topArticles: [{ articleId: "00000000-0000-4000-8000-000000000001", title: "Published article", status: "published", totalPv: 3 }],
+  comparison: { status: "available", previousFromDay: "2026-07-08", previousToDay: "2026-08-06", previousTotalPv: 2, deltaPv: 1 },
 } as const;
 
 async function createAnalyticsApp({ failing = false } = {}) {
@@ -159,6 +160,7 @@ test("analytics aggregates only currently public articles and restores stored PV
     INSERT INTO article_daily_views (article_id, day, total_pv, direct_pv, search_pv)
     SELECT $1::uuid, today, 5, 5, 0 FROM bounds
     UNION ALL SELECT $1::uuid, today - 2, 1, 0, 1 FROM bounds
+    UNION ALL SELECT $2::uuid, today - 7, 9, 9, 0 FROM bounds
     UNION ALL SELECT $2::uuid, today, 9, 9, 0 FROM bounds
     UNION ALL SELECT $3::uuid, today, 9, 9, 0 FROM bounds
     UNION ALL SELECT $4::uuid, today, 9, 9, 0 FROM bounds
@@ -172,6 +174,25 @@ test("analytics aggregates only currently public articles and restores stored PV
     assert.equal(result.daily.every((point) => /^\d{4}-\d{2}-\d{2}$/.test(point.day)), true);
     assert.equal(result.daily.at(-1)?.day, result.toDay);
     assert.equal(result.daily.reduce((sum, point) => sum + point.pv, 0), 6);
+    if (range === 400) {
+      assert.equal(result.comparison.status, "unavailable");
+      if (result.comparison.status === "unavailable") {
+        const previousToDay = new Date(`${result.fromDay}T00:00:00.000Z`);
+        previousToDay.setUTCDate(previousToDay.getUTCDate() - 1);
+        const previousFromDay = new Date(`${result.fromDay}T00:00:00.000Z`);
+        previousFromDay.setUTCDate(previousFromDay.getUTCDate() - range);
+        assert.deepEqual(result.comparison, {
+          status: "unavailable",
+          reason: "outside_retention",
+          previousFromDay: previousFromDay.toISOString().slice(0, 10),
+          previousToDay: previousToDay.toISOString().slice(0, 10),
+        });
+      }
+    } else {
+      assert.equal(result.comparison.status, "available");
+      assert.equal(result.comparison.previousTotalPv, 0);
+      assert.equal(result.comparison.deltaPv, 6);
+    }
   }
   const visible = await repository.read({ range: 7, limit: 8 });
   assert.equal(visible.daily.length, 7);

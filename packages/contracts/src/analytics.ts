@@ -12,12 +12,29 @@ const adminAnalyticsRangeQueryValues = ["7", "30", "90", "400"] as const;
 const adminAnalyticsSourceSchema = z.enum(anonymousViewSourceValues);
 const daySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const nonNegativeSafeIntegerSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const signedSafeIntegerSchema = z.number().int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER);
 
 /** The wire query remains strings so duplicate, signed, decimal, and padded inputs fail closed. */
 export const adminAnalyticsQuerySchema = z.object({
   range: z.enum(adminAnalyticsRangeQueryValues).transform((value) => Number(value) as (typeof adminAnalyticsRangeValues)[number]),
   limit: z.string().regex(/^[1-8]$/).transform(Number),
 }).strict();
+
+const adminAnalyticsComparisonSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("available"),
+    previousFromDay: daySchema,
+    previousToDay: daySchema,
+    previousTotalPv: nonNegativeSafeIntegerSchema,
+    deltaPv: signedSafeIntegerSchema,
+  }).strict(),
+  z.object({
+    status: z.literal("unavailable"),
+    reason: z.literal("outside_retention"),
+    previousFromDay: daySchema,
+    previousToDay: daySchema,
+  }).strict(),
+]);
 
 const adminAnalyticsResponseBaseSchema = z.object({
   range: z.union([z.literal(7), z.literal(30), z.literal(90), z.literal(400)]),
@@ -33,6 +50,7 @@ const adminAnalyticsResponseBaseSchema = z.object({
     status: z.literal("published"),
     totalPv: nonNegativeSafeIntegerSchema,
   }).strict()),
+  comparison: adminAnalyticsComparisonSchema,
 }).strict();
 
 function addCalendarDays(day: string, amount: number) {
@@ -48,6 +66,16 @@ export const adminAnalyticsResponseSchema = adminAnalyticsResponseBaseSchema.sup
   if (value.daily[0]?.day !== value.fromDay) issue(["fromDay"], "fromDay must equal the first daily day");
   if (value.daily.at(-1)?.day !== value.toDay) issue(["toDay"], "toDay must equal the last daily day");
   if (addCalendarDays(value.fromDay, value.range - 1) !== value.toDay) issue(["toDay"], "range endpoints are inconsistent");
+  const previousFromDay = addCalendarDays(value.fromDay, -value.range);
+  const previousToDay = addCalendarDays(value.fromDay, -1);
+  if (!previousFromDay || !previousToDay) issue(["comparison"], "comparison dates are invalid");
+  if (value.comparison.previousFromDay !== previousFromDay) issue(["comparison", "previousFromDay"], "previous period must be immediately adjacent and equal length");
+  if (value.comparison.previousToDay !== previousToDay) issue(["comparison", "previousToDay"], "previous period must end immediately before the current period");
+  if (value.range === 400 && value.comparison.status !== "unavailable") issue(["comparison", "status"], "400-day comparison is outside retention");
+  if (value.range !== 400 && value.comparison.status !== "available") issue(["comparison", "status"], "retained comparison must be available");
+  if (value.comparison.status === "available" && value.comparison.deltaPv !== value.totalPv - value.comparison.previousTotalPv) {
+    issue(["comparison", "deltaPv"], "comparison delta must equal current minus previous PV");
+  }
   for (let index = 0; index < value.daily.length; index += 1) {
     const point = value.daily[index]!;
     const expected = addCalendarDays(value.fromDay, index);
