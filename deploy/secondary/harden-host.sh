@@ -194,6 +194,10 @@ snapshot_host() {
 
 arm_rollback() {
   local directory=$1 unit=blog-x-secondary-hardening-rollback
+  # A previous elapsed timer remains active until explicitly stopped. Reset it
+  # before writing the next stage so every mutation receives a fresh window.
+  systemctl stop "$unit.timer" "$unit.service" 2>/dev/null || true
+  systemctl reset-failed "$unit.timer" "$unit.service" 2>/dev/null || true
   cat > "/etc/systemd/system/$unit.service" <<UNIT
 [Unit]
 Description=Blog X secondary hardening timed rollback
@@ -212,6 +216,15 @@ WantedBy=timers.target
 UNIT
   systemctl daemon-reload
   systemctl start "$unit.timer"
+  systemctl is-active --quiet "$unit.timer"
+}
+
+disarm_rollback() {
+  local unit=blog-x-secondary-hardening-rollback
+  # Do not stop this service from within its own rollback ExecStart. The timer
+  # is the remaining trigger; reset any stale unit failure state idempotently.
+  systemctl stop "$unit.timer" 2>/dev/null || true
+  systemctl reset-failed "$unit.timer" "$unit.service" 2>/dev/null || true
 }
 
 restore_snapshot() {
@@ -224,10 +237,12 @@ restore_snapshot() {
 }
 
 require_sshd_policy() {
-  sshd -T | grep -qx 'permitrootlogin no'
-  sshd -T | grep -qx 'passwordauthentication no'
-  sshd -T | grep -Eq '^kbdinteractiveauthentication no$|^challengeresponseauthentication no$'
-  sshd -T | grep -qx 'pubkeyauthentication yes'
+  local sshd_effective
+  sshd_effective=$(sshd -T)
+  grep -Fqx 'permitrootlogin no' <<<"$sshd_effective"
+  grep -Fqx 'passwordauthentication no' <<<"$sshd_effective"
+  grep -Fqx 'kbdinteractiveauthentication no' <<<"$sshd_effective" || grep -Fqx 'challengeresponseauthentication no' <<<"$sshd_effective"
+  grep -Fqx 'pubkeyauthentication yes' <<<"$sshd_effective"
 }
 
 write_sshd_policy() {
@@ -254,7 +269,7 @@ harden_ssh() {
 confirm_ssh() {
   [[ $# -eq 1 && $1 == --ack-fresh-admin-key-session=$ACK_FRESH_KEY_SESSION ]] || fail 'fresh key-only administrator session acknowledgement is required'
   require_sshd_policy
-  systemctl stop blog-x-secondary-hardening-rollback.timer
+  disarm_rollback
 }
 
 apply_firewall() {
@@ -286,12 +301,13 @@ verify_live_topology() {
 confirm_firewall() {
   [[ $# -eq 1 && $1 == --ack-fresh-admin-key-session=$ACK_FRESH_KEY_SESSION ]] || fail 'fresh key-only administrator session acknowledgement is required'
   verify_live_topology
-  systemctl stop blog-x-secondary-hardening-rollback.timer
+  disarm_rollback
 }
 
 rollback() {
   [[ $# -eq 1 && $1 == --backup-dir=* ]] || usage
   restore_snapshot "$(backup_dir "${1#*=}")"
+  disarm_rollback
 }
 
 case ${1:-} in

@@ -95,9 +95,12 @@ test("SSH and firewall stages are acknowledgement-gated, rollback-backed, and li
   assert.match(source, /host mutation stages cannot run with a test root/);
   assert.doesNotMatch(source, /ufw allow (?:3001|5432)/);
   assert.match(source, /readonly SSH_POLICY=\/etc\/ssh\/sshd_config\.d\/00-blog-x-hardening\.conf/);
-  assert.match(source, /sshd -T \| grep -qx 'passwordauthentication no'/);
-  assert.match(source, /systemctl daemon-reload[\s\S]*systemctl start "\$unit\.timer"/);
-  assert.match(source, /systemctl stop blog-x-secondary-hardening-rollback\.timer/);
+  assert.match(source, /sshd_effective=\$\(sshd -T\)/);
+  assert.doesNotMatch(source, /sshd -T\s*\|/);
+  assert.match(source, /grep -Fqx 'passwordauthentication no' <<<"\$sshd_effective"/);
+  assert.match(source, /systemctl stop "\$unit\.timer" "\$unit\.service" 2>\/dev\/null \|\| true[\s\S]*systemctl reset-failed "\$unit\.timer" "\$unit\.service" 2>\/dev\/null \|\| true[\s\S]*systemctl daemon-reload[\s\S]*systemctl start "\$unit\.timer"[\s\S]*systemctl is-active --quiet "\$unit\.timer"/);
+  assert.match(source, /disarm_rollback\(\) \{[\s\S]*systemctl stop "\$unit\.timer" 2>\/dev\/null \|\| true[\s\S]*systemctl reset-failed "\$unit\.timer" "\$unit\.service" 2>\/dev\/null \|\| true/);
+  assert.match(source, /restore_snapshot "\$\(backup_dir "\$\{1#\*=\}"\)"\n  disarm_rollback/);
 });
 
 test("tunnel account stays key-auth eligible while its password remains unknowable", async () => {

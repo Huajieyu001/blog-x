@@ -117,7 +117,11 @@ test("secondary hardening is staged, key-acknowledged, and keeps application por
   assert.doesNotMatch(hardening, /command=/);
   assert.match(hardening, /OnActiveSec=10min/);
   assert.match(hardening, /00-blog-x-hardening\.conf/);
-  assert.match(hardening, /sshd -T \| grep -qx 'passwordauthentication no'/);
+  assert.match(hardening, /sshd_effective=\$\(sshd -T\)/);
+  assert.doesNotMatch(hardening, /sshd -T\s*\|/);
+  assert.match(hardening, /systemctl stop "\$unit\.timer" "\$unit\.service"/);
+  assert.match(hardening, /systemctl reset-failed "\$unit\.timer" "\$unit\.service"/);
+  assert.match(hardening, /systemctl is-active --quiet "\$unit\.timer"/);
   assert.match(hardening, /openssl rand -base64 48 \| openssl passwd -6 -stdin/);
   assert.match(hardening, /usermod --shell \/usr\/sbin\/nologin --password/);
   assert.doesNotMatch(hardening, /passwd --lock/);
