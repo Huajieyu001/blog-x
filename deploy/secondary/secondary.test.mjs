@@ -116,6 +116,11 @@ test("secondary hardening is staged, key-acknowledged, and keeps application por
   assert.match(hardening, /permitopen=\\"\$TUNNEL_DESTINATION\\"/);
   assert.doesNotMatch(hardening, /command=/);
   assert.match(hardening, /OnActiveSec=10min/);
+  assert.match(hardening, /00-blog-x-hardening\.conf/);
+  assert.match(hardening, /sshd -T \| grep -qx 'passwordauthentication no'/);
+  assert.match(hardening, /openssl rand -base64 48 \| openssl passwd -6 -stdin/);
+  assert.match(hardening, /usermod --shell \/usr\/sbin\/nologin --password/);
+  assert.doesNotMatch(hardening, /passwd --lock/);
   assert.match(hardening, /sshd -t/);
   assert.match(hardening, /reload ssh/);
   assert.match(hardening, /ufw allow 22\/tcp/);

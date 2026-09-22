@@ -82,4 +82,17 @@ test("SSH and firewall stages are acknowledgement-gated, rollback-backed, and li
   assert.match(source, /confirm-firewall\) shift; confirm_firewall/);
   assert.match(source, /host mutation stages cannot run with a test root/);
   assert.doesNotMatch(source, /ufw allow (?:3001|5432)/);
+  assert.match(source, /readonly SSH_POLICY=\/etc\/ssh\/sshd_config\.d\/00-blog-x-hardening\.conf/);
+  assert.match(source, /sshd -T \| grep -qx 'passwordauthentication no'/);
+  assert.match(source, /systemctl daemon-reload[\s\S]*systemctl start "\$unit\.timer"/);
+  assert.match(source, /systemctl stop blog-x-secondary-hardening-rollback\.timer/);
+});
+
+test("tunnel account stays key-auth eligible while its password remains unknowable", async () => {
+  const source = await readFile(script, "utf8");
+  assert.match(source, /useradd --create-home --user-group --shell \/usr\/sbin\/nologin/);
+  assert.match(source, /openssl rand -base64 48 \| openssl passwd -6 -stdin/);
+  assert.match(source, /usermod --shell \/usr\/sbin\/nologin --password "\$password_hash" "\$TUNNEL_USER"/);
+  assert.match(source, /unset password_hash/);
+  assert.doesNotMatch(source, /passwd --lock/);
 });

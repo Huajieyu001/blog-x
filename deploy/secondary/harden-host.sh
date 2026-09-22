@@ -11,7 +11,9 @@ readonly ACK_PRIMARY_TUNNEL_HEALTH=primary-tunnel-switched-restarted-and-healthy
 readonly ACK_FRESH_KEY_SESSION=fresh-key-only-ubuntu-session-verified
 readonly APP_ROOT=/opt/blog-x
 readonly BACKUP_ROOT=/var/backups/blog-x-hardening
-readonly SSH_POLICY=/etc/ssh/sshd_config.d/90-blog-x-hardening.conf
+# Ubuntu includes sshd_config.d lexicographically and sshd keeps the first value
+# it encounters for these options. This must precede cloud-init's 50-* policy.
+readonly SSH_POLICY=/etc/ssh/sshd_config.d/00-blog-x-hardening.conf
 
 test_root=${BLOG_X_HARDEN_TEST_ROOT:-}
 if [[ -n $test_root ]]; then
@@ -84,11 +86,16 @@ prepare_admin() {
 
 provision_tunnel_user() {
   [[ $# -eq 1 && $1 == --tunnel-key-file=* ]] || usage
-  local source target line
+  local source target line password_hash
   source=$(key_file "$1")
   if [[ -z $test_root ]]; then
     if ! id -u "$TUNNEL_USER" >/dev/null 2>&1; then useradd --create-home --user-group --shell /usr/sbin/nologin "$TUNNEL_USER"; fi
-    passwd --lock "$TUNNEL_USER" >/dev/null
+    # A leading ! password lock can reject public-key authentication before
+    # authorized_keys is evaluated. Store only a fresh, unknown SHA-512 hash.
+    password_hash=$(openssl rand -base64 48 | openssl passwd -6 -stdin)
+    [[ $password_hash == '$6$'* ]] || fail 'unable to create an unusable tunnel password hash'
+    usermod --shell /usr/sbin/nologin --password "$password_hash" "$TUNNEL_USER"
+    unset password_hash
     id -nG "$TUNNEL_USER" | tr ' ' '\n' | grep -Eq '^(sudo|adm|docker)$' && fail 'tunnel account has an administrative group'
   else
     install -d -m 0700 "$TUNNEL_HOME"
