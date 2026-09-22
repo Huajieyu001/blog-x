@@ -1319,6 +1319,10 @@ function phase12FailureFixtureProcess() {
     const to = new Date(Date.UTC(2026, 8, 14));
     const from = new Date(to);
     from.setUTCDate(from.getUTCDate() - range + 1);
+    const previousFrom = new Date(from);
+    previousFrom.setUTCDate(previousFrom.getUTCDate() - range);
+    const previousTo = new Date(from);
+    previousTo.setUTCDate(previousTo.getUTCDate() - 1);
     const day = (value) => value.toISOString().slice(0, 10);
     return {
       range,
@@ -1333,6 +1337,9 @@ function phase12FailureFixtureProcess() {
       }),
       sources: sources.map((source) => ({ source, totalPv: 0 })),
       topArticles: [],
+      comparison: range === 400
+        ? { status: "unavailable", reason: "outside_retention", previousFromDay: day(previousFrom), previousToDay: day(previousTo) }
+        : { status: "available", previousFromDay: day(previousFrom), previousToDay: day(previousTo), previousTotalPv: 0, deltaPv: 0 },
     };
   };
   const server = createServer((request, response) => {
