@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -55,11 +55,25 @@ test("prepare-admin is fixture-idempotent and rejects unsafe public-key input be
   const keys = await readFile(join(root, "home/blog-x-admin/.ssh/authorized_keys"), "utf8");
   assert.match(keys, /unrelated-key/);
   assert.equal(keys.split(key).length - 1, 1);
+  assert.equal((await stat(join(root, "home/blog-x-admin/.ssh"))).mode & 0o777, 0o700);
+  assert.equal((await stat(join(root, "home/blog-x-admin/.ssh/authorized_keys"))).mode & 0o777, 0o600);
+  assert.equal((await stat(join(root, "etc/sudoers.d"))).mode & 0o777, 0o750);
+  assert.equal((await stat(join(root, "etc/sudoers.d/blog-x-admin"))).mode & 0o777, 0o440);
 
   const before = keys;
   const rejected = await run(root, "prepare-admin", "--public-key", `${key}\nssh-ed25519 injected`);
   assert.notEqual(rejected.code, 0);
   assert.equal(await readFile(join(root, "home/blog-x-admin/.ssh/authorized_keys"), "utf8"), before);
+});
+
+test("prepare-admin gives the administrator its SSH files while sudoers stays root-owned and traversable", async () => {
+  const source = await readFile(script, "utf8");
+  assert.match(source, /chown "\$ADMIN_USER:\$ADMIN_USER" "\$ssh_dir" "\$keys"/);
+  assert.match(source, /set_root_permissions "\$\(dirname "\$sudoers"\)" "\$sudoers_tmp"/);
+  assert.match(source, /set_mode 0750 "\$\(dirname "\$sudoers"\)"/);
+  assert.match(source, /set_mode 0440 "\$sudoers_tmp"/);
+  assert.match(source, /mv -f -- "\$sudoers_tmp" "\$sudoers"/);
+  assert.doesNotMatch(source, /set_root_permissions "\$ssh_dir" "\$keys"/);
 });
 
 test("hardening stages are fixed, reversible, and contain no secret-bearing interfaces", async () => {

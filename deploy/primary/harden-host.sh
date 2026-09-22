@@ -226,7 +226,7 @@ validate_public_key() {
 prepare_admin() {
   local key=${1:-}
   validate_public_key "$key"
-  local home ssh_dir keys sudoers
+  local home ssh_dir keys sudoers sudoers_tmp
   home="$(host_path "/home/$ADMIN_USER")"
   ssh_dir="$home/.ssh"
   keys="$ssh_dir/authorized_keys"
@@ -237,13 +237,19 @@ prepare_admin() {
   elif ! id "$ADMIN_USER" >/dev/null 2>&1; then
     useradd --create-home --shell /bin/bash --groups wheel "$ADMIN_USER"
   fi
-  install -d -m 0700 "$ssh_dir" "$(dirname "$sudoers")"
+  install -d -m 0700 "$ssh_dir"
+  install -d -m 0750 "$(dirname "$sudoers")"
   touch "$keys"
   grep -qxF -- "$key" "$keys" || printf '%s\n' "$key" >> "$keys"
-  printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$ADMIN_USER" > "$sudoers"
-  set_root_permissions "$ssh_dir" "$keys" "$sudoers"
+  sudoers_tmp="$(mktemp "$(dirname "$sudoers")/.${ADMIN_USER}.XXXXXX")"
+  printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$ADMIN_USER" > "$sudoers_tmp"
+  if ! is_test; then chown "$ADMIN_USER:$ADMIN_USER" "$ssh_dir" "$keys"; fi
+  set_root_permissions "$(dirname "$sudoers")" "$sudoers_tmp"
   set_mode 0700 "$ssh_dir"
-  set_mode 0600 "$keys" "$sudoers"
+  set_mode 0600 "$keys"
+  set_mode 0750 "$(dirname "$sudoers")"
+  set_mode 0440 "$sudoers_tmp"
+  mv -f -- "$sudoers_tmp" "$sudoers"
   if ! is_test; then visudo -cf "$sudoers" >/dev/null || fail "sudoers validation failed"; fi
   note "dedicated administrator key prepared; verify a fresh key-only session before SSH hardening"
 }
