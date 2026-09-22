@@ -76,6 +76,22 @@ test("prepare-admin gives the administrator its SSH files while sudoers stays ro
   assert.doesNotMatch(source, /set_root_permissions "\$ssh_dir" "\$keys"/);
 });
 
+test("tunnel switching uses a non-blocking bounded restart and cancels rollback after fixture recovery", async (t) => {
+  const root = await fixture();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const source = await readFile(script, "utf8");
+  assert.match(source, /systemctl restart --no-block "\$TUNNEL_SERVICE"/);
+  assert.match(source, /ActiveEnterTimestampMonotonic/);
+  assert.match(source, /seq 1 "\$TUNNEL_RESTART_ATTEMPTS"/);
+  assert.match(source, /sleep "\$TUNNEL_RESTART_INTERVAL_SECONDS"/);
+
+  const result = await runWith(root, { BLOG_X_HARDEN_TEST_TUNNEL_RESTART: "fail" }, "switch-tunnel-user", "blog-x-tunnel");
+  assert.notEqual(result.code, 0);
+  const config = await readFile(join(root, "etc/blog-x/primary.env"), "utf8");
+  assert.match(config, /^SECONDARY_SSH_USER=legacy-tunnel$/m);
+  await assert.rejects(stat(join(root, "var/lib/blog-x-hardening/.armed-backup")));
+});
+
 test("hardening stages are fixed, reversible, and contain no secret-bearing interfaces", async () => {
   const source = await readFile(script, "utf8");
   for (const stage of ["prepare-admin", "switch-tunnel-user", "harden-ssh", "confirm-ssh", "apply-firewall", "confirm-firewall", "apply-edge", "rollback-edge", "verify", "rollback"]) {

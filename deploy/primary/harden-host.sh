@@ -9,6 +9,8 @@ readonly TEST_MODE="${BLOG_X_HARDEN_TEST_MODE:-}"
 readonly TEST_ALLOW="${BLOG_X_HARDEN_TEST_ALLOW:-}"
 readonly ADMIN_USER=blog-x-admin
 readonly TUNNEL_SERVICE=blog-x-primary-tunnel.service
+readonly TUNNEL_RESTART_ATTEMPTS=75
+readonly TUNNEL_RESTART_INTERVAL_SECONDS=2
 readonly ROLLBACK_SERVICE=blog-x-hardening-rollback.service
 readonly ROLLBACK_TIMER=blog-x-hardening-rollback.timer
 
@@ -276,6 +278,25 @@ loopback_api_healthy() {
   curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3001/health >/dev/null
 }
 
+tunnel_active_timestamp() {
+  systemctl show --property=ActiveEnterTimestampMonotonic --value "$TUNNEL_SERVICE" 2>/dev/null || true
+}
+
+restart_tunnel_bounded() {
+  if is_test; then [[ ${BLOG_X_HARDEN_TEST_TUNNEL_RESTART:-success} == success ]]; return; fi
+  local before current attempt
+  before="$(tunnel_active_timestamp)"
+  systemctl restart --no-block "$TUNNEL_SERVICE" || return 1
+  for attempt in $(seq 1 "$TUNNEL_RESTART_ATTEMPTS"); do
+    current="$(tunnel_active_timestamp)"
+    if [[ -n $current && $current != "$before" ]] && systemctl is-active --quiet "$TUNNEL_SERVICE" && loopback_api_healthy; then
+      return 0
+    fi
+    sleep "$TUNNEL_RESTART_INTERVAL_SECONDS"
+  done
+  return 1
+}
+
 switch_tunnel_user() {
   local account=$1 backup
   backup="$(create_backup)"
@@ -284,13 +305,10 @@ switch_tunnel_user() {
     cancel_rollback
     fail "tunnel account was not changed"
   fi
-  if is_test; then
-    note "fixture tunnel account rewritten"
-    return 0
-  fi
-  if ! systemctl restart "$TUNNEL_SERVICE" || ! systemctl is-active --quiet "$TUNNEL_SERVICE" || ! loopback_api_healthy; then
+  if ! restart_tunnel_bounded; then
     restore_backup "$backup"
-    systemctl restart "$TUNNEL_SERVICE" || true
+    restart_tunnel_bounded || true
+    cancel_rollback
     fail "new tunnel account did not provide a healthy loopback API; prior state restored"
   fi
   note "tunnel account switched; retain rollback until SSH and firewall confirmation"
@@ -551,7 +569,7 @@ rollback() {
   if ! is_test; then
     sshd -t -f "$SSHD_CONFIG" && systemctl reload sshd || true
     nginx -t && systemctl reload nginx || true
-    systemctl restart "$TUNNEL_SERVICE" || true
+    restart_tunnel_bounded || true
   fi
   cancel_rollback
   note "hardening rollback restored the specified backup"
