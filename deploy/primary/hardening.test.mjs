@@ -7,13 +7,14 @@ import test from "node:test";
 
 const script = new URL("./harden-host.sh", import.meta.url);
 
-const run = (root, ...args) => new Promise((resolve, reject) => {
+const runWith = (root, extraEnv, ...args) => new Promise((resolve, reject) => {
   const child = spawn("bash", [script.pathname, ...args], {
     env: {
       ...process.env,
       BLOG_X_HARDEN_TEST_ROOT: root,
       BLOG_X_HARDEN_TEST_MODE: "1",
       BLOG_X_HARDEN_TEST_ALLOW: "fixture-only",
+      ...extraEnv,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -24,6 +25,8 @@ const run = (root, ...args) => new Promise((resolve, reject) => {
   child.on("error", reject);
   child.on("close", (code) => resolve({ code, stdout, stderr }));
 });
+
+const run = (root, ...args) => runWith(root, {}, ...args);
 
 const fixture = async () => {
   const root = await mkdtemp(join(tmpdir(), "blog-x-primary-hardening-"));
@@ -65,12 +68,53 @@ test("hardening stages are fixed, reversible, and contain no secret-bearing inte
     assert.match(source, new RegExp(`\\b${stage}\\b`));
   }
   assert.match(source, /sshd -t/);
+  assert.match(source, /sshd -T -f "\$SSHD_CONFIG"/);
   assert.match(source, /systemctl reload sshd/);
   assert.match(source, /firewall-offline-cmd/);
+  assert.match(source, /runtime-state\.env/);
+  assert.match(source, /firewalld-config\.tar\.gz/);
+  assert.match(source, /restore_firewall_state/);
+  assert.match(source, /rpcbind\.socket/);
+  assert.match(source, /write_firewall_allowlist/);
+  assert.doesNotMatch(source, /for service in \$\(firewall-cmd/);
   assert.match(source, /rpcbind/);
   assert.match(source, /--max-time/);
   assert.match(source, /SECONDARY_SSH_USER/);
   assert.doesNotMatch(source, /PRIVATE KEY|PASSWORD=|read -s/);
+});
+
+test("SSH include precedes legacy access directives so OpenSSH evaluates the hardened first value", async (t) => {
+  const root = await fixture();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const sshd = join(root, "etc/ssh/sshd_config");
+  await writeFile(sshd, "PermitRootLogin yes\nPasswordAuthentication yes\nKbdInteractiveAuthentication yes\nPubkeyAuthentication no\n");
+
+  const result = await runWith(root, { SUDO_USER: "blog-x-admin" }, "harden-ssh", "--fresh-key-session");
+  assert.equal(result.code, 0, result.stderr);
+  const effectiveCandidate = await readFile(sshd, "utf8");
+  assert.ok(effectiveCandidate.indexOf("Include /etc/ssh/sshd_config.d/*.conf") < effectiveCandidate.indexOf("PermitRootLogin yes"));
+  const dropIn = await readFile(join(root, "etc/ssh/sshd_config.d/99-blog-x-hardening.conf"), "utf8");
+  assert.match(dropIn, /PermitRootLogin no/);
+  assert.match(dropIn, /PasswordAuthentication no/);
+});
+
+test("listener guard accepts loopback API and Web ports but rejects wildcard and non-loopback listeners", async (t) => {
+  const root = await fixture();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const loopback = [
+    "LISTEN 0 4096 127.0.0.1:3001 0.0.0.0:*",
+    "LISTEN 0 4096 127.0.0.1:3100 0.0.0.0:*",
+    "LISTEN 0 4096 [::1]:3001 [::]:*",
+  ].join("\n");
+  const accepted = await runWith(root, { BLOG_X_HARDEN_TEST_LISTENERS: loopback }, "test-listeners");
+  assert.equal(accepted.code, 1, accepted.stderr);
+
+  const wildcard = await runWith(root, { BLOG_X_HARDEN_TEST_LISTENERS: "LISTEN 0 4096 0.0.0.0:3001 0.0.0.0:*" }, "test-listeners");
+  assert.equal(wildcard.code, 0, wildcard.stderr);
+  assert.match(wildcard.stdout, /3001/);
+  const address = await runWith(root, { BLOG_X_HARDEN_TEST_LISTENERS: "LISTEN 0 4096 192.0.2.10:25 0.0.0.0:*" }, "test-listeners");
+  assert.equal(address.code, 0, address.stderr);
+  assert.match(address.stdout, /25/);
 });
 
 test("fixture edge stage installs one managed include without publishing or contacting a host", async (t) => {

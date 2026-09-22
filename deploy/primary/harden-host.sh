@@ -37,6 +37,7 @@ readonly STATE_DIR="$(host_path /var/lib/blog-x-hardening)"
 readonly BACKUP_ROOT="$(host_path /var/backups/blog-x-hardening)"
 readonly SSHD_CONFIG="$(host_path /etc/ssh/sshd_config)"
 readonly SSHD_DROPIN="$(host_path /etc/ssh/sshd_config.d/99-blog-x-hardening.conf)"
+readonly FIREWALL_CONFIG="$(host_path /etc/firewalld)"
 readonly NGINX_CONFIG="$(host_path /etc/nginx/conf.d/blog-x.conf)"
 readonly NGINX_SNIPPET="$(host_path /etc/nginx/snippets/blog-x-security-headers.conf)"
 readonly SNIPPET_SOURCE="$SCRIPT_DIR/nginx/blog-x-security-headers.conf"
@@ -60,6 +61,87 @@ config_value() {
   printf '%s\n' "$value"
 }
 
+unit_state() {
+  local unit=$1 enabled active
+  if is_test; then
+    printf 'disabled inactive\n'
+    return 0
+  fi
+  enabled="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
+  active="$(systemctl is-active "$unit" 2>/dev/null || true)"
+  printf '%s %s\n' "${enabled:-disabled}" "${active:-inactive}"
+}
+
+snapshot_firewall_state() {
+  local backup=$1 state unit key enabled active
+  state="$backup/runtime-state.env"
+  : > "$state"
+  for unit in firewalld.service rpcbind.service rpcbind.socket; do
+    key=${unit//./_}
+    read -r enabled active < <(unit_state "$unit")
+    printf '%s_ENABLED=%s\n%s_ACTIVE=%s\n' "$key" "$enabled" "$key" "$active" >> "$state"
+  done
+  if [[ -d $FIREWALL_CONFIG ]]; then
+    tar -C "$(dirname "$FIREWALL_CONFIG")" -czf "$backup/firewalld-config.tar.gz" "$(basename "$FIREWALL_CONFIG")"
+  else
+    : > "$backup/firewalld-config.absent"
+  fi
+  set_root_permissions "$state" "$backup/firewalld-config.tar.gz" "$backup/firewalld-config.absent" 2>/dev/null || true
+  set_mode 0600 "$state"
+}
+
+state_value() {
+  local state=$1 key=$2
+  awk -F= -v key="$key" '$1 == key { print $2; exit }' "$state"
+}
+
+restore_unit_enabled_state() {
+  local unit=$1 state=$2
+  case "$state" in
+    enabled|enabled-runtime|linked|linked-runtime|alias) systemctl enable "$unit" ;;
+    disabled) systemctl disable "$unit" >/dev/null 2>&1 || true ;;
+    masked) systemctl mask "$unit" ;;
+    static|indirect|generated|transient|'') : ;;
+    *) fail "unrecognized saved systemd enablement state" ;;
+  esac
+}
+
+restore_unit_active_state() {
+  local unit=$1 state=$2
+  case "$state" in
+    active) systemctl start "$unit" ;;
+    inactive|failed|deactivating|activating|'') systemctl stop "$unit" >/dev/null 2>&1 || true ;;
+    *) fail "unrecognized saved systemd activity state" ;;
+  esac
+}
+
+restore_firewall_state() {
+  local backup=$1 state
+  state="$backup/runtime-state.env"
+  [[ -f $state ]] || return 0
+  if [[ -f $backup/firewalld-config.tar.gz ]]; then
+    rm -rf -- "$FIREWALL_CONFIG"
+    tar -C "$(dirname "$FIREWALL_CONFIG")" -xzf "$backup/firewalld-config.tar.gz"
+  elif [[ -f $backup/firewalld-config.absent ]]; then
+    rm -rf -- "$FIREWALL_CONFIG"
+  fi
+  is_test && return 0
+  local firewall_enabled firewall_active rpcbind_enabled rpcbind_active socket_enabled socket_active
+  firewall_enabled="$(state_value "$state" firewalld_service_ENABLED)"
+  firewall_active="$(state_value "$state" firewalld_service_ACTIVE)"
+  rpcbind_enabled="$(state_value "$state" rpcbind_service_ENABLED)"
+  rpcbind_active="$(state_value "$state" rpcbind_service_ACTIVE)"
+  socket_enabled="$(state_value "$state" rpcbind_socket_ENABLED)"
+  socket_active="$(state_value "$state" rpcbind_socket_ACTIVE)"
+  restore_unit_enabled_state firewalld.service "$firewall_enabled"
+  restore_unit_active_state firewalld.service "$firewall_active"
+  if [[ $firewall_active == active ]]; then firewall-cmd --reload; fi
+  restore_unit_enabled_state rpcbind.socket "$socket_enabled"
+  restore_unit_active_state rpcbind.socket "$socket_active"
+  restore_unit_enabled_state rpcbind.service "$rpcbind_enabled"
+  restore_unit_active_state rpcbind.service "$rpcbind_active"
+}
+
 create_backup() {
   local stamp backup
   stamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
@@ -78,6 +160,7 @@ create_backup() {
       : > "$backup/$destination.absent"
     fi
   done
+  snapshot_firewall_state "$backup"
   printf '%s\n' "$backup" > "$STATE_DIR/.latest-backup"
   set_root_permissions "$backup" "$STATE_DIR/.latest-backup"
   set_mode 0700 "$backup"
@@ -103,6 +186,7 @@ restore_backup() {
   elif [[ -f $backup/blog-x-security-headers.conf.absent ]]; then
     rm -f -- "$NGINX_SNIPPET"
   fi
+  restore_firewall_state "$backup"
 }
 
 arm_rollback() {
@@ -190,7 +274,10 @@ switch_tunnel_user() {
   local account=$1 backup
   backup="$(create_backup)"
   arm_rollback "$backup" tunnel
-  rewrite_tunnel_user "$account"
+  if ! rewrite_tunnel_user "$account"; then
+    cancel_rollback
+    fail "tunnel account was not changed"
+  fi
   if is_test; then
     note "fixture tunnel account rewritten"
     return 0
@@ -224,9 +311,21 @@ KbdInteractiveAuthentication no
 EOF
   set_root_permissions "$SSHD_DROPIN"
   set_mode 0600 "$SSHD_DROPIN"
-  if ! grep -Eq '^[[:space:]]*Include[[:space:]].*sshd_config\.d/\*\.conf' "$SSHD_CONFIG"; then
-    printf '\nInclude /etc/ssh/sshd_config.d/*.conf\n' >> "$SSHD_CONFIG"
-  fi
+  local tmp include
+  include='Include /etc/ssh/sshd_config.d/*.conf'
+  tmp="$(mktemp "$(dirname "$SSHD_CONFIG")/.sshd_config.XXXXXX")"
+  awk -v include="$include" '
+    function is_policy(line) {
+      return line ~ /^[[:space:]]*(PermitRootLogin|PasswordAuthentication|KbdInteractiveAuthentication|PubkeyAuthentication)[[:space:]]+/
+    }
+    /^[[:space:]]*Include[[:space:]]+\/etc\/ssh\/sshd_config\.d\/\*\.conf[[:space:]]*$/ { next }
+    !inserted && is_policy($0) { print include; inserted=1 }
+    { print }
+    END { if (!inserted) print include }
+  ' "$SSHD_CONFIG" > "$tmp"
+  set_root_permissions "$tmp"
+  set_mode 0600 "$tmp"
+  mv -f -- "$tmp" "$SSHD_CONFIG"
 }
 
 harden_ssh() {
@@ -236,9 +335,13 @@ harden_ssh() {
   local backup
   backup="$(create_backup)"
   arm_rollback "$backup" ssh
-  write_sshd_policy
+  if ! write_sshd_policy; then
+    restore_backup "$backup"
+    cancel_rollback
+    fail "candidate SSH policy could not be written; prior state restored"
+  fi
   if is_test; then return 0; fi
-  if ! sshd -t -f "$SSHD_CONFIG" || ! systemctl reload sshd || ! sshd -T -f "$SSHD_CONFIG" | grep -qx 'permitrootlogin no' || ! sshd -T -f "$SSHD_CONFIG" | grep -qx 'passwordauthentication no' || ! sshd -T -f "$SSHD_CONFIG" | grep -qx 'pubkeyauthentication yes'; then
+  if ! sshd -t -f "$SSHD_CONFIG" || ! systemctl reload sshd || ! sshd -T -f "$SSHD_CONFIG" | grep -qx 'permitrootlogin no' || ! sshd -T -f "$SSHD_CONFIG" | grep -qx 'passwordauthentication no' || ! sshd -T -f "$SSHD_CONFIG" | grep -qx 'kbdinteractiveauthentication no' || ! sshd -T -f "$SSHD_CONFIG" | grep -qx 'pubkeyauthentication yes'; then
     restore_backup "$backup"
     sshd -t -f "$SSHD_CONFIG" && systemctl reload sshd || true
     fail "candidate SSH policy failed validation; prior state restored"
@@ -263,41 +366,90 @@ rpc_consumers_present() {
 
 stop_rpcbind_if_safe() {
   if rpc_consumers_present; then
-    fail "NFS/RPC consumer detected; refusing to stop rpcbind"
+    printf '%s\n' 'NFS/RPC consumer detected; refusing to stop rpcbind' >&2
+    return 1
   fi
   is_test || systemctl disable --now rpcbind.service rpcbind.socket
 }
 
 unexpected_public_listeners() {
-  ss -lntH | awk '
+  if is_test && [[ -n ${BLOG_X_HARDEN_TEST_LISTENERS:-} ]]; then
+    printf '%s\n' "$BLOG_X_HARDEN_TEST_LISTENERS"
+  else
+    ss -lntH
+  fi | awk '
     {
-      address=$4; sub(/^\[/, "", address); sub(/\]$/, "", address)
-      port=address; sub(/^.*:/, "", port)
-      host=address; sub(/:[^:]*$/, "", host)
-      public=(host=="0.0.0.0" || host=="*" || host=="::" || host ~ /^[0-9a-fA-F:]+$/ || host ~ /^[0-9.]+$/)
+      address=$4
+      if (address ~ /^\[/) {
+        host=address; sub(/^\[/, "", host); sub(/\]:[^]]*$/, "", host)
+        port=address; sub(/^.*\]:/, "", port)
+      } else {
+        port=address; sub(/^.*:/, "", port)
+        host=address; sub(/:[^:]*$/, "", host)
+      }
+      loopback=(host=="127.0.0.1" || host=="::1")
+      wildcard=(host=="0.0.0.0" || host=="*" || host=="::")
+      nonloopback=(host ~ /^[0-9.]+$/ || host ~ /^[0-9a-fA-F:]+$/)
+      public=(!loopback && (wildcard || nonloopback))
       if (public && port != 22 && port != 80 && port != 443) { print port; bad=1 }
     }
     END { exit bad ? 0 : 1 }
   '
 }
 
+write_firewall_allowlist() {
+  local zones zone
+  zones="$FIREWALL_CONFIG/zones"
+  zone="$zones/public.xml"
+  install -d -m 0755 "$zones"
+  cat > "$zone" <<'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<zone target="default">
+  <short>public</short>
+  <description>Blog X public ingress: SSH, HTTP, and HTTPS only.</description>
+  <port port="22" protocol="tcp"/>
+  <port port="80" protocol="tcp"/>
+  <port port="443" protocol="tcp"/>
+</zone>
+EOF
+  set_root_permissions "$zone"
+  set_mode 0600 "$zone"
+  command -v firewall-offline-cmd >/dev/null || fail "firewall-offline-cmd is required for allow-before-enable"
+  for port in 22 80 443; do firewall-offline-cmd --zone=public --add-port="$port/tcp"; done
+}
+
+firewall_is_exact() {
+  local ports services rich port count=0
+  ports="$(firewall-cmd --zone=public --list-ports)"
+  services="$(firewall-cmd --zone=public --list-services)"
+  rich="$(firewall-cmd --zone=public --list-rich-rules)"
+  [[ -z $services && -z $rich ]] || return 1
+  for port in $ports; do
+    case "$port" in 22/tcp|80/tcp|443/tcp) ((count += 1)) ;; *) return 1 ;; esac
+  done
+  [[ $count -eq 3 && " $ports " == *' 22/tcp '* && " $ports " == *' 80/tcp '* && " $ports " == *' 443/tcp '* ]]
+}
+
 apply_firewall() {
   local backup
   backup="$(create_backup)"
   arm_rollback "$backup" firewall
-  stop_rpcbind_if_safe
+  if ! stop_rpcbind_if_safe; then
+    restore_backup "$backup"
+    cancel_rollback
+    fail "rpcbind was not changed because its prior state could not be safely preserved"
+  fi
   if is_test; then return 0; fi
-  if unexpected_public_listeners; then fail "unexpected public TCP listener detected; firewall was not enabled"; fi
-  command -v firewall-offline-cmd >/dev/null || fail "firewall-offline-cmd is required for allow-before-enable"
-  for port in 22 80 443; do firewall-offline-cmd --zone=public --add-port="$port/tcp"; done
-  systemctl enable --now firewalld
-  for service in $(firewall-cmd --permanent --zone=public --list-services); do firewall-cmd --permanent --zone=public --remove-service="$service"; done
-  for port in $(firewall-cmd --permanent --zone=public --list-ports); do firewall-cmd --permanent --zone=public --remove-port="$port"; done
-  for port in 22 80 443; do firewall-cmd --permanent --zone=public --add-port="$port/tcp"; done
-  firewall-cmd --reload
-  firewall-cmd --zone=public --query-port=22/tcp && firewall-cmd --zone=public --query-port=80/tcp && firewall-cmd --zone=public --query-port=443/tcp || {
-    restore_backup "$backup"; fail "required firewall allowances are not active";
-  }
+  if unexpected_public_listeners; then
+    restore_backup "$backup"
+    cancel_rollback
+    fail "unexpected public TCP listener detected; prior rpcbind state restored"
+  fi
+  if ! write_firewall_allowlist || ! systemctl enable --now firewalld || ! firewall-cmd --reload || ! firewall-cmd --zone=public --query-port=22/tcp || ! firewall-cmd --zone=public --query-port=80/tcp || ! firewall-cmd --zone=public --query-port=443/tcp || ! firewall_is_exact; then
+    restore_backup "$backup"
+    cancel_rollback
+    fail "required exact firewall allowances are not active; prior firewall and rpcbind state restored"
+  fi
   note "firewall applied; confirm-firewall from a fresh external administrator session before rollback expiry"
 }
 
@@ -358,9 +510,10 @@ apply_edge() {
   fi
   local backup
   backup="$(create_backup)"
-  install -d -m 0755 "$(dirname "$NGINX_SNIPPET")"
-  install -m 0644 "$SNIPPET_SOURCE" "$NGINX_SNIPPET"
-  ensure_nginx_include
+  if ! install -d -m 0755 "$(dirname "$NGINX_SNIPPET")" || ! install -m 0644 "$SNIPPET_SOURCE" "$NGINX_SNIPPET" || ! ensure_nginx_include; then
+    restore_backup "$backup"
+    fail "edge configuration could not be written; last-known-good configuration restored"
+  fi
   if is_test; then return 0; fi
   if ! nginx -t || ! systemctl reload nginx || ! verify_edge_headers; then
     restore_backup "$backup"
@@ -418,6 +571,7 @@ main() {
     confirm-firewall) confirm_firewall "$@" ;;
     apply-edge) [[ $# -eq 0 ]] || usage; apply_edge ;;
     rollback-edge) rollback_edge "$@" ;;
+    test-listeners) is_test || usage; unexpected_public_listeners ;;
     verify) [[ $# -eq 0 ]] || usage; verify ;;
     rollback) rollback "$@" ;;
     *) usage ;;
