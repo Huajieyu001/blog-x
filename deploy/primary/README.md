@@ -23,8 +23,11 @@ this repository, then use this order:
 4. Run `apply-firewall`, verify an external administrator session still works, then run
    `confirm-firewall --fresh-key-session` from that session. Only TCP 22, 80 and 443
    are retained; a detected NFS/RPC consumer makes rpcbind shutdown refuse safely.
+5. Run `apply-edge` to install the checked-in Nginx headers without an application
+   deployment. `nginx -t`, HTTPS page/API probes and header checks must all pass.
 Each reducing stage writes a root-owned backup under
 `/var/backups/blog-x-hardening` and arms an eight-minute systemd rollback timer.
 Failures restore synchronously; an unconfirmed timer restores automatically. Use
-`rollback --backup <path>` only with a displayed hardening backup path. The final host-password rotation is interactive and happens
+`rollback --backup <path>` or `rollback-edge --backup <path>` only with a displayed
+hardening backup path. The final host-password rotation is interactive and happens
 only after all key-only checks; it is intentionally not accepted as script input.

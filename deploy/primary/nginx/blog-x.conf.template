@@ -15,6 +15,7 @@ server {
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
     server_tokens off;
+    include /etc/nginx/snippets/blog-x-security-headers.conf;
     client_max_body_size 6m;
 
     location / {

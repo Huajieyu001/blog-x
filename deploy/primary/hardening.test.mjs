@@ -61,7 +61,7 @@ test("prepare-admin is fixture-idempotent and rejects unsafe public-key input be
 
 test("hardening stages are fixed, reversible, and contain no secret-bearing interfaces", async () => {
   const source = await readFile(script, "utf8");
-  for (const stage of ["prepare-admin", "switch-tunnel-user", "harden-ssh", "confirm-ssh", "apply-firewall", "confirm-firewall", "verify", "rollback"]) {
+  for (const stage of ["prepare-admin", "switch-tunnel-user", "harden-ssh", "confirm-ssh", "apply-firewall", "confirm-firewall", "apply-edge", "rollback-edge", "verify", "rollback"]) {
     assert.match(source, new RegExp(`\\b${stage}\\b`));
   }
   assert.match(source, /sshd -t/);
@@ -71,4 +71,28 @@ test("hardening stages are fixed, reversible, and contain no secret-bearing inte
   assert.match(source, /--max-time/);
   assert.match(source, /SECONDARY_SSH_USER/);
   assert.doesNotMatch(source, /PRIVATE KEY|PASSWORD=|read -s/);
+});
+
+test("fixture edge stage installs one managed include without publishing or contacting a host", async (t) => {
+  const root = await fixture();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const config = join(root, "etc/nginx/conf.d/blog-x.conf");
+  await writeFile(config, "server {\n    server_tokens off;\n}\n");
+
+  const first = await run(root, "apply-edge");
+  const second = await run(root, "apply-edge");
+  assert.equal(first.code, 0, first.stderr);
+  assert.equal(second.code, 0, second.stderr);
+  const rendered = await readFile(config, "utf8");
+  assert.equal((rendered.match(/blog-x-security-headers\.conf/g) ?? []).length, 1);
+  const snippet = await readFile(join(root, "etc/nginx/snippets/blog-x-security-headers.conf"), "utf8");
+  assert.match(snippet, /proxy_hide_header X-Powered-By;/);
+  assert.match(snippet, /Strict-Transport-Security/);
+  assert.doesNotMatch(snippet, /unsafe-eval|\*/);
+
+  const backup = (await readFile(join(root, "var/lib/blog-x-hardening/.latest-backup"), "utf8")).trim();
+  const rollback = await run(root, "rollback-edge", "--backup", backup);
+  assert.equal(rollback.code, 0, rollback.stderr);
+  assert.doesNotMatch(await readFile(config, "utf8"), /blog-x-security-headers\.conf/);
+  await assert.rejects(readFile(join(root, "etc/nginx/snippets/blog-x-security-headers.conf")));
 });

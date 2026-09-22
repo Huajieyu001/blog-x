@@ -37,6 +37,9 @@ readonly STATE_DIR="$(host_path /var/lib/blog-x-hardening)"
 readonly BACKUP_ROOT="$(host_path /var/backups/blog-x-hardening)"
 readonly SSHD_CONFIG="$(host_path /etc/ssh/sshd_config)"
 readonly SSHD_DROPIN="$(host_path /etc/ssh/sshd_config.d/99-blog-x-hardening.conf)"
+readonly NGINX_CONFIG="$(host_path /etc/nginx/conf.d/blog-x.conf)"
+readonly NGINX_SNIPPET="$(host_path /etc/nginx/snippets/blog-x-security-headers.conf)"
+readonly SNIPPET_SOURCE="$SCRIPT_DIR/nginx/blog-x-security-headers.conf"
 
 require_file() { [[ -f $1 ]] || fail "required file is missing"; }
 set_root_permissions() {
@@ -65,9 +68,15 @@ create_backup() {
   for pair in \
     "$CONFIG:primary.env" \
     "$SSHD_CONFIG:sshd_config" \
-    "$SSHD_DROPIN:sshd-hardening.conf"; do
+    "$SSHD_DROPIN:sshd-hardening.conf" \
+    "$NGINX_CONFIG:blog-x.conf" \
+    "$NGINX_SNIPPET:blog-x-security-headers.conf"; do
     local source=${pair%%:*} destination=${pair#*:}
-    [[ -f $source ]] && cp -p -- "$source" "$backup/$destination"
+    if [[ -f $source ]]; then
+      cp -p -- "$source" "$backup/$destination"
+    else
+      : > "$backup/$destination.absent"
+    fi
   done
   printf '%s\n' "$backup" > "$STATE_DIR/.latest-backup"
   set_root_permissions "$backup" "$STATE_DIR/.latest-backup"
@@ -79,9 +88,21 @@ create_backup() {
 restore_backup() {
   local backup=$1
   [[ $backup == "$BACKUP_ROOT"/* && -d $backup ]] || fail "backup path is outside the hardening backup root"
-  [[ -f $backup/primary.env ]] && install -m 0600 "$backup/primary.env" "$CONFIG"
-  [[ -f $backup/sshd_config ]] && install -m 0600 "$backup/sshd_config" "$SSHD_CONFIG"
-  [[ -f $backup/sshd-hardening.conf ]] && install -d -m 0755 "$(dirname "$SSHD_DROPIN")" && install -m 0600 "$backup/sshd-hardening.conf" "$SSHD_DROPIN"
+  if [[ -f $backup/primary.env ]]; then install -m 0600 "$backup/primary.env" "$CONFIG"; fi
+  if [[ -f $backup/sshd_config ]]; then install -m 0600 "$backup/sshd_config" "$SSHD_CONFIG"; fi
+  if [[ -f $backup/sshd-hardening.conf ]]; then
+    install -d -m 0755 "$(dirname "$SSHD_DROPIN")"
+    install -m 0600 "$backup/sshd-hardening.conf" "$SSHD_DROPIN"
+  elif [[ -f $backup/sshd-hardening.conf.absent ]]; then
+    rm -f -- "$SSHD_DROPIN"
+  fi
+  if [[ -f $backup/blog-x.conf ]]; then install -m 0640 "$backup/blog-x.conf" "$NGINX_CONFIG"; fi
+  if [[ -f $backup/blog-x-security-headers.conf ]]; then
+    install -d -m 0755 "$(dirname "$NGINX_SNIPPET")"
+    install -m 0644 "$backup/blog-x-security-headers.conf" "$NGINX_SNIPPET"
+  elif [[ -f $backup/blog-x-security-headers.conf.absent ]]; then
+    rm -f -- "$NGINX_SNIPPET"
+  fi
 }
 
 arm_rollback() {
@@ -288,12 +309,81 @@ confirm_firewall() {
   note "firewall rollback cancelled after external confirmation"
 }
 
+ensure_nginx_include() {
+  local include='    include /etc/nginx/snippets/blog-x-security-headers.conf;'
+  grep -qxF "$include" "$NGINX_CONFIG" && return 0
+  local tmp
+  tmp="$(mktemp "$(dirname "$NGINX_CONFIG")/.blog-x.conf.XXXXXX")"
+  awk -v include="$include" '
+    { print }
+    /^[[:space:]]*server_tokens[[:space:]]+off;/ { print include; added=1 }
+    END { if (!added) exit 42 }
+  ' "$NGINX_CONFIG" > "$tmp" || { rm -f -- "$tmp"; fail "known Blog X TLS include point was not found"; }
+  set_root_permissions "$tmp"
+  set_mode 0640 "$tmp"
+  mv -f -- "$tmp" "$NGINX_CONFIG"
+}
+
+header_present() { grep -qiF "$1" "$2"; }
+verify_edge_headers() {
+  local origin headers api_headers
+  origin="$(config_value PUBLIC_ORIGIN)"
+  [[ $origin =~ ^https://[A-Za-z0-9.-]+$ ]] || fail "PUBLIC_ORIGIN is not a canonical HTTPS origin"
+  grep -qF 'proxy_hide_header X-Powered-By;' "$NGINX_SNIPPET" || fail "edge header snippet is incomplete"
+  headers="$(mktemp)"
+  api_headers="$(mktemp)"
+  trap 'rm -f -- "$headers" "$api_headers"' RETURN
+  curl --fail --silent --show-error --max-time 10 --connect-timeout 5 -D "$headers" -o /dev/null "$origin/"
+  curl --fail --silent --show-error --max-time 10 --connect-timeout 5 -D "$api_headers" -o /dev/null "$origin/api/health"
+  for expected in \
+    'Content-Security-Policy: default-src' \
+    'Strict-Transport-Security: max-age=31536000; includeSubDomains' \
+    'X-Content-Type-Options: nosniff' \
+    'Referrer-Policy: strict-origin-when-cross-origin' \
+    'Cross-Origin-Opener-Policy: same-origin' \
+    'X-Frame-Options: DENY' \
+    'Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()'; do
+    header_present "$expected" "$headers" && header_present "$expected" "$api_headers" || return 1
+  done
+  ! grep -qi '^X-Powered-By:' "$headers" && ! grep -qi '^X-Powered-By:' "$api_headers"
+}
+
+apply_edge() {
+  require_file "$SNIPPET_SOURCE"
+  require_file "$NGINX_CONFIG"
+  if [[ -f $NGINX_SNIPPET ]] && cmp -s "$SNIPPET_SOURCE" "$NGINX_SNIPPET" && grep -qxF '    include /etc/nginx/snippets/blog-x-security-headers.conf;' "$NGINX_CONFIG"; then
+    if ! is_test; then verify_edge_headers || fail "existing edge headers did not pass verification"; fi
+    note "edge headers already installed; no Nginx mutation performed"
+    return 0
+  fi
+  local backup
+  backup="$(create_backup)"
+  install -d -m 0755 "$(dirname "$NGINX_SNIPPET")"
+  install -m 0644 "$SNIPPET_SOURCE" "$NGINX_SNIPPET"
+  ensure_nginx_include
+  if is_test; then return 0; fi
+  if ! nginx -t || ! systemctl reload nginx || ! verify_edge_headers; then
+    restore_backup "$backup"
+    nginx -t && systemctl reload nginx || true
+    fail "edge header validation failed; last-known-good Nginx configuration restored"
+  fi
+  note "edge headers applied and verified without an application release"
+}
+
+rollback_edge() {
+  [[ ${1:-} == --backup && -n ${2:-} ]] || fail "usage: rollback-edge --backup <hardening-backup>"
+  restore_backup "$2"
+  if ! is_test; then nginx -t && systemctl reload nginx; fi
+  note "edge configuration restored from hardening backup"
+}
+
 verify() {
-  local tunnel=unknown ssh=unknown firewall=unknown
+  local tunnel=unknown ssh=unknown firewall=unknown edge=unknown
   if ! is_test && systemctl is-active --quiet "$TUNNEL_SERVICE"; then tunnel=yes; else tunnel=no; fi
   if [[ -f $SSHD_DROPIN ]] && grep -qx 'PermitRootLogin no' "$SSHD_DROPIN" && grep -qx 'PasswordAuthentication no' "$SSHD_DROPIN"; then ssh=yes; else ssh=no; fi
   if ! is_test && firewall-cmd --zone=public --query-port=22/tcp >/dev/null 2>&1 && firewall-cmd --zone=public --query-port=80/tcp >/dev/null 2>&1 && firewall-cmd --zone=public --query-port=443/tcp >/dev/null 2>&1; then firewall=yes; else firewall=no; fi
-  printf 'tunnel_active=%s\nssh_key_only=%s\nfirewall_22_80_443=%s\n' "$tunnel" "$ssh" "$firewall"
+  if [[ -f $NGINX_SNIPPET ]] && grep -qF 'proxy_hide_header X-Powered-By;' "$NGINX_SNIPPET"; then edge=yes; else edge=no; fi
+  printf 'tunnel_active=%s\nssh_key_only=%s\nfirewall_22_80_443=%s\nedge_headers=%s\n' "$tunnel" "$ssh" "$firewall" "$edge"
 }
 
 rollback() {
@@ -301,6 +391,7 @@ rollback() {
   restore_backup "$2"
   if ! is_test; then
     sshd -t -f "$SSHD_CONFIG" && systemctl reload sshd || true
+    nginx -t && systemctl reload nginx || true
     systemctl restart "$TUNNEL_SERVICE" || true
   fi
   cancel_rollback
@@ -308,7 +399,7 @@ rollback() {
 }
 
 usage() {
-  printf '%s\n' 'usage: harden-host.sh {prepare-admin|switch-tunnel-user|harden-ssh|confirm-ssh|apply-firewall|confirm-firewall|verify|rollback} ...' >&2
+  printf '%s\n' 'usage: harden-host.sh {prepare-admin|switch-tunnel-user|harden-ssh|confirm-ssh|apply-firewall|confirm-firewall|apply-edge|rollback-edge|verify|rollback} ...' >&2
   exit 64
 }
 
@@ -325,6 +416,8 @@ main() {
     confirm-ssh) confirm_ssh "$@" ;;
     apply-firewall) [[ $# -eq 0 ]] || usage; apply_firewall ;;
     confirm-firewall) confirm_firewall "$@" ;;
+    apply-edge) [[ $# -eq 0 ]] || usage; apply_edge ;;
+    rollback-edge) rollback_edge "$@" ;;
     verify) [[ $# -eq 0 ]] || usage; verify ;;
     rollback) rollback "$@" ;;
     *) usage ;;

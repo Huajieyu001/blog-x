@@ -5,7 +5,7 @@ import test from "node:test";
 const read = (file) => readFile(new URL(file, import.meta.url), "utf8");
 
 test("primary bundle keeps the browser at canonical HTTPS and Web/API ports private", async () => {
-  const [nginx, deploy, tunnel, health] = await Promise.all(["./nginx/blog-x.conf.template", "./deploy.sh", "./tunnel.sh", "./healthcheck.sh"].map(read));
+  const [nginx, deploy, tunnel, health, headers] = await Promise.all(["./nginx/blog-x.conf.template", "./deploy.sh", "./tunnel.sh", "./healthcheck.sh", "./nginx/blog-x-security-headers.conf"].map(read));
   assert.match(nginx, /server_name huajieyu001\.top/);
   assert.match(nginx, /proxy_pass http:\/\/127\.0\.0\.1:3100/);
   assert.match(nginx, /X-Blog-X-Ingress-Auth __BLOG_X_INGRESS_AUTH_SECRET__/);
@@ -16,6 +16,13 @@ test("primary bundle keeps the browser at canonical HTTPS and Web/API ports priv
   assert.match(tunnel, /UserKnownHostsFile="\$KNOWN_HOSTS_PATH"/);
   assert.match(tunnel, /-L "127\.0\.0\.1:3001:127\.0\.0\.1:3001"/);
   assert.match(health, /127\.0\.0\.1:3001\/health/);
+  assert.match(nginx, /include \/etc\/nginx\/snippets\/blog-x-security-headers\.conf;/);
+  assert.match(headers, /proxy_hide_header X-Powered-By;/);
+  assert.match(headers, /add_header Content-Security-Policy/);
+  assert.match(headers, /Strict-Transport-Security "max-age=31536000; includeSubDomains" always;/);
+  assert.match(headers, /Permissions-Policy "camera=\(\), microphone=\(\), geolocation=\(\), payment=\(\), usb=\(\)" always;/);
+  assert.doesNotMatch(headers, /unsafe-eval|\*/);
+  assert.equal([...headers.matchAll(/add_header Content-Security-Policy/g)].length, 1);
 });
 
 test("primary deploy backs up and health-gates a prebuilt candidate before cutover", async () => {
