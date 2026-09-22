@@ -106,6 +106,26 @@ test("root retention command remains bounded and calls the API CLI without a sch
   assert.doesNotMatch(packageJson.scripts.retention, /enable|install|systemctl/i);
 });
 
+test("secondary hardening is staged, key-acknowledged, and keeps application ports private", async () => {
+  const [hardening, handoff] = await Promise.all([read("./harden-host.sh"), read("./README.md")]);
+  for (const stage of ["prepare-admin", "provision-tunnel-user", "finalize-tunnel-migration", "harden-ssh", "apply-firewall", "confirm-firewall", "verify"]) {
+    assert.match(hardening, new RegExp(`\\b${stage}\\b`));
+  }
+  assert.match(hardening, /primary-tunnel-switched-restarted-and-healthy/);
+  assert.match(hardening, /fresh-key-only-ubuntu-session-verified/);
+  assert.match(hardening, /permitopen=\\"\$TUNNEL_DESTINATION\\"/);
+  assert.doesNotMatch(hardening, /command=/);
+  assert.match(hardening, /OnActiveSec=10min/);
+  assert.match(hardening, /sshd -t/);
+  assert.match(hardening, /reload ssh/);
+  assert.match(hardening, /ufw allow 22\/tcp/);
+  assert.doesNotMatch(hardening, /ufw allow (?:3001|5432)\/tcp/);
+  assert.match(hardening, /"\(Service\|service\)":"api"/);
+  assert.match(hardening, /"\(Service\|service\)":"postgres"/);
+  assert.match(handoff, /password rotation/i);
+  assert.doesNotMatch(handoff, /password[:=]\s*\S+/i);
+});
+
 test("immutable secondary deployment resolves a revision tag once and uses only its inspected image ID", async () => {
   const [dockerfile, compose, deploy] = await Promise.all([
     read("../../apps/api/Dockerfile"), read("./compose.yaml"), read("./deploy.sh"),
