@@ -1150,7 +1150,7 @@ async function seedMainBrowserScenario(context, file) {
     context.secrets.push(expiredSessionToken);
     const query = [
       `insert into articles (id,title,slug,markdown,status,published_at,deleted_at) values ('${articleId}','${title}','${slug}','# ${title}','published',CURRENT_TIMESTAMP,null);`,
-      `insert into article_daily_views (article_id,day,total_pv,direct_pv,search_pv) values ('${articleId}',((CURRENT_TIMESTAMP at time zone 'Asia/Shanghai')::date - 29),10,7,3);`,
+      `insert into article_daily_views (article_id,day,total_pv,direct_pv,search_pv) values ('${articleId}',((CURRENT_TIMESTAMP at time zone 'Asia/Shanghai')::date - 29),10,7,3),('${articleId}',((CURRENT_TIMESTAMP at time zone 'Asia/Shanghai')::date - 59),4,4,0);`,
       "insert into sessions (administrator_id,token_digest,expires_at,revoked_at)",
       `select id,'${hashText(expiredSessionToken)}',now()-interval '1 minute',null from administrators where username='${context.username}';`,
     ].join(" ");

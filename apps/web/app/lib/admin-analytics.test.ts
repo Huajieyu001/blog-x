@@ -34,6 +34,13 @@ const analytics = {
     { source: "social", totalPv: 0 }, { source: "external", totalPv: 0 },
   ],
   topArticles: [{ articleId: "00000000-0000-4000-8000-000000000001", title: "Published", status: "published", totalPv: 2 }],
+  comparison: {
+    status: "available",
+    previousFromDay: "2026-07-08",
+    previousToDay: "2026-08-06",
+    previousTotalPv: 1,
+    deltaPv: 1,
+  },
 };
 
 function installFetch(fetcher: typeof fetch) {
@@ -63,6 +70,8 @@ test("admin helpers distinguish non-2xx, network, malformed JSON, and invalid co
     new Error("network unavailable"),
     new Response("not json", { status: 200 }),
     new Response(JSON.stringify({ ...analytics, totalPv: 1 }), { status: 200 }),
+    new Response(JSON.stringify({ ...analytics, comparison: { status: "available", previousFromDay: "2026-07-08", previousToDay: "2026-08-06", previousTotalPv: 1 } }), { status: 200 }),
+    new Response(JSON.stringify({ ...analytics, comparison: { ...analytics.comparison, deltaPv: 0 } }), { status: 200 }),
     new Response(JSON.stringify([]), { status: 200 }),
   ];
   context.after(installFetch(async () => {
@@ -73,6 +82,8 @@ test("admin helpers distinguish non-2xx, network, malformed JSON, and invalid co
 
   assert.deepEqual(await getAdminPostsResult("cookie"), { kind: "upstream_error" });
   assert.deepEqual(await getAdminPostsResult("cookie"), { kind: "upstream_error" });
+  assert.deepEqual(await getAdminAnalytics("cookie", 30, 1), { kind: "upstream_error" });
+  assert.deepEqual(await getAdminAnalytics("cookie", 30, 1), { kind: "upstream_error" });
   assert.deepEqual(await getAdminAnalytics("cookie", 30, 1), { kind: "upstream_error" });
   assert.deepEqual(await getAdminAnalytics("cookie", 30, 1), { kind: "upstream_error" });
   assert.deepEqual(await getAdminPostsResult("cookie"), { kind: "ok", data: [] });

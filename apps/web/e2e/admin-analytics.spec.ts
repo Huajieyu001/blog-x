@@ -41,12 +41,29 @@ test("administrator analytics uses same-origin SSR navigation with strict ranges
   await expect(overview.getByText("日均 PV", { exact: true })).toBeVisible();
   await expect(overview.getByText("有访问的天数", { exact: true })).toBeVisible();
   await expect(overview.getByText("最高单日", { exact: true })).toBeVisible();
+  const comparison = page.getByRole("region", { name: "周期对比" });
+  await expect(comparison.getByText("当前时段 PV", { exact: true })).toBeVisible();
+  await expect(comparison.getByText("10 PV", { exact: true })).toBeVisible();
+  await expect(comparison.getByText("上一等长时段 PV", { exact: true })).toBeVisible();
+  await expect(comparison.getByText("4 PV", { exact: true })).toBeVisible();
+  await expect(comparison.getByText("+6 PV", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "30 天" })).toHaveAttribute("aria-current", "page");
   for (const range of ["7 天", "90 天", "400 天"]) await expect(page.getByRole("link", { name: range })).toBeVisible();
   await page.getByRole("link", { name: "7 天" }).click();
   await expect(page).toHaveURL(`${webOrigin}/admin/analytics?range=7`);
   await expect(page.getByRole("heading", { name: "所选时段还没有浏览记录" })).toBeVisible();
+  await expect(comparison.getByText("持平 0 PV", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "下载每日 CSV" })).toHaveAttribute("href", "/api/admin/analytics.csv?range=7&limit=8");
+
+  await page.getByRole("link", { name: "90 天" }).click();
+  await expect(page).toHaveURL(`${webOrigin}/admin/analytics?range=90`);
+  await expect(comparison.getByText("14 PV", { exact: true })).toBeVisible();
+  await expect(comparison.getByText("+14 PV", { exact: true })).toBeVisible();
+
+  await page.getByRole("link", { name: "400 天" }).click();
+  await expect(page).toHaveURL(`${webOrigin}/admin/analytics?range=400`);
+  await expect(comparison.getByText("不可计算", { exact: true })).toHaveCount(2);
+  await expect(comparison.getByText("上一等长 400 天时段早于 400 天汇总保留范围。", { exact: true })).toBeVisible();
 });
 
 test("invalid analytics range never reaches an analytics API request and offers exact recovery", async ({ page }) => {

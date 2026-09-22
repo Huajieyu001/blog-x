@@ -21,6 +21,12 @@ function averagePv(total: number, range: number) {
   return new Intl.NumberFormat("zh-CN", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(total / range);
 }
 
+function comparisonDelta(value: number) {
+  if (value > 0) return `+${pv(value)} PV`;
+  if (value < 0) return `−${pv(Math.abs(value))} PV`;
+  return "持平 0 PV";
+}
+
 export function AnalyticsDisclosure() {
   return <aside className={styles.analyticsDisclosure} aria-labelledby="analytics-privacy-title">
     <h2 id="analytics-privacy-title">隐私说明</h2>
@@ -57,11 +63,27 @@ export function AnalyticsRangeNav({ range }: { range: AdminAnalytics["range"] })
 export function AnalyticsKpis({ analytics }: { analytics: AdminAnalytics }) {
   const activeDays = analytics.daily.filter((point) => point.pv > 0).length;
   const peak = analytics.daily.reduce((highest, point) => point.pv > highest.pv ? point : highest, analytics.daily[0]!);
-  return <dl className={styles.analyticsKpis} role="group" aria-label="访问概览">
-    <div><dt>日均 PV</dt><dd>{averagePv(analytics.totalPv, analytics.range)}</dd><p>所选时段日均浏览</p></div>
-    <div><dt>有访问的天数</dt><dd>{activeDays}</dd><p>共 {analytics.range} 天</p></div>
-    <div><dt>最高单日</dt><dd>{pv(peak.pv)} PV</dd><p>{peak.day}</p></div>
-  </dl>;
+  const comparison = analytics.comparison;
+  return <>
+    <dl className={styles.analyticsKpis} role="group" aria-label="访问概览">
+      <div><dt>日均 PV</dt><dd>{averagePv(analytics.totalPv, analytics.range)}</dd><p>所选时段日均浏览</p></div>
+      <div><dt>有访问的天数</dt><dd>{activeDays}</dd><p>共 {analytics.range} 天</p></div>
+      <div><dt>最高单日</dt><dd>{pv(peak.pv)} PV</dd><p>{peak.day}</p></div>
+    </dl>
+    <section className={styles.analyticsComparison} aria-labelledby="analytics-comparison-title">
+      <h2 id="analytics-comparison-title">周期对比</h2>
+      <dl className={styles.analyticsComparisonGrid} aria-label="与上一等长时段对比">
+        <div><dt>当前时段 PV</dt><dd>{pv(analytics.totalPv)} PV</dd><p>{analytics.fromDay} 至 {analytics.toDay}</p></div>
+        {comparison.status === "available" ? <>
+          <div><dt>上一等长时段 PV</dt><dd>{pv(comparison.previousTotalPv)} PV</dd><p>{comparison.previousFromDay} 至 {comparison.previousToDay}</p></div>
+          <div><dt>变化</dt><dd>{comparisonDelta(comparison.deltaPv)}</dd><p>当前时段减上一等长时段</p></div>
+        </> : <>
+          <div><dt>上一等长时段 PV</dt><dd>不可计算</dd><p>{comparison.previousFromDay} 至 {comparison.previousToDay}</p></div>
+          <div><dt>变化</dt><dd>不可计算</dd><p>上一等长 400 天时段早于 400 天汇总保留范围。</p></div>
+        </>}
+      </dl>
+    </section>
+  </>;
 }
 
 export function AnalyticsDetails({ analytics }: { analytics: AdminAnalytics }) {
