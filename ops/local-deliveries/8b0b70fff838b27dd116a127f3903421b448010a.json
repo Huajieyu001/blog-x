@@ -1,0 +1,690 @@
+{
+  "format": "blog-x-v1.1-local-delivery-evidence",
+  "version": 1,
+  "implementationRevision": "8b0b70fff838b27dd116a127f3903421b448010a",
+  "lockfileSha256": "bc0d27ec8b44b3d384ddba296814ed73edbd418240514a790a859d81f4527578",
+  "attemptClaim": {
+    "authority": "blog-x-v1.1-local-delivery-8b0b70fff838b27dd116a127f3903421b448010a",
+    "evidencePath": "ops/local-deliveries/8b0b70fff838b27dd116a127f3903421b448010a.json",
+    "implementationRevision": "8b0b70fff838b27dd116a127f3903421b448010a",
+    "sha256": "38a219db24c737ccc9ecb19adfc966b4bd0c7163c219b4a447aa9da5aabbf1b2"
+  },
+  "acceptance": {
+    "format": "blog-x-v1.1-local-delivery-acceptance",
+    "version": 2,
+    "manifestSha256": "8305da4dbfb3cf8c9a7c70b99f37fa6b10c63386bde1907a2f1b72b606838f6e",
+    "inventory": [
+      "apps/api/test/admin-analytics.test.ts",
+      "apps/api/test/article-draft-preview.test.ts",
+      "apps/api/test/article-lifecycle.test.ts",
+      "apps/api/test/article-revisions.test.ts",
+      "apps/api/test/article-slug-redirects.test.ts",
+      "apps/api/test/auth-session.test.ts",
+      "apps/api/test/backup-restore.test.ts",
+      "apps/api/test/distribution-export.test.ts",
+      "apps/api/test/media.test.ts",
+      "apps/api/test/operational-retention.test.ts",
+      "apps/api/test/pages-archive.test.ts",
+      "apps/api/test/phase2-public-visibility.test.ts",
+      "apps/api/test/public-discovery.test.ts",
+      "apps/api/test/public-distribution.test.ts",
+      "apps/api/test/public-list.test.ts",
+      "apps/api/test/public-visibility.test.ts",
+      "apps/api/test/site-settings.test.ts",
+      "apps/api/test/taxonomy.test.ts",
+      "apps/web/e2e/about-archive.spec.ts",
+      "apps/web/e2e/admin-analytics.spec.ts",
+      "apps/web/e2e/article-lifecycle.spec.ts",
+      "apps/web/e2e/article-revisions.spec.ts",
+      "apps/web/e2e/article-toc.spec.ts",
+      "apps/web/e2e/auth-session.spec.ts",
+      "apps/web/e2e/draft-preview.spec.ts",
+      "apps/web/e2e/media.spec.ts",
+      "apps/web/e2e/phase1-publishing.spec.ts",
+      "apps/web/e2e/phase2-reading.spec.ts",
+      "apps/web/e2e/phase3-distribution.spec.ts",
+      "apps/web/e2e/phase4-restore.spec.ts",
+      "apps/web/e2e/public-discovery.spec.ts",
+      "apps/web/e2e/public-errors.spec.ts",
+      "apps/web/e2e/public-list.spec.ts",
+      "apps/web/e2e/public-reading.spec.ts",
+      "apps/web/e2e/public-shell.spec.ts",
+      "apps/web/e2e/taxonomy.spec.ts",
+      "apps/web/e2e/walking-skeleton.spec.ts"
+    ],
+    "generatedIntegration": {
+      "runs": 1,
+      "manifestSha256": "8305da4dbfb3cf8c9a7c70b99f37fa6b10c63386bde1907a2f1b72b606838f6e",
+      "inventory": [
+        "apps/api/test/admin-analytics.test.ts",
+        "apps/api/test/article-draft-preview.test.ts",
+        "apps/api/test/article-lifecycle.test.ts",
+        "apps/api/test/article-revisions.test.ts",
+        "apps/api/test/article-slug-redirects.test.ts",
+        "apps/api/test/auth-session.test.ts",
+        "apps/api/test/backup-restore.test.ts",
+        "apps/api/test/distribution-export.test.ts",
+        "apps/api/test/media.test.ts",
+        "apps/api/test/operational-retention.test.ts",
+        "apps/api/test/pages-archive.test.ts",
+        "apps/api/test/phase2-public-visibility.test.ts",
+        "apps/api/test/public-discovery.test.ts",
+        "apps/api/test/public-distribution.test.ts",
+        "apps/api/test/public-list.test.ts",
+        "apps/api/test/public-visibility.test.ts",
+        "apps/api/test/site-settings.test.ts",
+        "apps/api/test/taxonomy.test.ts",
+        "apps/web/e2e/about-archive.spec.ts",
+        "apps/web/e2e/admin-analytics.spec.ts",
+        "apps/web/e2e/article-lifecycle.spec.ts",
+        "apps/web/e2e/article-revisions.spec.ts",
+        "apps/web/e2e/article-toc.spec.ts",
+        "apps/web/e2e/auth-session.spec.ts",
+        "apps/web/e2e/draft-preview.spec.ts",
+        "apps/web/e2e/media.spec.ts",
+        "apps/web/e2e/phase1-publishing.spec.ts",
+        "apps/web/e2e/phase2-reading.spec.ts",
+        "apps/web/e2e/phase3-distribution.spec.ts",
+        "apps/web/e2e/phase4-restore.spec.ts",
+        "apps/web/e2e/public-errors.spec.ts",
+        "apps/web/e2e/public-list.spec.ts",
+        "apps/web/e2e/public-reading.spec.ts",
+        "apps/web/e2e/public-shell.spec.ts",
+        "apps/web/e2e/taxonomy.spec.ts",
+        "apps/web/e2e/walking-skeleton.spec.ts"
+      ],
+      "resultSha256": "28816a748b80f4f17261ce2c94c481aa921891404da4ec47fad72d131ab2c23b",
+      "outputSha256": "26ba2682cac137b906287b9c22a6941008d0dea21a48efdaab388420fbe36bca",
+      "counts": {
+        "tests": 97,
+        "passed": 97,
+        "failed": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "cleanupAcknowledged": true
+    },
+    "phase7Browser": {
+      "runs": 1,
+      "manifestSha256": "8305da4dbfb3cf8c9a7c70b99f37fa6b10c63386bde1907a2f1b72b606838f6e",
+      "inventory": [
+        "apps/web/e2e/public-discovery.spec.ts"
+      ],
+      "resultSha256": "01cae7a3140d6a5f01f491d0a46dcf423abfa96a21c91860a0f0ab40b55a1b1e",
+      "outputSha256": "ab84b8e08815bc76f69a76a019512c8dbb661caafb5bdba773e8e6013b5bfbe6",
+      "counts": {
+        "tests": 17,
+        "passed": 17,
+        "failed": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "cleanupAcknowledged": true
+    },
+    "counts": {
+      "tests": 114,
+      "passed": 114,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "releaseState": "BLOCKED",
+    "resultSha256": "430ae3a4aeaa968448fa4d353c1beadd4ea25c3d7fd63ecdb8e5e3ee442d2ad9",
+    "sha256": "701fc77cb3acc86ed011152d24b648103c2df231e26b48b9dd092f6c153ee9ed"
+  },
+  "oldImages": {
+    "api": "sha256:f9d5bd52689d86c61338132d10f73452a9e979291b9ed22e77941f057ce43443",
+    "web": "sha256:04378a3cfaa15c960d6c9e0d8747b1fa612abc39f0d1fcf9290cb8f4f02738ec"
+  },
+  "seeds": {
+    "api": {
+      "reference": "sha256:f9d5bd52689d86c61338132d10f73452a9e979291b9ed22e77941f057ce43443",
+      "inspectedId": "sha256:f9d5bd52689d86c61338132d10f73452a9e979291b9ed22e77941f057ce43443"
+    },
+    "web": {
+      "reference": "sha256:04378a3cfaa15c960d6c9e0d8747b1fa612abc39f0d1fcf9290cb8f4f02738ec",
+      "inspectedId": "sha256:04378a3cfaa15c960d6c9e0d8747b1fa612abc39f0d1fcf9290cb8f4f02738ec"
+    }
+  },
+  "targets": {
+    "api": {
+      "id": "sha256:fa7923fa3ab185223f888d3dbcf6ba5e28b8ebcb03368ea1f082c5ac1dc3d744",
+      "labels": {
+        "org.opencontainers.image.revision": "8b0b70fff838b27dd116a127f3903421b448010a",
+        "io.blog-x.lockfile-sha256": "bc0d27ec8b44b3d384ddba296814ed73edbd418240514a790a859d81f4527578",
+        "io.blog-x.seed-image-id": "sha256:f9d5bd52689d86c61338132d10f73452a9e979291b9ed22e77941f057ce43443",
+        "io.blog-x.application": "api",
+        "io.blog-x.public-origin": "http://127.0.0.1:3100",
+        "io.blog-x.refresh-kind": "v1.1-offline-local-delivery"
+      },
+      "probe": {
+        "storeSha256": "e9fcfe0f8e5f90e858f6f7205ba34f840e6ac9b01bc0b943f710ca3b3013da0d",
+        "filesystemSha256": "4e711cb2a7801fd15cde9cf30037f334732c33a5b8ff9686e2f7d7d1b4446281",
+        "filesystemExact": true
+      }
+    },
+    "web": {
+      "id": "sha256:5820e9bf004cf363802bfc27ceab33d9514d8db10a5daaaf36a17fea0eb55de0",
+      "labels": {
+        "org.opencontainers.image.revision": "8b0b70fff838b27dd116a127f3903421b448010a",
+        "io.blog-x.lockfile-sha256": "bc0d27ec8b44b3d384ddba296814ed73edbd418240514a790a859d81f4527578",
+        "io.blog-x.seed-image-id": "sha256:04378a3cfaa15c960d6c9e0d8747b1fa612abc39f0d1fcf9290cb8f4f02738ec",
+        "io.blog-x.application": "web",
+        "io.blog-x.public-origin": "http://127.0.0.1:3100",
+        "io.blog-x.refresh-kind": "v1.1-offline-local-delivery"
+      },
+      "probe": {
+        "storeSha256": "e9fcfe0f8e5f90e858f6f7205ba34f840e6ac9b01bc0b943f710ca3b3013da0d",
+        "filesystemSha256": "ac33728998681f1d57b4dc04fb272df5a46815e526d075636ab8d70cc6870ed6",
+        "filesystemExact": true
+      }
+    }
+  },
+  "stages": {
+    "preflight": {
+      "business": {
+        "count": 23,
+        "sha256": "7001936dd6bd46e291f2688a37a8a9b80ed95e7ea130afaaad5bf47c5f1496f6"
+      },
+      "containers": {
+        "api": {
+          "id": "c5d629794929770039bd16163b2fe97af026eff2d2edc13b49e024aac008a317",
+          "imageId": "sha256:f9d5bd52689d86c61338132d10f73452a9e979291b9ed22e77941f057ce43443",
+          "labels": {
+            "com.docker.compose.oneoff": "False",
+            "com.docker.compose.project": "blogxlocal",
+            "com.docker.compose.service": "api",
+            "io.blog-x.application": "api",
+            "io.blog-x.lockfile-sha256": "bc0d27ec8b44b3d384ddba296814ed73edbd418240514a790a859d81f4527578",
+            "io.blog-x.public-origin": "http://127.0.0.1:3100",
+            "io.blog-x.refresh-kind": "v1.1-offline-local-delivery",
+            "io.blog-x.seed-image-id": "sha256:4bf8e7b81bd07c4a34eed7373ba465f43b0931c82532cd4f15f5fa754ee5333d",
+            "org.opencontainers.image.revision": "231f97c6fb40ef49b4142c73d2812acda9ec0d69"
+          },
+          "healthy": true
+        },
+        "postgres": {
+          "id": "b8102f3830b5bb9769ba6e8127c6c444098c7c4f5d0941ca6db0652863ba09c8",
+          "imageId": "sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15",
+          "labels": {
+            "com.docker.compose.oneoff": "False",
+            "com.docker.compose.project": "blogxlocal",
+            "com.docker.compose.service": "postgres"
+          },
+          "healthy": true
+        },
+        "web": {
+          "id": "9f261f46eb1d72010b270d11d540bf6bc8f3db75badfd2eb0163d07dd2993766",
+          "imageId": "sha256:04378a3cfaa15c960d6c9e0d8747b1fa612abc39f0d1fcf9290cb8f4f02738ec",
+          "labels": {
+            "com.docker.compose.oneoff": "False",
+            "com.docker.compose.project": "blogxlocal",
+            "com.docker.compose.service": "web",
+            "io.blog-x.application": "web",
+            "io.blog-x.lockfile-sha256": "bc0d27ec8b44b3d384ddba296814ed73edbd418240514a790a859d81f4527578",
+            "io.blog-x.public-origin": "http://127.0.0.1:3100",
+            "io.blog-x.refresh-kind": "v1.1-offline-local-delivery",
+            "io.blog-x.seed-image-id": "sha256:36b185a3e1a0bf7ba9996fb16fa1726baa102a5dcbb2e063c7f241701894de5e",
+            "org.opencontainers.image.revision": "231f97c6fb40ef49b4142c73d2812acda9ec0d69"
+          },
+          "healthy": true
+        }
+      },
+      "database": {
+        "name": "blog_x",
+        "systemIdentifier": "7671532272855924775",
+        "schemaRows": 262,
+        "schemaSha256": "ad0aebd58be6fd8b9f986676e3a62ec473f9071f257f31e786934c7e0141be97"
+      },
+      "git": {
+        "implementationRevision": "8b0b70fff838b27dd116a127f3903421b448010a",
+        "clean": true,
+        "lockfileSha256": "bc0d27ec8b44b3d384ddba296814ed73edbd418240514a790a859d81f4527578",
+        "ref": "refs/heads/dev"
+      },
+      "ledger": {
+        "count": 1,
+        "rows": {
+          "phase1": {
+            "appliedAt": "2026-09-21T18:05:26.109Z",
+            "stableSha256": "3ebe7f07aa2ac6a8a24eaaf949eeadfb8b9c82af725838f5800f18f8b3857364"
+          }
+        },
+        "stableSha256": "87bfbb3e717c9caeecd524c672046ead858b24736dd5f2e2d8c2837c064fa538",
+        "timestampSha256": "3e245b5e6193312e3ab040589171bbde2deea30eb59eac7bce4aea36ab295388"
+      },
+      "media": {
+        "count": 0,
+        "bytes": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "protected": {
+        "count": 238,
+        "sha256": "807151f2496b673bceba1e0a193fcc5b84d7afff58579bbad72fe71e299a1952"
+      },
+      "reading": {
+        "state": "empty_public_set",
+        "listStatus": 200,
+        "listBodySha256": "15447e79e02e9bdb61d76cdfb12c434ef7040985239f056deccc8345621123c4",
+        "detailStatus": null,
+        "detailBodySha256": null,
+        "slugSha256": null
+      },
+      "releaseState": "BLOCKED",
+      "routes": {
+        "/": {
+          "status": 200,
+          "bodySha256": "b7f36bb6fe948a654f724e15c5c2e2b6c3f25d5b53d12fc8ad148e3a362c768e"
+        },
+        "/api/health": {
+          "status": 200,
+          "bodySha256": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93",
+          "contractSha256": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93"
+        },
+        "/api/public/articles/phase6-unknown/related": {
+          "status": 404,
+          "bodySha256": "d2dfdc9511fbeaa0701d1f8730f4989313b062ca1b61a2bd8bed8f4f5d654b5d",
+          "contractSha256": "d2dfdc9511fbeaa0701d1f8730f4989313b062ca1b61a2bd8bed8f4f5d654b5d"
+        },
+        "/api/public/search?q=": {
+          "status": 200,
+          "bodySha256": "5b9910eddf5ec63e61e37cf51143d55ff080a7a8020944a982f1e929a5ec58b1",
+          "contractSha256": "094deff51a454de8e177e7970feea39e423f39918552d1448151d0ac02dfb906"
+        },
+        "/archives": {
+          "status": 200,
+          "bodySha256": "f1199c6b8b18181a21829c1acfdf821daba6d57b649622f7728946fb865dbf7e"
+        },
+        "/categories": {
+          "status": 200,
+          "bodySha256": "f65e81cb6d9c927351665057a959ce219ff070ddcf59396a7bfdd9b9922fe39e"
+        },
+        "/search": {
+          "status": 200,
+          "bodySha256": "dbad44e0c3f741193eef415bfd7bfa9573c7a48d833eb8e255c16de70ce766b3"
+        },
+        "/tags": {
+          "status": 200,
+          "bodySha256": "72c7f159de3c715c0a63db0c5ff895c9adb0081085ff7762d34bc5a6df2f6c90"
+        }
+      },
+      "sequences": {
+        "count": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "seeds": {
+        "api": {
+          "reference": "sha256:f9d5bd52689d86c61338132d10f73452a9e979291b9ed22e77941f057ce43443",
+          "inspectedId": "sha256:f9d5bd52689d86c61338132d10f73452a9e979291b9ed22e77941f057ce43443"
+        },
+        "web": {
+          "reference": "sha256:04378a3cfaa15c960d6c9e0d8747b1fa612abc39f0d1fcf9290cb8f4f02738ec",
+          "inspectedId": "sha256:04378a3cfaa15c960d6c9e0d8747b1fa612abc39f0d1fcf9290cb8f4f02738ec"
+        }
+      },
+      "targets": {
+        "api": {
+          "id": "sha256:fa7923fa3ab185223f888d3dbcf6ba5e28b8ebcb03368ea1f082c5ac1dc3d744",
+          "labelsSha256": "36feb6e6379bf391ee721a5c8fba0fa5d999b008a0b6208593dc7f368a370815",
+          "filesystemSha256": "4e711cb2a7801fd15cde9cf30037f334732c33a5b8ff9686e2f7d7d1b4446281",
+          "storeSha256": "e9fcfe0f8e5f90e858f6f7205ba34f840e6ac9b01bc0b943f710ca3b3013da0d"
+        },
+        "web": {
+          "id": "sha256:5820e9bf004cf363802bfc27ceab33d9514d8db10a5daaaf36a17fea0eb55de0",
+          "labelsSha256": "7a9e69d36f114b36e7f4bcbda58a69fc4666a4ee8af4a52dc737531e0a03d271",
+          "filesystemSha256": "ac33728998681f1d57b4dc04fb272df5a46815e526d075636ab8d70cc6870ed6",
+          "storeSha256": "e9fcfe0f8e5f90e858f6f7205ba34f840e6ac9b01bc0b943f710ca3b3013da0d"
+        }
+      },
+      "topology": {
+        "project": "blogxlocal",
+        "servicesExact": true,
+        "fixedPortsExact": true,
+        "portOwnerExact": true,
+        "containersHealthy": true
+      },
+      "volumes": {
+        "count": 2,
+        "sha256": "45ed3264cf37f07f3674e91ed531739de5c10dc3d5482169a290a8331521a031"
+      }
+    },
+    "postMigration": {
+      "business": {
+        "count": 23,
+        "sha256": "7001936dd6bd46e291f2688a37a8a9b80ed95e7ea130afaaad5bf47c5f1496f6"
+      },
+      "containers": {
+        "api": {
+          "id": "c5d629794929770039bd16163b2fe97af026eff2d2edc13b49e024aac008a317",
+          "imageId": "sha256:f9d5bd52689d86c61338132d10f73452a9e979291b9ed22e77941f057ce43443",
+          "labels": {
+            "com.docker.compose.oneoff": "False",
+            "com.docker.compose.project": "blogxlocal",
+            "com.docker.compose.service": "api",
+            "io.blog-x.application": "api",
+            "io.blog-x.lockfile-sha256": "bc0d27ec8b44b3d384ddba296814ed73edbd418240514a790a859d81f4527578",
+            "io.blog-x.public-origin": "http://127.0.0.1:3100",
+            "io.blog-x.refresh-kind": "v1.1-offline-local-delivery",
+            "io.blog-x.seed-image-id": "sha256:4bf8e7b81bd07c4a34eed7373ba465f43b0931c82532cd4f15f5fa754ee5333d",
+            "org.opencontainers.image.revision": "231f97c6fb40ef49b4142c73d2812acda9ec0d69"
+          },
+          "healthy": true
+        },
+        "postgres": {
+          "id": "b8102f3830b5bb9769ba6e8127c6c444098c7c4f5d0941ca6db0652863ba09c8",
+          "imageId": "sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15",
+          "labels": {
+            "com.docker.compose.oneoff": "False",
+            "com.docker.compose.project": "blogxlocal",
+            "com.docker.compose.service": "postgres"
+          },
+          "healthy": true
+        },
+        "web": {
+          "id": "9f261f46eb1d72010b270d11d540bf6bc8f3db75badfd2eb0163d07dd2993766",
+          "imageId": "sha256:04378a3cfaa15c960d6c9e0d8747b1fa612abc39f0d1fcf9290cb8f4f02738ec",
+          "labels": {
+            "com.docker.compose.oneoff": "False",
+            "com.docker.compose.project": "blogxlocal",
+            "com.docker.compose.service": "web",
+            "io.blog-x.application": "web",
+            "io.blog-x.lockfile-sha256": "bc0d27ec8b44b3d384ddba296814ed73edbd418240514a790a859d81f4527578",
+            "io.blog-x.public-origin": "http://127.0.0.1:3100",
+            "io.blog-x.refresh-kind": "v1.1-offline-local-delivery",
+            "io.blog-x.seed-image-id": "sha256:36b185a3e1a0bf7ba9996fb16fa1726baa102a5dcbb2e063c7f241701894de5e",
+            "org.opencontainers.image.revision": "231f97c6fb40ef49b4142c73d2812acda9ec0d69"
+          },
+          "healthy": true
+        }
+      },
+      "database": {
+        "name": "blog_x",
+        "systemIdentifier": "7671532272855924775",
+        "schemaRows": 262,
+        "schemaSha256": "ad0aebd58be6fd8b9f986676e3a62ec473f9071f257f31e786934c7e0141be97"
+      },
+      "git": {
+        "implementationRevision": "8b0b70fff838b27dd116a127f3903421b448010a",
+        "clean": true,
+        "lockfileSha256": "bc0d27ec8b44b3d384ddba296814ed73edbd418240514a790a859d81f4527578",
+        "ref": "refs/heads/dev"
+      },
+      "ledger": {
+        "count": 1,
+        "rows": {
+          "phase1": {
+            "appliedAt": "2026-09-22T01:47:22.341Z",
+            "stableSha256": "3ebe7f07aa2ac6a8a24eaaf949eeadfb8b9c82af725838f5800f18f8b3857364"
+          }
+        },
+        "stableSha256": "87bfbb3e717c9caeecd524c672046ead858b24736dd5f2e2d8c2837c064fa538",
+        "timestampSha256": "bf589b412f41e29e965bc9f07c26bcc88ead1dafd0b8601d942e1b239ab38082"
+      },
+      "media": {
+        "count": 0,
+        "bytes": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "protected": {
+        "count": 238,
+        "sha256": "807151f2496b673bceba1e0a193fcc5b84d7afff58579bbad72fe71e299a1952"
+      },
+      "reading": {
+        "state": "empty_public_set",
+        "listStatus": 200,
+        "listBodySha256": "15447e79e02e9bdb61d76cdfb12c434ef7040985239f056deccc8345621123c4",
+        "detailStatus": null,
+        "detailBodySha256": null,
+        "slugSha256": null
+      },
+      "releaseState": "BLOCKED",
+      "routes": {
+        "/": {
+          "status": 200,
+          "bodySha256": "b7f36bb6fe948a654f724e15c5c2e2b6c3f25d5b53d12fc8ad148e3a362c768e"
+        },
+        "/api/health": {
+          "status": 200,
+          "bodySha256": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93",
+          "contractSha256": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93"
+        },
+        "/api/public/articles/phase6-unknown/related": {
+          "status": 404,
+          "bodySha256": "d2dfdc9511fbeaa0701d1f8730f4989313b062ca1b61a2bd8bed8f4f5d654b5d",
+          "contractSha256": "d2dfdc9511fbeaa0701d1f8730f4989313b062ca1b61a2bd8bed8f4f5d654b5d"
+        },
+        "/api/public/search?q=": {
+          "status": 200,
+          "bodySha256": "5b9910eddf5ec63e61e37cf51143d55ff080a7a8020944a982f1e929a5ec58b1",
+          "contractSha256": "094deff51a454de8e177e7970feea39e423f39918552d1448151d0ac02dfb906"
+        },
+        "/archives": {
+          "status": 200,
+          "bodySha256": "f1199c6b8b18181a21829c1acfdf821daba6d57b649622f7728946fb865dbf7e"
+        },
+        "/categories": {
+          "status": 200,
+          "bodySha256": "f65e81cb6d9c927351665057a959ce219ff070ddcf59396a7bfdd9b9922fe39e"
+        },
+        "/search": {
+          "status": 200,
+          "bodySha256": "dbad44e0c3f741193eef415bfd7bfa9573c7a48d833eb8e255c16de70ce766b3"
+        },
+        "/tags": {
+          "status": 200,
+          "bodySha256": "72c7f159de3c715c0a63db0c5ff895c9adb0081085ff7762d34bc5a6df2f6c90"
+        }
+      },
+      "sequences": {
+        "count": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "seeds": {
+        "api": {
+          "reference": "sha256:f9d5bd52689d86c61338132d10f73452a9e979291b9ed22e77941f057ce43443",
+          "inspectedId": "sha256:f9d5bd52689d86c61338132d10f73452a9e979291b9ed22e77941f057ce43443"
+        },
+        "web": {
+          "reference": "sha256:04378a3cfaa15c960d6c9e0d8747b1fa612abc39f0d1fcf9290cb8f4f02738ec",
+          "inspectedId": "sha256:04378a3cfaa15c960d6c9e0d8747b1fa612abc39f0d1fcf9290cb8f4f02738ec"
+        }
+      },
+      "targets": {
+        "api": {
+          "id": "sha256:fa7923fa3ab185223f888d3dbcf6ba5e28b8ebcb03368ea1f082c5ac1dc3d744",
+          "labelsSha256": "36feb6e6379bf391ee721a5c8fba0fa5d999b008a0b6208593dc7f368a370815",
+          "filesystemSha256": "4e711cb2a7801fd15cde9cf30037f334732c33a5b8ff9686e2f7d7d1b4446281",
+          "storeSha256": "e9fcfe0f8e5f90e858f6f7205ba34f840e6ac9b01bc0b943f710ca3b3013da0d"
+        },
+        "web": {
+          "id": "sha256:5820e9bf004cf363802bfc27ceab33d9514d8db10a5daaaf36a17fea0eb55de0",
+          "labelsSha256": "7a9e69d36f114b36e7f4bcbda58a69fc4666a4ee8af4a52dc737531e0a03d271",
+          "filesystemSha256": "ac33728998681f1d57b4dc04fb272df5a46815e526d075636ab8d70cc6870ed6",
+          "storeSha256": "e9fcfe0f8e5f90e858f6f7205ba34f840e6ac9b01bc0b943f710ca3b3013da0d"
+        }
+      },
+      "topology": {
+        "project": "blogxlocal",
+        "servicesExact": true,
+        "fixedPortsExact": true,
+        "portOwnerExact": true,
+        "containersHealthy": true
+      },
+      "volumes": {
+        "count": 2,
+        "sha256": "45ed3264cf37f07f3674e91ed531739de5c10dc3d5482169a290a8331521a031"
+      }
+    },
+    "postCutover": {
+      "business": {
+        "count": 23,
+        "sha256": "7001936dd6bd46e291f2688a37a8a9b80ed95e7ea130afaaad5bf47c5f1496f6"
+      },
+      "containers": {
+        "api": {
+          "id": "0da2c933d28cb80236b004a4d94e51586883a0be193410d144ac301263734100",
+          "imageId": "sha256:fa7923fa3ab185223f888d3dbcf6ba5e28b8ebcb03368ea1f082c5ac1dc3d744",
+          "labels": {
+            "com.docker.compose.oneoff": "False",
+            "com.docker.compose.project": "blogxlocal",
+            "com.docker.compose.service": "api",
+            "io.blog-x.application": "api",
+            "io.blog-x.lockfile-sha256": "bc0d27ec8b44b3d384ddba296814ed73edbd418240514a790a859d81f4527578",
+            "io.blog-x.public-origin": "http://127.0.0.1:3100",
+            "io.blog-x.refresh-kind": "v1.1-offline-local-delivery",
+            "io.blog-x.seed-image-id": "sha256:f9d5bd52689d86c61338132d10f73452a9e979291b9ed22e77941f057ce43443",
+            "org.opencontainers.image.revision": "8b0b70fff838b27dd116a127f3903421b448010a"
+          },
+          "healthy": true
+        },
+        "postgres": {
+          "id": "b8102f3830b5bb9769ba6e8127c6c444098c7c4f5d0941ca6db0652863ba09c8",
+          "imageId": "sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15",
+          "labels": {
+            "com.docker.compose.oneoff": "False",
+            "com.docker.compose.project": "blogxlocal",
+            "com.docker.compose.service": "postgres"
+          },
+          "healthy": true
+        },
+        "web": {
+          "id": "4f86b742e937388ca7fa7b301fa69e24e7054dc819283c5e983c4a4100c0bcf7",
+          "imageId": "sha256:5820e9bf004cf363802bfc27ceab33d9514d8db10a5daaaf36a17fea0eb55de0",
+          "labels": {
+            "com.docker.compose.oneoff": "False",
+            "com.docker.compose.project": "blogxlocal",
+            "com.docker.compose.service": "web",
+            "io.blog-x.application": "web",
+            "io.blog-x.lockfile-sha256": "bc0d27ec8b44b3d384ddba296814ed73edbd418240514a790a859d81f4527578",
+            "io.blog-x.public-origin": "http://127.0.0.1:3100",
+            "io.blog-x.refresh-kind": "v1.1-offline-local-delivery",
+            "io.blog-x.seed-image-id": "sha256:04378a3cfaa15c960d6c9e0d8747b1fa612abc39f0d1fcf9290cb8f4f02738ec",
+            "org.opencontainers.image.revision": "8b0b70fff838b27dd116a127f3903421b448010a"
+          },
+          "healthy": true
+        }
+      },
+      "database": {
+        "name": "blog_x",
+        "systemIdentifier": "7671532272855924775",
+        "schemaRows": 262,
+        "schemaSha256": "ad0aebd58be6fd8b9f986676e3a62ec473f9071f257f31e786934c7e0141be97"
+      },
+      "git": {
+        "implementationRevision": "8b0b70fff838b27dd116a127f3903421b448010a",
+        "clean": true,
+        "lockfileSha256": "bc0d27ec8b44b3d384ddba296814ed73edbd418240514a790a859d81f4527578",
+        "ref": "refs/heads/dev"
+      },
+      "ledger": {
+        "count": 1,
+        "rows": {
+          "phase1": {
+            "appliedAt": "2026-09-22T01:47:22.341Z",
+            "stableSha256": "3ebe7f07aa2ac6a8a24eaaf949eeadfb8b9c82af725838f5800f18f8b3857364"
+          }
+        },
+        "stableSha256": "87bfbb3e717c9caeecd524c672046ead858b24736dd5f2e2d8c2837c064fa538",
+        "timestampSha256": "bf589b412f41e29e965bc9f07c26bcc88ead1dafd0b8601d942e1b239ab38082"
+      },
+      "media": {
+        "count": 0,
+        "bytes": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "protected": {
+        "count": 238,
+        "sha256": "807151f2496b673bceba1e0a193fcc5b84d7afff58579bbad72fe71e299a1952"
+      },
+      "reading": {
+        "state": "empty_public_set",
+        "listStatus": 200,
+        "listBodySha256": "15447e79e02e9bdb61d76cdfb12c434ef7040985239f056deccc8345621123c4",
+        "detailStatus": null,
+        "detailBodySha256": null,
+        "slugSha256": null
+      },
+      "releaseState": "BLOCKED",
+      "routes": {
+        "/": {
+          "status": 200,
+          "bodySha256": "b7f36bb6fe948a654f724e15c5c2e2b6c3f25d5b53d12fc8ad148e3a362c768e"
+        },
+        "/api/health": {
+          "status": 200,
+          "bodySha256": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93",
+          "contractSha256": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93"
+        },
+        "/api/public/articles/phase6-unknown/related": {
+          "status": 404,
+          "bodySha256": "d2dfdc9511fbeaa0701d1f8730f4989313b062ca1b61a2bd8bed8f4f5d654b5d",
+          "contractSha256": "d2dfdc9511fbeaa0701d1f8730f4989313b062ca1b61a2bd8bed8f4f5d654b5d"
+        },
+        "/api/public/search?q=": {
+          "status": 200,
+          "bodySha256": "5b9910eddf5ec63e61e37cf51143d55ff080a7a8020944a982f1e929a5ec58b1",
+          "contractSha256": "094deff51a454de8e177e7970feea39e423f39918552d1448151d0ac02dfb906"
+        },
+        "/archives": {
+          "status": 200,
+          "bodySha256": "f1199c6b8b18181a21829c1acfdf821daba6d57b649622f7728946fb865dbf7e"
+        },
+        "/categories": {
+          "status": 200,
+          "bodySha256": "f65e81cb6d9c927351665057a959ce219ff070ddcf59396a7bfdd9b9922fe39e"
+        },
+        "/search": {
+          "status": 200,
+          "bodySha256": "dbad44e0c3f741193eef415bfd7bfa9573c7a48d833eb8e255c16de70ce766b3"
+        },
+        "/tags": {
+          "status": 200,
+          "bodySha256": "72c7f159de3c715c0a63db0c5ff895c9adb0081085ff7762d34bc5a6df2f6c90"
+        }
+      },
+      "sequences": {
+        "count": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "seeds": {
+        "api": {
+          "reference": "sha256:f9d5bd52689d86c61338132d10f73452a9e979291b9ed22e77941f057ce43443",
+          "inspectedId": "sha256:f9d5bd52689d86c61338132d10f73452a9e979291b9ed22e77941f057ce43443"
+        },
+        "web": {
+          "reference": "sha256:04378a3cfaa15c960d6c9e0d8747b1fa612abc39f0d1fcf9290cb8f4f02738ec",
+          "inspectedId": "sha256:04378a3cfaa15c960d6c9e0d8747b1fa612abc39f0d1fcf9290cb8f4f02738ec"
+        }
+      },
+      "targets": {
+        "api": {
+          "id": "sha256:fa7923fa3ab185223f888d3dbcf6ba5e28b8ebcb03368ea1f082c5ac1dc3d744",
+          "labelsSha256": "36feb6e6379bf391ee721a5c8fba0fa5d999b008a0b6208593dc7f368a370815",
+          "filesystemSha256": "4e711cb2a7801fd15cde9cf30037f334732c33a5b8ff9686e2f7d7d1b4446281",
+          "storeSha256": "e9fcfe0f8e5f90e858f6f7205ba34f840e6ac9b01bc0b943f710ca3b3013da0d"
+        },
+        "web": {
+          "id": "sha256:5820e9bf004cf363802bfc27ceab33d9514d8db10a5daaaf36a17fea0eb55de0",
+          "labelsSha256": "7a9e69d36f114b36e7f4bcbda58a69fc4666a4ee8af4a52dc737531e0a03d271",
+          "filesystemSha256": "ac33728998681f1d57b4dc04fb272df5a46815e526d075636ab8d70cc6870ed6",
+          "storeSha256": "e9fcfe0f8e5f90e858f6f7205ba34f840e6ac9b01bc0b943f710ca3b3013da0d"
+        }
+      },
+      "topology": {
+        "project": "blogxlocal",
+        "servicesExact": true,
+        "fixedPortsExact": true,
+        "portOwnerExact": true,
+        "containersHealthy": true
+      },
+      "volumes": {
+        "count": 2,
+        "sha256": "45ed3264cf37f07f3674e91ed531739de5c10dc3d5482169a290a8331521a031"
+      }
+    }
+  },
+  "releaseState": "BLOCKED"
+}
