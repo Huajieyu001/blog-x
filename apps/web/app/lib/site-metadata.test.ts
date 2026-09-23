@@ -30,7 +30,7 @@ test("RSS escapes hostile summary text, removes invalid controls, and preserves 
     categories: [],
     tags: [],
     about: null,
-  }, origin);
+  }, undefined, origin);
   assert.equal((rss.match(/<item>/g) ?? []).length, 20);
   assert.match(rss, /<title>Article 0 &lt;&amp;<\/title>/);
   assert.match(rss, /Summary 0 &lt;tag&gt; &amp; &quot;quote&quot; &apos;apostrophe&apos;/);
@@ -39,6 +39,45 @@ test("RSS escapes hostile summary text, removes invalid controls, and preserves 
   assert.match(rss, /<pubDate>Sun, 09 Aug 2026 09:00:00 GMT<\/pubDate>/);
   assert.doesNotMatch(rss, /markdown|renderedHtml|INTERNAL_API_ORIGIN/i);
   assert.equal(escapeXml("<&>\"'\u0000"), "&lt;&amp;&gt;&quot;&apos;");
+});
+
+test("settings-aware distribution builders preserve Unicode identity, escaping, and same-origin URLs", () => {
+  const origin = publicOrigin("https://blog.example");
+  const site = { name: '猫 & <码> "站点"', description: '长期 & <实践> "安全"' };
+  const article = {
+    title: "公开文章",
+    summary: "公开摘要",
+    slug: "unicode article",
+    publishedAt: "2026-09-04T08:00:00.000Z",
+  };
+
+  const metadata = pageMetadata({
+    title: article.title,
+    description: article.summary,
+    path: "/posts/unicode%20article",
+    type: "article",
+    origin,
+    site,
+  });
+  assert.equal(metadata.openGraph?.siteName, site.name);
+  assert.equal(metadata.openGraph?.url, "https://blog.example/posts/unicode%20article");
+
+  const posting = buildBlogPosting(article, origin, site);
+  assert.deepEqual(posting.publisher, {
+    "@type": "Organization",
+    name: site.name,
+    description: site.description,
+  });
+  const jsonLd = serializeJsonLd(buildBlogPosting({ ...article, title: `${article.title}</script>` }, origin, site));
+  assert.doesNotMatch(jsonLd, /</);
+  assert.match(jsonLd, /猫 & \\u003c码>/);
+
+  const rss = renderRss({ articles: [{ ...article, updatedAt: article.publishedAt, category: null, tags: [] }], categories: [], tags: [], about: null }, site, origin);
+  assert.match(rss, /<channel><title>猫 &amp; &lt;码&gt; &quot;站点&quot;<\/title>/);
+  assert.match(rss, /<description>长期 &amp; &lt;实践&gt; &quot;安全&quot;<\/description>/);
+  assert.match(rss, /<link>https:\/\/blog\.example\/<\/link>/);
+  assert.match(rss, /https:\/\/blog\.example\/posts\/unicode%20article/);
+  assert.doesNotMatch(rss, /evil\.example/);
 });
 
 test("canonical pagination accepts only the exact indexable shapes", () => {
@@ -106,13 +145,18 @@ test("BlogPosting uses only four public facts and the exact canonical seven-key 
     publishedAt: "2026-09-04T08:00:00.000Z",
   }, origin);
 
-  assert.deepEqual(Object.keys(posting), ["@context", "@type", "headline", "description", "datePublished", "mainEntityOfPage", "url"]);
+  assert.deepEqual(Object.keys(posting), ["@context", "@type", "headline", "description", "datePublished", "publisher", "mainEntityOfPage", "url"]);
   assert.deepEqual(posting, {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
     headline: "A public title",
     description: "A public summary",
     datePublished: "2026-09-04T08:00:00.000Z",
+    publisher: {
+      "@type": "Organization",
+      name: "Blog X",
+      description: "记录代码、系统与长期实践。",
+    },
     mainEntityOfPage: "https://blog.example/posts/%E4%B8%AD%E6%96%87%20%2F%20trusted%20result",
     url: "https://blog.example/posts/%E4%B8%AD%E6%96%87%20%2F%20trusted%20result",
   });

@@ -1,4 +1,4 @@
-import type { PublicDistribution } from "@blog-x/contracts";
+import { defaultSiteSettings, type PublicDistribution, type PublicSiteSettings } from "@blog-x/contracts";
 import type { Metadata } from "next";
 
 const disallowedXmlControls = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g;
@@ -39,7 +39,9 @@ type PublicBlogPostingInput = {
   publishedAt: string;
 };
 
-export function buildBlogPosting({ title, summary, slug, publishedAt }: PublicBlogPostingInput, origin = publicOrigin()) {
+type PublicSiteIdentity = Pick<PublicSiteSettings, "name" | "description">;
+
+export function buildBlogPosting({ title, summary, slug, publishedAt }: PublicBlogPostingInput, origin = publicOrigin(), site: PublicSiteIdentity = defaultSiteSettings) {
   const canonical = publicUrl(`/posts/${encodeURIComponent(slug)}`, origin);
   return {
     "@context": "https://schema.org",
@@ -47,6 +49,11 @@ export function buildBlogPosting({ title, summary, slug, publishedAt }: PublicBl
     headline: title,
     description: summary,
     datePublished: publishedAt,
+    publisher: {
+      "@type": "Organization",
+      name: site.name,
+      description: site.description,
+    },
     mainEntityOfPage: canonical,
     url: canonical,
   };
@@ -88,6 +95,7 @@ type PageMetadataOptions = {
   origin?: URL;
   index?: boolean;
   canonicalPath?: string | null;
+  site?: PublicSiteIdentity;
 };
 
 export function pageMetadata({
@@ -98,6 +106,7 @@ export function pageMetadata({
   origin = publicOrigin(),
   index = true,
   canonicalPath,
+  site = defaultSiteSettings,
 }: PageMetadataOptions): Metadata {
   const url = publicUrl(path, origin);
   const resolvedCanonicalPath = canonicalPath === undefined ? (index ? path : null) : canonicalPath;
@@ -111,7 +120,7 @@ export function pageMetadata({
       },
     } : {}),
     ...(!index ? { robots: { index: false, follow: true } } : {}),
-    openGraph: { title, description, type, url, siteName: "Blog X" },
+    openGraph: { title, description, type, url, siteName: site.name },
   };
 }
 
@@ -125,8 +134,8 @@ export function escapeXml(value: string) {
   })[character]!);
 }
 
-export function renderRss(distribution: PublicDistribution, origin = publicOrigin()) {
-  const site = origin.toString();
+export function renderRss(distribution: PublicDistribution, site: PublicSiteIdentity = defaultSiteSettings, origin = publicOrigin()) {
+  const siteUrl = origin.toString();
   const items = distribution.articles.slice(0, 20).map((article) => {
     const permalink = publicUrl(`/posts/${encodeURIComponent(article.slug)}`, origin);
     return [
@@ -139,5 +148,5 @@ export function renderRss(distribution: PublicDistribution, origin = publicOrigi
       "</item>",
     ].join("");
   }).join("");
-  return `<?xml version=\"1.0\" encoding=\"UTF-8\"?><rss version=\"2.0\"><channel><title>Blog X</title><link>${escapeXml(site)}</link><description>个人技术博客</description>${items}</channel></rss>`;
+  return `<?xml version=\"1.0\" encoding=\"UTF-8\"?><rss version=\"2.0\"><channel><title>${escapeXml(site.name)}</title><link>${escapeXml(siteUrl)}</link><description>${escapeXml(site.description)}</description>${items}</channel></rss>`;
 }
