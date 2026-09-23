@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { defaultSiteSettings } from "@blog-x/contracts";
 import { notFound, permanentRedirect } from "next/navigation";
 import ArticleBody from "../../_components/ArticleBody";
 import ArticleToc from "../../_components/ArticleToc";
@@ -7,23 +8,24 @@ import CopyArticleLink from "../../_components/CopyArticleLink";
 import PostCard from "../../_components/PostCard";
 import ReadingProgress from "../../_components/ReadingProgress";
 import ViewBeacon from "./ViewBeacon";
-import { getPublicPost, getPublicRelatedPosts } from "../../lib/api";
+import { getPublicPost, getPublicRelatedPosts, getPublicSiteSettings } from "../../lib/api";
 import { buildBlogPosting, pageMetadata, serializeJsonLd } from "../../lib/site-metadata";
 import styles from "../../public.module.css";
 
 export default async function PublicArticlePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const result = await getPublicPost(slug);
+  const [result, siteResult] = await Promise.all([getPublicPost(slug), getPublicSiteSettings()]);
   if (result.kind === "redirect") permanentRedirect(result.location);
   if (result.kind === "not_found") notFound();
   if (result.kind === "upstream_error") throw new Error("public content unavailable");
   const article = result.data;
+  const site = siteResult.kind === "ok" ? siteResult.data : defaultSiteSettings;
   const blogPosting = buildBlogPosting({
     title: article.title,
     summary: article.summary,
     slug: article.slug,
     publishedAt: article.publishedAt,
-  });
+  }, undefined, site);
   const jsonLd = serializeJsonLd(blogPosting);
   const relatedResult = await getPublicRelatedPosts(slug);
   const seenSlugs = new Set([article.slug]);
@@ -95,15 +97,17 @@ export default async function PublicArticlePage({ params }: { params: Promise<{ 
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  const result = await getPublicPost(slug);
+  const [result, siteResult] = await Promise.all([getPublicPost(slug), getPublicSiteSettings()]);
   if (result.kind === "redirect") permanentRedirect(result.location);
   if (result.kind === "not_found") notFound();
   if (result.kind === "upstream_error") throw new Error("public content unavailable");
   const article = result.data;
+  const site = siteResult.kind === "ok" ? siteResult.data : defaultSiteSettings;
   return pageMetadata({
     title: article.title,
     description: article.seoDescription || article.summary || "记录代码、系统与长期实践。",
     path: `/posts/${encodeURIComponent(article.slug)}`,
     type: "article",
+    site,
   });
 }
