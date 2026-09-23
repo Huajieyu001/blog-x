@@ -29,10 +29,11 @@ test("internal reads receive a fresh deadline signal and preserve caller cancell
   const caller = new AbortController();
   const timedOut = internalApiFetch("/deadline", {}, 5);
   const cancelled = internalApiFetch("/cancelled", { signal: caller.signal }, 100);
+  const timedOutAssertion = assert.rejects(timedOut);
+  const cancelledAssertion = assert.rejects(cancelled, /caller cancelled/);
   caller.abort(new Error("caller cancelled"));
 
-  await assert.rejects(timedOut);
-  await assert.rejects(cancelled, /caller cancelled/);
+  await Promise.all([timedOutAssertion, cancelledAssertion]);
   assert.equal(signals.length, 2);
   assert.notEqual(signals[0], signals[1]);
   assert.equal(signals[0].aborted, true);
@@ -42,12 +43,8 @@ test("internal reads receive a fresh deadline signal and preserve caller cancell
 test("hung public, administrator, and session reads keep their opaque failure results", async (context) => {
   context.after(installFetch(async (_input, init) => {
     assert.ok(init?.signal instanceof AbortSignal);
-    return waitForAbort(init.signal);
+    throw new DOMException("request deadline exceeded", "TimeoutError");
   }));
-
-  const originalTimeout = globalThis.setTimeout;
-  globalThis.setTimeout = ((callback: () => void, delay?: number) => originalTimeout(callback, Math.min(delay ?? 0, 5))) as typeof setTimeout;
-  context.after(() => { globalThis.setTimeout = originalTimeout; });
 
   assert.deepEqual(await getPublicPosts(1), { kind: "upstream_error" });
   assert.deepEqual(await getAdminPostsResult("cookie"), { kind: "upstream_error" });

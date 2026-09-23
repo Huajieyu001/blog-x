@@ -39,6 +39,7 @@ import {
 import { cache } from "react";
 
 const internalApiOrigin = process.env.INTERNAL_API_ORIGIN ?? "http://127.0.0.1:3001";
+const internalApiTimeoutMs = 4_000;
 
 type Parser<T> = { safeParse: (value: unknown) => { success: true; data: T } | { success: false } };
 export type PublicResult<T> = { kind: "ok"; data: T } | { kind: "not_found" } | { kind: "upstream_error" };
@@ -46,9 +47,16 @@ export type PublicPostResult = PublicResult<PublicPostDetail> | { kind: "redirec
 export type AdminResult<T> = { kind: "ok"; data: T } | { kind: "upstream_error" };
 export type AdminOptionalResult<T> = AdminResult<T> | { kind: "not_found" };
 
+/** Bounded, per-request fetch for Web server reads from the internal API. */
+export function internalApiFetch(path: string, init: RequestInit = {}, timeoutMs = internalApiTimeoutMs): Promise<Response> {
+  const deadline = AbortSignal.timeout(timeoutMs);
+  const signal = init.signal ? AbortSignal.any([init.signal, deadline]) : deadline;
+  return fetch(`${internalApiOrigin}${path}`, { ...init, signal });
+}
+
 async function getPublic<T>(path: string, schema: Parser<T>, allowNotFound = false): Promise<PublicResult<T>> {
   try {
-    const response = await fetch(`${internalApiOrigin}${path}`, { cache: "no-store" });
+    const response = await internalApiFetch(path, { cache: "no-store" });
     if (response.status === 404) {
       const missing = publicPostNotFoundResponseSchema.safeParse(await response.json());
       return allowNotFound && missing.success ? { kind: "not_found" } : { kind: "upstream_error" };
@@ -63,7 +71,7 @@ async function getPublic<T>(path: string, schema: Parser<T>, allowNotFound = fal
 
 export async function getSessionStatus(cookieHeader: string): Promise<SessionStatus | null> {
   try {
-    const response = await fetch(`${internalApiOrigin}/auth/session`, {
+    const response = await internalApiFetch("/auth/session", {
       cache: "no-store",
       headers: cookieHeader ? { cookie: cookieHeader } : undefined,
     });
@@ -181,7 +189,7 @@ export async function getAdminPosts(cookieHeader: string): Promise<AdminPost[]> 
 
 export async function getAdminPostsResult(cookieHeader: string): Promise<AdminResult<AdminPost[]>> {
   try {
-    const response = await fetch(`${internalApiOrigin}/admin/posts`, {
+    const response = await internalApiFetch("/admin/posts", {
       cache: "no-store",
       headers: cookieHeader ? { cookie: cookieHeader } : undefined,
     });
