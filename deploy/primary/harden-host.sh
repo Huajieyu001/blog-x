@@ -40,6 +40,8 @@ readonly STATE_DIR="$(host_path /var/lib/blog-x-hardening)"
 readonly BACKUP_ROOT="$(host_path /var/backups/blog-x-hardening)"
 readonly SSHD_CONFIG="$(host_path /etc/ssh/sshd_config)"
 readonly SSHD_DROPIN="$(host_path /etc/ssh/sshd_config.d/99-blog-x-hardening.conf)"
+readonly SSHD_BLOCK_BEGIN='# BEGIN BLOG X MANAGED SSH POLICY'
+readonly SSHD_BLOCK_END='# END BLOG X MANAGED SSH POLICY'
 readonly FIREWALL_CONFIG="$(host_path /etc/firewalld)"
 readonly NGINX_CONFIG="$(host_path /etc/nginx/conf.d/blog-x.conf)"
 readonly NGINX_SNIPPET="$(host_path /etc/nginx/snippets/blog-x-security-headers.conf)"
@@ -351,28 +353,33 @@ acknowledge_fresh_session() {
 require_fresh_session() { [[ -s $STATE_DIR/fresh-key-session ]] || fail "fresh key-only session acknowledgement is required"; }
 
 write_sshd_policy() {
-  install -d -m 0755 "$(dirname "$SSHD_DROPIN")"
-  cat > "$SSHD_DROPIN" <<'EOF'
-# Managed by Blog X hardening; do not edit while rollback is armed.
-PubkeyAuthentication yes
-PermitRootLogin no
-PasswordAuthentication no
-KbdInteractiveAuthentication no
-EOF
-  set_root_permissions "$SSHD_DROPIN"
-  set_mode 0600 "$SSHD_DROPIN"
-  local tmp include_line
-  include_line='Include /etc/ssh/sshd_config.d/*.conf'
+  require_file "$SSHD_CONFIG"
+  local tmp
   tmp="$(mktemp "$(dirname "$SSHD_CONFIG")/.sshd_config.XXXXXX")"
-  awk -v include_line="$include_line" '
-    function is_policy(line) {
-      return line ~ /^[[:space:]]*(PermitRootLogin|PasswordAuthentication|KbdInteractiveAuthentication|PubkeyAuthentication)[[:space:]]+/
+  if ! awk -v blogx_begin="$SSHD_BLOCK_BEGIN" -v blogx_end="$SSHD_BLOCK_END" '
+    BEGIN {
+      print blogx_begin
+      print "PubkeyAuthentication yes"
+      print "PermitRootLogin no"
+      print "PasswordAuthentication no"
+      print "KbdInteractiveAuthentication no"
+      print "ChallengeResponseAuthentication no"
+      print blogx_end
+      print ""
     }
-    /^[[:space:]]*Include[[:space:]]+\/etc\/ssh\/sshd_config\.d\/\*\.conf[[:space:]]*$/ { next }
-    !inserted && is_policy($0) { print include_line; inserted=1 }
+    $0 == blogx_begin { in_block=1; blocks++; next }
+    in_block && $0 == blogx_end { in_block=0; next }
+    in_block { next }
     { print }
-    END { if (!inserted) print include_line }
-  ' "$SSHD_CONFIG" > "$tmp"
+    END { if (in_block || blocks > 1) exit 42 }
+  ' "$SSHD_CONFIG" > "$tmp"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+  if ! is_test && ! sshd -t -f "$tmp"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
   set_root_permissions "$tmp"
   set_mode 0600 "$tmp"
   mv -f -- "$tmp" "$SSHD_CONFIG"
@@ -598,7 +605,7 @@ rollback_edge() {
 verify() {
   local tunnel=unknown ssh=unknown firewall=unknown edge=unknown
   if ! is_test && systemctl is-active --quiet "$TUNNEL_SERVICE"; then tunnel=yes; else tunnel=no; fi
-  if [[ -f $SSHD_DROPIN ]] && grep -qx 'PermitRootLogin no' "$SSHD_DROPIN" && grep -qx 'PasswordAuthentication no' "$SSHD_DROPIN"; then ssh=yes; else ssh=no; fi
+  if is_test && grep -qxF "$SSHD_BLOCK_BEGIN" "$SSHD_CONFIG" && grep -qxF "$SSHD_BLOCK_END" "$SSHD_CONFIG"; then ssh=yes; elif ! is_test && effective_sshd_policy_valid; then ssh=yes; else ssh=no; fi
   if ! is_test && firewall-cmd --zone=public --query-port=22/tcp >/dev/null 2>&1 && firewall-cmd --zone=public --query-port=80/tcp >/dev/null 2>&1 && firewall-cmd --zone=public --query-port=443/tcp >/dev/null 2>&1; then firewall=yes; else firewall=no; fi
   if [[ -f $NGINX_SNIPPET ]] && grep -qF 'proxy_hide_header X-Powered-By;' "$NGINX_SNIPPET"; then edge=yes; else edge=no; fi
   printf 'tunnel_active=%s\nssh_key_only=%s\nfirewall_22_80_443=%s\nedge_headers=%s\n' "$tunnel" "$ssh" "$firewall" "$edge"

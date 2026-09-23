@@ -144,19 +144,33 @@ test("restored failure paths cancel the armed rollback timer", async () => {
   assert.equal((edge.match(/restore_backup "\$backup"[\s\S]{0,180}cancel_rollback/g) ?? []).length, 2);
 });
 
-test("SSH include precedes legacy access directives so OpenSSH evaluates the hardened first value", async (t) => {
+test("managed SSH policy block is topmost, idempotent, and preserves existing configuration order", async (t) => {
   const root = await fixture();
   t.after(() => rm(root, { recursive: true, force: true }));
   const sshd = join(root, "etc/ssh/sshd_config");
-  await writeFile(sshd, "PermitRootLogin yes\nPasswordAuthentication yes\nKbdInteractiveAuthentication yes\nPubkeyAuthentication no\n");
+  await writeFile(sshd, "# Existing header\nPermitRootLogin yes\nPasswordAuthentication yes\nKbdInteractiveAuthentication yes\nPubkeyAuthentication no\nMatch User legacy\n  X11Forwarding no\n");
 
-  const result = await runWith(root, { SUDO_USER: "blog-x-admin" }, "harden-ssh", "--fresh-key-session");
-  assert.equal(result.code, 0, result.stderr);
+  const first = await runWith(root, { SUDO_USER: "blog-x-admin" }, "harden-ssh", "--fresh-key-session");
+  const second = await runWith(root, { SUDO_USER: "blog-x-admin" }, "harden-ssh", "--fresh-key-session");
+  assert.equal(first.code, 0, first.stderr);
+  assert.equal(second.code, 0, second.stderr);
   const effectiveCandidate = await readFile(sshd, "utf8");
-  assert.ok(effectiveCandidate.indexOf("Include /etc/ssh/sshd_config.d/*.conf") < effectiveCandidate.indexOf("PermitRootLogin yes"));
-  const dropIn = await readFile(join(root, "etc/ssh/sshd_config.d/99-blog-x-hardening.conf"), "utf8");
-  assert.match(dropIn, /PermitRootLogin no/);
-  assert.match(dropIn, /PasswordAuthentication no/);
+  assert.ok(effectiveCandidate.startsWith("# BEGIN BLOG X MANAGED SSH POLICY\n"));
+  assert.equal((effectiveCandidate.match(/# BEGIN BLOG X MANAGED SSH POLICY/g) ?? []).length, 1);
+  assert.ok(effectiveCandidate.indexOf("PermitRootLogin no") < effectiveCandidate.indexOf("PermitRootLogin yes"));
+  assert.match(effectiveCandidate, /ChallengeResponseAuthentication no/);
+  assert.match(effectiveCandidate, /Match User legacy\n  X11Forwarding no/);
+  assert.doesNotMatch(effectiveCandidate, /^Include /m);
+  await assert.rejects(readFile(join(root, "etc/ssh/sshd_config.d/99-blog-x-hardening.conf")));
+});
+
+test("managed SSH policy validates a candidate without OpenSSH Include support", async () => {
+  const source = await readFile(script, "utf8");
+  const writer = source.slice(source.indexOf("write_sshd_policy()"), source.indexOf("effective_sshd_policy_valid()"));
+  assert.match(writer, /sshd -t -f "\$tmp"/);
+  assert.match(writer, /ChallengeResponseAuthentication no/);
+  assert.doesNotMatch(writer, /Include \/etc\/ssh\/sshd_config\.d/);
+  assert.doesNotMatch(writer, /SSHD_DROPIN/);
 });
 
 test("listener guard accepts loopback API and Web ports but rejects wildcard and non-loopback listeners", async (t) => {
