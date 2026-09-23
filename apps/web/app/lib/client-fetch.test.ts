@@ -115,6 +115,21 @@ test("media upload recognizes sanitized retryable service failures", () => {
   assert.match(panel, /setUploadFailed\(response\.status !== 400 && response\.status !== 413\)/);
 });
 
+test("administrator mutation transport failures remain localized and outcome-honest", () => {
+  const taxonomy = readFileSync(new URL("../admin/_components/TaxonomyManager.tsx", import.meta.url), "utf8");
+  const media = readFileSync(new URL("../admin/_components/MediaLibrary.tsx", import.meta.url), "utf8");
+
+  assert.match(taxonomy, /网络中断，保存结果未知；请刷新确认后再重试。/);
+  assert.match(taxonomy, /网络中断，删除结果未知；请刷新确认后再重试。/);
+  assert.doesNotMatch(taxonomy, /未保存任何更改|内容没有删除/);
+  assert.match(media, /class MediaCatalogResponseError extends Error/);
+  assert.match(media, /error instanceof MediaCatalogResponseError \? error\.message : catalogError\(\)/);
+  assert.match(media, /class MediaDeleteResponseError extends Error/);
+  assert.match(media, /error instanceof MediaDeleteResponseError[\s\S]*?error\.message/);
+  assert.match(media, /网络中断，删除结果未知；请刷新媒体库确认后再重试。/);
+  assert.doesNotMatch(media, /error instanceof Error \? error\.message/);
+});
+
 test("public view beacon uses the shared default deadline without changing anonymous delivery semantics", () => {
   const source = readFileSync(
     new URL("../posts/[slug]/ViewBeacon.tsx", import.meta.url),

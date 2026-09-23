@@ -17,6 +17,9 @@ type Mode = "select" | "manage";
 type MediaLibraryProps = { mode?: Mode; onSelect?: (media: MediaReference) => void };
 const pageSize = 12;
 
+class MediaCatalogResponseError extends Error {}
+class MediaDeleteResponseError extends Error {}
+
 function catalogError(status?: number) {
   return status === 401 ? "登录状态已失效，请重新登录。" : "媒体目录暂时无法加载，请检查连接后重试。";
 }
@@ -55,7 +58,7 @@ export default function MediaLibrary({ mode = "select", onSelect }: MediaLibrary
       });
       const body = await response.json().catch(() => null);
       const parsed = mediaCatalogResponseSchema.safeParse(body);
-      if (!response.ok || !parsed.success) throw new Error(catalogError(response.status));
+      if (!response.ok || !parsed.success) throw new MediaCatalogResponseError(catalogError(response.status));
       // A slower request for a previous page/search must never overwrite the
       // current catalogue or make a stale card look safe to delete.
       if (request !== catalogRequest.current) return;
@@ -72,7 +75,7 @@ export default function MediaLibrary({ mode = "select", onSelect }: MediaLibrary
       setLoadState("error");
       setMessage(isFetchDeadlineExceeded(error)
         ? "媒体目录加载超时，请检查连接后重试。"
-        : error instanceof Error ? error.message : catalogError());
+        : error instanceof MediaCatalogResponseError ? error.message : catalogError());
     }
   }, []);
 
@@ -120,14 +123,16 @@ export default function MediaLibrary({ mode = "select", onSelect }: MediaLibrary
     try {
       const response = await fetchWithDeadline(`/api/admin/media/${target.id}`, { method: "DELETE", credentials: "same-origin" });
       const body = await response.json().catch(() => null);
-      if (!response.ok || !mediaDeletedResponseSchema.safeParse(body).success) throw new Error(deleteError(response.status, body));
+      if (!response.ok || !mediaDeletedResponseSchema.safeParse(body).success) throw new MediaDeleteResponseError(deleteError(response.status, body));
       setConfirming(null);
       setMessage("媒体已永久删除。");
       await loadCatalog(page, appliedQuery, true);
     } catch (error) {
       setMessage(isFetchDeadlineExceeded(error)
         ? "删除请求超时，服务器可能已完成删除；请刷新目录确认后再重试。"
-        : error instanceof Error ? error.message : "删除失败，媒体仍保留在目录中，请重试。");
+        : error instanceof MediaDeleteResponseError
+          ? error.message
+          : "网络中断，删除结果未知；请刷新媒体库确认后再重试。");
     } finally { setPending(false); }
   }
 

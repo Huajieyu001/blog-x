@@ -65,7 +65,7 @@ export default function TaxonomyManager({ kind, initialTerms }: { kind: "categor
     } catch (error) {
       setStatus(isFetchDeadlineExceeded(error)
         ? "保存请求超时，服务器可能已完成操作；请刷新确认后再重试。"
-        : "网络异常，未保存任何更改，请重试。");
+        : "网络中断，保存结果未知；请刷新确认后再重试。");
     } finally {
       setBusy(null);
     }
@@ -94,7 +94,7 @@ export default function TaxonomyManager({ kind, initialTerms }: { kind: "categor
     } catch (error) {
       setStatus(isFetchDeadlineExceeded(error)
         ? "删除请求超时，服务器可能已完成操作；请刷新确认后再重试。"
-        : "网络异常，内容没有删除，请重试。");
+        : "网络中断，删除结果未知；请刷新确认后再重试。");
     } finally {
       setBusy(null);
     }
