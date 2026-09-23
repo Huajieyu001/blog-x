@@ -144,6 +144,19 @@ test("restored failure paths cancel the armed rollback timer", async () => {
   assert.equal((edge.match(/restore_backup "\$backup"[\s\S]{0,180}cancel_rollback/g) ?? []).length, 2);
 });
 
+test("edge header verification retries graceful Nginx reloads with bounded fresh header captures", async () => {
+  const source = await readFile(script, "utf8");
+  const verify = source.slice(source.indexOf("verify_edge_headers()"), source.indexOf("apply_edge()"));
+  assert.match(source, /readonly EDGE_HEADER_ATTEMPTS=10/);
+  assert.match(source, /readonly EDGE_HEADER_RETRY_SECONDS=0\.5/);
+  assert.match(verify, /for attempt in \$\(seq 1 "\$EDGE_HEADER_ATTEMPTS"\)/);
+  assert.equal((verify.match(/: > "\$headers"/g) ?? []).length, 1);
+  assert.equal((verify.match(/: > "\$api_headers"/g) ?? []).length, 1);
+  assert.match(verify, /edge_headers_match "\$headers" "\$api_headers"/);
+  assert.match(verify, /sleep "\$EDGE_HEADER_RETRY_SECONDS"/);
+  assert.match(verify, /done\n  return 1/);
+});
+
 test("managed SSH policy block is topmost, idempotent, and preserves existing configuration order", async (t) => {
   const root = await fixture();
   t.after(() => rm(root, { recursive: true, force: true }));

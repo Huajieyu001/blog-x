@@ -12,6 +12,8 @@ readonly TUNNEL_SERVICE=blog-x-primary-tunnel.service
 readonly TUNNEL_RESTART_ATTEMPTS=75
 readonly TUNNEL_RESTART_INTERVAL_SECONDS=2
 readonly TUNNEL_RECOVERY_ATTEMPTS=15
+readonly EDGE_HEADER_ATTEMPTS=10
+readonly EDGE_HEADER_RETRY_SECONDS=0.5
 readonly ROLLBACK_SERVICE=blog-x-hardening-rollback.service
 readonly ROLLBACK_TIMER=blog-x-hardening-rollback.timer
 
@@ -547,16 +549,8 @@ ensure_nginx_include() {
 }
 
 header_present() { grep -qiF "$1" "$2"; }
-verify_edge_headers() {
-  local origin headers api_headers
-  origin="$(config_value PUBLIC_ORIGIN)"
-  [[ $origin =~ ^https://[A-Za-z0-9.-]+$ ]] || fail "PUBLIC_ORIGIN is not a canonical HTTPS origin"
-  grep -qF 'proxy_hide_header X-Powered-By;' "$NGINX_SNIPPET" || fail "edge header snippet is incomplete"
-  headers="$(mktemp)"
-  api_headers="$(mktemp)"
-  trap 'rm -f -- "$headers" "$api_headers"' RETURN
-  curl --fail --silent --show-error --max-time 10 --connect-timeout 5 -D "$headers" -o /dev/null "$origin/"
-  curl --fail --silent --show-error --max-time 10 --connect-timeout 5 -D "$api_headers" -o /dev/null "$origin/api/health"
+edge_headers_match() {
+  local headers=$1 api_headers=$2 expected
   for expected in \
     'Content-Security-Policy: default-src' \
     'Strict-Transport-Security: max-age=31536000; includeSubDomains' \
@@ -568,6 +562,27 @@ verify_edge_headers() {
     header_present "$expected" "$headers" && header_present "$expected" "$api_headers" || return 1
   done
   ! grep -qi '^X-Powered-By:' "$headers" && ! grep -qi '^X-Powered-By:' "$api_headers"
+}
+
+verify_edge_headers() {
+  local origin headers api_headers attempt
+  origin="$(config_value PUBLIC_ORIGIN)"
+  [[ $origin =~ ^https://[A-Za-z0-9.-]+$ ]] || fail "PUBLIC_ORIGIN is not a canonical HTTPS origin"
+  grep -qF 'proxy_hide_header X-Powered-By;' "$NGINX_SNIPPET" || fail "edge header snippet is incomplete"
+  headers="$(mktemp)"
+  api_headers="$(mktemp)"
+  trap 'rm -f -- "$headers" "$api_headers"' RETURN
+  for attempt in $(seq 1 "$EDGE_HEADER_ATTEMPTS"); do
+    : > "$headers"
+    : > "$api_headers"
+    if curl --fail --silent --show-error --max-time 10 --connect-timeout 5 -D "$headers" -o /dev/null "$origin/" && \
+      curl --fail --silent --show-error --max-time 10 --connect-timeout 5 -D "$api_headers" -o /dev/null "$origin/api/health" && \
+      edge_headers_match "$headers" "$api_headers"; then
+      return 0
+    fi
+    if [[ $attempt -lt $EDGE_HEADER_ATTEMPTS ]]; then sleep "$EDGE_HEADER_RETRY_SECONDS"; fi
+  done
+  return 1
 }
 
 apply_edge() {
