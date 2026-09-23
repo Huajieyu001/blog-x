@@ -90,6 +90,20 @@ test("remaining administrator and authentication requests use the shared deadlin
   }
 });
 
+test("media catalogue cancels stale loads without changing timeout recovery or image semantics", () => {
+  const library = readFileSync(new URL("../admin/_components/MediaLibrary.tsx", import.meta.url), "utf8");
+  const panel = readFileSync(new URL("../admin/_components/MediaPanel.tsx", import.meta.url), "utf8");
+
+  assert.match(library, /const catalogAbort = useRef<AbortController \| null>\(null\);/);
+  assert.match(library, /catalogAbort\.current\?\.abort\(\);\s*const controller = new AbortController\(\);\s*catalogAbort\.current = controller;/);
+  assert.match(library, /fetchWithDeadline\([\s\S]*?credentials: "same-origin",\s*signal: controller\.signal,/);
+  assert.match(library, /if \(controller\.signal\.aborted \|\| request !== catalogRequest\.current\) return;/);
+  assert.match(library, /return \(\) => \{ catalogRequest\.current \+= 1; catalogAbort\.current\?\.abort\(\); \};/);
+  assert.match(library, /isFetchDeadlineExceeded\(error\)[\s\S]*?媒体目录加载超时/);
+  assert.match(library, /<img src=\{item\.url\} width=\{item\.width\} height=\{item\.height\} alt="" loading="lazy" decoding="async" \/>/);
+  assert.match(panel, /<img src=\{media\.url\} width=\{media\.width\} height=\{media\.height\} alt=\{media\.decorative \? "" : media\.alt\} loading="lazy" decoding="async" \/>/);
+});
+
 test("public view beacon uses the shared default deadline without changing anonymous delivery semantics", () => {
   const source = readFileSync(
     new URL("../posts/[slug]/ViewBeacon.tsx", import.meta.url),

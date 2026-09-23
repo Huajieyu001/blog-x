@@ -40,12 +40,19 @@ export default function MediaLibrary({ mode = "select", onSelect }: MediaLibrary
   const trigger = useRef<HTMLButtonElement | null>(null);
   const confirmButton = useRef<HTMLButtonElement | null>(null);
   const catalogRequest = useRef(0);
+  const catalogAbort = useRef<AbortController | null>(null);
 
   const loadCatalog = useCallback(async (requestedPage: number, requestedQuery: string, keepStatus = false) => {
+    catalogAbort.current?.abort();
+    const controller = new AbortController();
+    catalogAbort.current = controller;
     const request = ++catalogRequest.current;
     setLoadState("loading");
     try {
-      const response = await fetchWithDeadline(`/api/admin/media?page=${requestedPage}&q=${encodeURIComponent(requestedQuery)}`, { credentials: "same-origin" });
+      const response = await fetchWithDeadline(`/api/admin/media?page=${requestedPage}&q=${encodeURIComponent(requestedQuery)}`, {
+        credentials: "same-origin",
+        signal: controller.signal,
+      });
       const body = await response.json().catch(() => null);
       const parsed = mediaCatalogResponseSchema.safeParse(body);
       if (!response.ok || !parsed.success) throw new Error(catalogError(response.status));
@@ -61,7 +68,7 @@ export default function MediaLibrary({ mode = "select", onSelect }: MediaLibrary
       setLoadState("ready");
       if (!keepStatus) setMessage(parsed.data.items.length ? "" : "没有找到匹配的媒体。");
     } catch (error) {
-      if (request !== catalogRequest.current) return;
+      if (controller.signal.aborted || request !== catalogRequest.current) return;
       setLoadState("error");
       setMessage(isFetchDeadlineExceeded(error)
         ? "媒体目录加载超时，请检查连接后重试。"
@@ -71,7 +78,7 @@ export default function MediaLibrary({ mode = "select", onSelect }: MediaLibrary
 
   useEffect(() => {
     void loadCatalog(page, appliedQuery);
-    return () => { catalogRequest.current += 1; };
+    return () => { catalogRequest.current += 1; catalogAbort.current?.abort(); };
   }, [page, appliedQuery, loadCatalog]);
 
   useEffect(() => {
@@ -141,7 +148,7 @@ export default function MediaLibrary({ mode = "select", onSelect }: MediaLibrary
       {loadState === "ready" && !items.length ? <section className={styles.emptyPanel}><h3>媒体库为空</h3><p>{appliedQuery ? "没有找到匹配的媒体。" : "上传图片后会显示在这里。"}</p></section> : null}
       {loadState === "ready" && items.length ? <ul className={styles.mediaLibraryList} aria-label={mode === "manage" ? "媒体目录" : "可复用媒体"}>
         {items.map((item) => <li key={item.id} className={styles.mediaLibraryCard}>
-          <img src={item.url} width={item.width} height={item.height} alt="" />
+          <img src={item.url} width={item.width} height={item.height} alt="" loading="lazy" decoding="async" />
           <div className={styles.mediaLibraryCardBody}>
             <strong>{item.width} × {item.height}</strong><span>{item.mimeType}</span><code>{item.id}</code><span>{item.referenceCount ? `被 ${item.referenceCount} 篇内容引用` : "未被内容引用"}</span>
           </div>

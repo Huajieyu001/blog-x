@@ -186,7 +186,7 @@ export default function MediaPanel({
       </div>
       {media ? (
         <figure className={styles.mediaPreview}>
-          <img src={media.url} width={media.width} height={media.height} alt={media.decorative ? "" : media.alt} />
+          <img src={media.url} width={media.width} height={media.height} alt={media.decorative ? "" : media.alt} loading="lazy" decoding="async" />
           <figcaption>{media.width} × {media.height} · {media.mimeType}</figcaption>
         </figure>
       ) : null}
