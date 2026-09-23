@@ -571,17 +571,18 @@ verify_edge_headers() {
   grep -qF 'proxy_hide_header X-Powered-By;' "$NGINX_SNIPPET" || fail "edge header snippet is incomplete"
   headers="$(mktemp)"
   api_headers="$(mktemp)"
-  trap 'rm -f -- "$headers" "$api_headers"' RETURN
   for attempt in $(seq 1 "$EDGE_HEADER_ATTEMPTS"); do
     : > "$headers"
     : > "$api_headers"
     if curl --fail --silent --show-error --max-time 10 --connect-timeout 5 -D "$headers" -o /dev/null "$origin/" && \
       curl --fail --silent --show-error --max-time 10 --connect-timeout 5 -D "$api_headers" -o /dev/null "$origin/api/health" && \
       edge_headers_match "$headers" "$api_headers"; then
+      rm -f -- "$headers" "$api_headers"
       return 0
     fi
     if [[ $attempt -lt $EDGE_HEADER_ATTEMPTS ]]; then sleep "$EDGE_HEADER_RETRY_SECONDS"; fi
   done
+  rm -f -- "$headers" "$api_headers"
   return 1
 }
 

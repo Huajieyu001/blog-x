@@ -154,7 +154,10 @@ test("edge header verification retries graceful Nginx reloads with bounded fresh
   assert.equal((verify.match(/: > "\$api_headers"/g) ?? []).length, 1);
   assert.match(verify, /edge_headers_match "\$headers" "\$api_headers"/);
   assert.match(verify, /sleep "\$EDGE_HEADER_RETRY_SECONDS"/);
-  assert.match(verify, /done\n  return 1/);
+  assert.doesNotMatch(verify, /trap .*RETURN/);
+  assert.equal((verify.match(/rm -f -- "\$headers" "\$api_headers"/g) ?? []).length, 2);
+  assert.ok(verify.indexOf('rm -f -- "$headers" "$api_headers"\n      return 0') >= 0);
+  assert.match(verify, /done\n  rm -f -- "\$headers" "\$api_headers"\n  return 1/);
 });
 
 test("managed SSH policy block is topmost, idempotent, and preserves existing configuration order", async (t) => {
