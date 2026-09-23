@@ -22,7 +22,7 @@ export default function SecurityPage() {
       if (!response.ok) { setError(response.status === 400 ? "当前密码错误或新密码不符合要求。" : "暂时无法修改密码，请稍后重试。"); requestAnimationFrame(() => errorRef.current?.focus()); return; }
       formElement.reset();
       router.replace("/login"); router.refresh();
-    } catch (error) { setError(isFetchDeadlineExceeded(error) ? "改密请求超时，服务器可能已完成修改；请先尝试重新登录确认。" : "暂时无法修改密码，请检查网络后重试。"); requestAnimationFrame(() => errorRef.current?.focus()); }
+    } catch (error) { setError(isFetchDeadlineExceeded(error) ? "改密请求超时，服务器可能已完成修改；请先尝试重新登录确认。" : "网络中断，密码修改结果未知；请先尝试重新登录确认。"); requestAnimationFrame(() => errorRef.current?.focus()); }
     finally { setPending(false); }
   }
   return <main className={styles.workspace} aria-labelledby="security-title"><header className={styles.workspaceHeader}><div><p className={styles.eyebrow}>BLOG X / 账户安全</p><h1 id="security-title">账户安全</h1><p>修改密码后，所有已登录设备都需要重新登录。</p></div><a className={styles.secondaryLink} href="/admin">返回工作台</a></header><section className={styles.workspaceSection}><form onSubmit={(event) => { event.preventDefault(); void submit(event.currentTarget); }}><label>当前密码<input name="currentPassword" type="password" autoComplete="current-password" required disabled={pending} /></label><label>新密码<input name="newPassword" type="password" autoComplete="new-password" minLength={12} required disabled={pending} /></label><label>确认新密码<input name="confirmation" type="password" autoComplete="new-password" minLength={12} required disabled={pending} /></label>{error ? <p ref={errorRef} tabIndex={-1} role="alert">{error}</p> : null}<button type="submit" disabled={pending}>{pending ? "正在修改…" : "修改密码"}</button></form></section></main>;

@@ -7,6 +7,8 @@ import { fetchWithDeadline, isFetchDeadlineExceeded } from "../lib/client-fetch"
 import { clearEditorRecoverySnapshots, getEditorRecoveryStorage } from "./_components/article-editor-recovery";
 import styles from "./admin-shell.module.css";
 
+const ambiguousLogoutResultMessage = "网络中断或响应异常，退出结果未知；请刷新确认。本机恢复副本仍然保留。";
+
 export default function LogoutButton({ className }: { className?: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -24,7 +26,14 @@ export default function LogoutButton({ className }: { className?: string }) {
       });
       const parsed = logoutResponseSchema.safeParse(await response.json().catch(() => null));
 
-      if (!response.ok || !parsed.success) throw new Error("logout failed");
+      if (!response.ok) {
+        setError("退出失败，请重试；未保存的本机恢复副本仍然保留。");
+        return;
+      }
+      if (!parsed.success) {
+        setError(ambiguousLogoutResultMessage);
+        return;
+      }
 
       const storage = getEditorRecoveryStorage();
       if (storage) clearEditorRecoverySnapshots(storage);
@@ -33,7 +42,7 @@ export default function LogoutButton({ className }: { className?: string }) {
     } catch (error) {
       setError(isFetchDeadlineExceeded(error)
         ? "退出请求超时，服务器可能已完成退出；请刷新确认。本机恢复副本仍然保留。"
-        : "退出失败，请重试；未保存的本机恢复副本仍然保留。");
+        : ambiguousLogoutResultMessage);
     } finally {
       setPending(false);
     }

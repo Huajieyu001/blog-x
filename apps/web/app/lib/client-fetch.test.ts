@@ -123,6 +123,8 @@ test("administrator mutation transport failures remain localized and outcome-hon
   const trash = readFileSync(new URL("../admin/_components/DeletedPostList.tsx", import.meta.url), "utf8");
   const about = readFileSync(new URL("../admin/_components/AboutEditor.tsx", import.meta.url), "utf8");
   const settings = readFileSync(new URL("../admin/_components/SettingsEditor.tsx", import.meta.url), "utf8");
+  const security = readFileSync(new URL("../admin/security/page.tsx", import.meta.url), "utf8");
+  const logout = readFileSync(new URL("../admin/LogoutButton.tsx", import.meta.url), "utf8");
 
   assert.match(taxonomy, /网络中断，保存结果未知；请刷新确认后再重试。/);
   assert.match(taxonomy, /网络中断，删除结果未知；请刷新确认后再重试。/);
@@ -148,6 +150,13 @@ test("administrator mutation transport failures remain localized and outcome-hon
   assert.match(settings, /const ambiguousSettingsResultMessage = "网络中断或响应异常，保存结果未知；请先刷新确认后再重试。";/);
   assert.equal((settings.match(/\bambiguousSettingsResultMessage\b/g) ?? []).length, 3);
   assert.match(settings, /设置已在其他位置更新，请刷新页面后再提交。/);
+  assert.match(security, /网络中断，密码修改结果未知；请先尝试重新登录确认。/);
+  assert.match(security, /response\.status === 400 \? "当前密码错误或新密码不符合要求。" : "暂时无法修改密码，请稍后重试。"/);
+  assert.match(logout, /const ambiguousLogoutResultMessage = "网络中断或响应异常，退出结果未知；请刷新确认。本机恢复副本仍然保留。";/);
+  assert.equal((logout.match(/\bambiguousLogoutResultMessage\b/g) ?? []).length, 3);
+  assert.match(logout, /if \(!response\.ok\) \{[\s\S]*?退出失败，请重试；未保存的本机恢复副本仍然保留。/);
+  assert.match(logout, /if \(!parsed\.success\) \{[\s\S]*?setError\(ambiguousLogoutResultMessage\)/);
+  assert.match(logout, /if \(storage\) clearEditorRecoverySnapshots\(storage\);/);
 });
 
 test("public view beacon uses the shared default deadline without changing anonymous delivery semantics", () => {
