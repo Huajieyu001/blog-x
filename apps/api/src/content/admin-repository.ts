@@ -15,6 +15,13 @@ export class ReservedArticleSlugError extends Error {
 }
 
 type Database = NodePgDatabase<typeof schema>;
+type StoredCoverAsset = {
+  id: string;
+  width: number;
+  height: number;
+  mimeType: string;
+};
+
 const selectedPost = {
   id: schema.articles.id,
   title: schema.articles.title,
@@ -162,16 +169,24 @@ export function createAdminPostRepository(db: Database) {
       .where(and(inArray(schema.media.id, ids), isNull(schema.media.deletedAt))).for("key share");
     if (rows.length !== ids.length) throw new MissingMediaReferenceError();
   }
-  async function hydrate(executor: Database, post: typeof schema.articles.$inferSelect, tagIds?: string[]): Promise<StoredAdminPost> {
-    const resolvedTags = tagIds ?? (await executor.select({ tagId: schema.articleTags.tagId }).from(schema.articleTags).where(eq(schema.articleTags.articleId, post.id))).map((row) => row.tagId);
+  function storedPost(post: typeof schema.articles.$inferSelect, tagIds: string[], coverAsset: StoredCoverAsset | null): StoredAdminPost {
     let coverMedia: MediaReference | null = null;
     if (post.coverMediaId) {
-      const asset = (await executor.select({ id: schema.media.id, width: schema.media.width, height: schema.media.height, mimeType: schema.media.derivativeMimeType }).from(schema.media).where(eq(schema.media.id, post.coverMediaId)).limit(1))[0];
-      if (!asset) throw new Error("cover media reference is missing");
-      coverMedia = mediaReferenceSchema.parse({ ...asset, url: `/media/${asset.id}`, alt: post.coverAlt, decorative: post.coverDecorative });
+      if (!coverAsset || coverAsset.id !== post.coverMediaId) throw new Error("cover media reference is missing");
+      coverMedia = mediaReferenceSchema.parse({ ...coverAsset, url: `/media/${coverAsset.id}`, alt: post.coverAlt, decorative: post.coverDecorative });
     }
     const { coverMediaId: _coverMediaId, coverAlt: _coverAlt, coverDecorative: _coverDecorative, legacyMediaReview, ...stored } = post;
-    return { ...stored, legacyMediaReview: legacyMediaReviewSchema.parse(legacyMediaReview), tagIds: resolvedTags, coverMedia };
+    return { ...stored, legacyMediaReview: legacyMediaReviewSchema.parse(legacyMediaReview), tagIds, coverMedia };
+  }
+  async function hydrate(executor: Database, post: typeof schema.articles.$inferSelect, tagIds?: string[]): Promise<StoredAdminPost> {
+    const tagsPromise = tagIds
+      ? Promise.resolve(tagIds)
+      : executor.select({ tagId: schema.articleTags.tagId }).from(schema.articleTags).where(eq(schema.articleTags.articleId, post.id)).then((rows) => rows.map((row) => row.tagId));
+    const coverPromise: Promise<StoredCoverAsset[]> = post.coverMediaId
+      ? executor.select({ id: schema.media.id, width: schema.media.width, height: schema.media.height, mimeType: schema.media.derivativeMimeType }).from(schema.media).where(eq(schema.media.id, post.coverMediaId)).limit(1)
+      : Promise.resolve([]);
+    const [resolvedTags, coverRows] = await Promise.all([tagsPromise, coverPromise]);
+    return storedPost(post, resolvedTags, coverRows[0] ?? null);
   }
 
   async function createDraft(input: AdminPostInput, actorAdministratorId: string) {
@@ -199,7 +214,26 @@ export function createAdminPostRepository(db: Database) {
   }
 
   async function listRetained() {
-    const posts = await db.select(selectedPost).from(schema.articles).where(isNull(schema.articles.deletedAt)).orderBy(desc(schema.articles.updatedAt)); return Promise.all(posts.map((post) => hydrate(db, post as typeof schema.articles.$inferSelect)));
+    const posts = await db.select(selectedPost).from(schema.articles).where(isNull(schema.articles.deletedAt)).orderBy(desc(schema.articles.updatedAt));
+    if (!posts.length) return [];
+    const articleIds = posts.map((post) => post.id);
+    const coverIds = [...new Set(posts.map((post) => post.coverMediaId).filter((id): id is string => Boolean(id)))];
+    const coverRowsPromise: Promise<StoredCoverAsset[]> = coverIds.length
+      ? db.select({ id: schema.media.id, width: schema.media.width, height: schema.media.height, mimeType: schema.media.derivativeMimeType }).from(schema.media).where(inArray(schema.media.id, coverIds))
+      : Promise.resolve([]);
+    const [tagRows, coverRows] = await Promise.all([
+      db.select({ articleId: schema.articleTags.articleId, tagId: schema.articleTags.tagId }).from(schema.articleTags)
+        .where(inArray(schema.articleTags.articleId, articleIds)).orderBy(asc(schema.articleTags.articleId), asc(schema.articleTags.tagId)),
+      coverRowsPromise,
+    ]);
+    const tagsByArticle = new Map<string, string[]>();
+    for (const row of tagRows) {
+      const tags = tagsByArticle.get(row.articleId) ?? [];
+      tags.push(row.tagId);
+      tagsByArticle.set(row.articleId, tags);
+    }
+    const coversById = new Map(coverRows.map((asset) => [asset.id, asset]));
+    return posts.map((post) => storedPost(post as typeof schema.articles.$inferSelect, tagsByArticle.get(post.id) ?? [], post.coverMediaId ? coversById.get(post.coverMediaId) ?? null : null));
   }
 
   async function listDeleted(): Promise<StoredDeletedPost[]> {
