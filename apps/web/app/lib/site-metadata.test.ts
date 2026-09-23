@@ -220,3 +220,22 @@ test("public article render starts cached reads together and keeps recovery plus
 
   assert.match(page, /<img[\s\S]*?src=\{article\.cover\.url\}[\s\S]*?width=\{article\.cover\.width\}[\s\S]*?height=\{article\.cover\.height\}[\s\S]*?alt=\{article\.cover\.decorative \? "" : article\.cover\.alt\}[\s\S]*?decoding="async"[\s\S]*?fetchPriority="high"/);
 });
+
+test("public feeds prioritize only their first visible default card cover", () => {
+  const card = readFileSync(new URL("../_components/PostCard.tsx", import.meta.url), "utf8");
+  assert.match(card, /priority\?: boolean/);
+  assert.match(card, /priority = false/);
+  assert.match(card, /loading=\{priority \? "eager" : "lazy"\}/);
+  assert.match(card, /fetchPriority=\{priority \? "high" : undefined\}/);
+  assert.match(card, /decoding="async"/);
+
+  for (const path of ["../page.tsx", "../categories/[slug]/page.tsx", "../tags/[slug]/page.tsx"]) {
+    const source = readFileSync(new URL(path, import.meta.url), "utf8");
+    assert.match(source, /priority=\{index === 0\}/, `${path} should prioritize its first visible card`);
+  }
+
+  for (const path of ["../search/page.tsx", "../posts/[slug]/page.tsx"]) {
+    const source = readFileSync(new URL(path, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /<PostCard[^>]*priority=/, `${path} compact cards should stay lazy`);
+  }
+});

@@ -83,7 +83,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         {!query.success ? <EmptyState kind="invalid" /> : result && result.items.length === 0 ? <EmptyState kind={result.page === 1 && result.totalItems === 0 ? "empty-blog" : "empty-page"} /> : result ? (
           <div className={styles.postList}>
             {result.items.map((post, index) => (
-              <PostCard key={post.slug} post={post} position={(result.page - 1) * result.pageSize + index + 1} />
+              <PostCard key={post.slug} post={post} position={(result.page - 1) * result.pageSize + index + 1} priority={index === 0} />
             ))}
           </div>
         ) : null}

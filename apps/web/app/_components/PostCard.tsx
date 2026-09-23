@@ -13,9 +13,10 @@ type PostCardProps = {
   post: PublicPostListItem;
   position?: number;
   variant?: "default" | "compact";
+  priority?: boolean;
 };
 
-export default function PostCard({ post, position = 1, variant = "default" }: PostCardProps) {
+export default function PostCard({ post, position = 1, variant = "default", priority = false }: PostCardProps) {
   const compact = variant === "compact";
   const articleClass = compact
     ? `${styles.compactPostCard} ${post.cover ? styles.compactPostCardWithCover : ""}`
@@ -51,8 +52,9 @@ export default function PostCard({ post, position = 1, variant = "default" }: Po
             width={post.cover.width}
             height={post.cover.height}
             alt=""
-            loading="lazy"
+            loading={priority ? "eager" : "lazy"}
             decoding="async"
+            fetchPriority={priority ? "high" : undefined}
           />
         </Link>
       ) : null}

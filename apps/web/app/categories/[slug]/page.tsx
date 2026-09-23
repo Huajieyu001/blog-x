@@ -26,7 +26,7 @@ export default async function CategoryPage({
   return <main className={styles.page}><section className={styles.feed}>
     <header className={styles.discoveryHeader}><p className={styles.eyebrow}>分类</p><h1>{data.term.name}</h1><p>{data.posts.totalItems} 篇已发布文章</p></header>
     {data.posts.items.length
-      ? <div className={styles.postList}>{data.posts.items.map((post, index) => <PostCard key={post.slug} post={post} position={(data.posts.page - 1) * 10 + index + 1} />)}</div>
+      ? <div className={styles.postList}>{data.posts.items.map((post, index) => <PostCard key={post.slug} post={post} position={(data.posts.page - 1) * 10 + index + 1} priority={index === 0} />)}</div>
       : <div className={styles.empty}><h2>这一页还没有文章</h2><p>可以返回最新文章继续阅读。</p><Link href="/" prefetch={false}>返回最新文章</Link></div>}
     <Pagination page={data.posts.page} totalPages={data.posts.totalPages} basePath={`/categories/${encodeURIComponent(slug)}`} />
   </section></main>;
