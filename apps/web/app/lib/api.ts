@@ -96,6 +96,7 @@ export async function getAdminAboutResult(cookieHeader: string): Promise<AdminOp
 const cachedPublicAbout = cache(() => getPublic("/public/about", publicAboutSchema, true));
 const cachedPublicSiteSettings = cache(() => getPublic("/public/site-settings", publicSiteSettingsSchema));
 const cachedPublicPosts = cache((page: number) => getPublic(`/public/articles?page=${encodeURIComponent(String(page))}`, publicPostListResponseSchema));
+const cachedPublicRelatedPosts = cache((slug: string) => getPublic(`/public/articles/${encodeURIComponent(slug)}/related`, publicRelatedPostsResponseSchema));
 function redirectLocation(location: string | null) {
   // The API is an upstream boundary. Never allow an absolute URL, a query,
   // traversal, or a differently-shaped API route to become browser navigation.
@@ -288,5 +289,5 @@ export function getPublicSearch(query: string, page: number): Promise<PublicResu
 }
 
 export function getPublicRelatedPosts(slug: string): Promise<PublicResult<PublicRelatedPostsResponse>> {
-  return getPublic(`/public/articles/${encodeURIComponent(slug)}/related`, publicRelatedPostsResponseSchema);
+  return cachedPublicRelatedPosts(slug);
 }

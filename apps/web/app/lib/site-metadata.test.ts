@@ -202,3 +202,21 @@ test("public page metadata uses validated public site identity", () => {
     assert.match(source, /pageMetadata\(\{[\s\S]*?\bsite\s*[,}]/, `${path} should pass site identity to metadata`);
   }
 });
+
+test("public article render starts cached reads together and keeps recovery plus cover contracts", () => {
+  const page = readFileSync(new URL("../posts/[slug]/page.tsx", import.meta.url), "utf8");
+  const api = readFileSync(new URL("./api.ts", import.meta.url), "utf8");
+
+  assert.match(page, /const \[result, siteResult, relatedResult\] = await Promise\.all\(\[\s*getPublicPost\(slug\),\s*getPublicSiteSettings\(\),\s*getPublicRelatedPosts\(slug\),\s*\]\)/);
+  assert.match(api, /const cachedPublicRelatedPosts = cache\(\(slug: string\) => getPublic\(`\/public\/articles\/\$\{encodeURIComponent\(slug\)\}\/related`, publicRelatedPostsResponseSchema\)\)/);
+  assert.match(api, /export function getPublicRelatedPosts\(slug: string\): Promise<PublicResult<PublicRelatedPostsResponse>> \{\s*return cachedPublicRelatedPosts\(slug\);\s*\}/);
+
+  assert.match(page, /if \(result\.kind === "redirect"\) permanentRedirect\(result\.location\);/);
+  assert.match(page, /if \(result\.kind === "not_found"\) notFound\(\);/);
+  assert.match(page, /if \(result\.kind === "upstream_error"\) throw new Error\("public content unavailable"\);/);
+  assert.match(page, /siteResult\.kind === "ok" \? siteResult\.data : defaultSiteSettings/);
+  assert.match(page, /relatedResult\.kind === "ok" && relatedItems\.length > 0/);
+  assert.match(page, /relatedResult\.kind !== "ok"/);
+
+  assert.match(page, /<img[\s\S]*?src=\{article\.cover\.url\}[\s\S]*?width=\{article\.cover\.width\}[\s\S]*?height=\{article\.cover\.height\}[\s\S]*?alt=\{article\.cover\.decorative \? "" : article\.cover\.alt\}[\s\S]*?decoding="async"[\s\S]*?fetchPriority="high"/);
+});

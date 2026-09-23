@@ -14,7 +14,11 @@ import styles from "../../public.module.css";
 
 export default async function PublicArticlePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const [result, siteResult] = await Promise.all([getPublicPost(slug), getPublicSiteSettings()]);
+  const [result, siteResult, relatedResult] = await Promise.all([
+    getPublicPost(slug),
+    getPublicSiteSettings(),
+    getPublicRelatedPosts(slug),
+  ]);
   if (result.kind === "redirect") permanentRedirect(result.location);
   if (result.kind === "not_found") notFound();
   if (result.kind === "upstream_error") throw new Error("public content unavailable");
@@ -27,7 +31,6 @@ export default async function PublicArticlePage({ params }: { params: Promise<{ 
     publishedAt: article.publishedAt,
   }, undefined, site);
   const jsonLd = serializeJsonLd(blogPosting);
-  const relatedResult = await getPublicRelatedPosts(slug);
   const seenSlugs = new Set([article.slug]);
   const relatedItems = relatedResult.kind === "ok"
     ? relatedResult.data.items.filter((item) => {
@@ -66,6 +69,8 @@ export default async function PublicArticlePage({ params }: { params: Promise<{ 
             width={article.cover.width}
             height={article.cover.height}
             alt={article.cover.decorative ? "" : article.cover.alt}
+            decoding="async"
+            fetchPriority="high"
           />
         ) : null}
         <div
