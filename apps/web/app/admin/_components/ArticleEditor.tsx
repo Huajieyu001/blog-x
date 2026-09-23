@@ -14,6 +14,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fetchWithDeadline, isFetchDeadlineExceeded } from "../../lib/client-fetch";
 import styles from "../admin.module.css";
+
+const ambiguousSaveResultMessage = "网络中断、请求超时或响应异常，保存结果未知；草稿内容仍保留，请先刷新或到文章列表确认后再重试";
 import ArticleActions from "./ArticleActions";
 import MediaPanel from "./MediaPanel";
 import {
@@ -493,10 +495,8 @@ export default function ArticleEditor({
         // it only after a successful existing-post save, preserving local edits.
         router.refresh();
       }
-    } catch (error) {
-      setMessage(isFetchDeadlineExceeded(error)
-        ? "请求超时，服务器可能已完成保存；请先刷新确认后再重试"
-        : "网络异常，草稿内容仍保留在编辑器中");
+    } catch {
+      setMessage(ambiguousSaveResultMessage);
     } finally {
       saveInFlight.current = false;
       setSaving(false);

@@ -127,6 +127,7 @@ test("administrator mutation transport failures remain localized and outcome-hon
   const settings = readFileSync(new URL("../admin/_components/SettingsEditor.tsx", import.meta.url), "utf8");
   const security = readFileSync(new URL("../admin/security/page.tsx", import.meta.url), "utf8");
   const logout = readFileSync(new URL("../admin/LogoutButton.tsx", import.meta.url), "utf8");
+  const articleEditor = readFileSync(new URL("../admin/_components/ArticleEditor.tsx", import.meta.url), "utf8");
 
   assert.match(taxonomy, /网络中断，保存结果未知；请刷新确认后再重试。/);
   assert.match(taxonomy, /网络中断，删除结果未知；请刷新确认后再重试。/);
@@ -159,6 +160,11 @@ test("administrator mutation transport failures remain localized and outcome-hon
   assert.match(logout, /if \(!response\.ok\) \{[\s\S]*?退出失败，请重试；未保存的本机恢复副本仍然保留。/);
   assert.match(logout, /if \(!parsed\.success\) \{[\s\S]*?setError\(ambiguousLogoutResultMessage\)/);
   assert.match(logout, /if \(storage\) clearEditorRecoverySnapshots\(storage\);/);
+  assert.match(articleEditor, /const ambiguousSaveResultMessage = "网络中断、请求超时或响应异常，保存结果未知；草稿内容仍保留，请先刷新或到文章列表确认后再重试";/);
+  assert.match(articleEditor, /if \(!saved\.success\) throw new Error\("invalid save response"\);/);
+  assert.match(articleEditor, /\} catch \{[\s\S]*?setMessage\(ambiguousSaveResultMessage\);/);
+  assert.match(articleEditor, /published_slug_confirmation_required[\s\S]*?slug_conflict[\s\S]*?文章保存失败，请重试/);
+  assert.doesNotMatch(articleEditor, /网络异常，草稿内容仍保留在编辑器中/);
 });
 
 test("public view beacon uses the shared default deadline without changing anonymous delivery semantics", () => {
