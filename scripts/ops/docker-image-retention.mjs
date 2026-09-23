@@ -9,6 +9,7 @@ const containerIdPattern = /^[a-f0-9]{64}$/;
 export const LOCAL_DELIVERY_IMAGE_LABEL = `io.blog-x.refresh-kind=${LOCAL_DELIVERY_REFRESH_KIND}`;
 export const DOCKER_IMAGE_RETENTION_FORMAT = "blog-x-docker-image-retention";
 export const DOCKER_IMAGE_RETENTION_VERSION = 1;
+const BLOG_X_REFRESH_WORKDIR = "/refresh-workspace";
 
 function fail(message) { throw new Error(message); }
 
@@ -75,11 +76,17 @@ export function buildDockerImageRetentionReport({ mode, candidates } = {}) {
 
 async function discoverCandidates(run) {
   if (typeof run !== "function") fail("Docker image retention discovery is invalid");
-  const listed = [...new Set(stdoutLines(await run("docker", ["image", "ls", "--quiet", "--no-trunc", "--filter", `label=${LOCAL_DELIVERY_IMAGE_LABEL}`])).map(immutableImageId))].sort();
+  const labeled = new Set(stdoutLines(await run("docker", ["image", "ls", "--quiet", "--no-trunc", "--filter", `label=${LOCAL_DELIVERY_IMAGE_LABEL}`])).map(immutableImageId));
+  const dangling = new Set(stdoutLines(await run("docker", ["image", "ls", "--quiet", "--no-trunc", "--filter", "dangling=true"])).map(immutableImageId));
+  const listed = [...new Set([...labeled, ...dangling])].sort();
   const images = [];
   for (const id of listed) {
     const fact = parsedSingleObject(await run("docker", ["image", "inspect", id]));
-    if (fact.Id !== id || fact.Config?.Labels?.["io.blog-x.refresh-kind"] !== LOCAL_DELIVERY_REFRESH_KIND || !Number.isSafeInteger(fact.Size) || fact.Size < 0) fail("Docker image retention discovery is invalid");
+    const exactLabel = fact.Config?.Labels?.["io.blog-x.refresh-kind"] === LOCAL_DELIVERY_REFRESH_KIND;
+    const hasNoRepositoryReference = [fact.RepoTags, fact.RepoDigests].every((value) => value == null || Array.isArray(value) && value.length === 0);
+    const exactDanglingRefresh = dangling.has(id) && hasNoRepositoryReference && fact.Config?.WorkingDir === BLOG_X_REFRESH_WORKDIR;
+    if (fact.Id !== id || labeled.has(id) && !exactLabel || !Number.isSafeInteger(fact.Size) || fact.Size < 0) fail("Docker image retention discovery is invalid");
+    if (!exactLabel && !exactDanglingRefresh) continue;
     images.push({ id, size: fact.Size });
   }
   const containers = [...new Set(stdoutLines(await run("docker", ["container", "ls", "--all", "--quiet", "--no-trunc"])).map(containerId))].sort();

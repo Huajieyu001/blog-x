@@ -8,16 +8,17 @@ import {
 const imageId = (character) => `sha256:${character.repeat(64)}`;
 const containerId = (character) => character.repeat(64);
 
-function image(id, size, label = "v1.1-offline-local-delivery") {
-  return { Id: id, Size: size, Config: { Labels: { "io.blog-x.refresh-kind": label } } };
+function image(id, size, label = "v1.1-offline-local-delivery", extra = {}) {
+  return { Id: id, Size: size, RepoTags: [], RepoDigests: [], Config: { Labels: { "io.blog-x.refresh-kind": label } }, ...extra };
 }
 
-function runner({ listed = [], images = {}, containers = [], references = {}, removeError } = {}) {
+function runner({ listed = [], dangling = [], images = {}, containers = [], references = {}, removeError } = {}) {
   const calls = [];
   const run = async (command, args) => {
     calls.push({ command, args: [...args] });
     if (command !== "docker") throw new Error("unexpected command");
     if (args.join(" ") === `image ls --quiet --no-trunc --filter label=${LOCAL_DELIVERY_IMAGE_LABEL}`) return { stdout: listed.map((id) => `${id}\n`).join("") };
+    if (args.join(" ") === "image ls --quiet --no-trunc --filter dangling=true") return { stdout: dangling.map((id) => `${id}\n`).join("") };
     if (args[0] === "image" && args[1] === "inspect") return { stdout: JSON.stringify([images[args[2]]]) };
     if (args.join(" ") === "container ls --all --quiet --no-trunc") return { stdout: containers.map((id) => `${id}\n`).join("") };
     if (args[0] === "container" && args[1] === "inspect") return { stdout: JSON.stringify([{ Image: references[args[2]] }]) };
@@ -50,6 +51,26 @@ test("dry run is deterministic, sanitized, and excludes duplicate or container-r
   assert.doesNotMatch(output.join(""), /other|container|label|path|stderr/i);
   assert.equal(fixture.calls.some(({ args }) => args[0] === "image" && args[1] === "rm"), false);
   assert.equal(fixture.calls.filter(({ args }) => args[0] === "image" && args[1] === "inspect").length, 2);
+});
+
+test("includes exact Blog X dangling refresh images but excludes unrelated dangling images", async () => {
+  const refresh = imageId("1");
+  const unrelated = imageId("2");
+  const referenced = imageId("3");
+  const container = containerId("4");
+  const fixture = runner({
+    dangling: [unrelated, referenced, refresh, refresh],
+    images: {
+      [refresh]: image(refresh, 13, undefined, { Config: { Labels: {}, WorkingDir: "/refresh-workspace" } }),
+      [referenced]: image(referenced, 17, undefined, { Config: { Labels: {}, WorkingDir: "/refresh-workspace" } }),
+      [unrelated]: image(unrelated, 19, undefined, { Config: { Labels: {}, WorkingDir: "/another-project" } }),
+    },
+    containers: [container],
+    references: { [container]: referenced },
+  });
+  const report = await runDockerImageRetentionCli({ argv: [], run: fixture.run, output: { write() {} } });
+  assert.deepEqual(report.candidateImageIds, [refresh]);
+  assert.equal(report.reclaimableBytes, "13");
 });
 
 test("apply recomputes candidates and removes only immutable unused IDs without force", async () => {
