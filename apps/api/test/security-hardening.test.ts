@@ -3,7 +3,7 @@ import test from "node:test";
 import cookie from "@fastify/cookie";
 import Fastify, { type FastifyPluginAsync } from "fastify";
 import { aboutInputSchema, adminPostInputSchema, taxonomyInputSchema } from "@blog-x/contracts";
-import { closeRuntimeResourcesOnAppClose, migrationFingerprint, pendingMigrationIndex } from "../src/app.js";
+import { closeRuntimeResourcesOnAppClose, createDatabaseHealthProbe, migrationFingerprint, pendingMigrationIndex, registerHealthRoute } from "../src/app.js";
 import { authRoutes } from "../src/routes/auth.js";
 import { mediaRoutes } from "../src/routes/media.js";
 import { InvalidMediaError } from "../src/media/processor.js";
@@ -65,6 +65,34 @@ test("serving resources remain open until the Fastify application closes", async
   assert.equal(closeCount, 1, "application shutdown owns database pool cleanup");
   await app.close();
   assert.equal(closeCount, 1, "cleanup remains idempotent");
+});
+
+test("database health probe is bounded and the route preserves the success contract", async (context) => {
+  const queries: unknown[] = [];
+  const probe = createDatabaseHealthProbe({
+    query: async (config) => { queries.push(config); },
+  });
+  const app = Fastify();
+  registerHealthRoute(app, probe);
+  context.after(() => app.close());
+
+  const response = await app.inject({ method: "GET", url: "/health" });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers["cache-control"], "no-store");
+  assert.deepEqual(response.json(), { ok: true });
+  assert.deepEqual(queries, [{ text: "select 1", query_timeout: 1_000 }]);
+});
+
+test("health fails closed without exposing database failure details", async (context) => {
+  const app = Fastify();
+  registerHealthRoute(app, async () => { throw new Error("DATABASE_FAILURE_INTERNAL_MARKER"); });
+  context.after(() => app.close());
+
+  const response = await app.inject({ method: "GET", url: "/health" });
+  assert.equal(response.statusCode, 503);
+  assert.equal(response.headers["cache-control"], "no-store");
+  assert.deepEqual(response.json(), { ok: false });
+  assert.doesNotMatch(response.body, /DATABASE_FAILURE_INTERNAL_MARKER/);
 });
 
 test("runtime configuration rejects unsafe production input before resources can be created", () => {

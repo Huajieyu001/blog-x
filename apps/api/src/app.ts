@@ -105,6 +105,28 @@ export function createRuntimeResources(config: ApiRuntimeConfig) {
 
 type RuntimeResources = ReturnType<typeof createRuntimeResources>;
 
+type DatabaseHealthPool = {
+  query(config: { text: string; query_timeout: number }): Promise<unknown>;
+};
+
+export function createDatabaseHealthProbe(pool: DatabaseHealthPool) {
+  return async () => {
+    await pool.query({ text: "select 1", query_timeout: 1_000 });
+  };
+}
+
+export function registerHealthRoute(app: FastifyInstance, probe: () => Promise<void>) {
+  app.get("/health", async (_request, reply) => {
+    reply.header("cache-control", "no-store");
+    try {
+      await probe();
+      return reply.send({ ok: true });
+    } catch {
+      return reply.code(503).send({ ok: false });
+    }
+  });
+}
+
 export function closeRuntimeResourcesOnAppClose(
   app: FastifyInstance,
   resources: Pick<RuntimeResources, "pool">,
@@ -127,6 +149,7 @@ type BuildAppOptions = {
   rateStore?: BoundedRateLimitStore;
   viewAggregationRepository?: ViewAggregationRepository;
   adminAnalyticsRepository?: AdminAnalyticsRepository;
+  healthProbe?: () => Promise<void>;
 };
 
 export async function buildApp(options: BuildAppOptions = {}) {
@@ -170,7 +193,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
     rateStore,
     ratePolicy: rateLimits.administratorMutation,
   };
-  app.get("/health", async () => ({ ok: true }));
+  registerHealthRoute(app, options.healthProbe ?? createDatabaseHealthProbe(resources.pool));
   await app.register(authRoutes, {
     db,
     sessionAuth: app.sessionAuth,
