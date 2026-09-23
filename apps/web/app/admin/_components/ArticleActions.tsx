@@ -27,6 +27,7 @@ const actionLabels: Record<ArticleAction, string> = {
 };
 
 const ambiguousMutationTimeoutMessage = "请求超时，服务器可能已完成操作；请先刷新确认后再重试";
+const ambiguousMutationResultMessage = "网络中断或响应异常，操作结果未知；请先刷新确认后再重试";
 
 function formatShanghai(instant: string) {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -160,7 +161,7 @@ export default function ArticleActions({
       setMessage(`${actionLabels[action]}成功`);
       onChanged?.(parsed.data);
     } catch (error) {
-      setMessage(isFetchDeadlineExceeded(error) ? ambiguousMutationTimeoutMessage : "网络异常，请重试");
+      setMessage(isFetchDeadlineExceeded(error) ? ambiguousMutationTimeoutMessage : ambiguousMutationResultMessage);
     } finally {
       setActionPending(null);
     }
@@ -196,7 +197,7 @@ export default function ArticleActions({
       }
       changedFromResponse(bodyJson, post.scheduledAt ? "改期预约成功" : "已设定预约");
     } catch (error) {
-      setMessage(isFetchDeadlineExceeded(error) ? ambiguousMutationTimeoutMessage : "网络异常，请重试");
+      setMessage(isFetchDeadlineExceeded(error) ? ambiguousMutationTimeoutMessage : ambiguousMutationResultMessage);
     } finally {
       setSchedulePending(false);
     }
@@ -221,7 +222,7 @@ export default function ArticleActions({
       }
       changedFromResponse(body, "已取消预约发布");
     } catch (error) {
-      setMessage(isFetchDeadlineExceeded(error) ? ambiguousMutationTimeoutMessage : "网络异常，请重试");
+      setMessage(isFetchDeadlineExceeded(error) ? ambiguousMutationTimeoutMessage : ambiguousMutationResultMessage);
     } finally {
       setSchedulePending(false);
     }

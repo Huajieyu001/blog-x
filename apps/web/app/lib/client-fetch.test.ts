@@ -118,6 +118,7 @@ test("media upload recognizes sanitized retryable service failures", () => {
 test("administrator mutation transport failures remain localized and outcome-honest", () => {
   const taxonomy = readFileSync(new URL("../admin/_components/TaxonomyManager.tsx", import.meta.url), "utf8");
   const media = readFileSync(new URL("../admin/_components/MediaLibrary.tsx", import.meta.url), "utf8");
+  const articleActions = readFileSync(new URL("../admin/_components/ArticleActions.tsx", import.meta.url), "utf8");
 
   assert.match(taxonomy, /网络中断，保存结果未知；请刷新确认后再重试。/);
   assert.match(taxonomy, /网络中断，删除结果未知；请刷新确认后再重试。/);
@@ -128,6 +129,9 @@ test("administrator mutation transport failures remain localized and outcome-hon
   assert.match(media, /error instanceof MediaDeleteResponseError[\s\S]*?error\.message/);
   assert.match(media, /网络中断，删除结果未知；请刷新媒体库确认后再重试。/);
   assert.doesNotMatch(media, /error instanceof Error \? error\.message/);
+  assert.match(articleActions, /const ambiguousMutationResultMessage = "网络中断或响应异常，操作结果未知；请先刷新确认后再重试";/);
+  assert.equal((articleActions.match(/: ambiguousMutationResultMessage\);/g) ?? []).length, 3);
+  assert.doesNotMatch(articleActions, /网络异常，请重试/);
 });
 
 test("public view beacon uses the shared default deadline without changing anonymous delivery semantics", () => {
