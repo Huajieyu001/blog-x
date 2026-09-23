@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { defaultSiteSettings } from "@blog-x/contracts";
 import { headers } from "next/headers";
 import Pagination from "../_components/Pagination";
 import PostCard from "../_components/PostCard";
@@ -8,6 +9,7 @@ import {
   resolveSearchCanonical,
   searchHref,
 } from "../lib/search-discovery";
+import { getPublicSiteSettings } from "../lib/api";
 import { pageMetadata } from "../lib/site-metadata";
 import { searchEncodingHeaderName } from "../../lib/search-encoding";
 import styles from "../public.module.css";
@@ -36,13 +38,15 @@ async function resolveOutcome(searchParams: SearchPageProps["searchParams"]) {
 }
 
 export async function generateMetadata({ searchParams }: SearchPageProps) {
-  const outcome = await resolveOutcome(searchParams);
+  const [outcome, siteResult] = await Promise.all([resolveOutcome(searchParams), getPublicSiteSettings()]);
+  const site = siteResult.kind === "ok" ? siteResult.data : defaultSiteSettings;
   return pageMetadata({
     title: "搜索文章",
     description: "搜索已发布文章。",
     path: "/search",
     canonicalPath: resolveSearchCanonical(outcome) ?? null,
     index: false,
+    site,
   });
 }
 

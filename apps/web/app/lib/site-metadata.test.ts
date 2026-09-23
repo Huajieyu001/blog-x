@@ -184,8 +184,18 @@ test("BlogPosting serialization is inert raw script text and round-trips all pub
   assert.deepEqual(JSON.parse(raw), posting);
 });
 
-test("top-level discovery metadata uses validated public site identity", () => {
-  for (const path of ["../page.tsx", "../categories/page.tsx", "../tags/page.tsx", "../archives/page.tsx"]) {
+test("public page metadata uses validated public site identity", () => {
+  for (const path of [
+    "../page.tsx",
+    "../categories/page.tsx",
+    "../categories/[slug]/page.tsx",
+    "../tags/page.tsx",
+    "../tags/[slug]/page.tsx",
+    "../archives/page.tsx",
+    "../search/page.tsx",
+    "../about/page.tsx",
+    "../posts/[slug]/page.tsx",
+  ]) {
     const source = readFileSync(new URL(path, import.meta.url), "utf8");
     assert.match(source, /getPublicSiteSettings/, `${path} should load public site settings`);
     assert.match(source, /defaultSiteSettings/, `${path} should retain the contract fallback`);

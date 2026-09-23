@@ -1,14 +1,16 @@
 import { notFound } from "next/navigation";
+import { defaultSiteSettings } from "@blog-x/contracts";
 import ArticleBody from "../_components/ArticleBody";
-import { getPublicAbout } from "../lib/api";
+import { getPublicAbout, getPublicSiteSettings } from "../lib/api";
 import { pageMetadata } from "../lib/site-metadata";
 import styles from "../public.module.css";
 export const dynamic = "force-dynamic";
 export async function generateMetadata() {
-  const result = await getPublicAbout();
+  const [result, siteResult] = await Promise.all([getPublicAbout(), getPublicSiteSettings()]);
   if (result.kind === "not_found") notFound();
   if (result.kind === "upstream_error") throw new Error("public content unavailable");
-  return pageMetadata({ title: result.data.title, description: `了解 ${result.data.title}。`, path: "/about" });
+  const site = siteResult.kind === "ok" ? siteResult.data : defaultSiteSettings;
+  return pageMetadata({ title: result.data.title, description: `了解 ${result.data.title}。`, path: "/about", site });
 }
 export default async function AboutPage() {
   const result = await getPublicAbout();

@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { publicPostPageQuerySchema } from "@blog-x/contracts";
+import { defaultSiteSettings, publicPostPageQuerySchema } from "@blog-x/contracts";
 import Pagination from "../../_components/Pagination";
 import PostCard from "../../_components/PostCard";
-import { getPublicTaxonomyPosts } from "../../lib/api";
+import { getPublicSiteSettings, getPublicTaxonomyPosts } from "../../lib/api";
 import { pageMetadata, resolveCanonicalPage } from "../../lib/site-metadata";
 import styles from "../../public.module.css";
 
@@ -39,11 +39,15 @@ export async function generateMetadata({ params, searchParams }: {
   const { slug } = await params;
   const query = await searchParams;
   const parsed = publicPostPageQuerySchema.safeParse({ page: query.page });
-  const result = await getPublicTaxonomyPosts("categories", slug, parsed.success ? parsed.data.page : 1);
+  const [result, siteResult] = await Promise.all([
+    getPublicTaxonomyPosts("categories", slug, parsed.success ? parsed.data.page : 1),
+    getPublicSiteSettings(),
+  ]);
   if (result.kind === "not_found") notFound();
   if (result.kind === "upstream_error") throw new Error("public content unavailable");
   const path = `/categories/${encodeURIComponent(result.data.term.slug)}`;
   const canonical = resolveCanonicalPage(path, query, result.data.posts.totalPages);
   const canonicalPath = canonical.canonical ? new URL(canonical.canonical).pathname + new URL(canonical.canonical).search : path;
-  return pageMetadata({ title: `${result.data.term.name} 分类`, description: `${result.data.term.name} 分类下的 ${result.data.posts.totalItems} 篇已发布文章。`, path: canonicalPath, index: canonical.index });
+  const site = siteResult.kind === "ok" ? siteResult.data : defaultSiteSettings;
+  return pageMetadata({ title: `${result.data.term.name} 分类`, description: `${result.data.term.name} 分类下的 ${result.data.posts.totalItems} 篇已发布文章。`, path: canonicalPath, index: canonical.index, site });
 }
