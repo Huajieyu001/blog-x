@@ -2,6 +2,11 @@ import { expect, test } from "@playwright/test";
 
 const webOrigin = process.env.E2E_WEB_ORIGIN ?? "";
 const fixtureOrigin = process.env.E2E_DISCOVERY_FIXTURE_ORIGIN ?? "";
+const expectedPublisher = {
+  "@type": "Organization",
+  name: "Blog X",
+  description: "记录代码、系统与长期实践。",
+};
 
 function requireGeneratedOrigin(value: string, label: string) {
   const parsed = new URL(value);
@@ -164,9 +169,10 @@ test("published article emits strict BlogPosting", async ({ page }) => {
   const raw = await script.textContent();
   expect(raw).not.toBeNull();
   const posting = JSON.parse(raw!);
-  expect(Object.keys(posting)).toEqual(["@context", "@type", "headline", "description", "datePublished", "mainEntityOfPage", "url"]);
+  expect(Object.keys(posting)).toEqual(["@context", "@type", "headline", "description", "datePublished", "publisher", "mainEntityOfPage", "url"]);
   expect(posting["@context"]).toBe("https://schema.org");
   expect(posting["@type"]).toBe("BlogPosting");
+  expect(posting.publisher).toEqual(expectedPublisher);
   await expect(page.locator("h1")).toHaveText(posting.headline);
   await expect(page.locator(".articleSummary")).toHaveText(posting.description);
   await expect(page.locator("article time[datetime]").first()).toHaveAttribute("datetime", posting.datePublished);
@@ -194,7 +200,8 @@ test("hostile and non-article JSON-LD boundaries", async ({ page }) => {
   expect(raw).not.toBeNull();
   expect(raw).not.toContain("<");
   const posting = JSON.parse(raw!);
-  expect(Object.keys(posting)).toEqual(["@context", "@type", "headline", "description", "datePublished", "mainEntityOfPage", "url"]);
+  expect(Object.keys(posting)).toEqual(["@context", "@type", "headline", "description", "datePublished", "publisher", "mainEntityOfPage", "url"]);
+  expect(posting.publisher).toEqual(expectedPublisher);
   await expect(page.locator("h1")).toHaveText(posting.headline);
   await expect(page.locator(".articleSummary")).toHaveText(posting.description);
   await expect(page.locator("article time[datetime]").first()).toHaveAttribute("datetime", posting.datePublished);
