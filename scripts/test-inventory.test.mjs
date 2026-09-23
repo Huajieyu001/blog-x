@@ -15,10 +15,10 @@ const cloneManifest = () => PACKAGE_TEST_INVENTORY.map((entry) => ({ ...entry })
 test("package test inventory is frozen, exact, complete and disjoint", async () => {
   assert.equal(Object.isFrozen(PACKAGE_TEST_INVENTORY), true);
   assert.equal(PACKAGE_TEST_INVENTORY.every(Object.isFrozen), true);
-  assert.equal(PACKAGE_TEST_INVENTORY.length, 53);
-  assert.equal(DEFAULT_TEST_FILES.length, 16);
+  assert.equal(PACKAGE_TEST_INVENTORY.length, 54);
+  assert.equal(DEFAULT_TEST_FILES.length, 17);
   assert.equal(INTEGRATION_TEST_FILES.length, 37);
-  assert.equal(new Set([...DEFAULT_TEST_FILES, ...INTEGRATION_TEST_FILES]).size, 53);
+  assert.equal(new Set([...DEFAULT_TEST_FILES, ...INTEGRATION_TEST_FILES]).size, 54);
   assert.deepEqual(DEFAULT_TEST_FILES, [
     "packages/contracts/src/analytics.test.ts",
     "packages/contracts/src/public-discovery.test.ts",
@@ -32,6 +32,7 @@ test("package test inventory is frozen, exact, complete and disjoint", async () 
     "apps/web/app/lib/admin-analytics.test.ts",
     "apps/web/app/lib/admin-content-results.test.ts",
     "apps/web/app/lib/api-timeout.test.ts",
+    "apps/web/app/lib/client-fetch.test.ts",
     "apps/web/app/lib/search-discovery.test.ts",
     "apps/web/app/lib/site-metadata.test.ts",
     "apps/web/lib/search-encoding.test.ts",
@@ -39,7 +40,7 @@ test("package test inventory is frozen, exact, complete and disjoint", async () 
   ]);
 
   const result = await assertCompleteTestInventory();
-  assert.deepEqual(result, { total: 53, default: 16, integration: 37 });
+  assert.deepEqual(result, { total: 54, default: 17, integration: 37 });
 });
 
 test("integration inventory has exact runner-owner counts", () => {

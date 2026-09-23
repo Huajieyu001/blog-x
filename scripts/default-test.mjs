@@ -34,6 +34,7 @@ export const DEFAULT_TEST_CHILDREN = Object.freeze([
     "apps/web/app/lib/admin-analytics.test.ts",
     "apps/web/app/lib/admin-content-results.test.ts",
     "apps/web/app/lib/api-timeout.test.ts",
+    "apps/web/app/lib/client-fetch.test.ts",
     "apps/web/app/lib/search-discovery.test.ts",
     "apps/web/app/lib/site-metadata.test.ts",
     "apps/web/lib/search-encoding.test.ts",
