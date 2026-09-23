@@ -5,6 +5,8 @@ import Fastify, { type FastifyPluginAsync } from "fastify";
 import { aboutInputSchema, adminPostInputSchema, taxonomyInputSchema } from "@blog-x/contracts";
 import { closeRuntimeResourcesOnAppClose, migrationFingerprint, pendingMigrationIndex } from "../src/app.js";
 import { authRoutes } from "../src/routes/auth.js";
+import { mediaRoutes } from "../src/routes/media.js";
+import { InvalidMediaError } from "../src/media/processor.js";
 import { parseApiRuntimeConfig } from "../src/security/config.js";
 import { requireAdministratorMutation, unsafeRoutePolicies } from "../src/security/mutation-guard.js";
 import { BoundedRateLimitStore, createRateLimitKey, type Clock } from "../src/security/rate-limiter.js";
@@ -14,6 +16,12 @@ class ManualClock implements Clock {
   constructor(private value = 0) {}
   now() { return this.value; }
   advance(milliseconds: number) { this.value += milliseconds; }
+}
+
+function multipartUpload() {
+  const boundary = "blog-x-security-hardening";
+  const body = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="cover.png"\r\nContent-Type: image/png\r\n\r\nnot-a-real-image\r\n--${boundary}--\r\n`);
+  return { body, contentType: `multipart/form-data; boundary=${boundary}` };
 }
 
 test("migration ledger advances only from an exact append-only history prefix", () => {
@@ -219,6 +227,42 @@ test("admin posts and export mutation policy is session-first, Origin-second, an
 
 test("taxonomy pages and media policy inventory has no unclassified unsafe route", () => {
   assert.equal(unsafeRoutePolicies.filter((policy) => !policy.contentType || !policy.limiter).length, 0);
+});
+
+test("authenticated media uploads distinguish invalid media from unavailable infrastructure without leaking details", async (context) => {
+  const app = Fastify({ trustProxy: false });
+  const origin = "http://127.0.0.1:3100";
+  const sessionAuth = { administratorIdForToken: async (token: string | undefined) => token === "valid" ? "administrator-id" : null, issue: async () => "", revoke: async () => undefined };
+  const rateStore = new BoundedRateLimitStore(new ManualClock(), 4_096);
+  let failure: Error = new InvalidMediaError();
+  let uploads = 0;
+
+  await app.register(cookie as unknown as FastifyPluginAsync);
+  await app.register(mediaRoutes, {
+    mediaService: {
+      upload: async () => {
+        uploads += 1;
+        throw failure;
+      },
+    } as never,
+    sessionAuth,
+    publicOrigin: origin,
+    mutationGuard: { sessionAuth, publicOrigin: origin, rateStore, ratePolicy: { limit: 4, windowMs: 60_000 } },
+  });
+  context.after(() => app.close());
+
+  const payload = multipartUpload();
+  const headers = { cookie: "blog_x_session=valid", origin, "content-type": payload.contentType };
+  const invalid = await app.inject({ method: "POST", url: "/admin/media", headers, payload: payload.body });
+  assert.equal(invalid.statusCode, 400);
+  assert.deepEqual(invalid.json(), { error: "invalid_media" });
+
+  failure = new Error("storage failure: /var/lib/blog-x/media/derivative/private-key.png");
+  const unavailable = await app.inject({ method: "POST", url: "/admin/media", headers, payload: payload.body });
+  assert.equal(unavailable.statusCode, 503);
+  assert.deepEqual(unavailable.json(), { error: "media_unavailable" });
+  assert.doesNotMatch(unavailable.body, /storage failure|var\/lib|derivative|private-key/i);
+  assert.equal(uploads, 2);
 });
 
 test("SQL-shaped Unicode content remains literal strict input rather than executable authority", () => {

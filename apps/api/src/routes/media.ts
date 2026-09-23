@@ -13,10 +13,37 @@ import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import type { Multipart } from "@fastify/multipart";
 import type { SessionService } from "../auth/sessions.js";
 import type { MediaService } from "../content/media-service.js";
+import { InvalidMediaError } from "../media/processor.js";
 import { requireAdministratorMutation, requireContentType, type MutationGuardOptions } from "../security/mutation-guard.js";
 import { requireAdministrator } from "../security/mutation-guard.js";
 
 const maximumSourceBytes = 5 * 1024 * 1024;
+
+async function parseMediaUpload(request: FastifyRequest) {
+  let received: { buffer: Buffer; mimeType: string } | null = null;
+  let alt = "";
+  let decorative = false;
+  const fields = new Set<string>();
+  const parts = (request as FastifyRequest & { parts: (options: object) => AsyncIterableIterator<Multipart> }).parts;
+  for await (const part of parts.call(request, { limits: { files: 1, fields: 2, fieldSize: 500, fileSize: maximumSourceBytes, parts: 3 } })) {
+    if (part.type === "file") {
+      if (part.fieldname !== "file" || received) throw new Error("invalid multipart shape");
+      const buffer = await part.toBuffer();
+      if (part.file.truncated) throw new Error("file too large");
+      received = { buffer, mimeType: part.mimetype };
+      continue;
+    }
+    if (!['alt', 'decorative'].includes(part.fieldname) || fields.has(part.fieldname) || typeof part.value !== "string") throw new Error("invalid multipart field");
+    fields.add(part.fieldname);
+    if (part.fieldname === "alt") alt = part.value;
+    if (part.fieldname === "decorative") {
+      if (!['true', 'false'].includes(part.value)) throw new Error("invalid decorative field");
+      decorative = part.value === "true";
+    }
+  }
+  if (!received) throw new Error("missing file");
+  return { ...received, alt, decorative };
+}
 
 export const mediaRoutes: FastifyPluginAsync<{
   mediaService: MediaService;
@@ -51,32 +78,19 @@ export const mediaRoutes: FastifyPluginAsync<{
   app.post("/admin/media", { bodyLimit: maximumSourceBytes + 64 * 1024 }, async (request, reply) => {
     if (!await requireAdministratorMutation(request, reply, options.mutationGuard)) return;
     if (!requireContentType(request, reply, "multipart/form-data")) return;
+
+    let upload: Awaited<ReturnType<typeof parseMediaUpload>>;
     try {
-      let received: { buffer: Buffer; mimeType: string } | null = null;
-      let alt = "";
-      let decorative = false;
-      const fields = new Set<string>();
-      const parts = (request as FastifyRequest & { parts: (options: object) => AsyncIterableIterator<Multipart> }).parts;
-      for await (const part of parts.call(request, { limits: { files: 1, fields: 2, fieldSize: 500, fileSize: maximumSourceBytes, parts: 3 } })) {
-        if (part.type === "file") {
-          if (part.fieldname !== "file" || received) throw new Error("invalid multipart shape");
-          const buffer = await part.toBuffer();
-          if (part.file.truncated) throw new Error("file too large");
-          received = { buffer, mimeType: part.mimetype };
-          continue;
-        }
-        if (!['alt', 'decorative'].includes(part.fieldname) || fields.has(part.fieldname) || typeof part.value !== "string") throw new Error("invalid multipart field");
-        fields.add(part.fieldname);
-        if (part.fieldname === "alt") alt = part.value;
-        if (part.fieldname === "decorative") {
-          if (!['true', 'false'].includes(part.value)) throw new Error("invalid decorative field");
-          decorative = part.value === "true";
-        }
-      }
-      if (!received) throw new Error("missing file");
-      return reply.code(201).send(await options.mediaService.upload(received.buffer, received.mimeType, { alt, decorative }));
+      upload = await parseMediaUpload(request);
     } catch {
       return reply.code(400).send(invalidMediaResponseSchema.parse({ error: "invalid_media" }));
+    }
+
+    try {
+      return reply.code(201).send(await options.mediaService.upload(upload.buffer, upload.mimeType, { alt: upload.alt, decorative: upload.decorative }));
+    } catch (error) {
+      if (error instanceof InvalidMediaError) return reply.code(400).send(invalidMediaResponseSchema.parse({ error: "invalid_media" }));
+      return reply.code(503).send(mediaUnavailableResponseSchema.parse({ error: "media_unavailable" }));
     }
   });
 
