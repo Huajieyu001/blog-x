@@ -61,6 +61,18 @@ type PublicCardRow = {
   coverDecorative: boolean;
 };
 
+type PublicDistributionArticleRow = {
+  id: string;
+  title: string;
+  summary: string;
+  slug: string;
+  publishedAt: Date | null;
+  updatedAt: Date;
+  categoryId: string | null;
+  categoryName: string | null;
+  categorySlug: string | null;
+};
+
 export class SearchUnavailableError extends Error {
   constructor(cause?: unknown) {
     super("public search unavailable", { cause });
@@ -128,6 +140,44 @@ export async function hydratePublicCards(tx: Pick<Database, "select">, rows: Pub
           decorative: row.coverDecorative,
         },
       } : {}),
+    };
+  });
+}
+
+export async function hydratePublicDistributionArticles(
+  tx: Pick<Database, "select">,
+  articles: PublicDistributionArticleRow[],
+) {
+  if (articles.length === 0) return [];
+
+  const tagsByArticle = new Map<string, Array<{ name: string; slug: string }>>();
+  const tagRows = await tx.select({
+    articleId: schema.articleTags.articleId,
+    id: schema.tags.id,
+    name: schema.tags.name,
+    slug: schema.tags.slug,
+  }).from(schema.articleTags)
+    .innerJoin(schema.tags, eq(schema.articleTags.tagId, schema.tags.id))
+    .where(inArray(schema.articleTags.articleId, articles.map((article) => article.id)))
+    .orderBy(schema.articleTags.articleId, schema.tags.name, schema.tags.id);
+  for (const tag of tagRows) {
+    const articleTags = tagsByArticle.get(tag.articleId) ?? [];
+    articleTags.push({ name: tag.name, slug: tag.slug });
+    tagsByArticle.set(tag.articleId, articleTags);
+  }
+
+  return articles.map((article) => {
+    if (!article.publishedAt) throw new Error("public predicate returned an article without publication time");
+    return {
+      title: article.title,
+      summary: article.summary,
+      slug: article.slug,
+      publishedAt: article.publishedAt.toISOString(),
+      updatedAt: article.updatedAt.toISOString(),
+      category: article.categoryId && article.categoryName && article.categorySlug
+        ? { name: article.categoryName, slug: article.categorySlug }
+        : null,
+      tags: tagsByArticle.get(article.id) ?? [],
     };
   });
 }
@@ -400,25 +450,7 @@ export function createPublicRepository(db: Database) {
         .limit(1))[0] ?? null;
 
       return publicDistributionSchema.parse({
-        articles: await Promise.all(articles.map(async (article) => {
-          if (!article.publishedAt) throw new Error("public predicate returned an article without publication time");
-          const articleTags = await tx.select({ name: schema.tags.name, slug: schema.tags.slug })
-            .from(schema.articleTags)
-            .innerJoin(schema.tags, eq(schema.articleTags.tagId, schema.tags.id))
-            .where(eq(schema.articleTags.articleId, article.id))
-            .orderBy(schema.tags.name, schema.tags.id);
-          return {
-            title: article.title,
-            summary: article.summary,
-            slug: article.slug,
-            publishedAt: article.publishedAt.toISOString(),
-            updatedAt: article.updatedAt.toISOString(),
-            category: article.categoryId && article.categoryName && article.categorySlug
-              ? { name: article.categoryName, slug: article.categorySlug }
-              : null,
-            tags: articleTags,
-          };
-        })),
+        articles: await hydratePublicDistributionArticles(tx, articles),
         categories,
         tags,
         about: about && { title: about.title, updatedAt: about.updatedAt.toISOString() },

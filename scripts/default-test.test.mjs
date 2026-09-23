@@ -35,7 +35,7 @@ test("default coordinator freezes exact literal Contracts, API and Web child arg
     },
     {
       id: "api",
-      argv: ["--import", "tsx", "--test", "--test-reporter=tap", "apps/api/test/markdown-renderer.test.ts", "apps/api/test/security-hardening.test.ts", "apps/api/test/public-view-security.test.ts"],
+      argv: ["--import", "tsx", "--test", "--test-reporter=tap", "apps/api/test/markdown-renderer.test.ts", "apps/api/test/public-distribution-unit.test.ts", "apps/api/test/security-hardening.test.ts", "apps/api/test/public-view-security.test.ts"],
     },
     {
       id: "web",
@@ -161,5 +161,5 @@ test("root and API scripts expose exact default and integration authorities", as
   const apiPackage = JSON.parse(await readFile(new URL("../apps/api/package.json", import.meta.url), "utf8"));
   assert.equal(rootPackage.scripts.test, "node scripts/default-test.mjs");
   assert.equal(rootPackage.scripts["test:integration"], "node scripts/local-delivery-acceptance.mjs");
-  assert.equal(apiPackage.scripts.test, "tsx --test --test-reporter=tap test/markdown-renderer.test.ts test/security-hardening.test.ts");
+  assert.equal(apiPackage.scripts.test, "tsx --test --test-reporter=tap test/markdown-renderer.test.ts test/public-distribution-unit.test.ts test/security-hardening.test.ts");
 });
