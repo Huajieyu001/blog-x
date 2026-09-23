@@ -126,7 +126,7 @@ export default function ArticleRevisionHistory({
         ? "恢复请求超时，服务器可能已完成恢复；请刷新确认后再重试。"
         : error instanceof Error && error.message === "stale"
           ? "文章已被其他保存更新，请刷新后重新选择历史版本。"
-          : "恢复失败，当前内容未被更改。请稍后重试。");
+          : "网络中断或响应异常，恢复结果未知；请刷新确认后再重试。");
       closeRestoreDialog();
     } finally {
       setRestoring(false);

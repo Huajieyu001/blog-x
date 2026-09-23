@@ -74,7 +74,7 @@ export default function DeletedPostList({ initial }: { initial: DeletedPost[] })
     } catch (error) {
       setMessage(isFetchDeadlineExceeded(error)
         ? "恢复请求超时，服务器可能已完成恢复；请刷新确认后再重试。"
-        : "恢复失败，请重试。");
+        : "网络中断或响应异常，恢复结果未知；请刷新确认后再重试。");
       closeRestoreDialog();
     } finally {
       setPending(false);
