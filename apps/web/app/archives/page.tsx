@@ -1,9 +1,15 @@
 import Link from "next/link";
-import { getArchives } from "../lib/api";
+import { defaultSiteSettings } from "@blog-x/contracts";
+import { getArchives, getPublicSiteSettings } from "../lib/api";
 import { pageMetadata } from "../lib/site-metadata";
 import styles from "../public.module.css";
 export const dynamic = "force-dynamic";
-export const metadata = pageMetadata({ title: "归档", description: "按时间浏览已发布文章。", path: "/archives" });
+
+export async function generateMetadata() {
+  const result = await getPublicSiteSettings();
+  const site = result.kind === "ok" ? result.data : defaultSiteSettings;
+  return pageMetadata({ title: "归档", description: "按时间浏览已发布文章。", path: "/archives", site });
+}
 
 export default async function ArchivesPage() {
   const result = await getArchives();

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { buildBlogPosting, escapeXml, pageMetadata, publicOrigin, publicUrl, renderRss, resolveCanonicalPage, serializeJsonLd } from "./site-metadata";
 
@@ -181,4 +182,13 @@ test("BlogPosting serialization is inert raw script text and round-trips all pub
   assert.match(raw, /\\u2028/);
   assert.match(raw, /\\u2029/);
   assert.deepEqual(JSON.parse(raw), posting);
+});
+
+test("top-level discovery metadata uses validated public site identity", () => {
+  for (const path of ["../page.tsx", "../categories/page.tsx", "../tags/page.tsx", "../archives/page.tsx"]) {
+    const source = readFileSync(new URL(path, import.meta.url), "utf8");
+    assert.match(source, /getPublicSiteSettings/, `${path} should load public site settings`);
+    assert.match(source, /defaultSiteSettings/, `${path} should retain the contract fallback`);
+    assert.match(source, /pageMetadata\(\{[\s\S]*?\bsite\s*[,}]/, `${path} should pass site identity to metadata`);
+  }
 });

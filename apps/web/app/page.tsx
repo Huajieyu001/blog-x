@@ -32,6 +32,7 @@ export async function generateMetadata({ searchParams }: HomePageProps) {
     description: site.description,
     path: canonical.canonical ? new URL(canonical.canonical).pathname + new URL(canonical.canonical).search : "/",
     index: canonical.index,
+    site,
   });
 }
 

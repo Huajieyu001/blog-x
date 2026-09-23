@@ -1,10 +1,16 @@
 import Link from "next/link";
-import { getPublicTaxonomy } from "../lib/api";
+import { defaultSiteSettings } from "@blog-x/contracts";
+import { getPublicSiteSettings, getPublicTaxonomy } from "../lib/api";
 import { pageMetadata } from "../lib/site-metadata";
 import styles from "../public.module.css";
 
 export const dynamic = "force-dynamic";
-export const metadata = pageMetadata({ title: "分类", description: "浏览公开文章分类。", path: "/categories" });
+
+export async function generateMetadata() {
+  const result = await getPublicSiteSettings();
+  const site = result.kind === "ok" ? result.data : defaultSiteSettings;
+  return pageMetadata({ title: "分类", description: "浏览公开文章分类。", path: "/categories", site });
+}
 
 export default async function CategoriesPage() {
   const result = await getPublicTaxonomy("categories");
