@@ -89,3 +89,30 @@ test("remaining administrator and authentication requests use the shared deadlin
     assert.doesNotMatch(source, /\bfetch\(/, `${path} should not bypass fetchWithDeadline`);
   }
 });
+
+test("public view beacon uses the shared default deadline without changing anonymous delivery semantics", () => {
+  const source = readFileSync(
+    new URL("../posts/[slug]/ViewBeacon.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    source,
+    /import \{ fetchWithDeadline \} from "\.\.\/\.\.\/lib\/client-fetch";/,
+  );
+  assert.match(source, /\bfetchWithDeadline\(/);
+  assert.doesNotMatch(source, /\bfetch\(/);
+  assert.ok(
+    source.indexOf("sentSlugs.current.add(slug);") < source.indexOf("fetchWithDeadline("),
+    "the slug must be recorded before dispatch",
+  );
+  assert.match(source, /method: "POST"/);
+  assert.match(source, /headers: \{ "content-type": "application\/json" \}/);
+  assert.match(source, /body: "\{\}"/);
+  assert.match(source, /credentials: "omit"/);
+  assert.match(source, /cache: "no-store"/);
+  assert.match(source, /keepalive: true/);
+  assert.match(source, /\}\)\.catch\(\(\) => undefined\);/);
+  assert.match(source, /\}, \[slug\]\);/);
+  assert.match(source, /return null;/);
+});
