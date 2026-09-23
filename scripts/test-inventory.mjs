@@ -17,6 +17,7 @@ const entries = [
   { path: "apps/web/app/layout.test.mjs", kind: "web-unit", scope: "default", fixtureOwner: null },
   { path: "apps/web/app/lib/admin-analytics.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
   { path: "apps/web/app/lib/admin-content-results.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
+  { path: "apps/web/app/lib/api-timeout.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
   { path: "apps/web/app/lib/search-discovery.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
   { path: "apps/web/app/lib/site-metadata.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
   { path: "apps/web/lib/search-encoding.test.ts", kind: "web-unit", scope: "default", fixtureOwner: null },
