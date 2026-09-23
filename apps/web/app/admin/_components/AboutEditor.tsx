@@ -8,6 +8,7 @@ import {
 } from "@blog-x/contracts";
 import { useEffect, useState } from "react";
 import ArticleBody from "../../_components/ArticleBody";
+import { fetchWithDeadline, isFetchDeadlineExceeded } from "../../lib/client-fetch";
 import styles from "../admin.module.css";
 
 type AboutAction = "save" | "preview" | "publish";
@@ -81,7 +82,7 @@ export default function AboutEditor({ initial }: { initial: AdminAbout | null })
     setPending(action);
     setMessage(actionCopy[action].pending);
     try {
-      const response = await fetch(`/api/admin/about${path}`, {
+      const response = await fetchWithDeadline(`/api/admin/about${path}`, {
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
@@ -116,8 +117,12 @@ export default function AboutEditor({ initial }: { initial: AdminAbout | null })
       setVersion(page.data.version);
       setPublished(page.data.status === "published");
       setMessage(path === "/publish" ? "关于页已发布。" : "草稿已保存。");
-    } catch {
-      setMessage(actionCopy[action].failed);
+    } catch (error) {
+      setMessage(isFetchDeadlineExceeded(error)
+        ? path === "/preview"
+          ? "预览请求超时，请稍后重试。"
+          : "请求超时，服务器可能已完成操作；请先刷新确认后再重试。"
+        : actionCopy[action].failed);
     } finally {
       setPending(null);
     }

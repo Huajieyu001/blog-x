@@ -12,6 +12,7 @@ import {
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { fetchWithDeadline, isFetchDeadlineExceeded } from "../../lib/client-fetch";
 import styles from "../admin.module.css";
 import ArticleActions from "./ArticleActions";
 import MediaPanel from "./MediaPanel";
@@ -334,7 +335,7 @@ export default function ArticleEditor({
     const timer = window.setTimeout(async () => {
       setPreviewMessage("预览中…");
       try {
-        const response = await fetch("/api/admin/posts/preview", {
+        const response = await fetchWithDeadline("/api/admin/posts/preview", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ markdown: fields.markdown }),
@@ -350,7 +351,7 @@ export default function ArticleEditor({
         }
       } catch (error) {
         if (controller.signal.aborted) return;
-        if (sequence === previewSequence.current) setPreviewMessage(error instanceof Error ? "预览暂时不可用" : "预览失败");
+        if (sequence === previewSequence.current) setPreviewMessage(isFetchDeadlineExceeded(error) ? "预览请求超时，请稍后重试" : error instanceof Error ? "预览暂时不可用" : "预览失败");
       }
     }, 300);
     return () => {
@@ -427,7 +428,7 @@ export default function ArticleEditor({
           slugChangeConfirmation: { articleId: currentPost.id, currentSlug: currentPost.slug, version: currentPost.version },
         } : {}),
       } : parsed.data;
-      const response = await fetch(postId ? `/api/admin/posts/${postId}` : "/api/admin/posts", {
+      const response = await fetchWithDeadline(postId ? `/api/admin/posts/${postId}` : "/api/admin/posts", {
         method: postId ? "PUT" : "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
@@ -492,8 +493,10 @@ export default function ArticleEditor({
         // it only after a successful existing-post save, preserving local edits.
         router.refresh();
       }
-    } catch {
-      setMessage("网络异常，草稿内容仍保留在编辑器中");
+    } catch (error) {
+      setMessage(isFetchDeadlineExceeded(error)
+        ? "请求超时，服务器可能已完成保存；请先刷新确认后再重试"
+        : "网络异常，草稿内容仍保留在编辑器中");
     } finally {
       saveInFlight.current = false;
       setSaving(false);

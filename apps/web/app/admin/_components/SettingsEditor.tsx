@@ -2,6 +2,7 @@
 
 import { adminSiteSettingsSchema, defaultSiteSettings, siteSettingsInputSchema, siteSettingsLimits, type AdminSiteSettings } from "@blog-x/contracts";
 import { useEffect, useRef, useState } from "react";
+import { fetchWithDeadline, isFetchDeadlineExceeded } from "../../lib/client-fetch";
 import styles from "../admin.module.css";
 
 type Field = "name" | "description" | "publicInfo";
@@ -71,13 +72,13 @@ export default function SettingsEditor({ initial }: { initial: AdminSiteSettings
     }
     setPending(true); setMessage("正在保存…");
     try {
-      const response = await fetch("/api/admin/site-settings", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify(parsed.data) });
+      const response = await fetchWithDeadline("/api/admin/site-settings", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify(parsed.data) });
       if (response.status === 409) { setMessage("设置已在其他位置更新，请刷新页面后再提交。"); return; }
       if (!response.ok) { setMessage("站点设置保存失败，请重试。"); return; }
       const settings = adminSiteSettingsSchema.safeParse(await response.json().catch(() => null));
       if (!settings.success) { setMessage("服务器返回了无法识别的设置，请重试。"); return; }
       setName(settings.data.name); setDescription(settings.data.description); setPublicInfo(settings.data.publicInfo); setVersion(settings.data.version); setSaved(snapshot(settings.data.name, settings.data.description, settings.data.publicInfo)); setFieldErrors({}); setMessage("站点设置已保存。");
-    } catch { setMessage("站点设置保存失败，请重试。"); }
+    } catch (error) { setMessage(isFetchDeadlineExceeded(error) ? "请求超时，服务器可能已完成保存；请先刷新确认后再重试。" : "站点设置保存失败，请重试。"); }
     finally { setPending(false); }
   }
   return <main className={styles.workspace} aria-busy={pending}>

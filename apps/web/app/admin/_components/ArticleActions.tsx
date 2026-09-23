@@ -2,6 +2,7 @@
 
 import { adminPostSchema, deletedArticleSchema, type AdminPost, type ArticleAction } from "@blog-x/contracts";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { fetchWithDeadline, isFetchDeadlineExceeded } from "../../lib/client-fetch";
 import {
   CHINA_TIMEZONE_OFFSET_MINUTES,
   formatTimezoneOffset,
@@ -24,6 +25,8 @@ const actionLabels: Record<ArticleAction, string> = {
   republish: "重新发布",
   delete: "删除",
 };
+
+const ambiguousMutationTimeoutMessage = "请求超时，服务器可能已完成操作；请先刷新确认后再重试";
 
 function formatShanghai(instant: string) {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -131,7 +134,7 @@ export default function ArticleActions({
     setActionPending(action);
     setMessage(`${actionLabels[action]}中…`);
     try {
-      const response = await fetch(`/api/admin/posts/${post.id}/${action}`, {
+      const response = await fetchWithDeadline(`/api/admin/posts/${post.id}/${action}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: "{}",
@@ -156,8 +159,8 @@ export default function ArticleActions({
       applyPost(parsed.data);
       setMessage(`${actionLabels[action]}成功`);
       onChanged?.(parsed.data);
-    } catch {
-      setMessage("网络异常，请重试");
+    } catch (error) {
+      setMessage(isFetchDeadlineExceeded(error) ? ambiguousMutationTimeoutMessage : "网络异常，请重试");
     } finally {
       setActionPending(null);
     }
@@ -180,7 +183,7 @@ export default function ArticleActions({
       const form = new FormData(event.currentTarget);
       const body = new URLSearchParams();
       form.forEach((value, key) => { if (typeof value === "string") body.append(key, value); });
-      const response = await fetch(`/api/admin/posts/${post.id}/schedule`, {
+      const response = await fetchWithDeadline(`/api/admin/posts/${post.id}/schedule`, {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
         body,
@@ -192,8 +195,8 @@ export default function ArticleActions({
         return;
       }
       changedFromResponse(bodyJson, post.scheduledAt ? "改期预约成功" : "已设定预约");
-    } catch {
-      setMessage("网络异常，请重试");
+    } catch (error) {
+      setMessage(isFetchDeadlineExceeded(error) ? ambiguousMutationTimeoutMessage : "网络异常，请重试");
     } finally {
       setSchedulePending(false);
     }
@@ -205,7 +208,7 @@ export default function ArticleActions({
     setSchedulePending(true);
     setMessage("取消预约中…");
     try {
-      const response = await fetch(`/api/admin/posts/${post.id}/schedule/cancel`, {
+      const response = await fetchWithDeadline(`/api/admin/posts/${post.id}/schedule/cancel`, {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
         body: "",
@@ -217,8 +220,8 @@ export default function ArticleActions({
         return;
       }
       changedFromResponse(body, "已取消预约发布");
-    } catch {
-      setMessage("网络异常，请重试");
+    } catch (error) {
+      setMessage(isFetchDeadlineExceeded(error) ? ambiguousMutationTimeoutMessage : "网络异常，请重试");
     } finally {
       setSchedulePending(false);
     }
