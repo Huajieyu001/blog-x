@@ -7,6 +7,7 @@ import {
   type ArticleRevisionSummary,
 } from "@blog-x/contracts";
 import { useEffect, useRef, useState } from "react";
+import { fetchWithDeadline, isFetchDeadlineExceeded } from "../../lib/client-fetch";
 import styles from "../admin.module.css";
 
 type DetailState =
@@ -94,7 +95,7 @@ export default function ArticleRevisionHistory({
   async function inspect(revision: ArticleRevisionSummary) {
     setDetail({ kind: "loading", id: revision.id });
     try {
-      const response = await fetch(`/api/admin/posts/${encodeURIComponent(article.id)}/revisions/${encodeURIComponent(revision.id)}`, {
+      const response = await fetchWithDeadline(`/api/admin/posts/${encodeURIComponent(article.id)}/revisions/${encodeURIComponent(revision.id)}`, {
         cache: "no-store",
         credentials: "same-origin",
       });
@@ -110,7 +111,7 @@ export default function ArticleRevisionHistory({
     setRestoring(true);
     setRestoreError(null);
     try {
-      const response = await fetch(`/api/admin/posts/${encodeURIComponent(article.id)}/revisions/${encodeURIComponent(revisionId)}/restore`, {
+      const response = await fetchWithDeadline(`/api/admin/posts/${encodeURIComponent(article.id)}/revisions/${encodeURIComponent(revisionId)}/restore`, {
         method: "POST",
         cache: "no-store",
         credentials: "same-origin",
@@ -121,9 +122,11 @@ export default function ArticleRevisionHistory({
       if (!response.ok) throw new Error("restore_failed");
       window.location.reload();
     } catch (error) {
-      setRestoreError(error instanceof Error && error.message === "stale"
-        ? "文章已被其他保存更新，请刷新后重新选择历史版本。"
-        : "恢复失败，当前内容未被更改。请稍后重试。");
+      setRestoreError(isFetchDeadlineExceeded(error)
+        ? "恢复请求超时，服务器可能已完成恢复；请刷新确认后再重试。"
+        : error instanceof Error && error.message === "stale"
+          ? "文章已被其他保存更新，请刷新后重新选择历史版本。"
+          : "恢复失败，当前内容未被更改。请稍后重试。");
       closeRestoreDialog();
     } finally {
       setRestoring(false);

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { fetchWithDeadline, isFetchDeadlineExceeded } from "./client-fetch";
@@ -67,4 +68,24 @@ test("a timed-out request cannot abort a concurrent sibling", async (context) =>
   assert.notEqual(signals[0], signals[1]);
   assert.equal(signals[0].aborted, true);
   assert.equal(signals[1].aborted, false);
+});
+
+test("remaining administrator and authentication requests use the shared deadline helper", () => {
+  const paths = [
+    "../login/page.tsx",
+    "../TracerAdmin.tsx",
+    "../admin/LogoutButton.tsx",
+    "../admin/security/page.tsx",
+    "../admin/_components/TaxonomyManager.tsx",
+    "../admin/_components/DeletedPostList.tsx",
+    "../admin/_components/MediaPanel.tsx",
+    "../admin/_components/MediaLibrary.tsx",
+    "../admin/_components/ArticleRevisionHistory.tsx",
+  ];
+
+  for (const path of paths) {
+    const source = readFileSync(new URL(path, import.meta.url), "utf8");
+    assert.match(source, /\bfetchWithDeadline\(/, `${path} should call fetchWithDeadline`);
+    assert.doesNotMatch(source, /\bfetch\(/, `${path} should not bypass fetchWithDeadline`);
+  }
 });

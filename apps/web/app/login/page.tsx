@@ -3,6 +3,7 @@
 import { loginInputSchema, loginResponseSchema } from "@blog-x/contracts";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import { fetchWithDeadline, isFetchDeadlineExceeded } from "../lib/client-fetch";
 import styles from "./login.module.css";
 
 type LoginError = { message: string; credentials: boolean } | null;
@@ -31,7 +32,7 @@ export default function LoginPage() {
     setPending(true);
     setError(null);
     try {
-      const response = await fetch("/api/auth/login", {
+      const response = await fetchWithDeadline("/api/auth/login", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(parsed.data),
@@ -51,8 +52,10 @@ export default function LoginPage() {
       }
       router.replace("/admin");
       router.refresh();
-    } catch {
-      showError("暂时无法连接登录服务，请检查网络后重试。");
+    } catch (error) {
+      showError(isFetchDeadlineExceeded(error)
+        ? "登录请求超时，服务器可能已完成登录；请刷新页面确认后再重试。"
+        : "暂时无法连接登录服务，请检查网络后重试。");
     } finally {
       pendingRef.current = false;
       setPending(false);

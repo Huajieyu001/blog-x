@@ -2,6 +2,7 @@
 
 import { taxonomyInputSchema, taxonomyTermSchema } from "@blog-x/contracts";
 import { useRef, useState } from "react";
+import { fetchWithDeadline, isFetchDeadlineExceeded } from "../../lib/client-fetch";
 import styles from "../admin.module.css";
 
 type Term = { id: string; name: string; slug: string; articleCount: number };
@@ -39,7 +40,7 @@ export default function TaxonomyManager({ kind, initialTerms }: { kind: "categor
     setBusy("form");
     setStatus(editing ? `正在更新${label}…` : `正在创建${label}…`);
     try {
-      const response = await fetch(`/api/admin/${kind}${editing ? `/${editing.id}` : ""}`, {
+      const response = await fetchWithDeadline(`/api/admin/${kind}${editing ? `/${editing.id}` : ""}`, {
         method: editing ? "PUT" : "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
@@ -61,8 +62,10 @@ export default function TaxonomyManager({ kind, initialTerms }: { kind: "categor
       setInvalid(false);
       setFormKey((key) => key + 1);
       if (wasEditing) restoreFocus();
-    } catch {
-      setStatus("网络异常，未保存任何更改，请重试。");
+    } catch (error) {
+      setStatus(isFetchDeadlineExceeded(error)
+        ? "保存请求超时，服务器可能已完成操作；请刷新确认后再重试。"
+        : "网络异常，未保存任何更改，请重试。");
     } finally {
       setBusy(null);
     }
@@ -75,7 +78,7 @@ export default function TaxonomyManager({ kind, initialTerms }: { kind: "categor
     setBusy(term.id);
     setStatus(`正在删除${label}“${term.name}”…`);
     try {
-      const response = await fetch(`/api/admin/${kind}/${term.id}`, { method: "DELETE", credentials: "same-origin" });
+      const response = await fetchWithDeadline(`/api/admin/${kind}/${term.id}`, { method: "DELETE", credentials: "same-origin" });
       if (response.status === 409) {
         setStatus("请先移除或重新分配关联文章，才能删除。");
         return;
@@ -88,8 +91,10 @@ export default function TaxonomyManager({ kind, initialTerms }: { kind: "categor
       setConfirmingDelete(null);
       setStatus(`${label}已删除。`);
       restoreFocus(nextFocusId);
-    } catch {
-      setStatus("网络异常，内容没有删除，请重试。");
+    } catch (error) {
+      setStatus(isFetchDeadlineExceeded(error)
+        ? "删除请求超时，服务器可能已完成操作；请刷新确认后再重试。"
+        : "网络异常，内容没有删除，请重试。");
     } finally {
       setBusy(null);
     }

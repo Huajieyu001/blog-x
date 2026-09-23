@@ -2,6 +2,7 @@
 
 import { mediaUploadResponseSchema, type MediaReference } from "@blog-x/contracts";
 import { useMemo, useRef, useState } from "react";
+import { fetchWithDeadline, isFetchDeadlineExceeded } from "../../lib/client-fetch";
 import styles from "../admin.module.css";
 import MediaLibrary from "./MediaLibrary";
 
@@ -76,7 +77,7 @@ export default function MediaPanel({
       form.append("alt", decorative ? "" : alt.trim());
       form.append("decorative", String(decorative));
       form.append("file", selectedFile);
-      const response = await fetch("/api/admin/media", { method: "POST", body: form, credentials: "same-origin" });
+      const response = await fetchWithDeadline("/api/admin/media", { method: "POST", body: form, credentials: "same-origin" });
       const body = await response.json().catch(() => null);
       if (selectionVersionRef.current !== selectionVersion) return;
       if (!response.ok) {
@@ -95,10 +96,12 @@ export default function MediaPanel({
       if (!parsed.success) throw new Error("invalid media response");
       setUploaded(parsed.data);
       announce("图片已上传，可插入文章或设为封面。", "success", true);
-    } catch {
+    } catch (error) {
       if (selectionVersionRef.current === selectionVersion) {
         setUploadFailed(true);
-        announce("图片暂时无法处理，所选文件仍然保留，可直接重试。", "error", true);
+        announce(isFetchDeadlineExceeded(error)
+          ? "上传请求超时，服务器可能已保存图片；请先刷新媒体库确认，所选文件仍然保留。"
+          : "图片暂时无法处理，所选文件仍然保留，可直接重试。", "error", true);
       }
     } finally {
       pendingRef.current = false;

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { restoredArticleSchema, type DeletedPost } from "@blog-x/contracts";
+import { fetchWithDeadline, isFetchDeadlineExceeded } from "../../lib/client-fetch";
 import styles from "../admin.module.css";
 
 export default function DeletedPostList({ initial }: { initial: DeletedPost[] }) {
@@ -58,7 +59,7 @@ export default function DeletedPostList({ initial }: { initial: DeletedPost[] })
     setPending(true);
     setMessage("");
     try {
-      const response = await fetch(`/api/admin/posts/${confirming.id}/restore`, {
+      const response = await fetchWithDeadline(`/api/admin/posts/${confirming.id}/restore`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "same-origin",
@@ -70,8 +71,10 @@ export default function DeletedPostList({ initial }: { initial: DeletedPost[] })
       setRestored({ id: confirming.id, title: confirming.title });
       setMessage("文章已恢复为草稿，仍未公开。");
       setConfirming(null);
-    } catch {
-      setMessage("恢复失败，请重试。");
+    } catch (error) {
+      setMessage(isFetchDeadlineExceeded(error)
+        ? "恢复请求超时，服务器可能已完成恢复；请刷新确认后再重试。"
+        : "恢复失败，请重试。");
       closeRestoreDialog();
     } finally {
       setPending(false);
