@@ -1035,6 +1035,20 @@ test("boundary audit rejects database/media ownership, forbidden public origins,
   assert.equal(issues.some((issue) => issue.path === "scripts/ops/fixtures/tls-public-certificate.pem" && issue.code === "tracked_secret_file"), false);
 });
 
+test("boundary audit keeps Web runtime ownership strict while excluding colocated Node tests", async (context) => {
+  const fixtureRoot = await mkdtemp(join(tmpdir(), "blog-x-boundary-test-authority-"));
+  context.after(async () => { await rm(fixtureRoot, { recursive: true, force: true }); });
+  await mkdir(join(fixtureRoot, "apps/web/app/lib"), { recursive: true });
+  const runtimePath = "apps/web/app/lib/runtime.ts";
+  const testPath = "apps/web/app/lib/runtime.test.ts";
+  await writeFile(join(fixtureRoot, runtimePath), 'import { readFileSync } from "node:fs"; export const value = readFileSync("runtime");\n');
+  await writeFile(join(fixtureRoot, testPath), 'import { readFileSync } from "node:fs"; export const value = readFileSync("fixture");\n');
+
+  const issues = await auditFiles(fixtureRoot, [runtimePath, testPath]);
+  assert.equal(issues.some((issue) => issue.path === runtimePath && issue.code === "web_filesystem_ownership"), true);
+  assert.equal(issues.some((issue) => issue.path === testPath && issue.code === "web_filesystem_ownership"), false);
+});
+
 test("release artifact audit rejects automatic remote capability, tracked READY, public data planes, address leakage, and false live claims", async (context) => {
   const fixtureRoot = await mkdtemp(join(tmpdir(), "blog-x-release-boundary-"));
   context.after(async () => { await rm(fixtureRoot, { recursive: true, force: true }); });

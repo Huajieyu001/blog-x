@@ -171,7 +171,8 @@ function auditTopologyPolicy(path, content, issues) {
 }
 
 function webRuntimeSurface(path) {
-  return path === "apps/web/next.config.ts" || path.startsWith("apps/web/app/");
+  const testOnly = /\.(?:test|spec)\.(?:[cm]?[jt]sx?)$/.test(path);
+  return !testOnly && (path === "apps/web/next.config.ts" || path.startsWith("apps/web/app/"));
 }
 
 function issue(code, path, message) {
