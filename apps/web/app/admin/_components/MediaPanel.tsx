@@ -101,10 +101,10 @@ export default function MediaPanel({
       announce("图片已上传，可插入文章或设为封面。", "success", true);
     } catch (error) {
       if (selectionVersionRef.current === selectionVersion) {
-        setUploadFailed(true);
+        setUploadFailed(false);
         announce(isFetchDeadlineExceeded(error)
           ? "上传请求超时，服务器可能已保存图片；请先刷新媒体库确认，所选文件仍然保留。"
-          : "图片暂时无法处理，所选文件仍然保留，可直接重试。", "error", true);
+          : "网络中断或响应异常，上传结果未知；请先刷新媒体库确认，所选文件仍然保留。", "error", true);
       }
     } finally {
       pendingRef.current = false;

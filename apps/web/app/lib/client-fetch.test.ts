@@ -112,7 +112,9 @@ test("media upload recognizes sanitized retryable service failures", () => {
   assert.match(panel, /媒体服务暂时不可用，所选文件仍然保留，可直接重试。/);
   assert.match(panel, /图片未上传：文件格式或大小不符合要求，请重新选择。/);
   assert.match(panel, /上传请求超时，服务器可能已保存图片；请先刷新媒体库确认，所选文件仍然保留。/);
+  assert.match(panel, /网络中断或响应异常，上传结果未知；请先刷新媒体库确认，所选文件仍然保留。/);
   assert.match(panel, /setUploadFailed\(response\.status !== 400 && response\.status !== 413\)/);
+  assert.match(panel, /catch \(error\) \{[\s\S]*?setUploadFailed\(false\);[\s\S]*?上传结果未知/);
 });
 
 test("administrator mutation transport failures remain localized and outcome-honest", () => {
