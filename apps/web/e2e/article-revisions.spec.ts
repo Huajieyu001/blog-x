@@ -71,7 +71,7 @@ test("administrator compares and restores a bounded article history without rend
   });
   await restoreButton.click();
   await restoreConfirm.click();
-  await expect(page.getByTestId("article-revision-history").getByRole("alert")).toHaveText("恢复失败，当前内容未被更改。请稍后重试。");
+  await expect(page.getByTestId("article-revision-history").getByRole("alert")).toHaveText("网络中断或响应异常，恢复结果未知；请刷新确认后再重试。");
   await expect(restoreButton).toBeFocused();
   await page.unroute("**/api/admin/posts/*/revisions/*/restore");
   let releaseRestore: (() => void) | undefined;

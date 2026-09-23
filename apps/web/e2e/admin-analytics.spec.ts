@@ -410,7 +410,7 @@ test("administrator shell is private, responsive, compact, and theme-aware", asy
   await page.setViewportSize({ width: 390, height: 900 });
   for (const [path, heading, controlName] of routes) {
     await page.goto(`${webOrigin}${path}`);
-    await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+    await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     const control = page.getByRole("link", { name: controlName }).first();
     const target = await control.boundingBox();

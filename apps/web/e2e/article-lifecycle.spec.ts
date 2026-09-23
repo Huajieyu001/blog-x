@@ -150,7 +150,7 @@ test("draft completes publish, edit, slug confirmation, unpublish, republish, an
   });
   await restoreButton.click();
   await restoreConfirm.click();
-  await expect(trash.getByRole("status")).toHaveText("恢复失败，请重试。");
+  await expect(trash.getByRole("status")).toHaveText("网络中断或响应异常，恢复结果未知；请刷新确认后再重试。");
   await expect(trash).toContainText(editedTitle);
   await expect(restoreButton).toBeFocused();
   await page.unroute("**/api/admin/posts/*/restore");
