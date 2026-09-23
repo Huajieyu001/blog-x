@@ -104,6 +104,17 @@ test("media catalogue cancels stale loads without changing timeout recovery or i
   assert.match(panel, /<img src=\{media\.url\} width=\{media\.width\} height=\{media\.height\} alt=\{media\.decorative \? "" : media\.alt\} loading="lazy" decoding="async" \/>/);
 });
 
+test("media upload recognizes sanitized retryable service failures", () => {
+  const panel = readFileSync(new URL("../admin/_components/MediaPanel.tsx", import.meta.url), "utf8");
+
+  assert.match(panel, /mediaUnavailableResponseSchema/);
+  assert.match(panel, /response\.status === 503 && mediaUnavailableResponseSchema\.safeParse\(body\)\.success/);
+  assert.match(panel, /媒体服务暂时不可用，所选文件仍然保留，可直接重试。/);
+  assert.match(panel, /图片未上传：文件格式或大小不符合要求，请重新选择。/);
+  assert.match(panel, /上传请求超时，服务器可能已保存图片；请先刷新媒体库确认，所选文件仍然保留。/);
+  assert.match(panel, /setUploadFailed\(response\.status !== 400 && response\.status !== 413\)/);
+});
+
 test("public view beacon uses the shared default deadline without changing anonymous delivery semantics", () => {
   const source = readFileSync(
     new URL("../posts/[slug]/ViewBeacon.tsx", import.meta.url),

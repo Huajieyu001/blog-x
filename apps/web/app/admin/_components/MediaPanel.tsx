@@ -1,6 +1,6 @@
 "use client";
 
-import { mediaUploadResponseSchema, type MediaReference } from "@blog-x/contracts";
+import { mediaUnavailableResponseSchema, mediaUploadResponseSchema, type MediaReference } from "@blog-x/contracts";
 import { useMemo, useRef, useState } from "react";
 import { fetchWithDeadline, isFetchDeadlineExceeded } from "../../lib/client-fetch";
 import styles from "../admin.module.css";
@@ -81,13 +81,16 @@ export default function MediaPanel({
       const body = await response.json().catch(() => null);
       if (selectionVersionRef.current !== selectionVersion) return;
       if (!response.ok) {
+        const unavailable = response.status === 503 && mediaUnavailableResponseSchema.safeParse(body).success;
         const message = response.status === 400 || response.status === 413
           ? "图片未上传：文件格式或大小不符合要求，请重新选择。"
           : response.status === 401
             ? "登录状态已失效，请重新登录后再上传。"
             : response.status === 429
               ? "上传请求过于频繁，请稍后重试。"
-              : "图片暂时无法处理，所选文件仍然保留，可直接重试。";
+              : unavailable
+                ? "媒体服务暂时不可用，所选文件仍然保留，可直接重试。"
+                : "图片暂时无法处理，所选文件仍然保留，可直接重试。";
         setUploadFailed(response.status !== 400 && response.status !== 413);
         announce(message, "error", true);
         return;
