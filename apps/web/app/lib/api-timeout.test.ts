@@ -50,3 +50,23 @@ test("hung public, administrator, and session reads keep their opaque failure re
   assert.deepEqual(await getAdminPostsResult("cookie"), { kind: "upstream_error" });
   assert.equal(await getSessionStatus("cookie"), null);
 });
+
+test("a timed-out internal read cannot abort a concurrent sibling", async (context) => {
+  const signals: AbortSignal[] = [];
+  context.after(installFetch(async (input, init) => {
+    assert.ok(init?.signal instanceof AbortSignal);
+    signals.push(init.signal);
+    return String(input).endsWith("/slow")
+      ? waitForAbort(init.signal)
+      : new Response(null, { status: 204 });
+  }));
+
+  const slow = internalApiFetch("/slow", {}, 5);
+  const fast = internalApiFetch("/fast", {}, 100);
+  await assert.rejects(slow);
+  assert.equal((await fast).status, 204);
+  assert.equal(signals.length, 2);
+  assert.notEqual(signals[0], signals[1]);
+  assert.equal(signals[0].aborted, true);
+  assert.equal(signals[1].aborted, false);
+});

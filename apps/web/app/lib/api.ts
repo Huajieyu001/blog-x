@@ -85,7 +85,7 @@ export async function getSessionStatus(cookieHeader: string): Promise<SessionSta
 
 export async function getAdminAboutResult(cookieHeader: string): Promise<AdminOptionalResult<AdminAbout>> {
   try {
-    const response = await fetch(`${internalApiOrigin}/admin/about`, { cache: "no-store", headers: cookieHeader ? { cookie: cookieHeader } : undefined });
+    const response = await internalApiFetch("/admin/about", { cache: "no-store", headers: cookieHeader ? { cookie: cookieHeader } : undefined });
     if (response.status === 404) return { kind: "not_found" };
     if (!response.ok) return { kind: "upstream_error" };
     const parsed = adminAboutSchema.safeParse(await response.json());
@@ -109,7 +109,7 @@ function redirectLocation(location: string | null) {
 
 const cachedPublicPost = cache(async (slug: string): Promise<PublicPostResult> => {
   try {
-    const response = await fetch(`${internalApiOrigin}/public/articles/${encodeURIComponent(slug)}`, { cache: "no-store", redirect: "manual" });
+    const response = await internalApiFetch(`/public/articles/${encodeURIComponent(slug)}`, { cache: "no-store", redirect: "manual" });
     if (response.status === 308) {
       const location = redirectLocation(response.headers.get("location"));
       return location ? { kind: "redirect", location } : { kind: "upstream_error" };
@@ -134,7 +134,7 @@ export function getPublicSiteSettings(): Promise<PublicResult<PublicSiteSettings
 
 export async function getAdminSiteSettingsResult(cookieHeader: string): Promise<AdminOptionalResult<AdminSiteSettings>> {
   try {
-    const response = await fetch(`${internalApiOrigin}/admin/site-settings`, { cache: "no-store", headers: cookieHeader ? { cookie: cookieHeader } : undefined });
+    const response = await internalApiFetch("/admin/site-settings", { cache: "no-store", headers: cookieHeader ? { cookie: cookieHeader } : undefined });
     if (response.status === 404) return { kind: "not_found" };
     if (!response.ok) return { kind: "upstream_error" };
     const parsed = adminSiteSettingsSchema.safeParse(await response.json());
@@ -146,7 +146,7 @@ export function getArchives() { return getPublic("/public/archives", archiveSche
 
 export async function getAdminPostResult(id: string, cookieHeader: string): Promise<AdminOptionalResult<AdminPost>> {
   try {
-    const response = await fetch(`${internalApiOrigin}/admin/posts/${encodeURIComponent(id)}`, {
+    const response = await internalApiFetch(`/admin/posts/${encodeURIComponent(id)}`, {
       cache: "no-store",
       headers: cookieHeader ? { cookie: cookieHeader } : undefined,
     });
@@ -161,7 +161,7 @@ export async function getAdminPostResult(id: string, cookieHeader: string): Prom
 
 export async function getAdminRevisionListResult(id: string, cookieHeader: string): Promise<AdminResult<ArticleRevisionSummary[]>> {
   try {
-    const response = await fetch(`${internalApiOrigin}/admin/posts/${encodeURIComponent(id)}/revisions`, {
+    const response = await internalApiFetch(`/admin/posts/${encodeURIComponent(id)}/revisions`, {
       cache: "no-store",
       headers: cookieHeader ? { cookie: cookieHeader } : undefined,
     });
@@ -175,7 +175,7 @@ export async function getAdminRevisionListResult(id: string, cookieHeader: strin
 
 export async function getAdminPosts(cookieHeader: string): Promise<AdminPost[]> {
   try {
-    const response = await fetch(`${internalApiOrigin}/admin/posts`, {
+    const response = await internalApiFetch("/admin/posts", {
       cache: "no-store",
       headers: cookieHeader ? { cookie: cookieHeader } : undefined,
     });
@@ -203,7 +203,7 @@ export async function getAdminPostsResult(cookieHeader: string): Promise<AdminRe
 
 export async function getAdminDeletedPostsResult(cookieHeader: string): Promise<AdminResult<DeletedPost[]>> {
   try {
-    const response = await fetch(`${internalApiOrigin}/admin/deleted-posts`, { cache: "no-store", headers: cookieHeader ? { cookie: cookieHeader } : undefined });
+    const response = await internalApiFetch("/admin/deleted-posts", { cache: "no-store", headers: cookieHeader ? { cookie: cookieHeader } : undefined });
     if (!response.ok) return { kind: "upstream_error" };
     const parsed = deletedPostListSchema.safeParse(await response.json());
     return parsed.success ? { kind: "ok", data: parsed.data } : { kind: "upstream_error" };
@@ -217,7 +217,7 @@ export async function getAdminAnalytics(
 ): Promise<AdminResult<AdminAnalytics>> {
   const query = new URLSearchParams({ range: String(range), limit: String(limit) });
   try {
-    const response = await fetch(`${internalApiOrigin}/admin/analytics?${query.toString()}`, {
+    const response = await internalApiFetch(`/admin/analytics?${query.toString()}`, {
       cache: "no-store",
       headers: cookieHeader ? { cookie: cookieHeader } : undefined,
     });
@@ -233,7 +233,7 @@ export async function getAdminAuditEventsResult(cookieHeader: string, cursor?: s
   try {
     const search = new URLSearchParams({ limit: "25" });
     if (cursor) search.set("cursor", cursor);
-    const response = await fetch(`${internalApiOrigin}/admin/audit-events?${search.toString()}`, {
+    const response = await internalApiFetch(`/admin/audit-events?${search.toString()}`, {
       cache: "no-store",
       headers: cookieHeader ? { cookie: cookieHeader } : undefined,
     });
@@ -250,7 +250,7 @@ export async function getAdminTaxonomyResult(
   cookieHeader: string,
 ): Promise<AdminResult<TaxonomyTerm[]>> {
   try {
-    const response = await fetch(`${internalApiOrigin}/admin/${kind}`, {
+    const response = await internalApiFetch(`/admin/${kind}`, {
       cache: "no-store",
       headers: cookieHeader ? { cookie: cookieHeader } : undefined,
     });

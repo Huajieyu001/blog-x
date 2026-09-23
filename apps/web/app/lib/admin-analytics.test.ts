@@ -58,10 +58,11 @@ test("admin post and analytics helpers forward only the server cookie, use no-st
 
   assert.deepEqual(await getAdminPostsResult("blog_x_session=secret"), { kind: "ok", data: [post] });
   assert.deepEqual(await getAdminAnalytics("blog_x_session=secret", 30, 1), { kind: "ok", data: analytics });
-  assert.deepEqual(requests, [
-    { url: "http://127.0.0.1:3001/admin/posts", init: { cache: "no-store", headers: { cookie: "blog_x_session=secret" } } },
-    { url: "http://127.0.0.1:3001/admin/analytics?range=30&limit=1", init: { cache: "no-store", headers: { cookie: "blog_x_session=secret" } } },
+  assert.deepEqual(requests.map(({ url, init }) => ({ url, cache: init?.cache, headers: init?.headers })), [
+    { url: "http://127.0.0.1:3001/admin/posts", cache: "no-store", headers: { cookie: "blog_x_session=secret" } },
+    { url: "http://127.0.0.1:3001/admin/analytics?range=30&limit=1", cache: "no-store", headers: { cookie: "blog_x_session=secret" } },
   ]);
+  for (const request of requests) assert.ok(request.init?.signal instanceof AbortSignal);
 });
 
 test("admin helpers distinguish non-2xx, network, malformed JSON, and invalid complete analytics contracts from valid empty data", async (context) => {
