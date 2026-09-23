@@ -121,6 +121,8 @@ test("administrator mutation transport failures remain localized and outcome-hon
   const articleActions = readFileSync(new URL("../admin/_components/ArticleActions.tsx", import.meta.url), "utf8");
   const revisions = readFileSync(new URL("../admin/_components/ArticleRevisionHistory.tsx", import.meta.url), "utf8");
   const trash = readFileSync(new URL("../admin/_components/DeletedPostList.tsx", import.meta.url), "utf8");
+  const about = readFileSync(new URL("../admin/_components/AboutEditor.tsx", import.meta.url), "utf8");
+  const settings = readFileSync(new URL("../admin/_components/SettingsEditor.tsx", import.meta.url), "utf8");
 
   assert.match(taxonomy, /网络中断，保存结果未知；请刷新确认后再重试。/);
   assert.match(taxonomy, /网络中断，删除结果未知；请刷新确认后再重试。/);
@@ -139,6 +141,13 @@ test("administrator mutation transport failures remain localized and outcome-hon
   }
   assert.doesNotMatch(revisions, /当前内容未被更改/);
   assert.match(revisions, /文章已被其他保存更新，请刷新后重新选择历史版本。/);
+  assert.match(about, /const ambiguousMutationResultMessage = "网络中断或响应异常，操作结果未知；请先刷新确认后再重试。";/);
+  assert.equal((about.match(/invalid: ambiguousMutationResultMessage/g) ?? []).length, 2);
+  assert.match(about, /path === "\/preview"[\s\S]*?actionCopy\.preview\.failed[\s\S]*?: ambiguousMutationResultMessage\);/);
+  assert.match(about, /内容已在其他位置更新，请刷新页面后再提交。/);
+  assert.match(settings, /const ambiguousSettingsResultMessage = "网络中断或响应异常，保存结果未知；请先刷新确认后再重试。";/);
+  assert.equal((settings.match(/\bambiguousSettingsResultMessage\b/g) ?? []).length, 3);
+  assert.match(settings, /设置已在其他位置更新，请刷新页面后再提交。/);
 });
 
 test("public view beacon uses the shared default deadline without changing anonymous delivery semantics", () => {

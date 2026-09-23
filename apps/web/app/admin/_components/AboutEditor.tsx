@@ -13,10 +13,12 @@ import styles from "../admin.module.css";
 
 type AboutAction = "save" | "preview" | "publish";
 
+const ambiguousMutationResultMessage = "网络中断或响应异常，操作结果未知；请先刷新确认后再重试。";
+
 const actionCopy: Record<AboutAction, { pending: string; failed: string; invalid: string }> = {
-  save: { pending: "正在保存…", failed: "草稿保存失败，请重试。", invalid: "服务器返回了无法识别的草稿，请重试。" },
+  save: { pending: "正在保存…", failed: "草稿保存失败，请重试。", invalid: ambiguousMutationResultMessage },
   preview: { pending: "正在生成预览…", failed: "预览生成失败，请重试。", invalid: "服务器返回了无法识别的预览，请重试。" },
-  publish: { pending: "正在发布…", failed: "关于页发布失败，请重试。", invalid: "服务器返回了无法识别的发布结果，请重试。" },
+  publish: { pending: "正在发布…", failed: "关于页发布失败，请重试。", invalid: ambiguousMutationResultMessage },
 };
 
 function aboutSnapshot(title: string, markdown: string) {
@@ -122,7 +124,9 @@ export default function AboutEditor({ initial }: { initial: AdminAbout | null })
         ? path === "/preview"
           ? "预览请求超时，请稍后重试。"
           : "请求超时，服务器可能已完成操作；请先刷新确认后再重试。"
-        : actionCopy[action].failed);
+        : path === "/preview"
+          ? actionCopy.preview.failed
+          : ambiguousMutationResultMessage);
     } finally {
       setPending(null);
     }
