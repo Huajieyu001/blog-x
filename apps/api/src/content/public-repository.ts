@@ -381,17 +381,19 @@ export function createPublicRepository(db: Database) {
       return redirect ? { kind: "redirect" as const, location: publicArticleRedirectResponseSchema.parse({ location: `/public/articles/${redirect.slug}` }).location } : null;
     }
     if (!article.publishedAt || article.status !== "published") throw new Error("public predicate returned a non-public article");
-    const tags = await db.select({ name: schema.tags.name, slug: schema.tags.slug })
+    const tagsPromise = db.select({ name: schema.tags.name, slug: schema.tags.slug })
       .from(schema.articleTags)
       .innerJoin(schema.tags, eq(schema.articleTags.tagId, schema.tags.id))
       .where(eq(schema.articleTags.articleId, article.id))
       .orderBy(schema.tags.name);
-    const cover = article.coverMediaId ? (await db.select({
+    const coverPromise = article.coverMediaId ? db.select({
       id: schema.media.id,
       width: schema.media.width,
       height: schema.media.height,
       mimeType: schema.media.derivativeMimeType,
-    }).from(schema.media).where(eq(schema.media.id, article.coverMediaId)).limit(1))[0] : null;
+    }).from(schema.media).where(eq(schema.media.id, article.coverMediaId)).limit(1) : Promise.resolve([]);
+    const [tags, coverRows] = await Promise.all([tagsPromise, coverPromise]);
+    const cover = coverRows[0] ?? null;
     return { kind: "article" as const, article: {
       title: article.title,
       summary: article.summary,
