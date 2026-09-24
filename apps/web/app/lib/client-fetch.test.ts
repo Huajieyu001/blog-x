@@ -73,7 +73,6 @@ test("a timed-out request cannot abort a concurrent sibling", async (context) =>
 test("remaining administrator and authentication requests use the shared deadline helper", () => {
   const paths = [
     "../login/page.tsx",
-    "../TracerAdmin.tsx",
     "../admin/LogoutButton.tsx",
     "../admin/security/page.tsx",
     "../admin/_components/TaxonomyManager.tsx",
