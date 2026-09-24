@@ -129,6 +129,32 @@ test("authenticated admin routes expose a visible first-focus skip path at deskt
   await page.setViewportSize({ width: 1280, height: 900 });
 });
 
+test("login recovers an authenticated session when the successful response is lost", async ({ page }) => {
+  await page.goto(`${webOrigin}/login`);
+  await page.evaluate(() => {
+    const nativeFetch = window.fetch.bind(window);
+    let loseLoginResponse = true;
+    window.fetch = async (...args) => {
+      const response = await nativeFetch(...args);
+      const target = typeof args[0] === "string" ? args[0] : args[0] instanceof Request ? args[0].url : args[0].toString();
+      if (loseLoginResponse && new URL(target, window.location.href).pathname === "/api/auth/login") {
+        loseLoginResponse = false;
+        throw new TypeError("simulated lost login response");
+      }
+      return response;
+    };
+  });
+
+  await page.getByLabel("用户名").fill(username);
+  await page.getByLabel("密码").fill(password);
+  await page.getByRole("button", { name: "登录" }).click();
+
+  await expect(page).toHaveURL(`${webOrigin}/admin`);
+  await expect(page.getByRole("heading", { name: "文章管理" })).toBeVisible();
+  await page.getByRole("button", { name: "退出登录" }).click();
+  await expect(page).toHaveURL(`${webOrigin}/login`);
+});
+
 test("password change requires a fresh sign-in and restores the generated fixture credential", async ({ page, context }) => {
   const replacementPassword = `temporary-password-${runId}-change`;
   let passwordChanged = false;

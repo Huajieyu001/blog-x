@@ -1,12 +1,27 @@
 "use client";
 
-import { loginInputSchema, loginResponseSchema } from "@blog-x/contracts";
+import { loginInputSchema, loginResponseSchema, sessionStatusSchema } from "@blog-x/contracts";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { fetchWithDeadline, isFetchDeadlineExceeded } from "../lib/client-fetch";
 import styles from "./login.module.css";
 
 type LoginError = { message: string; credentials: boolean } | null;
+type SessionRecovery = "authenticated" | "unauthenticated" | "unknown";
+
+async function recoverLoginSession(): Promise<SessionRecovery> {
+  try {
+    const response = await fetchWithDeadline("/api/auth/session", {
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    if (response.status === 401) return "unauthenticated";
+    const body = await response.json().catch(() => null);
+    return response.ok && sessionStatusSchema.safeParse(body).success ? "authenticated" : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,6 +33,11 @@ export default function LoginPage() {
   function showError(message: string, credentials = false) {
     setError({ message, credentials });
     window.requestAnimationFrame(() => errorRef.current?.focus());
+  }
+
+  function enterAdmin() {
+    router.replace("/admin");
+    router.refresh();
   }
 
   async function submit(form: FormData) {
@@ -47,15 +67,21 @@ export default function LoginPage() {
         return;
       }
       if (!loginResponseSchema.safeParse(body).success) {
-        showError("登录服务返回了无法识别的结果，请稍后重试。");
+        const recovery = await recoverLoginSession();
+        if (recovery === "authenticated") enterAdmin();
+        else showError(recovery === "unauthenticated"
+          ? "登录服务返回了无法识别的结果，请稍后重试。"
+          : "登录结果暂时无法确认，请刷新页面确认后再重试。");
         return;
       }
-      router.replace("/admin");
-      router.refresh();
+      enterAdmin();
     } catch (error) {
-      showError(isFetchDeadlineExceeded(error)
-        ? "登录请求超时，服务器可能已完成登录；请刷新页面确认后再重试。"
+      const recovery = await recoverLoginSession();
+      if (recovery === "authenticated") enterAdmin();
+      else if (recovery === "unauthenticated") showError(isFetchDeadlineExceeded(error)
+        ? "登录请求超时且尚未建立会话，请稍后重试。"
         : "暂时无法连接登录服务，请检查网络后重试。");
+      else showError("登录结果暂时无法确认，请刷新页面确认后再重试。");
     } finally {
       pendingRef.current = false;
       setPending(false);
