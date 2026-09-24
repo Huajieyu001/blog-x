@@ -78,14 +78,20 @@ async function discoverCandidates(run) {
   if (typeof run !== "function") fail("Docker image retention discovery is invalid");
   const labeled = new Set(stdoutLines(await run("docker", ["image", "ls", "--quiet", "--no-trunc", "--filter", `label=${LOCAL_DELIVERY_IMAGE_LABEL}`])).map(immutableImageId));
   const dangling = new Set(stdoutLines(await run("docker", ["image", "ls", "--quiet", "--no-trunc", "--filter", "dangling=true"])).map(immutableImageId));
-  const listed = [...new Set([...labeled, ...dangling])].sort();
+  const all = new Set(stdoutLines(await run("docker", ["image", "ls", "--all", "--quiet", "--no-trunc"])).map(immutableImageId));
+  if ([...labeled, ...dangling].some((id) => !all.has(id))) fail("Docker image retention discovery is invalid");
   const images = [];
-  for (const id of listed) {
+  const parentImageIds = [];
+  for (const id of [...all].sort()) {
     const fact = parsedSingleObject(await run("docker", ["image", "inspect", id]));
+    const parent = fact.Parent ?? "";
+    if (fact.Id !== id || typeof parent !== "string" || parent && !imageIdPattern.test(parent)) fail("Docker image retention discovery is invalid");
+    if (parent) parentImageIds.push(parent);
+    if (!labeled.has(id) && !dangling.has(id)) continue;
     const exactLabel = fact.Config?.Labels?.["io.blog-x.refresh-kind"] === LOCAL_DELIVERY_REFRESH_KIND;
     const hasNoRepositoryReference = [fact.RepoTags, fact.RepoDigests].every((value) => value == null || Array.isArray(value) && value.length === 0);
     const exactDanglingRefresh = dangling.has(id) && hasNoRepositoryReference && fact.Config?.WorkingDir === BLOG_X_REFRESH_WORKDIR;
-    if (fact.Id !== id || labeled.has(id) && !exactLabel || !Number.isSafeInteger(fact.Size) || fact.Size < 0) fail("Docker image retention discovery is invalid");
+    if (labeled.has(id) && !exactLabel || !Number.isSafeInteger(fact.Size) || fact.Size < 0) fail("Docker image retention discovery is invalid");
     if (!exactLabel && !exactDanglingRefresh) continue;
     images.push({ id, size: fact.Size });
   }
@@ -95,7 +101,7 @@ async function discoverCandidates(run) {
     const fact = parsedSingleObject(await run("docker", ["container", "inspect", id]));
     referencedImageIds.push(immutableImageId(fact.Image));
   }
-  return selectRetentionCandidates({ images, referencedImageIds });
+  return selectRetentionCandidates({ images, referencedImageIds: [...referencedImageIds, ...parentImageIds] });
 }
 
 async function defaultRun(command, args) {
@@ -118,7 +124,9 @@ export async function runDockerImageRetentionCli({ argv = [], run = defaultRun, 
   try {
     const candidates = await discoverCandidates(run);
     const report = buildDockerImageRetentionReport({ mode, candidates });
-    if (mode === "apply" && candidates.length > 0) await run("docker", ["image", "rm", ...report.candidateImageIds]);
+    if (mode === "apply") {
+      for (const id of report.candidateImageIds) await run("docker", ["image", "rm", id]);
+    }
     writeReport(output, report);
     return report;
   } catch {

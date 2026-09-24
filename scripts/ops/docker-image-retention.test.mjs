@@ -9,16 +9,18 @@ const imageId = (character) => `sha256:${character.repeat(64)}`;
 const containerId = (character) => character.repeat(64);
 
 function image(id, size, label = "v1.1-offline-local-delivery", extra = {}) {
-  return { Id: id, Size: size, RepoTags: [], RepoDigests: [], Config: { Labels: { "io.blog-x.refresh-kind": label } }, ...extra };
+  return { Id: id, Parent: "", Size: size, RepoTags: [], RepoDigests: [], Config: { Labels: { "io.blog-x.refresh-kind": label } }, ...extra };
 }
 
-function runner({ listed = [], dangling = [], images = {}, containers = [], references = {}, removeError } = {}) {
+function runner({ listed = [], dangling = [], all, images = {}, containers = [], references = {}, removeError } = {}) {
   const calls = [];
+  const allImages = all ?? [...new Set([...listed, ...dangling])];
   const run = async (command, args) => {
     calls.push({ command, args: [...args] });
     if (command !== "docker") throw new Error("unexpected command");
     if (args.join(" ") === `image ls --quiet --no-trunc --filter label=${LOCAL_DELIVERY_IMAGE_LABEL}`) return { stdout: listed.map((id) => `${id}\n`).join("") };
     if (args.join(" ") === "image ls --quiet --no-trunc --filter dangling=true") return { stdout: dangling.map((id) => `${id}\n`).join("") };
+    if (args.join(" ") === "image ls --all --quiet --no-trunc") return { stdout: allImages.map((id) => `${id}\n`).join("") };
     if (args[0] === "image" && args[1] === "inspect") return { stdout: JSON.stringify([images[args[2]]]) };
     if (args.join(" ") === "container ls --all --quiet --no-trunc") return { stdout: containers.map((id) => `${id}\n`).join("") };
     if (args[0] === "container" && args[1] === "inspect") return { stdout: JSON.stringify([{ Image: references[args[2]] }]) };
@@ -53,6 +55,26 @@ test("dry run is deterministic, sanitized, and excludes duplicate or container-r
   assert.equal(fixture.calls.filter(({ args }) => args[0] === "image" && args[1] === "inspect").length, 2);
 });
 
+test("protects every candidate that remains an ancestor of another local image", async () => {
+  const ancestor = imageId("5");
+  const leaf = imageId("6");
+  const child = imageId("7");
+  const root = imageId("8");
+  const fixture = runner({
+    listed: [ancestor, leaf],
+    all: [child, leaf, ancestor, root],
+    images: {
+      [ancestor]: image(ancestor, 23),
+      [leaf]: image(leaf, 29),
+      [child]: image(child, 31, "other", { Parent: ancestor, Config: { Labels: {}, WorkingDir: "/other" } }),
+      [root]: { ...image(root, 37, "other", { Config: { Labels: {}, WorkingDir: "/" } }), Parent: undefined },
+    },
+  });
+  const report = await runDockerImageRetentionCli({ argv: [], run: fixture.run, output: { write() {} } });
+  assert.deepEqual(report.candidateImageIds, [leaf]);
+  assert.equal(report.reclaimableBytes, "29");
+});
+
 test("includes exact Blog X dangling refresh images but excludes unrelated dangling images", async () => {
   const refresh = imageId("1");
   const unrelated = imageId("2");
@@ -75,13 +97,14 @@ test("includes exact Blog X dangling refresh images but excludes unrelated dangl
 
 test("apply recomputes candidates and removes only immutable unused IDs without force", async () => {
   const removable = imageId("e");
-  const fixture = runner({ listed: [removable], images: { [removable]: image(removable, 5) } });
+  const second = imageId("9");
+  const fixture = runner({ listed: [removable, second], images: { [removable]: image(removable, 5), [second]: image(second, 7) } });
   const output = [];
   const report = await runDockerImageRetentionCli({ argv: ["--apply"], run: fixture.run, output: { write: (line) => output.push(line) } });
   assert.equal(report.mode, "apply");
-  const removal = fixture.calls.find(({ args }) => args[0] === "image" && args[1] === "rm");
-  assert.deepEqual(removal.args, ["image", "rm", removable]);
-  assert.equal(removal.args.some((value) => /force|prune|container|volume|network|cache/i.test(value)), false);
+  const removals = fixture.calls.filter(({ args }) => args[0] === "image" && args[1] === "rm");
+  assert.deepEqual(removals.map(({ args }) => args), [["image", "rm", second], ["image", "rm", removable]]);
+  assert.equal(removals.some(({ args }) => args.some((value) => /force|prune|container|volume|network|cache/i.test(value))), false);
   assert.deepEqual(JSON.parse(output.join("")), report);
 
   const empty = runner();
