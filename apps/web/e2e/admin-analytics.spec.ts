@@ -24,6 +24,15 @@ async function login(page: Page) {
   await expect(page).toHaveURL(`${webOrigin}/admin`);
 }
 
+async function gotoAuthenticatedAdmin(page: Page, path: string) {
+  const target = `${webOrigin}${path}`;
+  await page.goto(target);
+  if (page.url() === `${webOrigin}/login`) {
+    await login(page);
+    await page.goto(target);
+  }
+}
+
 test("administrator analytics uses same-origin SSR navigation with strict ranges and permanent privacy copy", async ({ page }) => {
   await login(page);
   await page.getByRole("link", { name: "查看完整统计 →" }).click();
@@ -409,7 +418,9 @@ test("administrator shell is private, responsive, compact, and theme-aware", asy
   ] as const;
   await page.setViewportSize({ width: 390, height: 900 });
   for (const [path, heading, controlName] of routes) {
-    await page.goto(`${webOrigin}${path}`);
+    // Session lifetime has its own dedicated acceptance suite. Keep this
+    // responsive-shell journey focused by recovering one incidental redirect.
+    await gotoAuthenticatedAdmin(page, path);
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     const control = page.getByRole("link", { name: controlName }).first();
