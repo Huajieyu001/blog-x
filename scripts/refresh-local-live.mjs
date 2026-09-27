@@ -26,15 +26,22 @@ function fail(message) { throw new Error(`local refresh: ${message}`); }
 function nativeProductionRun(command, args, options = {}) {
   const env = buildMinimalChildEnvironment(process.env, options.env ?? {});
   return new Promise((resolvePromise, reject) => {
+    const longAcceptance = command === "node" && args.length === 1 && args[0] === "scripts/local-delivery-acceptance.mjs";
     const child = spawn(command, args, { cwd: productionRoot, env, stdio: [options.input ? "pipe" : "ignore", "pipe", "pipe"] });
+    const heartbeat = longAcceptance ? setInterval(() => {
+      process.stdout.write("LOCAL DELIVERY ACCEPTANCE RUNNING\n");
+    }, 20_000) : undefined;
+    heartbeat?.unref();
+    const stopHeartbeat = () => { if (heartbeat) clearInterval(heartbeat); };
     let stdout = ""; let stderr = "";
     child.stdout.on("data", (chunk) => { stdout += chunk; });
     child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.once("error", () => reject(new Error("production child spawn failed")));
+    child.once("error", () => { stopHeartbeat(); reject(new Error("production child spawn failed")); });
     child.once("close", (code) => {
+      stopHeartbeat();
       if (code === 0) return resolvePromise({ stdout, stderr });
       const failure = new Error("production child failed");
-      if (command === "node" && args.length === 1 && args[0] === "scripts/local-delivery-acceptance.mjs") {
+      if (longAcceptance) {
         try {
           const typed = parseLocalDeliveryAcceptanceFailure(`${stdout}${stderr}`);
           Object.defineProperties(failure, {

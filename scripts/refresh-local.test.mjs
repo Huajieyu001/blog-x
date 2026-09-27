@@ -1270,6 +1270,9 @@ test("generated and Phase 7 typed failures persist distinct allowlisted secret-f
 test("failure report schema accepts only stable allowlisted classes and live runner preserves typed acceptance records", async () => {
   const liveSource = await readFile(join(process.cwd(), "scripts/refresh-local-live.mjs"), "utf8");
   assert.match(liveSource, /parseLocalDeliveryAcceptanceFailure/);
+  assert.match(liveSource, /longAcceptance[\s\S]*?setInterval[\s\S]*?LOCAL DELIVERY ACCEPTANCE RUNNING[\s\S]*?20_000/);
+  assert.match(liveSource, /heartbeat\?\.unref\(\)/);
+  assert.match(liveSource, /stopHeartbeat\(\);[\s\S]*?if \(code === 0\)/);
   assert.doesNotMatch(liveSource, /new Error\(`\$\{command\} failed/);
 
   const fixture = liveFixture();
