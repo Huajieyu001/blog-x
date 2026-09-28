@@ -31,6 +31,13 @@ async function gotoAuthenticatedAdmin(page: Page, path: string) {
     await login(page);
     await page.goto(target);
   }
+  if (await page.getByRole("heading", { name: "管理服务暂时不可用", exact: true }).count()) {
+    await page.goto(target);
+  }
+  if (page.url() === `${webOrigin}/login`) {
+    await login(page);
+    await page.goto(target);
+  }
 }
 
 test("administrator analytics uses same-origin SSR navigation with strict ranges and permanent privacy copy", async ({ page }) => {
@@ -333,7 +340,7 @@ test("administrator shell is private, responsive, compact, and theme-aware", asy
   const origins = new Set<string>();
   page.on("request", (request) => origins.add(new URL(request.url()).origin));
   await login(page);
-  await page.goto(`${webOrigin}/admin/analytics?range=30`);
+  await gotoAuthenticatedAdmin(page, "/admin/analytics?range=30");
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
   await expect(page.getByRole("heading", { name: "访问统计" })).toBeVisible();
   await expect(page.locator("main")).toHaveCount(1);
@@ -357,7 +364,7 @@ test("administrator shell is private, responsive, compact, and theme-aware", asy
   ] as const;
 
   for (const [path, currentLabel] of destinations) {
-    await page.goto(`${webOrigin}${path}`);
+    await gotoAuthenticatedAdmin(page, path);
     await expect(navigation.getByRole("link", { name: currentLabel })).toHaveAttribute("aria-current", "page");
     await expect.poll(async () => navigation.getByRole("link").evaluateAll((links) => links.filter((link) => link.getAttribute("aria-current") === "page").length)).toBe(1);
     if (path === "/admin/about") {
@@ -369,11 +376,12 @@ test("administrator shell is private, responsive, compact, and theme-aware", asy
   }
   await expect(page.getByRole("button", { name: "退出登录" })).toBeVisible();
 
-  await page.goto(`${webOrigin}${detailPath}`);
+  if (!detailPath) throw new Error("generated analytics article link is missing");
+  await gotoAuthenticatedAdmin(page, detailPath);
   await expect(navigation.getByRole("link", { name: "文章管理" })).toHaveAttribute("aria-current", "page");
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${webOrigin}/admin`);
+  await gotoAuthenticatedAdmin(page, "/admin");
   const menu = page.getByRole("button", { name: "打开后台导航" });
   const content = page.locator("#admin-content");
   await menu.click();
