@@ -46,6 +46,7 @@ export type PublicResult<T> = { kind: "ok"; data: T } | { kind: "not_found" } | 
 export type PublicPostResult = PublicResult<PublicPostDetail> | { kind: "redirect"; location: string };
 export type AdminResult<T> = { kind: "ok"; data: T } | { kind: "upstream_error" };
 export type AdminOptionalResult<T> = AdminResult<T> | { kind: "not_found" };
+export type SessionStatusResult = { kind: "ok"; data: SessionStatus } | { kind: "unauthorized" } | { kind: "upstream_error" };
 
 /** Bounded, per-request fetch for Web server reads from the internal API. */
 export function internalApiFetch(path: string, init: RequestInit = {}, timeoutMs = internalApiTimeoutMs): Promise<Response> {
@@ -69,17 +70,18 @@ async function getPublic<T>(path: string, schema: Parser<T>, allowNotFound = fal
   }
 }
 
-export async function getSessionStatus(cookieHeader: string): Promise<SessionStatus | null> {
+export async function getSessionStatus(cookieHeader: string): Promise<SessionStatusResult> {
   try {
     const response = await internalApiFetch("/auth/session", {
       cache: "no-store",
       headers: cookieHeader ? { cookie: cookieHeader } : undefined,
     });
-    if (!response.ok) return null;
+    if (response.status === 401) return { kind: "unauthorized" };
+    if (!response.ok) return { kind: "upstream_error" };
     const parsed = sessionStatusSchema.safeParse(await response.json());
-    return parsed.success ? parsed.data : null;
+    return parsed.success ? { kind: "ok", data: parsed.data } : { kind: "upstream_error" };
   } catch {
-    return null;
+    return { kind: "upstream_error" };
   }
 }
 

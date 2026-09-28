@@ -48,7 +48,22 @@ test("hung public, administrator, and session reads keep their opaque failure re
 
   assert.deepEqual(await getPublicPosts(1), { kind: "upstream_error" });
   assert.deepEqual(await getAdminPostsResult("cookie"), { kind: "upstream_error" });
-  assert.equal(await getSessionStatus("cookie"), null);
+  assert.deepEqual(await getSessionStatus("cookie"), { kind: "upstream_error" });
+});
+
+test("session reads distinguish expired credentials from unavailable or malformed upstreams", async (context) => {
+  const responses = [
+    new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 }),
+    new Response(JSON.stringify({ error: "unavailable" }), { status: 503 }),
+    new Response(JSON.stringify({ authenticated: false }), { status: 200 }),
+    new Response(JSON.stringify({ authenticated: true }), { status: 200 }),
+  ];
+  context.after(installFetch(async () => responses.shift()!));
+
+  assert.deepEqual(await getSessionStatus("expired"), { kind: "unauthorized" });
+  assert.deepEqual(await getSessionStatus("active"), { kind: "upstream_error" });
+  assert.deepEqual(await getSessionStatus("active"), { kind: "upstream_error" });
+  assert.deepEqual(await getSessionStatus("active"), { kind: "ok", data: { authenticated: true } });
 });
 
 test("a timed-out internal read cannot abort a concurrent sibling", async (context) => {
