@@ -58,3 +58,16 @@ test("tracked templates are secret-free and require service-owned configuration"
   assert.match(files[0], /KNOWN_HOSTS_PATH=\/etc\/blog-x\/ssh\/known_hosts/);
   assert.match(files[1], /-e BLOG_X_INGRESS_AUTH_SECRET="\$BLOG_X_INGRESS_AUTH_SECRET"/);
 });
+
+test("every primary Web creation path runs the same immutable non-root contract", async () => {
+  const [deploy, rollback, dockerfile] = await Promise.all([read("./deploy.sh"), read("./rollback.sh"), read("../../apps/web/Dockerfile")]);
+  const expected = /--user 1000:1000 --read-only --cap-drop=ALL --security-opt=no-new-privileges --tmpfs \/tmp:rw,noexec,nosuid,uid=1000,gid=1000,size=64m --tmpfs \/workspace\/apps\/web\/\.next\/cache:rw,nosuid,uid=1000,gid=1000,size=64m/g;
+  assert.equal([...deploy.matchAll(expected)].length, 2, "candidate and cutover must be identically restricted");
+  assert.match(rollback, expected);
+  assert.match(dockerfile, /^USER node$/m);
+  assert.match(dockerfile, /FROM node:24\.15\.0-alpine AS production-dependencies/);
+  assert.match(dockerfile, /pnpm --filter @blog-x\/web\.\.\. install --prod --frozen-lockfile/);
+  assert.match(dockerfile, /COPY --from=build --chown=1000:1000 \/workspace\/apps\/web\/\.next/);
+  const runtime = dockerfile.slice(dockerfile.lastIndexOf("FROM node:24.15.0-alpine\n"));
+  assert.doesNotMatch(runtime, /COPY apps\/web apps\/web/);
+});

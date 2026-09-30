@@ -19,7 +19,7 @@ systemctl stop blog-x-primary-web.service >/dev/null 2>&1 || true
 docker rm -f blog-x-web >/dev/null 2>&1 || true
 ln -sfn "$release" "$CURRENT.next"
 mv -Tf "$CURRENT.next" "$CURRENT"
-docker create --name blog-x-web --network host --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m --tmpfs /workspace/apps/web/.next/cache:rw,nosuid,size=64m \
+docker create --name blog-x-web --network host --user 1000:1000 --read-only --cap-drop=ALL --security-opt=no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,uid=1000,gid=1000,size=64m --tmpfs /workspace/apps/web/.next/cache:rw,nosuid,uid=1000,gid=1000,size=64m \
   -e NODE_ENV=production -e HOST=127.0.0.1 -e PORT=3100 -e PUBLIC_ORIGIN="$PUBLIC_ORIGIN" -e INTERNAL_API_ORIGIN=http://127.0.0.1:3001 \
   -e BLOG_X_INGRESS_AUTH_SECRET="$(sed -n 's/^BLOG_X_INGRESS_AUTH_SECRET=//p' "$CONFIG")" "$IMAGE"
 systemctl enable --now blog-x-primary-web.service
