@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 function requiredRunnerFact(name: string) {
   const value = process.env[name];
@@ -26,18 +26,58 @@ async function login(page: Page) {
 
 async function gotoAuthenticatedAdmin(page: Page, path: string) {
   const target = `${webOrigin}${path}`;
-  await page.goto(target);
-  if (page.url() === `${webOrigin}/login`) {
-    await login(page);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     await page.goto(target);
+    if (page.url() === `${webOrigin}/login`) {
+      await login(page);
+      await page.goto(target);
+    }
+    if (!await page.getByRole("heading", { name: "管理服务暂时不可用", exact: true }).count()) return;
+    if (attempt < 2) await page.waitForTimeout(250);
   }
-  if (await page.getByRole("heading", { name: "管理服务暂时不可用", exact: true }).count()) {
-    await page.goto(target);
+  throw new Error(`administrator session could not be confirmed for ${path}`);
+}
+
+async function expectShortSidebarLayout(page: Page, sidebar: Locator) {
+  const navigation = sidebar.getByRole("navigation", { name: "管理功能" });
+  await expect(navigation).toBeVisible();
+  const chrome = async () => sidebar.evaluate((element) => {
+    const identity = element.firstElementChild;
+    const footer = element.lastElementChild;
+    const nav = element.querySelector("nav");
+    const insideViewport = (candidate: Element | null) => {
+      if (!candidate) return false;
+      const { top, bottom } = candidate.getBoundingClientRect();
+      return top >= -1 && bottom <= window.innerHeight + 1;
+    };
+    return {
+      identityVisible: insideViewport(identity),
+      footerVisible: insideViewport(footer),
+      navigationCanScroll: (nav?.scrollHeight ?? 0) > (nav?.clientHeight ?? 0),
+      navigationScrollTop: nav?.scrollTop ?? 0,
+      sidebarScrollTop: element.scrollTop,
+    };
+  });
+
+  expect(await chrome()).toMatchObject({ identityVisible: true, footerVisible: true, navigationCanScroll: true, sidebarScrollTop: 0 });
+  await navigation.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await expect.poll(async () => (await chrome()).navigationScrollTop).toBeGreaterThan(0);
+
+  for (const label of ["工作台", "文章管理", "新建文章", "分类与标签", "关于页", "站点设置", "操作日志"]) {
+    const destination = navigation.getByRole("link", { name: label, exact: true });
+    await destination.scrollIntoViewIfNeeded();
+    await expect(destination).toBeVisible();
+    expect(await destination.evaluate((element) => {
+      const container = element.closest("nav");
+      if (!container) return false;
+      const target = element.getBoundingClientRect();
+      const bounds = container.getBoundingClientRect();
+      return target.top >= bounds.top && target.bottom <= bounds.bottom;
+    })).toBe(true);
   }
-  if (page.url() === `${webOrigin}/login`) {
-    await login(page);
-    await page.goto(target);
-  }
+
+  expect(await chrome()).toMatchObject({ identityVisible: true, footerVisible: true, sidebarScrollTop: 0 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 }
 
 test("administrator analytics uses same-origin SSR navigation with strict ranges and permanent privacy copy", async ({ page }) => {
@@ -351,6 +391,8 @@ test("administrator shell is private, responsive, compact, and theme-aware", asy
   const detailPath = await page.getByRole("link", { name: analyticsTitle }).getAttribute("href");
   expect(detailPath).toMatch(/^\/admin\/posts\//);
 
+  await page.setViewportSize({ width: 1280, height: 420 });
+  await expectShortSidebarLayout(page, navigation);
   await page.setViewportSize({ width: 1280, height: 900 });
 
   const destinations = [
@@ -380,18 +422,20 @@ test("administrator shell is private, responsive, compact, and theme-aware", asy
   await gotoAuthenticatedAdmin(page, detailPath);
   await expect(navigation.getByRole("link", { name: "文章管理" })).toHaveAttribute("aria-current", "page");
 
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 390, height: 420 });
   await gotoAuthenticatedAdmin(page, "/admin");
   const menu = page.getByRole("button", { name: "打开后台导航" });
   const content = page.locator("#admin-content");
   await menu.click();
   await expect(navigation.getByRole("link", { name: "工作台" })).toBeFocused();
   await expect(content).toHaveAttribute("inert", "");
+  await expectShortSidebarLayout(page, navigation);
   await page.keyboard.press("Shift+Tab");
   expect(await navigation.evaluate((element) => element.contains(document.activeElement))).toBe(true);
   await page.keyboard.press("Escape");
   await expect(menu).toBeFocused();
 
+  await page.setViewportSize({ width: 390, height: 844 });
   await menu.click();
   await page.getByRole("link", { name: "文章管理" }).click();
   await expect(page).toHaveURL(`${webOrigin}/admin#articles`);

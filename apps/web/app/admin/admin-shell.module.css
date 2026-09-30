@@ -33,20 +33,20 @@
   box-sizing: border-box;
   display: flex;
   height: 100vh;
-  min-height: 620px;
+  height: 100dvh;
+  min-height: 0;
   flex-direction: column;
   padding: 30px 20px 22px;
   color: #e9f1ed;
   background: #1d2925;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
 }
 
-.identity { display: grid; gap: 5px; padding: 0 10px 28px; border-bottom: 1px solid rgb(255 255 255 / 14%); }
+.identity { display: grid; flex: 0 0 auto; gap: 5px; padding: 0 10px 28px; border-bottom: 1px solid rgb(255 255 255 / 14%); }
 .brand { color: #fff; font: 600 1.6rem/1.1 ui-serif, Georgia, serif; letter-spacing: -.04em; text-decoration: none; }
 .identity > span { color: #9db0a8; font: 700 .65rem/1.4 ui-monospace, monospace; letter-spacing: .17em; }
 
-.navigation { display: grid; gap: 4px; padding: 22px 0; }
+.navigation { display: grid; min-height: 0; flex: 1 1 auto; gap: 4px; overflow-y: auto; overscroll-behavior-y: contain; padding: 22px 0; }
 .navigation a {
   display: grid;
   min-height: 46px;
@@ -64,7 +64,7 @@
 .navigation a[aria-current="page"] { color: #17201d; background: #c9e7dc; }
 .navigation a[aria-current="page"] > span { color: #46655a; }
 
-.sidebarFooter { display: grid; gap: 12px; margin-top: auto; padding: 18px 10px 0; border-top: 1px solid rgb(255 255 255 / 14%); }
+.sidebarFooter { display: grid; flex: 0 0 auto; gap: 12px; margin-top: 0; padding: 18px 10px 0; border-top: 1px solid rgb(255 255 255 / 14%); }
 .theme fieldset { display: grid; gap: 4px; }
 .theme fieldset legend { float: none; margin: 0; color: #9db0a8; line-height: 1.4; }
 .theme fieldset div { flex-wrap: wrap; }
@@ -90,7 +90,6 @@
     position: fixed;
     left: 0;
     width: min(320px, calc(100vw - 48px));
-    min-height: 100vh;
     visibility: hidden;
     transform: translateX(-102%);
     transition: transform 180ms ease, visibility 180ms;
