@@ -27,6 +27,9 @@ services:
   api:
     image: ${BLOG_X_API_IMAGE:-blog-x-api-local}
     pull_policy: never
+    # Local refresh images and existing development media volumes are root-owned.
+    # Production uses the image's unprivileged default through the secondary model.
+    user: "0:0"
     init: true
     restart: unless-stopped
     logging:

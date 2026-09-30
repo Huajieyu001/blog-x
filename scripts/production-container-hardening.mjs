@@ -88,6 +88,11 @@ function restrictedRun(name, image, extra = []) {
   return ["run", "-d", "--name", name, "--user", "1000:1000", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--tmpfs", "/tmp:rw,noexec,nosuid,uid=1000,gid=1000,size=64m", "--tmpfs", "/workspace/apps/web/.next/cache:rw,nosuid,uid=1000,gid=1000,size=64m", ...extra, image];
 }
 
+function restrictedApiRun(image, network, media, commandArgs = [], detachedName) {
+  const args = ["run", ...(detachedName ? ["-d", "--name", detachedName] : ["--rm"]), "--user", "1000:1000", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--tmpfs", "/tmp:rw,noexec,nosuid,uid=1000,gid=1000,size=64m", "--network", network, "--mount", `type=volume,src=${media},dst=/var/lib/blog-x/media`, "-e", "DATABASE_URL=postgres://blog_x@postgres:5432/blog_x", "-e", "PUBLIC_ORIGIN=http://hardening.test", "-e", "API_HOST=0.0.0.0", "-e", "API_PORT=3001", "-e", "TRUSTED_PROXY_CIDRS=0.0.0.0/0", "-e", "MEDIA_ROOT=/var/lib/blog-x/media", image, ...commandArgs];
+  return args;
+}
+
 async function startWebFixture(candidateContext) {
   await docker(["network", "create", "--label", `blog-x.hardening=${runId}`, names.network]);
   created.networks.add(names.network);
@@ -125,6 +130,40 @@ async function verifyWeb(candidateContext) {
   return { baselineBytes, candidateBytes };
 }
 
+async function verifyApi(candidateContext) {
+  const baselineContext = join(temporaryRoot, "baseline");
+  await build(baselineContext, "apps/api/Dockerfile", names.baselineApi, baselineRef);
+  await build(candidateContext, "apps/api/Dockerfile", names.candidateApi, "f".repeat(40));
+  const [baselineBytes, candidateBytes] = await Promise.all([inspectSize(names.baselineApi), inspectSize(names.candidateApi)]);
+  console.log(`api image bytes baseline=${baselineBytes} candidate=${candidateBytes}`);
+  assert.ok(candidateBytes < baselineBytes, `API candidate (${candidateBytes}) must be smaller than baseline (${baselineBytes})`);
+  await assertNoDirectDevDependencies(names.candidateApi, "apps/api/package.json");
+  await assertNoPaths(names.candidateApi, ["/workspace/apps/api/test", "/workspace/apps/api/dist", "/workspace/apps/api/tsconfig.json", "/workspace/apps/api/drizzle.config.ts", "/workspace/tsconfig.base.json"]);
+  assert.equal(await docker(["image", "inspect", "--format", "{{.Config.User}}", names.candidateApi]), "node");
+  await docker(["run", "--rm", "--user", "1000:1000", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--tmpfs", "/tmp:rw,noexec,nosuid,uid=1000,gid=1000,size=64m", "--entrypoint", "node", names.candidateApi, "-e", "process.exit(process.getuid()===1000&&process.getgid()===1000?0:1)"]);
+  await docker(["run", "--rm", "--user", "1000:1000", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--tmpfs", "/tmp:rw,noexec,nosuid,uid=1000,gid=1000,size=64m", "--entrypoint", "corepack", names.candidateApi, "pnpm", "--filter", "@blog-x/api", "exec", "tsx", "--version"]);
+  await docker(["network", "create", "--label", `blog-x.hardening=${runId}`, names.network]);
+  created.networks.add(names.network);
+  await docker(["volume", "create", "--label", `blog-x.hardening=${runId}`, names.media]);
+  created.volumes.add(names.media);
+  await docker(["run", "-d", "--name", names.postgres, "--network", names.network, "--network-alias", "postgres", "--label", `blog-x.hardening=${runId}`, "-e", "POSTGRES_DB=blog_x", "-e", "POSTGRES_USER=blog_x", "-e", "POSTGRES_HOST_AUTH_METHOD=trust", "postgres:18-alpine"]);
+  created.containers.add(names.postgres);
+  await waitFor(["exec", names.postgres, "pg_isready", "-U", "blog_x", "-d", "blog_x"], "isolated PostgreSQL");
+  const apiCommand = (script, ...scriptArgs) => ["corepack", "pnpm", "--filter", "@blog-x/api", script, ...scriptArgs];
+  await docker(restrictedApiRun(names.candidateApi, names.network, names.media, apiCommand("db:migrate")));
+  await docker(restrictedApiRun(names.candidateApi, names.network, names.media, apiCommand("db:schema:verify")));
+  const publish = await docker(restrictedApiRun(names.candidateApi, names.network, names.media, apiCommand("publish:due", "--limit=100")));
+  assert.match(publish, /"format":"blog-x-publish-due"/);
+  const retention = await docker(restrictedApiRun(names.candidateApi, names.network, names.media, apiCommand("retention", "--views-limit=100", "--sessions-limit=100")));
+  assert.match(retention, /"format":"blog-x-operational-retention"/);
+  await docker(restrictedApiRun(names.candidateApi, names.network, names.media, ["/bin/sh", "-ec", "printf hardening >/var/lib/blog-x/media/marker && test \"$(cat /var/lib/blog-x/media/marker)\" = hardening && tar -cf /tmp/media.tar -C /var/lib/blog-x/media marker && tar -tf /tmp/media.tar | grep -Fx marker"], undefined));
+  await docker(["exec", names.postgres, "/bin/sh", "-ec", "pg_dump -Fc -U blog_x -d blog_x >/tmp/blog-x-hardening.dump && pg_restore -l /tmp/blog-x-hardening.dump >/dev/null"]);
+  await docker(restrictedApiRun(names.candidateApi, names.network, names.media, [], names.api));
+  created.containers.add(names.api);
+  await waitFor(["exec", names.api, "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"], "hardened API");
+  return { baselineBytes, candidateBytes };
+}
+
 async function cleanup() {
   for (const name of created.containers) await docker(["rm", "-f", name]).catch(() => {});
   for (const name of created.networks) await docker(["network", "rm", name]).catch(() => {});
@@ -137,8 +176,12 @@ try {
   await archiveRevision(baselineRef, join(temporaryRoot, "baseline"));
   await archiveRevision("HEAD", join(temporaryRoot, "candidate"));
   if (scope === "web") await verifyWeb(join(temporaryRoot, "candidate"));
-  if (scope === "api") throw new Error("API hardening acceptance is not installed yet");
-  if (scope === "all") throw new Error("full hardening acceptance is not installed yet");
+  if (scope === "api") await verifyApi(join(temporaryRoot, "candidate"));
+  if (scope === "all") {
+    await verifyApi(join(temporaryRoot, "candidate"));
+    await cleanup();
+    await verifyWeb(join(temporaryRoot, "candidate"));
+  }
 } finally {
   await cleanup();
   await rm(temporaryRoot, { recursive: true, force: true });
