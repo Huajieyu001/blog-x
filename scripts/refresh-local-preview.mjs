@@ -27,7 +27,7 @@ export function createFastLocalPreviewPlan() {
     Object.freeze({ command: "docker-compose", args: Object.freeze([...composePrefix, "build", "api"]) }),
     Object.freeze({ command: "docker-compose", args: Object.freeze([...composePrefix, "build", "web"]) }),
     Object.freeze({ command: "docker-compose", args: Object.freeze([...composePrefix, "up", "-d", "--wait", "api", "web"]) }),
-    Object.freeze({ command: "corepack", args: Object.freeze(["pnpm", "exec", "playwright", "test", "apps/web/e2e/local-preview-smoke.spec.ts", "--workers=1"]) }),
+    Object.freeze({ command: "corepack", args: Object.freeze(["pnpm", "exec", "playwright", "test", "--config=scripts/local-preview.playwright.config.ts", "scripts/local-preview-smoke.spec.ts", "--workers=1"]) }),
   ]);
 }
 

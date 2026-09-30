@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import { INTEGRATION_TEST_FILES, assertCompleteTestInventory } from "./test-inventory.mjs";
+
 import {
   FAST_LOCAL_PREVIEW_READY,
   assertFastPreviewArgv,
@@ -27,7 +29,7 @@ test("fast preview plan uses only the fixed local Compose cutover and narrow smo
     { command: "docker-compose", args: ["-p", "blogxlocal", "-f", "compose.yaml", "build", "api"] },
     { command: "docker-compose", args: ["-p", "blogxlocal", "-f", "compose.yaml", "build", "web"] },
     { command: "docker-compose", args: ["-p", "blogxlocal", "-f", "compose.yaml", "up", "-d", "--wait", "api", "web"] },
-    { command: "corepack", args: ["pnpm", "exec", "playwright", "test", "apps/web/e2e/local-preview-smoke.spec.ts", "--workers=1"] },
+    { command: "corepack", args: ["pnpm", "exec", "playwright", "test", "--config=scripts/local-preview.playwright.config.ts", "scripts/local-preview-smoke.spec.ts", "--workers=1"] },
   ]);
 });
 
@@ -85,4 +87,9 @@ test("package scripts add the preview path without changing the full delivery co
   assert.equal(packageJson.scripts["local:deliver"], "node scripts/refresh-local.mjs");
   assert.equal(packageJson.scripts["local:preview"], "node scripts/refresh-local-preview.mjs");
   assert.equal(packageJson.scripts["test:local-preview"], "node --test scripts/refresh-local-preview.test.mjs");
+});
+
+test("preview-only smoke stays outside the canonical integration inventory", async () => {
+  assert.equal(INTEGRATION_TEST_FILES.includes("scripts/local-preview-smoke.spec.ts"), false);
+  assert.deepEqual(await assertCompleteTestInventory(), { total: 55, default: 18, integration: 37 });
 });
