@@ -20,6 +20,8 @@
     "local:verify": "node scripts/local-verify.mjs",
     "local:deliver:preflight": "node scripts/refresh-local.mjs --check-docker-capacity",
     "local:deliver": "node scripts/refresh-local.mjs",
+    "local:preview": "node scripts/refresh-local-preview.mjs",
+    "test:local-preview": "node --test scripts/refresh-local-preview.test.mjs",
     "db:generate:check": "corepack pnpm --filter @blog-x/api db:generate:check",
     "db:migrate": "corepack pnpm --filter @blog-x/api db:migrate",
     "db:seed": "corepack pnpm --filter @blog-x/api db:seed",
