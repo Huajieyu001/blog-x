@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -22,8 +23,66 @@ test("secondary compose keeps PostgreSQL private and API loopback-only", async (
   assert.match(compose, /mem_limit: 1200m/);
   assert.match(compose, /mem_limit: 1400m/);
   assert.doesNotMatch(compose, /network:\s*none/);
-  assert.match(compose, /command: \["corepack", "pnpm", "--filter", "@blog-x\/api", "dev"\]/);
+  assert.match(api, /command: \["corepack", "pnpm", "--filter", "@blog-x\/api", "start"\]/);
+  assert.match(api, /user: "1000:1000"/);
+  assert.match(api, /read_only: true/);
+  assert.match(api, /tmpfs:\n\s+- \/tmp:rw,noexec,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=1777/);
+  assert.match(api, /cap_drop:\n\s+- ALL/);
+  assert.match(api, /security_opt:\n\s+- no-new-privileges:true/);
   assert.doesNotMatch(compose, /node apps\/api\/dist\/app\.js|@blog-x\/contracts.*dist/);
+});
+
+test("secondary deployment accepts only portable Docker Compose 2.20.0-or-newer output", async () => {
+  const deploy = await read("./deploy.sh");
+  const begin = deploy.indexOf("# BLOG_X_COMPOSE_VERSION_CHECK_BEGIN");
+  const end = deploy.indexOf("# BLOG_X_COMPOSE_VERSION_CHECK_END");
+  assert.ok(begin >= 0 && end > begin, "compose version functions must remain extractable");
+  const functions = deploy.slice(begin, end);
+  const harness = `${functions}
+docker() {
+  [[ \${1-} == compose && \${2-} == version ]] || return 97
+  if [[ \${3-} == --format && \${4-} == '{{.Version}}' && \$# -eq 4 ]]; then
+    printf '%s' "\${FORMAT_OUTPUT-}"
+    return "\${FORMAT_STATUS-0}"
+  fi
+  if [[ \$# -eq 2 ]]; then
+    printf '%s' "\${PLAIN_OUTPUT-}"
+    return "\${PLAIN_STATUS-0}"
+  fi
+  return 98
+}
+require_supported_compose`;
+  const run = ({ formatted = "", formattedStatus = 0, plain = "", plainStatus = 0 }) => spawnSync("bash", ["-c", harness], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      FORMAT_OUTPUT: formatted,
+      FORMAT_STATUS: String(formattedStatus),
+      PLAIN_OUTPUT: plain,
+      PLAIN_STATUS: String(plainStatus),
+    },
+  });
+
+  for (const formatted of ["2.20.0", "v2.20.0", "3.0.0", "2.21.7"]) {
+    assert.equal(run({ formatted }).status, 0, `formatted ${formatted} should pass`);
+  }
+  for (const plain of ["Docker Compose version 2.20.0", "Docker Compose version v2.20.0", "Docker Compose version 3.1.4"]) {
+    assert.equal(run({ formattedStatus: 1, plain }).status, 0, `fallback ${plain} should pass`);
+  }
+  for (const formatted of [
+    "2.19.9", "v1.29.2", "2.20", "2.20.0-rc.1", "2.20.0+build", "02.20.0",
+    " 2.20.0", "2.20.0 ", "2.20.0 extra", "2.20.0\n3.0.0",
+  ]) assert.notEqual(run({ formatted, plain: "Docker Compose version 3.0.0" }).status, 0, `formatted ${JSON.stringify(formatted)} should fail closed`);
+  for (const plain of [
+    "Docker Compose version 2.19.9", "Docker Compose version 1.29.2", "docker-compose version 1.29.2",
+    "Docker Compose version 2.20", "Docker Compose version 2.20.0-rc.1", "Docker Compose version 2.20.0+build",
+    " Docker Compose version 2.20.0", "Docker Compose version 2.20.0 ", "Docker Compose version 2.20.0 extra",
+    "Docker Compose version 2.20.0\nDocker Compose version 3.0.0",
+  ]) assert.notEqual(run({ formattedStatus: 1, plain }).status, 0, `fallback ${JSON.stringify(plain)} should fail closed`);
+  assert.notEqual(run({ formattedStatus: 1, plainStatus: 1 }).status, 0);
+  assert.doesNotMatch(functions, /docker-compose/);
+  assert.ok(deploy.indexOf("require_supported_compose") < deploy.indexOf('"${compose[@]}" config --quiet'));
+  assert.ok(deploy.indexOf("require_supported_compose", end) < deploy.indexOf('"${compose[@]}" build api'));
 });
 
 test("API image installs only the API workspace closure, never the Web dependency graph", async () => {
@@ -152,6 +211,8 @@ test("immutable secondary deployment resolves a revision tag once and uses only 
   assert.match(deploy, /run --rm --no-build api corepack pnpm --filter @blog-x\/api db:migrate/);
   assert.match(deploy, /run --rm --no-build api corepack pnpm --filter @blog-x\/api db:schema:verify/);
   assert.match(deploy, /up -d --no-build api/);
+  const ownership = 'docker run --rm --user 0:0 --cap-drop=ALL --cap-add=CHOWN --security-opt=no-new-privileges --network none --read-only --pids-limit=64 --memory=128m --mount type=volume,src=blog-x-secondary_media-data,dst=/var/lib/blog-x/media "$candidate_image_id" chown -R -- 1000:1000 /var/lib/blog-x/media';
+  assert.match(deploy, new RegExp(ownership.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(deploy, /rollback\.env/);
   assert.match(deploy, /current\.env/);
   assert.doesNotMatch(deploy, /source .*rollback|\. .*rollback|eval /i);
@@ -159,6 +220,9 @@ test("immutable secondary deployment resolves a revision tag once and uses only 
   for (const gate of ["candidate_image_id", "rollback.env", "mv -f -- \"$state_tmp\" \"$ROLLBACK_RECORD\""]) {
     assert.ok(deploy.indexOf(gate) >= 0 && deploy.indexOf(gate) < firstMigration, `${gate} must precede migration`);
   }
+  const rollbackWritten = deploy.indexOf('write_rollback_record\ndocker run --rm --user 0:0');
+  const ownershipIndex = deploy.indexOf(ownership);
+  assert.ok(rollbackWritten >= 0 && ownershipIndex > rollbackWritten && ownershipIndex < firstMigration, "exact media ownership migration must follow the rollback record and precede database migration");
   const timerEnableIndex = deploy.indexOf("systemctl enable --now");
   for (const gate of ["db:migrate", "db:schema:verify", "BLOG_X_API_IMAGE", "current.env", "API listener is not loopback-only"]) {
     assert.ok(timerEnableIndex > deploy.lastIndexOf(gate), `timer activation must follow ${gate}`);

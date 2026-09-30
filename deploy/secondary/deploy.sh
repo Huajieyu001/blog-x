@@ -13,6 +13,47 @@ readonly CURRENT_RECORD="$DEPLOYMENTS_DIR/current.env"
 is_revision() { [[ $1 =~ ^[a-f0-9]{40}$ ]]; }
 is_image_id() { [[ $1 =~ ^sha256:[a-f0-9]{64}$ ]]; }
 
+# BLOG_X_COMPOSE_VERSION_CHECK_BEGIN
+compose_version_supported() {
+  local version=$1
+  local major minor patch
+  [[ $version =~ ^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || return 1
+  major=${BASH_REMATCH[1]}
+  minor=${BASH_REMATCH[2]}
+  patch=${BASH_REMATCH[3]}
+  (( major > 2 || (major == 2 && (minor > 20 || (minor == 20 && patch >= 0))) ))
+}
+
+require_supported_compose() {
+  local formatted plain version
+  if formatted="$(docker compose version --format '{{.Version}}')"; then
+    [[ $formatted != *$'\n'* ]] || {
+      printf '%s\n' 'Docker Compose returned a multiline formatted version' >&2
+      return 1
+    }
+    compose_version_supported "$formatted" || {
+      printf '%s\n' 'Docker Compose 2.20.0 or newer is required' >&2
+      return 1
+    }
+    return 0
+  fi
+
+  plain="$(docker compose version)" || {
+    printf '%s\n' 'Docker Compose version could not be determined' >&2
+    return 1
+  }
+  [[ $plain != *$'\n'* && $plain =~ ^Docker\ Compose\ version\ (v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$ ]] || {
+    printf '%s\n' 'Docker Compose returned an unsupported version format' >&2
+    return 1
+  }
+  version=${BASH_REMATCH[1]}
+  compose_version_supported "$version" || {
+    printf '%s\n' 'Docker Compose 2.20.0 or newer is required' >&2
+    return 1
+  }
+}
+# BLOG_X_COMPOSE_VERSION_CHECK_END
+
 single_running_api() {
   local -a api_containers=()
   mapfile -t api_containers < <(docker ps --filter "label=com.docker.compose.project=$PROJECT" --filter 'label=com.docker.compose.service=api' --format '{{.ID}}')
@@ -86,6 +127,7 @@ if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
   printf '%s\n' 'deploy must run as root' >&2
   exit 1
 fi
+require_supported_compose
 [[ -f $ENV_FILE ]] || { printf '%s\n' 'secondary environment is missing' >&2; exit 1; }
 [[ $(stat -c '%a' "$ENV_FILE") == 600 ]] || { printf '%s\n' 'secondary environment must be mode 0600' >&2; exit 1; }
 [[ $(stat -c '%U:%G' "$ENV_FILE") == root:root ]] || { printf '%s\n' 'secondary environment must be owned by root:root' >&2; exit 1; }
@@ -140,6 +182,7 @@ is_image_id "$candidate_image_id" || { printf '%s\n' 'candidate API image ID is 
 candidate_label="$(docker image inspect --format '{{ index .Config.Labels \"org.opencontainers.image.revision\" }}' "$candidate_image_id")"
 [[ $candidate_label == "$revision" ]] || { printf '%s\n' 'candidate API revision label is invalid' >&2; exit 1; }
 write_rollback_record
+docker run --rm --user 0:0 --cap-drop=ALL --cap-add=CHOWN --security-opt=no-new-privileges --network none --read-only --pids-limit=64 --memory=128m --mount type=volume,src=blog-x-secondary_media-data,dst=/var/lib/blog-x/media "$candidate_image_id" chown -R -- 1000:1000 /var/lib/blog-x/media
 
 candidate_compose=(env "BLOG_X_REVISION=$revision" "BLOG_X_API_IMAGE=$candidate_image_id" docker compose --project-name "$PROJECT" --env-file "$ENV_FILE" --file "$COMPOSE_FILE")
 "${candidate_compose[@]}" config --quiet
