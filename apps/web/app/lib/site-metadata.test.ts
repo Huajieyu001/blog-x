@@ -203,6 +203,33 @@ test("public page metadata uses validated public site identity", () => {
   }
 });
 
+test("About keeps validated published content and makes only missing content a branded empty page", () => {
+  const about = readFileSync(new URL("../about/page.tsx", import.meta.url), "utf8");
+  const publicStyles = readFileSync(new URL("../public.module.css", import.meta.url), "utf8");
+
+  assert.match(about, /import Link from "next\/link"/);
+  assert.match(about, /const \[result, siteResult\] = await Promise\.all\(\[getPublicAbout\(\), getPublicSiteSettings\(\)\]\)/);
+  assert.match(about, /siteResult\.kind === "ok" \? siteResult\.data : defaultSiteSettings/);
+  assert.match(about, /if \(result\.kind === "upstream_error"\) throw new Error\("public content unavailable"\);/);
+  assert.equal((about.match(/if \(result\.kind === "upstream_error"\) throw new Error\("public content unavailable"\);/g) ?? []).length, 2);
+  assert.doesNotMatch(about, /notFound|next\/navigation/);
+
+  assert.match(about, /title: `关于 \$\{site\.name\}`/);
+  assert.match(about, /description: site\.description/);
+  assert.match(about, /path: "\/about"/);
+  assert.match(about, /<h1>\{site\.name\}<\/h1>/);
+  assert.match(about, /<p className=\{styles\.articleSummary\}>\{site\.description\}<\/p>/);
+  assert.match(about, /<h2 id="about-preparing-title">关于页面正在准备中<\/h2>/);
+  assert.match(about, /<nav className=\{styles\.emptyActions\} aria-label="关于页面导航">[\s\S]*?<Link href="\/" prefetch=\{false\}>返回最新文章<\/Link>[\s\S]*?<\/nav>/);
+
+  assert.match(about, /title: result\.data\.title, description: `了解 \$\{result\.data\.title\}。`/);
+  assert.match(about, /<ArticleBody renderedHtml=\{result\.data\.renderedHtml\} \/>/);
+  assert.match(publicStyles, /\.empty h2, \.empty h3/);
+  assert.match(publicStyles, /\.emptyWelcome h2, \.emptyWelcome h3/);
+  assert.match(publicStyles, /\.emptyActions a \{ display: inline-flex; min-height: 44px/);
+  assert.match(publicStyles, /@media \(max-width: 700px\) \{[\s\S]*?\.emptyActions \{ display: grid; \}/);
+});
+
 test("public article render starts cached reads together and keeps recovery plus cover contracts", () => {
   const page = readFileSync(new URL("../posts/[slug]/page.tsx", import.meta.url), "utf8");
   const api = readFileSync(new URL("./api.ts", import.meta.url), "utf8");
