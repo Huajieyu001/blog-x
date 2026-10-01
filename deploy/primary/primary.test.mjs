@@ -7,6 +7,10 @@ const read = (file) => readFile(new URL(file, import.meta.url), "utf8");
 test("primary bundle keeps the browser at canonical HTTPS and Web/API ports private", async () => {
   const [nginx, deploy, tunnel, health, headers] = await Promise.all(["./nginx/blog-x.conf.template", "./deploy.sh", "./tunnel.sh", "./healthcheck.sh", "./nginx/blog-x-security-headers.conf"].map(read));
   assert.match(nginx, /server_name huajieyu001\.top/);
+  assert.match(nginx, /server_name huajieyu001\.top www\.huajieyu001\.top;/);
+  assert.match(nginx, /server_name www\.huajieyu001\.top;/);
+  assert.equal([...nginx.matchAll(/return 301 https:\/\/huajieyu001\.top\$request_uri;/g)].length, 2);
+  assert.doesNotMatch(nginx, /https:\/\/\$host/);
   assert.match(nginx, /proxy_pass http:\/\/127\.0\.0\.1:3100/);
   assert.match(nginx, /X-Blog-X-Ingress-Auth __BLOG_X_INGRESS_AUTH_SECRET__/);
   assert.doesNotMatch(nginx, /proxy_pass http:\/\/(?!127\.0\.0\.1:3100)/);
