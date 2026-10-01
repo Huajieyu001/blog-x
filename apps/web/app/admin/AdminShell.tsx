@@ -33,6 +33,16 @@ export default function AdminShell({ children }: { children: ReactNode }) {
   useEffect(() => { setOpen(false); }, [pathname]);
 
   useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    const closeDesktopDrawer = () => {
+      if (desktop.matches) setOpen(false);
+    };
+    closeDesktopDrawer();
+    desktop.addEventListener("change", closeDesktopDrawer);
+    return () => desktop.removeEventListener("change", closeDesktopDrawer);
+  }, []);
+
+  useEffect(() => {
     const synchronizeHash = () => setHash(window.location.hash);
     synchronizeHash();
     window.addEventListener("hashchange", synchronizeHash);

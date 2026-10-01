@@ -65,10 +65,12 @@
 .navigation a[aria-current="page"] > span { color: #46655a; }
 
 .sidebarFooter { display: grid; flex: 0 0 auto; gap: 12px; margin-top: 0; padding: 18px 10px 0; border-top: 1px solid rgb(255 255 255 / 14%); }
+.theme { --accent: #c9e7dc; }
 .theme fieldset { display: grid; gap: 4px; }
 .theme fieldset legend { float: none; margin: 0; color: #9db0a8; line-height: 1.4; }
 .theme fieldset div { flex-wrap: wrap; }
 .theme fieldset span { min-height: 44px; padding: 0 8px; color: #c8d3ce; }
+.theme fieldset input:checked + span { color: #17201d; background: #c9e7dc; font-weight: 650; text-decoration: none; }
 .siteLink { display: flex; min-height: 44px; align-items: center; justify-content: space-between; color: #c8d3ce; font-size: .82rem; text-decoration: none; }
 .logoutButton { min-height: 44px; border: 1px solid rgb(255 255 255 / 25%); border-radius: 7px; color: #f2f5f3; background: transparent; font-weight: 650; cursor: pointer; }
 .logoutButton:disabled { cursor: wait; opacity: .65; }

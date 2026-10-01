@@ -447,6 +447,18 @@ test("administrator shell is private, responsive, compact, and theme-aware", asy
   await page.mouse.click(370, 400);
   await expect(menu).toBeFocused();
 
+  await menu.click();
+  await expect(content).toHaveAttribute("inert", "");
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await expect(content).not.toHaveAttribute("inert", "");
+  await expect(content).not.toHaveAttribute("aria-hidden", "true");
+  await expect.poll(() => page.evaluate(() => document.body.style.overflow)).not.toBe("hidden");
+  await content.focus();
+  await page.keyboard.press("Tab");
+  expect(await content.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(menu).toHaveAttribute("aria-expanded", "false");
+
   await page.setViewportSize({ width: 1280, height: 900 });
 
   const row = page.getByTestId(/admin-post-/).first();
