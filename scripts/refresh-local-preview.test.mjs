@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
@@ -91,6 +92,14 @@ test("fast preview uses one local Unix authority, offline two-image builds, immu
   assert.deepEqual(cutover.options.env, { ...ambient, BLOG_X_API_IMAGE: SHA("d"), BLOG_X_WEB_IMAGE: SHA("e") });
   assert.ok(f.calls.findIndex((call) => call.args?.[2] === "blog-x-web-preview:current") < f.calls.indexOf(cutover));
   assert.deepEqual(f.output, [`${FAST_LOCAL_PREVIEW_READY}\n`]);
+});
+
+test("both refresh Dockerfiles trust the already validated lockfile during offline installs", async () => {
+  for (const application of ["api", "web"]) {
+    const dockerfile = await readFile(new URL(`../apps/${application}/Dockerfile.refresh`, import.meta.url), "utf8");
+    assert.match(dockerfile, /RUN corepack pnpm install --store-dir=\/pnpm-store --offline --frozen-lockfile --trust-lockfile/);
+    assert.match(dockerfile, /--network=none --pull=false/);
+  }
 });
 
 test("fast preview rejects ambient Docker routing and arguments", () => {

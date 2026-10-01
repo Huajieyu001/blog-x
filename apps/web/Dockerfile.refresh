@@ -23,7 +23,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
-RUN corepack pnpm install --store-dir=/pnpm-store --offline --frozen-lockfile
+RUN corepack pnpm install --store-dir=/pnpm-store --offline --frozen-lockfile --trust-lockfile
 COPY apps/web apps/web
 COPY packages/contracts packages/contracts
 ENV NEXT_TELEMETRY_DISABLED=1
