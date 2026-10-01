@@ -214,7 +214,8 @@ test("About keeps validated published content and makes only missing content a b
   assert.equal((about.match(/if \(result\.kind === "upstream_error"\) throw new Error\("public content unavailable"\);/g) ?? []).length, 2);
   assert.doesNotMatch(about, /notFound|next\/navigation/);
 
-  assert.match(about, /title: `关于 \$\{site\.name\}`/);
+  assert.match(about, /title: "关于", description: site\.description/);
+  assert.doesNotMatch(about, /title: `关于 \$\{site\.name\}`/, "the root title template appends the validated site name");
   assert.match(about, /description: site\.description/);
   assert.match(about, /path: "\/about"/);
   assert.match(about, /<h1>\{site\.name\}<\/h1>/);

@@ -12,7 +12,7 @@ export async function generateMetadata() {
 
   if (result.kind === "upstream_error") throw new Error("public content unavailable");
   if (result.kind === "not_found") {
-    return pageMetadata({ title: `关于 ${site.name}`, description: site.description, path: "/about", site });
+    return pageMetadata({ title: "关于", description: site.description, path: "/about", site });
   }
 
   return pageMetadata({ title: result.data.title, description: `了解 ${result.data.title}。`, path: "/about", site });
