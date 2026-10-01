@@ -2,7 +2,7 @@ import { defaultSiteSettings } from "@blog-x/contracts";
 import { getPublicDistribution, getPublicSiteSettings } from "../lib/api";
 import { renderRss } from "../lib/site-metadata";
 
-export const revalidate = 30;
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   const [distribution, siteResult] = await Promise.all([getPublicDistribution(), getPublicSiteSettings()]);

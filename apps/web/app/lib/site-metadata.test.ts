@@ -241,19 +241,20 @@ test("public feeds prioritize only their first visible default card cover", () =
   }
 });
 
-test("only stable public indexes use the shared 30-second render horizon", () => {
+test("data-backed public routes stay build-independent while validated data and RSS use the short cache", () => {
   for (const path of [
     "../archives/page.tsx",
     "../categories/page.tsx",
     "../tags/page.tsx",
     "../sitemap.ts",
     "../rss.xml/route.ts",
-    "../robots.ts",
   ]) {
     const source = readFileSync(new URL(path, import.meta.url), "utf8");
-    assert.match(source, /export const revalidate = 30/);
-    assert.doesNotMatch(source, /force-dynamic/);
+    assert.match(source, /force-dynamic/, `${path} must not require the API during an offline image build`);
+    assert.doesNotMatch(source, /export const revalidate = 30/);
   }
+  const robots = readFileSync(new URL("../robots.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(robots, /force-dynamic|export const revalidate/, "robots has no data dependency and can remain fully static");
   const rss = readFileSync(new URL("../rss.xml/route.ts", import.meta.url), "utf8");
   assert.match(rss, /"cache-control": "public, max-age=30"/);
 

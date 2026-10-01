@@ -3,7 +3,7 @@ import { publicPostPageSize } from "@blog-x/contracts";
 import { getPublicDistribution } from "./lib/api";
 import { publicUrl } from "./lib/site-metadata";
 
-export const revalidate = 30;
+export const dynamic = "force-dynamic";
 
 function pagedUrls(path: string, totalItems: number) {
   const totalPages = Math.ceil(totalItems / publicPostPageSize);

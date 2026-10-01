@@ -3,7 +3,7 @@ import { defaultSiteSettings } from "@blog-x/contracts";
 import { getArchives, getPublicSiteSettings } from "../lib/api";
 import { pageMetadata } from "../lib/site-metadata";
 import styles from "../public.module.css";
-export const revalidate = 30;
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata() {
   const result = await getPublicSiteSettings();

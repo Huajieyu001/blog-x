@@ -4,7 +4,7 @@ import { getPublicSiteSettings, getPublicTaxonomy } from "../lib/api";
 import { pageMetadata } from "../lib/site-metadata";
 import styles from "../public.module.css";
 
-export const revalidate = 30;
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata() {
   const result = await getPublicSiteSettings();
