@@ -36,6 +36,40 @@ test("root layout renders a responsive ICP footer and keyboard skip target for e
   assert.doesNotMatch(adminCss, /\.content:focus \{\s*outline: none;\s*\}/);
 });
 
+test("private layouts isolate crawler and public distribution metadata without bypassing auth", async () => {
+  const [root, loginLayout, loginPage, adminLayout] = await Promise.all([
+    read("./layout.tsx"),
+    read("./login/layout.tsx"),
+    read("./login/page.tsx"),
+    read("./admin/layout.tsx"),
+  ]);
+
+  assert.match(root, /title: \{ default: site\.name, template: `%s \| \$\{site\.name\}` \}/);
+  assert.match(root, /openGraph: \{ title: site\.name,/);
+  assert.match(root, /alternates: \{ types: \{ "application\/rss\+xml": "\/rss\.xml" \} \}/);
+
+  for (const [name, source, title] of [
+    ["login", loginLayout, "管理员登录"],
+    ["admin", adminLayout, "管理后台"],
+  ]) {
+    assert.match(source, new RegExp(`title: "${title}"`), `${name} has its leaf title`);
+    assert.match(source, /robots: \{ index: false, follow: false \}/, `${name} blocks indexing and following`);
+    assert.match(source, /openGraph: null/, `${name} clears inherited Open Graph metadata`);
+    assert.match(source, /alternates: null/, `${name} clears inherited canonical and RSS metadata`);
+  }
+
+  assert.match(loginLayout, /import type \{ Metadata \} from "next";/);
+  assert.doesNotMatch(loginLayout, /["']use client["']/);
+  assert.match(loginLayout, /return children;/);
+  assert.match(loginPage, /["']use client["']/);
+
+  assert.match(adminLayout, /const cookieHeader = \(await cookies\(\)\)\.toString\(\);/);
+  assert.match(adminLayout, /getSessionStatus\(cookieHeader\)/);
+  assert.match(adminLayout, /if \(session\.kind === "unauthorized"\) redirect\("\/login"\);/);
+  assert.match(adminLayout, /if \(session\.kind === "upstream_error"\) return \(/);
+  assert.match(adminLayout, /return <AdminShell>\{children\}<\/AdminShell>;/);
+});
+
 test("Next security headers retain only the required development CSP exception", async () => {
   const config = await read("../next.config.ts");
   for (const directive of [

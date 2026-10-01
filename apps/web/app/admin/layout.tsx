@@ -1,9 +1,17 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { getSessionStatus } from "../lib/api";
 import AdminShell from "./AdminShell";
 import styles from "./admin.module.css";
+
+export const metadata: Metadata = {
+  title: "管理后台",
+  robots: { index: false, follow: false },
+  openGraph: null,
+  alternates: null,
+};
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
   const cookieHeader = (await cookies()).toString();
