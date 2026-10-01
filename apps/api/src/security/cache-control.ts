@@ -27,7 +27,9 @@ function hasImmutableMediaPolicy(value: unknown) {
 function allowsPublicCache(request: FastifyRequest, reply: FastifyReply) {
   if (request.method !== "GET" || hasCredential(request) || hasSetCookie(reply)) return false;
   const path = requestPathname(request);
-  if (!path.startsWith("/public/")) return false;
+  // Search terms are caller-controlled and would create an unbounded shared
+  // cache key space even with a short TTL.
+  if (!path.startsWith("/public/") || path === "/public/search") return false;
   return (reply.statusCode >= 200 && reply.statusCode < 300)
     || (reply.statusCode === 308 && /^\/public\/articles\/[A-Za-z0-9][A-Za-z0-9-]*$/.test(path));
 }

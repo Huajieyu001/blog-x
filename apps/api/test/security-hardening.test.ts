@@ -25,6 +25,7 @@ test("response cache policy caches only anonymous successful public reads", asyn
   context.after(() => app.close());
 
   app.get("/public/ok", async () => ({ ok: true }));
+  app.get("/public/search", async () => ({ items: [] }));
   app.get("/public/articles/renamed-post", async (_request, reply) => reply.code(308).header("location", "/public/articles/current-post").send());
   app.get("/public/invalid", async (_request, reply) => reply.code(400).send({ error: "invalid_request" }));
   app.get("/public/missing", async (_request, reply) => reply.code(404).send({ error: "not_found" }));
@@ -44,6 +45,7 @@ test("response cache policy caches only anonymous successful public reads", asyn
   assert.equal((await app.inject({ method: "GET", url: "/public/ok", headers: { authorization: "Bearer value" } })).headers["cache-control"], "no-store");
   for (const request of [
     { method: "GET", url: "/public/invalid" },
+    { method: "GET", url: "/public/search?q=caller-controlled" },
     { method: "GET", url: "/public/missing" },
     { method: "GET", url: "/public/limited" },
     { method: "GET", url: "/public/failed" },
