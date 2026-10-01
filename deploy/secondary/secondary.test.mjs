@@ -23,7 +23,8 @@ test("secondary compose keeps PostgreSQL private and API loopback-only", async (
   assert.match(compose, /mem_limit: 1200m/);
   assert.match(compose, /mem_limit: 1400m/);
   assert.doesNotMatch(compose, /network:\s*none/);
-  assert.match(api, /command: \["corepack", "pnpm", "--filter", "@blog-x\/api", "start"\]/);
+  assert.match(api, /command: \["\.\/apps\/api\/node_modules\/\.bin\/tsx", "apps\/api\/src\/app\.ts"\]/);
+  assert.doesNotMatch(api, /command:.*"(?:start|dev)"/);
   assert.match(api, /user: "1000:1000"/);
   assert.match(api, /read_only: true/);
   assert.match(api, /tmpfs:\n\s+- \/tmp:rw,noexec,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=1777/);
