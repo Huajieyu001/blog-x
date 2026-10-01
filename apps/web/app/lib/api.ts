@@ -36,10 +36,14 @@ import {
   articleRevisionListSchema,
   type ArticleRevisionSummary,
 } from "@blog-x/contracts";
+import { unstable_cache } from "next/cache";
 import { cache } from "react";
 
 const internalApiOrigin = process.env.INTERNAL_API_ORIGIN ?? "http://127.0.0.1:3001";
 const internalApiTimeoutMs = 4_000;
+/** Shared API and render-cache horizon for anonymous, validated public content. */
+export const publicRevalidationSeconds = 30;
+const publicDataCacheOptions = { revalidate: publicRevalidationSeconds } as const;
 
 type Parser<T> = { safeParse: (value: unknown) => { success: true; data: T } | { success: false } };
 export type PublicResult<T> = { kind: "ok"; data: T } | { kind: "not_found" } | { kind: "upstream_error" };
@@ -70,6 +74,42 @@ async function getPublic<T>(path: string, schema: Parser<T>, allowNotFound = fal
   }
 }
 
+type CacheablePublicFailure = "not_found" | "upstream_error";
+
+class CacheablePublicReadError extends Error {
+  constructor(readonly result: CacheablePublicFailure) {
+    super(result);
+  }
+}
+
+function cacheableFailure<T>(error: unknown): PublicResult<T> {
+  return error instanceof CacheablePublicReadError && error.result === "not_found"
+    ? { kind: "not_found" }
+    : { kind: "upstream_error" };
+}
+
+/**
+ * Keep the HTTP fetch itself no-store. Next's fetch cache is HTTP-status
+ * agnostic, so the Next data cache is intentionally applied only after a
+ * successful response has passed its runtime contract schema.
+ */
+async function readCacheablePublic<T>(path: string, schema: Parser<T>, allowNotFound = false): Promise<T> {
+  try {
+    const response = await internalApiFetch(path, { cache: "no-store" });
+    if (response.status === 404) {
+      const missing = publicPostNotFoundResponseSchema.safeParse(await response.json());
+      throw new CacheablePublicReadError(allowNotFound && missing.success ? "not_found" : "upstream_error");
+    }
+    if (!response.ok) throw new CacheablePublicReadError("upstream_error");
+    const parsed = schema.safeParse(await response.json());
+    if (!parsed.success) throw new CacheablePublicReadError("upstream_error");
+    return parsed.data;
+  } catch (error) {
+    if (error instanceof CacheablePublicReadError) throw error;
+    throw new CacheablePublicReadError("upstream_error");
+  }
+}
+
 export async function getSessionStatus(cookieHeader: string): Promise<SessionStatusResult> {
   try {
     const response = await internalApiFetch("/auth/session", {
@@ -95,10 +135,65 @@ export async function getAdminAboutResult(cookieHeader: string): Promise<AdminOp
   } catch { return { kind: "upstream_error" }; }
 }
 
-const cachedPublicAbout = cache(() => getPublic("/public/about", publicAboutSchema, true));
-const cachedPublicSiteSettings = cache(() => getPublic("/public/site-settings", publicSiteSettingsSchema));
+const readCachedPublicAbout = unstable_cache(
+  () => readCacheablePublic("/public/about", publicAboutSchema, true),
+  ["blog-x", "public-about"],
+  publicDataCacheOptions,
+);
+const readCachedPublicSiteSettings = unstable_cache(
+  () => readCacheablePublic("/public/site-settings", publicSiteSettingsSchema),
+  ["blog-x", "public-site-settings"],
+  publicDataCacheOptions,
+);
+const readCachedArchives = unstable_cache(
+  () => readCacheablePublic("/public/archives", archiveSchema),
+  ["blog-x", "public-archives"],
+  publicDataCacheOptions,
+);
+const readCachedPublicDistribution = unstable_cache(
+  () => readCacheablePublic("/public/distribution", publicDistributionSchema),
+  ["blog-x", "public-distribution"],
+  publicDataCacheOptions,
+);
+const readCachedPublicCategories = unstable_cache(
+  () => readCacheablePublic("/public/categories", publicTaxonomyListSchema),
+  ["blog-x", "public-categories"],
+  publicDataCacheOptions,
+);
+const readCachedPublicTags = unstable_cache(
+  () => readCacheablePublic("/public/tags", publicTaxonomyListSchema),
+  ["blog-x", "public-tags"],
+  publicDataCacheOptions,
+);
+const cachedPublicAbout = cache(async () => {
+  try { return { kind: "ok" as const, data: await readCachedPublicAbout() }; } catch (error) { return cacheableFailure<Awaited<ReturnType<typeof readCachedPublicAbout>>>(error); }
+});
+const cachedPublicSiteSettings = cache(async () => {
+  try { return { kind: "ok" as const, data: await readCachedPublicSiteSettings() }; } catch (error) { return cacheableFailure<Awaited<ReturnType<typeof readCachedPublicSiteSettings>>>(error); }
+});
+const cachedArchives = cache(async () => {
+  try { return { kind: "ok" as const, data: await readCachedArchives() }; } catch (error) { return cacheableFailure<Awaited<ReturnType<typeof readCachedArchives>>>(error); }
+});
+const cachedPublicDistribution = cache(async () => {
+  try { return { kind: "ok" as const, data: await readCachedPublicDistribution() }; } catch (error) { return cacheableFailure<Awaited<ReturnType<typeof readCachedPublicDistribution>>>(error); }
+});
+const cachedPublicTaxonomy = cache(async (kind: "categories" | "tags") => {
+  try {
+    const reader = kind === "categories" ? readCachedPublicCategories : readCachedPublicTags;
+    return { kind: "ok" as const, data: await reader() };
+  } catch (error) {
+    return cacheableFailure<Awaited<ReturnType<typeof readCachedPublicCategories>>>(error);
+  }
+});
 const cachedPublicPosts = cache((page: number) => getPublic(`/public/articles?page=${encodeURIComponent(String(page))}`, publicPostListResponseSchema));
-const cachedPublicRelatedPosts = cache((slug: string) => getPublic(`/public/articles/${encodeURIComponent(slug)}/related`, publicRelatedPostsResponseSchema));
+const readCachedPublicRelatedPosts = unstable_cache(
+  (slug: string) => readCacheablePublic(`/public/articles/${encodeURIComponent(slug)}/related`, publicRelatedPostsResponseSchema),
+  ["blog-x", "public-related-posts"],
+  publicDataCacheOptions,
+);
+const cachedPublicRelatedPosts = cache(async (slug: string) => {
+  try { return { kind: "ok" as const, data: await readCachedPublicRelatedPosts(slug) }; } catch (error) { return cacheableFailure<Awaited<ReturnType<typeof readCachedPublicRelatedPosts>>>(error); }
+});
 function redirectLocation(location: string | null) {
   // The API is an upstream boundary. Never allow an absolute URL, a query,
   // traversal, or a differently-shaped API route to become browser navigation.
@@ -110,21 +205,34 @@ function redirectLocation(location: string | null) {
   } catch { return null; }
 }
 
-const cachedPublicPost = cache(async (slug: string): Promise<PublicPostResult> => {
+async function readCacheablePublicPost(slug: string): Promise<Extract<PublicPostResult, { kind: "ok" | "redirect" }>> {
   try {
     const response = await internalApiFetch(`/public/articles/${encodeURIComponent(slug)}`, { cache: "no-store", redirect: "manual" });
     if (response.status === 308) {
       const location = redirectLocation(response.headers.get("location"));
-      return location ? { kind: "redirect", location } : { kind: "upstream_error" };
+      if (location) return { kind: "redirect", location };
+      throw new CacheablePublicReadError("upstream_error");
     }
     if (response.status === 404) {
       const missing = publicPostNotFoundResponseSchema.safeParse(await response.json());
-      return missing.success ? { kind: "not_found" } : { kind: "upstream_error" };
+      throw new CacheablePublicReadError(missing.success ? "not_found" : "upstream_error");
     }
-    if (!response.ok) return { kind: "upstream_error" };
+    if (!response.ok) throw new CacheablePublicReadError("upstream_error");
     const parsed = publicPostDetailSchema.safeParse(await response.json());
-    return parsed.success ? { kind: "ok", data: parsed.data } : { kind: "upstream_error" };
-  } catch { return { kind: "upstream_error" }; }
+    if (!parsed.success) throw new CacheablePublicReadError("upstream_error");
+    return { kind: "ok", data: parsed.data };
+  } catch (error) {
+    if (error instanceof CacheablePublicReadError) throw error;
+    throw new CacheablePublicReadError("upstream_error");
+  }
+}
+const readCachedPublicPost = unstable_cache(
+  readCacheablePublicPost,
+  ["blog-x", "public-post"],
+  publicDataCacheOptions,
+);
+const cachedPublicPost = cache(async (slug: string): Promise<PublicPostResult> => {
+  try { return await readCachedPublicPost(slug); } catch (error) { return cacheableFailure<PublicPostDetail>(error); }
 });
 const cachedPublicTaxonomyPosts = cache((kind: "categories" | "tags", slug: string, page: number) => getPublic(`/public/${kind}/${encodeURIComponent(slug)}/articles?page=${encodeURIComponent(String(page))}`, publicTaxonomyPostListSchema, true));
 
@@ -145,7 +253,7 @@ export async function getAdminSiteSettingsResult(cookieHeader: string): Promise<
   } catch { return { kind: "upstream_error" }; }
 }
 
-export function getArchives() { return getPublic("/public/archives", archiveSchema); }
+export function getArchives() { return cachedArchives(); }
 
 export async function getAdminPostResult(id: string, cookieHeader: string): Promise<AdminOptionalResult<AdminPost>> {
   try {
@@ -274,11 +382,11 @@ export function getPublicPost(slug: string): Promise<PublicPostResult> {
 }
 
 export function getPublicDistribution(): Promise<PublicResult<PublicDistribution>> {
-  return getPublic("/public/distribution", publicDistributionSchema);
+  return cachedPublicDistribution();
 }
 
 export function getPublicTaxonomy(kind: "categories" | "tags") {
-  return getPublic(`/public/${kind}`, publicTaxonomyListSchema);
+  return cachedPublicTaxonomy(kind);
 }
 
 export function getPublicTaxonomyPosts(kind: "categories" | "tags", slug: string, page: number) {

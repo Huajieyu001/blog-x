@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
-import { getAdminPostsResult, getPublicPosts, getSessionStatus, internalApiFetch } from "./api.js";
+import { getAdminPostsResult, getPublicPosts, getPublicSearch, getSessionStatus, internalApiFetch, publicRevalidationSeconds } from "./api.js";
 
 function installFetch(fetcher: typeof fetch) {
   const original = globalThis.fetch;
@@ -84,4 +85,29 @@ test("a timed-out internal read cannot abort a concurrent sibling", async (conte
   assert.notEqual(signals[0], signals[1]);
   assert.equal(signals[0].aborted, true);
   assert.equal(signals[1].aborted, false);
+});
+
+test("validated finite public data has a 30-second cache, while HTTP reads and caller-controlled search stay no-store", async (context) => {
+  const calls: Array<{ input: string; init: RequestInit | undefined }> = [];
+  context.after(installFetch(async (input, init) => {
+    calls.push({ input: String(input), init });
+    return new Response(JSON.stringify({ error: "unavailable" }), { status: 503 });
+  }));
+
+  assert.equal(publicRevalidationSeconds, 30);
+  assert.deepEqual(await getPublicPosts(1), { kind: "upstream_error" });
+  assert.deepEqual(await getPublicSearch("caller controlled query", 1), { kind: "upstream_error" });
+  assert.deepEqual(await getAdminPostsResult("session=value"), { kind: "upstream_error" });
+  assert.deepEqual(await getSessionStatus("session=value"), { kind: "upstream_error" });
+  assert.equal(calls.length, 4);
+  for (const call of calls) assert.equal(call.init?.cache, "no-store", call.input);
+  assert.equal(calls[1]?.input.includes("/public/search?"), true);
+  assert.equal(calls[2]?.init?.headers instanceof Headers, false);
+  assert.deepEqual(calls[2]?.init?.headers, { cookie: "session=value" });
+  assert.deepEqual(calls[3]?.init?.headers, { cookie: "session=value" });
+
+  const source = readFileSync(new URL("./api.ts", import.meta.url), "utf8");
+  assert.match(source, /export const publicRevalidationSeconds = 30/);
+  assert.match(source, /unstable_cache\([\s\S]*?publicDataCacheOptions/);
+  assert.match(source, /readCacheablePublic[\s\S]*?cache: "no-store"/);
 });

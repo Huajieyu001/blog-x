@@ -51,6 +51,7 @@ import { adminAnalyticsRoutes } from "./routes/admin-analytics.js";
 import { createSiteSettingsRepository } from "./content/site-settings-repository.js";
 import { createSiteSettingsService } from "./content/site-settings-service.js";
 import { siteSettingsRoutes } from "./routes/site-settings.js";
+import { registerResponseCacheControl } from "./security/cache-control.js";
 
 const databaseSchema = { administrators, articles, articleRevisions, articleSlugRedirects, articleDailyViews, sessions, categories, tags, articleTags, sitePages, siteSettings, media, auditEvents };
 
@@ -175,6 +176,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   // TypeScript 7's bundler resolution does not model the package's CommonJS
   // `export =` declaration as an ESM Fastify plugin, though the runtime shape is compatible.
   await app.register(cookie as unknown as FastifyPluginAsync);
+  registerResponseCacheControl(app);
   app.decorate("sessionAuth", createSessionService(db));
   app.addHook("onRequest", async (request, reply) => {
     // Protected mutations deliberately defer to the shared guard so an

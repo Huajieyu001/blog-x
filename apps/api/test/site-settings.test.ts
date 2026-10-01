@@ -47,7 +47,7 @@ test("site settings preserve the fixed ICP default, authenticate mutations, audi
   assert.equal(savedSettings.registrationUrl, "https://beian.miit.gov.cn/");
   const updatedPublic = await app.inject({ method: "GET", url: "/public/site-settings" });
   assert.equal(updatedPublic.statusCode, 200);
-  assert.equal(updatedPublic.headers["cache-control"], "no-store");
+  assert.equal(updatedPublic.headers["cache-control"], "public, max-age=30");
   assert.deepEqual(updatedPublic.json(), { name: "我的博客", description: "可靠的公开阅读", publicInfo: "长期维护", registrationNumber: "黔ICP备2023015906号", registrationUrl: "https://beian.miit.gov.cn/" });
   const missingMedia = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
   const rejectedMediaReference = await app.inject({

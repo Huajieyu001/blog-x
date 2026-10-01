@@ -8,7 +8,6 @@ type Options = { siteSettingsService: SiteSettingsService; sessionAuth: SessionS
 
 export const siteSettingsRoutes: FastifyPluginAsync<Options> = async (app, options) => {
   app.get("/public/site-settings", async (_request, reply) => {
-    reply.header("cache-control", "no-store");
     return options.siteSettingsService.getPublic();
   });
   app.get("/admin/site-settings", async (request, reply) => {

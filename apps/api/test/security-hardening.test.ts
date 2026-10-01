@@ -11,12 +11,53 @@ import { parseApiRuntimeConfig } from "../src/security/config.js";
 import { requireAdministratorMutation, unsafeRoutePolicies } from "../src/security/mutation-guard.js";
 import { BoundedRateLimitStore, createRateLimitKey, type Clock } from "../src/security/rate-limiter.js";
 import { appendAuditEvent } from "../src/audit/audit-repository.js";
+import { registerResponseCacheControl } from "../src/security/cache-control.js";
 
 class ManualClock implements Clock {
   constructor(private value = 0) {}
   now() { return this.value; }
   advance(milliseconds: number) { this.value += milliseconds; }
 }
+
+test("response cache policy caches only anonymous successful public reads", async (context) => {
+  const app = Fastify();
+  registerResponseCacheControl(app);
+  context.after(() => app.close());
+
+  app.get("/public/ok", async () => ({ ok: true }));
+  app.get("/public/articles/renamed-post", async (_request, reply) => reply.code(308).header("location", "/public/articles/current-post").send());
+  app.get("/public/invalid", async (_request, reply) => reply.code(400).send({ error: "invalid_request" }));
+  app.get("/public/missing", async (_request, reply) => reply.code(404).send({ error: "not_found" }));
+  app.get("/public/limited", async (_request, reply) => reply.code(429).send({ error: "too_many_requests" }));
+  app.get("/public/failed", async (_request, reply) => reply.code(503).send({ error: "unavailable" }));
+  app.get("/public/private", async (_request, reply) => reply.header("cache-control", "private, no-store, max-age=0").send({ ok: true }));
+  app.get("/public/sets-cookie", async (_request, reply) => reply.header("set-cookie", "session=private; HttpOnly").send({ ok: true }));
+  app.get("/admin/ok", async () => ({ ok: true }));
+  app.get("/health", async () => ({ ok: true }));
+  app.get("/media/example", async (_request, reply) => reply.header("cache-control", "public, max-age=31536000, immutable").send({ ok: true }));
+  app.post("/public/ok", async () => ({ ok: true }));
+
+  const cacheable = "public, max-age=30";
+  assert.equal((await app.inject({ method: "GET", url: "/public/ok" })).headers["cache-control"], cacheable);
+  assert.equal((await app.inject({ method: "GET", url: "/public/articles/renamed-post" })).headers["cache-control"], cacheable);
+  assert.equal((await app.inject({ method: "GET", url: "/public/ok", headers: { cookie: "harmless=value" } })).headers["cache-control"], "no-store");
+  assert.equal((await app.inject({ method: "GET", url: "/public/ok", headers: { authorization: "Bearer value" } })).headers["cache-control"], "no-store");
+  for (const request of [
+    { method: "GET", url: "/public/invalid" },
+    { method: "GET", url: "/public/missing" },
+    { method: "GET", url: "/public/limited" },
+    { method: "GET", url: "/public/failed" },
+    { method: "GET", url: "/public/sets-cookie" },
+    { method: "GET", url: "/admin/ok" },
+    { method: "GET", url: "/health" },
+    { method: "POST", url: "/public/ok" },
+    { method: "GET", url: "/unknown" },
+  ] as const) {
+    assert.equal((await app.inject(request)).headers["cache-control"], "no-store", `${request.method} ${request.url}`);
+  }
+  assert.equal((await app.inject({ method: "GET", url: "/public/private" })).headers["cache-control"], "private, no-store, max-age=0");
+  assert.equal((await app.inject({ method: "GET", url: "/media/example" })).headers["cache-control"], "public, max-age=31536000, immutable");
+});
 
 function multipartUpload() {
   const boundary = "blog-x-security-hardening";
