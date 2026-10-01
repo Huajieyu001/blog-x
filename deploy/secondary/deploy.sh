@@ -187,8 +187,8 @@ docker run --rm --user 0:0 --cap-drop=ALL --cap-add=CHOWN --security-opt=no-new-
 candidate_compose=(env "BLOG_X_REVISION=$revision" "BLOG_X_API_IMAGE=$candidate_image_id" docker compose --project-name "$PROJECT" --env-file "$ENV_FILE" --file "$COMPOSE_FILE")
 "${candidate_compose[@]}" config --quiet
 "${candidate_compose[@]}" up -d --no-build postgres
-"${candidate_compose[@]}" run --rm --no-build api corepack pnpm --filter @blog-x/api db:migrate
-"${candidate_compose[@]}" run --rm --no-build api corepack pnpm --filter @blog-x/api db:schema:verify
+"${candidate_compose[@]}" run --rm api corepack pnpm --filter @blog-x/api db:migrate
+"${candidate_compose[@]}" run --rm api corepack pnpm --filter @blog-x/api db:schema:verify
 "${candidate_compose[@]}" up -d --no-build api
 
 for _ in $(seq 1 30); do

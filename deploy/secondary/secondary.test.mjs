@@ -209,8 +209,9 @@ test("immutable secondary deployment resolves a revision tag once and uses only 
   assert.match(deploy, /docker image inspect --format '\{\{\.Id\}\}' "\$candidate_tag"/);
   assert.match(deploy, /org\.opencontainers\.image\.revision/);
   assert.match(deploy, /"BLOG_X_API_IMAGE=\$candidate_image_id"/);
-  assert.match(deploy, /run --rm --no-build api corepack pnpm --filter @blog-x\/api db:migrate/);
-  assert.match(deploy, /run --rm --no-build api corepack pnpm --filter @blog-x\/api db:schema:verify/);
+  assert.match(deploy, /run --rm api corepack pnpm --filter @blog-x\/api db:migrate/);
+  assert.match(deploy, /run --rm api corepack pnpm --filter @blog-x\/api db:schema:verify/);
+  assert.doesNotMatch(deploy, /run[^\n]*--no-build/, "--no-build is supported by compose up, not compose run");
   assert.match(deploy, /up -d --no-build api/);
   const ownership = 'docker run --rm --user 0:0 --cap-drop=ALL --cap-add=CHOWN --security-opt=no-new-privileges --network none --read-only --pids-limit=64 --memory=128m --mount type=volume,src=blog-x-secondary_media-data,dst=/var/lib/blog-x/media "$candidate_image_id" chown -R -- 1000:1000 /var/lib/blog-x/media';
   assert.match(deploy, new RegExp(ownership.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
