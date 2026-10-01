@@ -37,7 +37,11 @@ function fixture({ fail = () => false, mutate = () => undefined, context = "coli
   const output = [];
   const seeds = { api: image("api", SHA("b")), web: image("web", SHA("c")) };
   const targets = { api: image("api", SHA("d"), { seed: SHA("b") }), web: image("web", SHA("e"), { seed: SHA("c") }) };
-  mutate({ seeds, targets });
+  const containers = {
+    api: { Name: "/blogxlocal-api-1", State: { Running: true }, Image: SHA("b") },
+    web: { Name: "/blogxlocal-web-1", State: { Running: true }, Image: SHA("c") },
+  };
+  mutate({ seeds, targets, containers });
   return {
     calls,
     output,
@@ -48,13 +52,11 @@ function fixture({ fail = () => false, mutate = () => undefined, context = "coli
       if (command === "git") return { stdout: `${REVISION}\n` };
       if (command === "docker" && args[0] === "context" && args[1] === "show") return { stdout: `${context}\n` };
       if (command === "docker" && args[0] === "context" && args[1] === "inspect") return { stdout: JSON.stringify([{ Name: context, Endpoints: { docker: { Host: "unix:///Users/test/.colima/default/docker.sock" } } }]) };
+      if (command === "docker" && args[0] === "container" && args[1] === "inspect") return { stdout: JSON.stringify([containers.api, containers.web]) };
       if (command === "docker" && args[0] === "image" && args[1] === "inspect") {
         const ref = args[2];
         if (ref === "node:24.15.0-alpine") return { stdout: JSON.stringify([image(null, SHA("f"))]) };
-        if (ref === "blog-x-api-local") return { stdout: JSON.stringify([seeds.api]) };
-        if (ref === "blog-x-web-local") return { stdout: JSON.stringify([seeds.web]) };
-        if (ref === seeds.api.Id) return { stdout: JSON.stringify([seeds.api]) };
-        if (ref === seeds.web.Id) return { stdout: JSON.stringify([seeds.web]) };
+        if (ref === SHA("b") && args[3] === SHA("c")) return { stdout: JSON.stringify([seeds.api, seeds.web]) };
         if (ref === "blog-x-api-preview:current") return { stdout: JSON.stringify([targets.api]) };
         if (ref === "blog-x-web-preview:current") return { stdout: JSON.stringify([targets.web]) };
       }
@@ -74,6 +76,8 @@ test("fast preview uses one local Unix authority, offline two-image builds, immu
   const f = fixture();
   await f.run();
   assert.deepEqual(buildFastPreviewEnvironment(ambient), ambient);
+  assert.deepEqual(commandCalls(f, "docker", ["container", "inspect"])[0].args, ["container", "inspect", "blogxlocal-api-1", "blogxlocal-web-1"]);
+  assert.deepEqual(commandCalls(f, "docker", ["image", "inspect"])[1].args, ["image", "inspect", SHA("b"), SHA("c")]);
   assert.deepEqual(commandCalls(f, "corepack").map((call) => call.args), [
     ["pnpm", "--offline", "-r", "typecheck"],
     ["pnpm", "--offline", "exec", "playwright", "test", "--config=scripts/local-preview.playwright.config.ts", "scripts/local-preview-smoke.spec.ts", "--workers=1"],
@@ -98,8 +102,10 @@ test("fast preview rejects ambient Docker routing and arguments", () => {
 for (const [name, options] of [
   ["disallowed Docker authority", { context: "remote" }],
   ["missing Node base", { fail: (call) => call.command === "docker" && call.args[2] === "node:24.15.0-alpine" }],
-  ["missing seed", { fail: (call) => call.command === "docker" && call.args[2] === "blog-x-api-local" }],
-  ["mutable seed id", { mutate: ({ seeds }) => { seeds.api.Id = "sha256:not-an-id"; } }],
+  ["missing canonical containers", { fail: (call) => call.command === "docker" && call.args[0] === "container" }],
+  ["stopped canonical container", { mutate: ({ containers }) => { containers.web.State.Running = false; } }],
+  ["malformed canonical image ID", { mutate: ({ containers }) => { containers.api.Image = "sha256:not-an-id"; } }],
+  ["missing canonical seed image", { fail: (call) => call.command === "docker" && call.args[0] === "image" && call.args[2] === SHA("b") && call.args[3] === SHA("c") }],
   ["application origin workdir or lock drift", { mutate: ({ seeds }) => { seeds.web.Config.WorkingDir = "/workspace"; } }],
   ["empty store or cache", { fail: (call) => call.command === "docker" && call.args[0] === "run" && call.args.includes(SHA("b")) }],
 ]) {

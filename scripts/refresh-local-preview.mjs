@@ -15,7 +15,7 @@ const composePrefix = Object.freeze(["-p", "blogxlocal", "-f", "compose.yaml"]);
 const origin = "http://127.0.0.1:3100";
 const refreshKind = "v1.1-offline-local-delivery";
 const applications = Object.freeze(["api", "web"]);
-const seedReferences = Object.freeze({ api: "blog-x-api-local", web: "blog-x-web-local" });
+const canonicalContainers = Object.freeze({ api: "blogxlocal-api-1", web: "blogxlocal-web-1" });
 const targetTags = Object.freeze({ api: "blog-x-api-preview:current", web: "blog-x-web-preview:current" });
 const requiredTargetLabels = Object.freeze([
   "org.opencontainers.image.revision",
@@ -100,6 +100,38 @@ async function inspectImage(runCommand, reference, options) {
   return parseImage((await runCommand("docker", ["image", "inspect", reference], options)).stdout, reference);
 }
 
+async function inspectCanonicalContainers(runCommand, options) {
+  let rows;
+  try { rows = JSON.parse(String((await runCommand("docker", ["container", "inspect", ...applications.map((application) => canonicalContainers[application])], options)).stdout)); }
+  catch { fail("canonical container inspect returned invalid JSON"); }
+  if (!Array.isArray(rows) || rows.length !== applications.length) fail("canonical container inspect returned an invalid result");
+  const byName = new Map(rows.map((row) => [row?.Name, row]));
+  const seedIds = {};
+  for (const application of applications) {
+    const name = `/${canonicalContainers[application]}`;
+    const container = byName.get(name);
+    if (!container || container.Name !== name || container.State?.Running !== true || !validImageId(container.Image)) fail(`${application} canonical container is not running with an immutable image`);
+    seedIds[application] = container.Image;
+  }
+  return Object.freeze(seedIds);
+}
+
+async function inspectSeedImages(runCommand, seedIds, options) {
+  let rows;
+  const references = applications.map((application) => seedIds[application]);
+  try { rows = JSON.parse(String((await runCommand("docker", ["image", "inspect", ...references], options)).stdout)); }
+  catch { fail("canonical seed image inspect returned invalid JSON"); }
+  if (!Array.isArray(rows) || rows.length !== applications.length) fail("canonical seed image inspect returned an invalid result");
+  const byId = new Map(rows.map((image) => [image?.Id, image]));
+  const images = {};
+  for (const application of applications) {
+    const image = byId.get(seedIds[application]);
+    if (!image || image.Id !== seedIds[application]) fail(`${application} canonical seed image drifted`);
+    images[application] = image;
+  }
+  return Object.freeze(images);
+}
+
 async function validatePrerequisites({ runCommand, env, revision, lockfileSha256 }) {
   const options = { cwd: root, env };
   const context = String((await runCommand("docker", ["context", "show"], options)).stdout ?? "").trim();
@@ -110,14 +142,8 @@ async function validatePrerequisites({ runCommand, env, revision, lockfileSha256
   assertLocalDockerAuthority(context, inspectedContext, { home: env.HOME });
   const base = await inspectImage(runCommand, "node:24.15.0-alpine", options);
   if (!validImageId(base.Id)) fail("local Node base image is missing or mutable");
-  const seedIds = {};
-  for (const application of applications) {
-    const tagged = await inspectImage(runCommand, seedReferences[application], options);
-    if (!validImageId(tagged.Id)) fail(`${application} seed image is not immutable`);
-    seedIds[application] = tagged.Id;
-  }
-  const images = {};
-  for (const application of applications) images[application] = await inspectImage(runCommand, seedIds[application], options);
+  const seedIds = await inspectCanonicalContainers(runCommand, options);
+  const images = await inspectSeedImages(runCommand, seedIds, options);
   for (const application of applications) {
     const image = images[application];
     assertSeedPrerequisiteFacts({ application, expectedId: seedIds[application], image, lockfileSha256 });
