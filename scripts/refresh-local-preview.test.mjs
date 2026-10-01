@@ -53,6 +53,8 @@ function fixture({ fail = () => false, mutate = () => undefined, context = "coli
         if (ref === "node:24.15.0-alpine") return { stdout: JSON.stringify([image(null, SHA("f"))]) };
         if (ref === "blog-x-api-local") return { stdout: JSON.stringify([seeds.api]) };
         if (ref === "blog-x-web-local") return { stdout: JSON.stringify([seeds.web]) };
+        if (ref === seeds.api.Id) return { stdout: JSON.stringify([seeds.api]) };
+        if (ref === seeds.web.Id) return { stdout: JSON.stringify([seeds.web]) };
         if (ref === "blog-x-api-preview:current") return { stdout: JSON.stringify([targets.api]) };
         if (ref === "blog-x-web-preview:current") return { stdout: JSON.stringify([targets.web]) };
       }
