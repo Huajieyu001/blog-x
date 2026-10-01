@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 const read = (file) => readFile(new URL(file, import.meta.url), "utf8");
@@ -20,6 +21,9 @@ test("primary bundle keeps the browser at canonical HTTPS and Web/API ports priv
   assert.match(tunnel, /UserKnownHostsFile="\$KNOWN_HOSTS_PATH"/);
   assert.match(tunnel, /-L "127\.0\.0\.1:3001:127\.0\.0\.1:3001"/);
   assert.match(health, /127\.0\.0\.1:3001\/health/);
+  assert.match(health, /\$\{port\}\/api\/health/);
+  assert.match(health, /X-Blog-X-Client-IP: 127\.0\.0\.1/);
+  assert.match(health, /X-Blog-X-Ingress-Auth: \$BLOG_X_INGRESS_AUTH_SECRET/);
   assert.match(nginx, /include \/etc\/nginx\/snippets\/blog-x-security-headers\.conf;/);
   assert.match(headers, /proxy_hide_header X-Powered-By;/);
   assert.match(headers, /add_header Content-Security-Policy/);
@@ -48,8 +52,28 @@ test("primary deploy backs up and health-gates a prebuilt candidate before cutov
   assert.match(backup, /SHA256SUMS/);
   assert.match(rollback, /docker image inspect/);
   assert.match(rollback, /mv -Tf "\$CURRENT.next" "\$CURRENT"/);
+  assert.match(rollback, /for _ in \$\(seq 1 20\); do .*healthcheck\.sh.*3100.*sleep 2/);
   assert.match(restore, /primary-state\.tar\.gz/);
   assert.match(restore, /systemctl reload nginx/);
+});
+
+test("primary candidate health rejects broken Web API forwarding even when the homepage and tunnel work", async () => {
+  const health = (await read("./healthcheck.sh")).replace('. "$CONFIG"', 'BLOG_X_INGRESS_AUTH_SECRET=health-test-placeholder-not-a-real-secret');
+  const harness = `curl() {
+    local target="\${@: -1}"
+    if [[ $target == *:3101/api/health ]]; then
+      printf 'checked-web-api\\n' >&2
+      return "\${WEB_API_EXIT:-0}"
+    fi
+    return 0
+  }
+${health}`;
+  for (const exitCode of [0, 22]) {
+    const result = spawnSync("bash", ["-c", harness, "healthcheck", "3101"], { encoding: "utf8", env: { ...process.env, WEB_API_EXIT: String(exitCode) } });
+    assert.equal(result.status, exitCode);
+    assert.match(result.stderr, /checked-web-api/);
+    if (exitCode !== 0) assert.doesNotMatch(result.stdout, /HEALTH CHECK PASSED/);
+  }
 });
 
 test("tracked templates are secret-free and require service-owned configuration", async () => {

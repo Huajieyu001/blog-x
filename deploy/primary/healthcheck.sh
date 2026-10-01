@@ -8,4 +8,7 @@ port="${1:-3100}"
 . "$CONFIG"
 curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3001/health >/dev/null
 curl --fail --silent --show-error --max-time 8 --resolve "huajieyu001.top:${port}:127.0.0.1" "http://huajieyu001.top:${port}/" >/dev/null
+curl --fail --silent --show-error --max-time 8 --resolve "huajieyu001.top:${port}:127.0.0.1" \
+  -H 'X-Blog-X-Client-IP: 127.0.0.1' -H "X-Blog-X-Ingress-Auth: $BLOG_X_INGRESS_AUTH_SECRET" \
+  "http://huajieyu001.top:${port}/api/health" >/dev/null
 printf 'PRIMARY HEALTH CHECK PASSED on loopback Web port %s\n' "$port"

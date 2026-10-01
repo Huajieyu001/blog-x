@@ -23,6 +23,7 @@ docker create --name blog-x-web --network host --user 1000:1000 --read-only --ca
   -e NODE_ENV=production -e HOST=127.0.0.1 -e PORT=3100 -e PUBLIC_ORIGIN="$PUBLIC_ORIGIN" -e INTERNAL_API_ORIGIN=http://127.0.0.1:3001 \
   -e BLOG_X_INGRESS_AUTH_SECRET="$(sed -n 's/^BLOG_X_INGRESS_AUTH_SECRET=//p' "$CONFIG")" "$IMAGE"
 systemctl enable --now blog-x-primary-web.service
+for _ in $(seq 1 20); do "$(dirname "$0")/healthcheck.sh" 3100 >/dev/null 2>&1 && break || sleep 2; done
 "$(dirname "$0")/healthcheck.sh" 3100
 nginx -t && nginx -s reload
 printf 'PRIMARY ROLLBACK COMPLETE %s\n' "$release_id"
