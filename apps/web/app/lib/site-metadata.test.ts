@@ -208,7 +208,8 @@ test("public article render starts cached reads together and keeps recovery plus
   const api = readFileSync(new URL("./api.ts", import.meta.url), "utf8");
 
   assert.match(page, /const \[result, siteResult, relatedResult\] = await Promise\.all\(\[\s*getPublicPost\(slug\),\s*getPublicSiteSettings\(\),\s*getPublicRelatedPosts\(slug\),\s*\]\)/);
-  assert.match(api, /const cachedPublicRelatedPosts = cache\(\(slug: string\) => getPublic\(`\/public\/articles\/\$\{encodeURIComponent\(slug\)\}\/related`, publicRelatedPostsResponseSchema\)\)/);
+  assert.match(api, /const readCachedPublicRelatedPosts = unstable_cache\([\s\S]*?`\/public\/articles\/\$\{encodeURIComponent\(slug\)\}\/related`[\s\S]*?publicDataCacheOptions/);
+  assert.match(api, /const cachedPublicRelatedPosts = cache\(async \(slug: string\) =>/);
   assert.match(api, /export function getPublicRelatedPosts\(slug: string\): Promise<PublicResult<PublicRelatedPostsResponse>> \{\s*return cachedPublicRelatedPosts\(slug\);\s*\}/);
 
   assert.match(page, /if \(result\.kind === "redirect"\) permanentRedirect\(result\.location\);/);
@@ -238,4 +239,30 @@ test("public feeds prioritize only their first visible default card cover", () =
     const source = readFileSync(new URL(path, import.meta.url), "utf8");
     assert.doesNotMatch(source, /<PostCard[^>]*priority=/, `${path} compact cards should stay lazy`);
   }
+});
+
+test("only stable public indexes use the shared 30-second render horizon", () => {
+  for (const path of [
+    "../archives/page.tsx",
+    "../categories/page.tsx",
+    "../tags/page.tsx",
+    "../sitemap.ts",
+    "../rss.xml/route.ts",
+    "../robots.ts",
+  ]) {
+    const source = readFileSync(new URL(path, import.meta.url), "utf8");
+    assert.match(source, /export const revalidate = 30/);
+    assert.doesNotMatch(source, /force-dynamic/);
+  }
+  const rss = readFileSync(new URL("../rss.xml/route.ts", import.meta.url), "utf8");
+  assert.match(rss, /"cache-control": "public, max-age=30"/);
+
+  for (const path of ["../page.tsx", "../about/page.tsx", "../admin/settings/page.tsx"]) {
+    const source = readFileSync(new URL(path, import.meta.url), "utf8");
+    assert.match(source, /force-dynamic/, `${path} must remain request-time`);
+    assert.doesNotMatch(source, /export const revalidate = 30/, `${path} must not inherit the stable public index policy`);
+  }
+  const search = readFileSync(new URL("../search/page.tsx", import.meta.url), "utf8");
+  assert.match(search, /headers\(\)/, "search must remain request-specific");
+  assert.doesNotMatch(search, /export const revalidate = 30/, "search must not inherit the stable public index policy");
 });

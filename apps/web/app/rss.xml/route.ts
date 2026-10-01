@@ -2,7 +2,7 @@ import { defaultSiteSettings } from "@blog-x/contracts";
 import { getPublicDistribution, getPublicSiteSettings } from "../lib/api";
 import { renderRss } from "../lib/site-metadata";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 30;
 
 export async function GET() {
   const [distribution, siteResult] = await Promise.all([getPublicDistribution(), getPublicSiteSettings()]);
@@ -11,7 +11,7 @@ export async function GET() {
   return new Response(renderRss(distribution.data, site), {
     headers: {
       "content-type": "application/rss+xml; charset=utf-8",
-      "cache-control": "no-store",
+      "cache-control": "public, max-age=30",
     },
   });
 }
