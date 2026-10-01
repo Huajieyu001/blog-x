@@ -79,8 +79,8 @@ test("fast preview uses one local Unix authority, offline two-image builds, immu
   assert.deepEqual(commandCalls(f, "docker", ["container", "inspect"])[0].args, ["container", "inspect", "blogxlocal-api-1", "blogxlocal-web-1"]);
   assert.deepEqual(commandCalls(f, "docker", ["image", "inspect"])[1].args, ["image", "inspect", SHA("b"), SHA("c")]);
   assert.deepEqual(commandCalls(f, "corepack").map((call) => call.args), [
-    ["pnpm", "--offline", "-r", "typecheck"],
-    ["pnpm", "--offline", "exec", "playwright", "test", "--config=scripts/local-preview.playwright.config.ts", "scripts/local-preview-smoke.spec.ts", "--workers=1"],
+    ["pnpm", "--config.offline=true", "-r", "run", "typecheck"],
+    ["pnpm", "--config.offline=true", "exec", "playwright", "test", "--config=scripts/local-preview.playwright.config.ts", "scripts/local-preview-smoke.spec.ts", "--workers=1"],
   ]);
   assert.deepEqual(commandCalls(f, "docker", ["build"]).map((call) => call.args), [
     ["build", "--network=none", "--pull=false", "--file", "apps/api/Dockerfile.refresh", "--tag", "blog-x-api-preview:current", "--build-arg", `SEED_IMAGE=${SHA("b")}`, "--build-arg", `SEED_IMAGE_ID=${SHA("b")}`, "--build-arg", `REFRESH_REVISION=${REVISION}`, "--build-arg", `LOCKFILE_SHA256=${LOCK}`, "--build-arg", `PUBLIC_ORIGIN=${origin}`, "."],

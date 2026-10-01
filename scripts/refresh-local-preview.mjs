@@ -50,10 +50,10 @@ export function createFastPreviewPlan({ revision, lockfileSha256, seeds, targets
     args: Object.freeze(["build", "--network=none", "--pull=false", "--file", `apps/${application}/Dockerfile.refresh`, "--tag", targetTags[application], "--build-arg", `SEED_IMAGE=${seeds[application]}`, "--build-arg", `SEED_IMAGE_ID=${seeds[application]}`, "--build-arg", `REFRESH_REVISION=${revision}`, "--build-arg", `LOCKFILE_SHA256=${lockfileSha256}`, "--build-arg", `PUBLIC_ORIGIN=${origin}`, "."]),
   });
   return Object.freeze({
-    typecheck: Object.freeze({ command: "corepack", args: Object.freeze(["pnpm", "--offline", "-r", "typecheck"]) }),
+    typecheck: Object.freeze({ command: "corepack", args: Object.freeze(["pnpm", "--config.offline=true", "-r", "run", "typecheck"]) }),
     builds: Object.freeze(applications.map(build)),
     cutover: Object.freeze({ command: "docker-compose", args: Object.freeze([...composePrefix, "up", "-d", "--wait", "--no-build", "--no-deps", "api", "web"]) }),
-    smoke: Object.freeze({ command: "corepack", args: Object.freeze(["pnpm", "--offline", "exec", "playwright", "test", "--config=scripts/local-preview.playwright.config.ts", "scripts/local-preview-smoke.spec.ts", "--workers=1"]) }),
+    smoke: Object.freeze({ command: "corepack", args: Object.freeze(["pnpm", "--config.offline=true", "exec", "playwright", "test", "--config=scripts/local-preview.playwright.config.ts", "scripts/local-preview-smoke.spec.ts", "--workers=1"]) }),
   });
 }
 
