@@ -8,7 +8,7 @@ import { collectProductionReadiness, formatProductionReadinessReport, runProduct
 import { assertLocalDeliveryEvidenceSchema } from "../refresh-local-runtime-core.mjs";
 
 const sha = (character) => character.repeat(40);
-const receiptRevision = "509b75c23e0e0af22272493cc8df32280444057d";
+const receiptRevision = "b34cc2efaf2d6f9af5652dd3e9c239606f1b5ff1";
 const now = new Date("2026-08-10T12:00:00.000Z");
 const observedAt = "2026-08-10T11:00:00.000Z";
 const validUntil = "2026-08-10T18:00:00.000Z";
@@ -74,10 +74,12 @@ function baseOptions(overrides = {}) {
   };
 }
 
-test("strict local delivery assertion remains exported", async () => {
+test("strict local delivery assertion accepts the current inventory and rejects stale immutable evidence", async () => {
   const { readFile } = await import("node:fs/promises");
-  const receipt = JSON.parse(await readFile("ops/local-deliveries/509b75c23e0e0af22272493cc8df32280444057d.json", "utf8"));
+  const receipt = JSON.parse(await readFile(`ops/local-deliveries/${receiptRevision}.json`, "utf8"));
+  const staleReceipt = JSON.parse(await readFile("ops/local-deliveries/509b75c23e0e0af22272493cc8df32280444057d.json", "utf8"));
   assert.equal(assertLocalDeliveryEvidenceSchema(receipt), true);
+  assert.throws(() => assertLocalDeliveryEvidenceSchema(staleReceipt), /inventory|manifest|drifted/i);
 });
 
 test("canonical blocked readiness binds local inputs and returns sanitized STOP", async () => {
