@@ -26,7 +26,17 @@ apt-get install -y --no-install-recommends docker.io docker-compose-v2 ca-certif
 systemctl enable --now docker
 
 install -d -m 0750 "$APP_ROOT" "$CONFIG_DIR" "$MEDIA_DIR" "$BACKUP_DIR"
+install -d -m 0750 "$APP_ROOT/deploy/secondary"
 install -d -m 0700 -o root -g root "$DEPLOYMENTS_DIR"
+for helper in trusted-peer.sh run-compose-job.sh; do
+  helper_source="$(dirname "$0")/$helper"
+  helper_destination="$APP_ROOT/deploy/secondary/$helper"
+  if [[ "$helper_source" -ef "$helper_destination" ]]; then
+    chmod 0755 "$helper_destination"
+  else
+    install -m 0755 "$helper_source" "$helper_destination"
+  fi
+done
 if [[ ! -f $ENV_FILE ]]; then
   db_password=$(openssl rand -hex 32)
   ingress_secret=$(openssl rand -hex 32)

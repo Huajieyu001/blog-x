@@ -16,11 +16,7 @@ export function parseSecondaryJobArguments(arguments_) {
 /** The only two compose operations this runner can invoke. */
 export function fixedSecondaryCommand(job) {
   if (!jobs.has(job)) throw new Error("invalid job");
-  return [
-    "compose", "--project-name", "blog-x-secondary", "--env-file", "/etc/blog-x/secondary.env", "--file", "/opt/blog-x/deploy/secondary/compose.yaml",
-    "exec", "-T", "api", "corepack", "pnpm", "--filter", "@blog-x/api",
-    ...(job === "retention" ? ["retention", "--views-limit=100", "--sessions-limit=100"] : ["publish:due", "--limit=100"]),
-  ];
+  return ["/opt/blog-x/deploy/secondary/run-compose-job.sh", job];
 }
 
 function executeFixedCommand(command, { timeoutMs = secondaryJobTimeoutMs } = {}) {
@@ -29,7 +25,7 @@ function executeFixedCommand(command, { timeoutMs = secondaryJobTimeoutMs } = {}
     let stderr = "";
     let timedOut = false;
     let settled = false;
-    const child = spawn("docker", command, { shell: false, env: { PATH: process.env.PATH ?? "" }, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command[0], command.slice(1), { shell: false, env: { PATH: process.env.PATH ?? "" }, stdio: ["ignore", "pipe", "pipe"] });
     const finish = (result) => {
       if (settled) return;
       settled = true;

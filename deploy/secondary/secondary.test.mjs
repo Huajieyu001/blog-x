@@ -30,7 +30,66 @@ test("secondary compose keeps PostgreSQL private and API loopback-only", async (
   assert.match(api, /tmpfs:\n\s+- \/tmp:rw,noexec,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=1777/);
   assert.match(api, /cap_drop:\n\s+- ALL/);
   assert.match(api, /security_opt:\n\s+- no-new-privileges:true/);
+  assert.match(api, /TRUSTED_PROXY_CIDRS: \$\{TRUSTED_PROXY_CIDRS:\?secondary trusted proxy peer must be resolved\}/);
+  assert.doesNotMatch(api, /TRUSTED_PROXY_CIDRS: 127\.0\.0\.1\/32/);
   assert.doesNotMatch(compose, /node apps\/api\/dist\/app\.js|@blog-x\/contracts.*dist/);
+});
+
+test("secondary trusted peer resolver permits only one inspected private ingress gateway and exact API attachment", async () => {
+  const helper = await read("./trusted-peer.sh");
+  const begin = helper.indexOf("# BLOG_X_TRUSTED_PEER_BEGIN");
+  const end = helper.indexOf("# BLOG_X_TRUSTED_PEER_END");
+  assert.ok(begin >= 0 && end > begin, "trusted peer helpers must remain extractable");
+  const functions = helper.slice(begin, end);
+  const harness = `${functions}
+docker() {
+  if [[ \${1-} == network && \${2-} == inspect ]]; then
+    if [[ \$# -eq 3 ]]; then return "\${NETWORK_STATUS-0}"; fi
+    if [[ \${4-} == *IPAM* ]]; then printf '%s\\n' "\${GATEWAY-}"; else printf '%s' "\${NETWORK_IDENTITY-bridge|blog-x-secondary|ingress}"; fi
+    return "\${NETWORK_STATUS-0}"
+  fi
+  if [[ \${1-} == inspect ]]; then printf '%s' "\${API_GATEWAY-}"; return "\${API_STATUS-0}"; fi
+  return 97
+}
+blog_x_export_trusted_proxy_cidr blog-x-secondary
+printf 'cidr=%s\\n' "\$TRUSTED_PROXY_CIDRS"
+blog_x_assert_api_ingress_gateway blog-x-secondary api`;
+  const run = ({ gateway, apiGateway = gateway, networkStatus = 0, apiStatus = 0, identity = "bridge|blog-x-secondary|ingress" }) => spawnSync("bash", ["-c", harness], {
+    encoding: "utf8", env: { ...process.env, GATEWAY: gateway, API_GATEWAY: apiGateway, NETWORK_STATUS: String(networkStatus), API_STATUS: String(apiStatus), NETWORK_IDENTITY: identity },
+  });
+  const accepted = run({ gateway: "172.21.0.1" });
+  assert.equal(accepted.status, 0, accepted.stderr);
+  assert.match(accepted.stdout, /cidr=172\.21\.0\.1\/32/);
+  for (const gateway of ["", "172.21.0.1\n172.22.0.1", "172.15.0.1", "127.0.0.1", "8.8.8.8", "172.21.0.999"]) {
+    assert.notEqual(run({ gateway }).status, 0, `gateway ${JSON.stringify(gateway)} must fail closed`);
+  }
+  assert.notEqual(run({ gateway: "172.21.0.1", apiGateway: "172.20.0.1" }).status, 0, "API must be attached to the resolved ingress gateway");
+  assert.notEqual(run({ gateway: "172.21.0.1", identity: "bridge|other-project|ingress" }).status, 0, "all resolver callers must reject a foreign network");
+});
+
+test("secondary ingress bootstrap creates only a labeled Docker bridge and rejects a foreign network", async () => {
+  const helper = await read("./trusted-peer.sh");
+  const functions = helper.slice(helper.indexOf("# BLOG_X_TRUSTED_PEER_BEGIN"), helper.indexOf("# BLOG_X_TRUSTED_PEER_END"));
+  const harness = `${functions}
+docker() {
+  if [[ \${1-} == network && \${2-} == inspect ]]; then
+    if [[ \$# -eq 3 ]]; then return "\${NETWORK_EXISTS-1}"; fi
+    printf '%s' "\${NETWORK_IDENTITY-bridge|blog-x-secondary|ingress}"
+    return 0
+  fi
+  if [[ \${1-} == network && \${2-} == create ]]; then printf '%s\\n' "create:\$*" >&2; return "\${CREATE_STATUS-0}"; fi
+  return 97
+}
+blog_x_ensure_ingress_network blog-x-secondary`;
+  const run = ({ exists = 1, identity = "bridge|blog-x-secondary|ingress", createStatus = 0 } = {}) => spawnSync("bash", ["-c", harness], {
+    encoding: "utf8", env: { ...process.env, NETWORK_EXISTS: String(exists), NETWORK_IDENTITY: identity, CREATE_STATUS: String(createStatus) },
+  });
+  const created = run();
+  assert.equal(created.status, 0, created.stderr);
+  assert.match(created.stderr, /create:network create --driver bridge --label com\.docker\.compose\.project=blog-x-secondary --label com\.docker\.compose\.network=ingress blog-x-secondary_ingress/);
+  assert.equal(run({ exists: 0 }).status, 0, "existing matching network must not be recreated");
+  assert.notEqual(run({ identity: "bridge|other-project|ingress" }).status, 0, "same-name foreign network must fail closed");
+  assert.notEqual(run({ identity: "overlay|blog-x-secondary|ingress" }).status, 0, "non-bridge network must fail closed");
 });
 
 test("secondary deployment accepts only portable Docker Compose 2.20.0-or-newer output", async () => {
@@ -111,6 +170,10 @@ test("install and deployment scripts use fixed safe authorities without secret o
   }
   assert.doesNotMatch(install, /systemctl\s+(?:enable|start)[^\n]*blog-x-secondary-retention/i);
   assert.match(deploy, /readonly ENV_FILE=\/etc\/blog-x\/secondary\.env/);
+  for (const script of [install, deploy, backup, publish]) assert.match(script, /trusted-peer\.sh/);
+  assert.match(deploy, /blog_x_ensure_ingress_network "\$PROJECT"/);
+  assert.match(deploy, /blog_x_export_trusted_proxy_cidr "\$PROJECT"/);
+  assert.match(deploy, /blog_x_assert_api_ingress_gateway "\$PROJECT" "\$running_api"/);
   assert.match(deploy, /stat -c '%U:%G' "\$ENV_FILE"\) == root:root/);
   assert.match(deploy, /db:migrate/);
   assert.match(deploy, /db:schema:verify/);

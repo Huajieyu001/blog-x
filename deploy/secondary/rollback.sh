@@ -10,6 +10,7 @@ readonly DEPLOYMENTS_DIR=/var/lib/blog-x/deployments
 readonly ROLLBACK_RECORD="$DEPLOYMENTS_DIR/rollback.env"
 readonly CURRENT_RECORD="$DEPLOYMENTS_DIR/current.env"
 readonly LAST_ROLLBACK_RECORD="$DEPLOYMENTS_DIR/last-rollback.env"
+readonly TRUSTED_PEER_RESOLVER="$APP_ROOT/deploy/secondary/trusted-peer.sh"
 
 is_revision() { [[ $1 =~ ^[a-f0-9]{40}$ ]]; }
 is_image_id() { [[ $1 =~ ^sha256:[a-f0-9]{64}$ ]]; }
@@ -58,6 +59,8 @@ ack_candidate_revision="${BASH_REMATCH[1]}"
 [[ -f $ENV_FILE ]] || fail 'secondary environment is missing'
 [[ $(stat -c '%a' "$ENV_FILE") == 600 ]] || fail 'secondary environment must be mode 0600'
 [[ $(stat -c '%U:%G' "$ENV_FILE") == root:root ]] || fail 'secondary environment must be owned by root:root'
+[[ -f $TRUSTED_PEER_RESOLVER && ! -L $TRUSTED_PEER_RESOLVER ]] || fail 'trusted peer resolver is missing or unsafe'
+. "$TRUSTED_PEER_RESOLVER"
 [[ -d $DEPLOYMENTS_DIR && ! -L $DEPLOYMENTS_DIR ]] || fail 'deployment state directory is invalid'
 [[ $(stat -c '%a' "$DEPLOYMENTS_DIR") == 700 ]] || fail 'deployment state directory must be mode 0700'
 [[ $(stat -c '%U:%G' "$DEPLOYMENTS_DIR") == root:root ]] || fail 'deployment state directory must be owned by root:root'
@@ -111,6 +114,8 @@ assert_service_topology "$current_postgres" postgres
 [[ "$(docker inspect --format '{{.State.Health.Status}}' "$current_postgres")" == healthy ]] || fail 'current PostgreSQL is not healthy'
 [[ "$(docker inspect --format '{{.Image}}' "$current_api")" == "$candidate_image_id" ]] || fail 'current API image does not match rollback candidate'
 [[ "$(docker image inspect --format '{{ index .Config.Labels \"org.opencontainers.image.revision\" }}' "$candidate_image_id")" == "$candidate_revision" ]] || fail 'current API revision does not match rollback candidate'
+blog_x_export_trusted_proxy_cidr "$PROJECT" || fail 'trusted proxy peer could not be resolved'
+blog_x_assert_api_ingress_gateway "$PROJECT" "$current_api" || fail 'secondary API ingress peer does not match resolved gateway'
 
 compose=(env "BLOG_X_REVISION=$prior_revision" "BLOG_X_API_IMAGE=$prior_image_id" docker compose --project-name "$PROJECT" --env-file "$ENV_FILE" --file "$COMPOSE_FILE")
 "${compose[@]}" config --quiet

@@ -9,6 +9,7 @@ readonly PROJECT=blog-x-secondary
 readonly DEPLOYMENTS_DIR=/var/lib/blog-x/deployments
 readonly ROLLBACK_RECORD="$DEPLOYMENTS_DIR/rollback.env"
 readonly CURRENT_RECORD="$DEPLOYMENTS_DIR/current.env"
+readonly TRUSTED_PEER_RESOLVER="$APP_ROOT/deploy/secondary/trusted-peer.sh"
 
 is_revision() { [[ $1 =~ ^[a-f0-9]{40}$ ]]; }
 is_image_id() { [[ $1 =~ ^sha256:[a-f0-9]{64}$ ]]; }
@@ -132,6 +133,9 @@ require_supported_compose
 [[ $(stat -c '%a' "$ENV_FILE") == 600 ]] || { printf '%s\n' 'secondary environment must be mode 0600' >&2; exit 1; }
 [[ $(stat -c '%U:%G' "$ENV_FILE") == root:root ]] || { printf '%s\n' 'secondary environment must be owned by root:root' >&2; exit 1; }
 [[ -f $COMPOSE_FILE ]] || { printf '%s\n' 'secondary compose bundle is missing' >&2; exit 1; }
+[[ -f $TRUSTED_PEER_RESOLVER && ! -L $TRUSTED_PEER_RESOLVER ]] || { printf '%s\n' 'trusted peer resolver is missing or unsafe' >&2; exit 1; }
+# The resolver is shipped with this root-owned deployment bundle; it prints no secrets.
+. "$TRUSTED_PEER_RESOLVER"
 
 if [[ -d $APP_ROOT/.git ]]; then
   revision=$(git -C "$APP_ROOT" rev-parse --verify HEAD)
@@ -172,7 +176,8 @@ fi
 [[ $prior_revision != "$revision" ]] || { printf '%s\n' 'candidate revision is already running' >&2; exit 1; }
 export BLOG_X_REVISION="$revision"
 compose=(docker compose --project-name "$PROJECT" --env-file "$ENV_FILE" --file "$COMPOSE_FILE")
-
+blog_x_ensure_ingress_network "$PROJECT" || { printf '%s\n' 'secondary ingress network is missing or invalid' >&2; exit 1; }
+blog_x_export_trusted_proxy_cidr "$PROJECT" || { printf '%s\n' 'trusted proxy peer could not be resolved' >&2; exit 1; }
 "${compose[@]}" config --quiet
 unset BLOG_X_API_IMAGE
 "${compose[@]}" build api
@@ -206,6 +211,7 @@ running_api="$(single_running_api)"
 [[ "$(docker inspect --format '{{.Image}}' "$running_api")" == "$candidate_image_id" ]] || { printf '%s\n' 'secondary API image ID does not match candidate' >&2; exit 1; }
 [[ "$(docker inspect --format '{{ index .Config.Labels \"com.docker.compose.project\" }}' "$running_api")" == "$PROJECT" ]] || { printf '%s\n' 'secondary API project topology is invalid' >&2; exit 1; }
 [[ "$(docker inspect --format '{{ index .Config.Labels \"com.docker.compose.service\" }}' "$running_api")" == api ]] || { printf '%s\n' 'secondary API service topology is invalid' >&2; exit 1; }
+blog_x_assert_api_ingress_gateway "$PROJECT" "$running_api" || { printf '%s\n' 'secondary API ingress peer does not match resolved gateway' >&2; exit 1; }
 write_current_record
 systemctl enable --now blog-x-secondary-backup.timer blog-x-secondary-publish-due.timer blog-x-secondary-retention.timer
 printf 'SECONDARY DEPLOYMENT COMPLETE %s %s\n' "$revision" "$candidate_image_id"

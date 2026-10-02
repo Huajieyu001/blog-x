@@ -13,11 +13,8 @@ test("secondary runner accepts only fixed jobs and fixed compose invocations", (
   for (const args of [[], ["shell", "--results-root=/tmp/results"], ["retention"], ["retention", "--results-root=relative"], ["retention", "--results-root=/tmp/results", "--limit=1"]]) {
     assert.deepEqual(parseSecondaryJobArguments(args), { ok: false });
   }
-  assert.deepEqual(fixedSecondaryCommand("retention"), [
-    "compose", "--project-name", "blog-x-secondary", "--env-file", "/etc/blog-x/secondary.env", "--file", "/opt/blog-x/deploy/secondary/compose.yaml",
-    "exec", "-T", "api", "corepack", "pnpm", "--filter", "@blog-x/api", "retention", "--views-limit=100", "--sessions-limit=100",
-  ]);
-  assert.deepEqual(fixedSecondaryCommand("publish-due").slice(-2), ["publish:due", "--limit=100"]);
+  assert.deepEqual(fixedSecondaryCommand("retention"), ["/opt/blog-x/deploy/secondary/run-compose-job.sh", "retention"]);
+  assert.deepEqual(fixedSecondaryCommand("publish-due"), ["/opt/blog-x/deploy/secondary/run-compose-job.sh", "publish-due"]);
 });
 
 test("success stores sanitized aggregate receipt rather than child output", async () => {
