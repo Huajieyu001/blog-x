@@ -251,6 +251,7 @@ test("auth logout, schedule mutations, and legacy publish have named unsafe rout
     "POST /admin/about",
     "POST /admin/about/preview",
     "POST /admin/about/publish",
+    "POST /admin/site-settings",
     "POST /admin/media",
     "DELETE /admin/media/:id",
     "POST /articles/publish",
