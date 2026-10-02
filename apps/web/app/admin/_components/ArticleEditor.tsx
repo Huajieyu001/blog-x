@@ -520,6 +520,10 @@ export default function ArticleEditor({
     if (JSON.stringify(fieldsRef.current) !== baselineFields.current || publishedAtCorrectionRef.current) {
       setCurrentPost(nextPost);
       setMessage("文章状态已更新；未保存的编辑内容仍保留，请手动保存");
+      // App Router refresh merges new server props without resetting this
+      // client component's state, so revision history gets the latest version
+      // while the editor keeps its unsaved Markdown.
+      router.refresh();
       return;
     }
     const nextFields = initialFields(nextPost);
@@ -528,6 +532,7 @@ export default function ArticleEditor({
     baselineFields.current = JSON.stringify(nextFields);
     setRecoveryBaseVersion(nextPost.version);
     setPublishedAtCorrection(false);
+    router.refresh();
   }
 
   function restoreRecovery() {

@@ -87,6 +87,14 @@ export default function ArticleRevisionHistory({
     };
   }, [confirmingRestore, restoring]);
 
+  // A lifecycle action refreshes server props with the new optimistic-lock
+  // version. Do not restore against a comparison selected for the old state.
+  useEffect(() => {
+    setDetail({ kind: "idle" });
+    setConfirmingRestore(null);
+    setRestoreError(null);
+  }, [article.id, article.version]);
+
   function closeRestoreDialog() {
     setConfirmingRestore(null);
     window.requestAnimationFrame(() => restoreTrigger.current?.focus());

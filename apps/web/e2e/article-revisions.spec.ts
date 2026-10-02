@@ -33,6 +33,14 @@ test("administrator compares and restores a bounded article history without rend
   await expect(history).toContainText("标题、正文");
   await expect(history.getByText("1 / 20", { exact: true })).toBeVisible();
   await expect(history).not.toContainText("# 原始内容");
+  // Every lifecycle mutation advances the optimistic-lock version. History
+  // restore below must use refreshed props without a manual page reload.
+  await page.getByRole("button", { name: "发布", exact: true }).click();
+  await expect(page.getByRole("button", { name: "下线", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "下线", exact: true }).click();
+  await expect(page.getByRole("button", { name: "重新发布", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "重新发布", exact: true }).click();
+  await expect(page.getByRole("button", { name: "下线", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "查看对比" }).click();
   const comparison = page.locator("#revision-comparison");
   await expect(comparison).toContainText("历史标题");

@@ -166,6 +166,15 @@ test("administrator mutation transport failures remain localized and outcome-hon
   assert.doesNotMatch(articleEditor, /网络异常，草稿内容仍保留在编辑器中/);
 });
 
+test("lifecycle refresh shares its new version with history without replacing editor state", () => {
+  const editor = readFileSync(new URL("../admin/_components/ArticleEditor.tsx", import.meta.url), "utf8");
+  const history = readFileSync(new URL("../admin/_components/ArticleRevisionHistory.tsx", import.meta.url), "utf8");
+  assert.match(editor, /文章状态已更新；未保存的编辑内容仍保留，请手动保存[\s\S]*?router\.refresh\(\);/);
+  assert.match(editor, /setRecoveryBaseVersion\(nextPost\.version\);[\s\S]*?router\.refresh\(\);/);
+  assert.match(history, /\[article\.id, article\.version\]/);
+  assert.doesNotMatch(editor, /window\.location\.reload\(\)/);
+});
+
 test("public view beacon uses the shared default deadline without changing anonymous delivery semantics", () => {
   const source = readFileSync(
     new URL("../posts/[slug]/ViewBeacon.tsx", import.meta.url),
