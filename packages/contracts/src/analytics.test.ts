@@ -1,6 +1,33 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { adminAnalyticsQuerySchema, adminAnalyticsResponseSchema } from "./analytics.js";
+import { adminAnalyticsQuerySchema, adminAnalyticsResponseSchema, anonymousViewSlugParamsSchema } from "./analytics.js";
+import { authorableSlugSchema, publicArticleLocationForSlug, publicArticleRedirectLocationSchema, publicPostPathForRedirectLocation } from "./slug.js";
+
+test("authorable Unicode and uppercase slugs use one canonical redirect and analytics grammar", () => {
+  for (const slug of ["old-post", "中文-文章", "My-Post", "Café-2026"]) {
+    assert.equal(authorableSlugSchema.parse(slug), slug);
+    assert.equal(anonymousViewSlugParamsSchema.parse({ slug }).slug, slug);
+    const location = publicArticleLocationForSlug(slug);
+    assert.equal(publicArticleRedirectLocationSchema.parse(location), location);
+    assert.equal(publicPostPathForRedirectLocation(location), `/posts/${encodeURIComponent(slug)}`);
+  }
+  assert.equal(publicArticleLocationForSlug("中文-My-Post"), "/public/articles/%E4%B8%AD%E6%96%87-My-Post");
+});
+
+test("article redirects reject noncanonical encoding and unsafe destinations", () => {
+  for (const location of [
+    "/public/articles/%25E4%25B8%25AD", "/public/articles/%2E%2E", "/public/articles/..",
+    "/public/articles/a%2Fb", "/public/articles/a%5Cb", "/public/articles/%00",
+    "/public/articles/%ZZ", "/public/articles/%E4%B8", "/public/articles/%6Fld",
+    "/public/articles/%20old", "/public/articles/old%20", "/public/articles/中文",
+    "/public/articles/x?next=y", "/public/articles/x#fragment", "/public/articles/",
+    "//outside.invalid/a", "https://outside.invalid/public/articles/old", "/admin/posts/old",
+    `/public/articles/${"a".repeat(181)}`,
+  ]) {
+    assert.equal(publicArticleRedirectLocationSchema.safeParse(location).success, false, location);
+    assert.equal(publicPostPathForRedirectLocation(location), null, location);
+  }
+});
 
 function analytics(range: 7 | 30 | 90 | 400 = 7) {
   const start = new Date(Date.UTC(2026, 8, 1));

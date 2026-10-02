@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { publicTaxonomyTermSchema } from "./taxonomy";
 import { mediaUsageReferenceSchema } from "./media";
+import { publicArticleRedirectLocationSchema } from "./slug";
 
 export const publicPostPageSize = 10;
 
@@ -59,7 +60,7 @@ export const publicPostNotFoundResponseSchema = z.object({
 
 /** Only an API-owned, root-relative detail route is safe to forward to the web app. */
 export const publicArticleRedirectResponseSchema = z.object({
-  location: z.string().regex(/^\/public\/articles\/[A-Za-z0-9][A-Za-z0-9-]*$/),
+  location: publicArticleRedirectLocationSchema,
 }).strict();
 
 export const invalidPublicPageResponseSchema = z.object({

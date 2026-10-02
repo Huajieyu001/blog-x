@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { mediaUsageReferenceSchema } from "./media";
+import { authorableSlugSchema } from "./slug";
 
-const slugPattern = /^[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*$/u;
 const publishedAtInputSchema = z.union([z.string().datetime({ offset: true }), z.null()]);
 const scheduledAtSchema = z.string().datetime({ offset: true });
 export const adminPostInputSchema = z.object({
@@ -10,7 +10,7 @@ export const adminPostInputSchema = z.object({
   // New authoring uses API-owned uploaded media only. Retained historic values
   // remain representable by the response schema below for explicit repair.
   coverUrl: z.string().max(0, "封面 URL 已停用；请使用已上传媒体"),
-  slug: z.string().trim().min(1, "请输入 Slug").max(180, "Slug 不能超过 180 个字符").regex(slugPattern, "Slug 只能包含字母、数字和单个连字符"),
+  slug: authorableSlugSchema,
   markdown: z.string().trim().min(1, "请输入 Markdown 正文").max(200_000, "正文不能超过 200000 个字符"),
   publishedAt: publishedAtInputSchema.optional().default(null),
   seoDescription: z.string().trim().max(320, "SEO 描述不能超过 320 个字符"),

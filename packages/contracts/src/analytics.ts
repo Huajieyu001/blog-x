@@ -1,9 +1,10 @@
 import { z } from "zod";
+import { authorableSlugSchema } from "./slug";
 
 export const anonymousViewSourceValues = ["direct", "internal", "search", "social", "external"] as const;
 export const anonymousViewSourceSchema = z.enum(anonymousViewSourceValues);
 export const anonymousViewSlugParamsSchema = z.object({
-  slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(180),
+  slug: authorableSlugSchema,
 }).strict();
 export const anonymousViewBodySchema = z.object({}).strict();
 

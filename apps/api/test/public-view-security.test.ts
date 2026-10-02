@@ -77,6 +77,17 @@ test("anonymous views classify only accepted traffic and keep rejections opaque"
   assert.deepEqual(calls, [{ slug: "privacy-safe", source: "search" }]);
 });
 
+test("authorable Unicode and uppercase slugs reach the aggregate repository", async (context) => {
+  const { app, calls } = await createViewApp({ limit: 3 });
+  context.after(() => app.close());
+  const headers = { origin: publicOrigin, "content-type": "application/json" };
+  for (const slug of ["中文-文章", "My-Post", "Café-2026"]) {
+    const response = await app.inject({ method: "POST", url: `/public/articles/${encodeURIComponent(slug)}/view`, headers, payload: {} });
+    assert.equal(response.statusCode, 204);
+  }
+  assert.deepEqual(calls.map((call) => call.slug), ["中文-文章", "My-Post", "Café-2026"]);
+});
+
 test("anonymous view limiter separates trusted Web proxy clients, rejects untrusted forwarding data, and never returns a retry hint", async (context) => {
   const clock = new ManualClock();
   const { app, calls } = await createViewApp({ limit: 1, capacity: 4, clock, trustedProxyAddresses: ["127.0.0.1/8"] });

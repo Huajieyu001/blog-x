@@ -34,6 +34,7 @@ import {
   adminSiteSettingsSchema,
   type AdminSiteSettings,
   articleRevisionListSchema,
+  publicPostPathForRedirectLocation,
   type ArticleRevisionSummary,
 } from "@blog-x/contracts";
 import { unstable_cache } from "next/cache";
@@ -197,12 +198,7 @@ const cachedPublicRelatedPosts = cache(async (slug: string) => {
 function redirectLocation(location: string | null) {
   // The API is an upstream boundary. Never allow an absolute URL, a query,
   // traversal, or a differently-shaped API route to become browser navigation.
-  const match = /^\/public\/articles\/([A-Za-z0-9][A-Za-z0-9-]*)$/.exec(location ?? "");
-  if (!match) return null;
-  try {
-    const slug = decodeURIComponent(match[1]);
-    return slug === match[1] ? `/posts/${encodeURIComponent(slug)}` : null;
-  } catch { return null; }
+  return location ? publicPostPathForRedirectLocation(location) : null;
 }
 
 async function readCacheablePublicPost(slug: string): Promise<Extract<PublicPostResult, { kind: "ok" | "redirect" }>> {

@@ -8,6 +8,7 @@ import {
   publicRelatedPostLimit,
   publicRelatedPostsResponseSchema,
   publicArticleRedirectResponseSchema,
+  publicArticleLocationForSlug,
   publicSearchPageSize,
   publicSearchResponseSchema,
 } from "@blog-x/contracts";
@@ -378,7 +379,7 @@ export function createPublicRepository(db: Database) {
         .innerJoin(schema.articles, eq(schema.articleSlugRedirects.articleId, schema.articles.id))
         .where(and(eq(schema.articleSlugRedirects.fromSlug, slug), publicPredicate))
         .limit(1))[0];
-      return redirect ? { kind: "redirect" as const, location: publicArticleRedirectResponseSchema.parse({ location: `/public/articles/${redirect.slug}` }).location } : null;
+      return redirect ? { kind: "redirect" as const, location: publicArticleRedirectResponseSchema.parse({ location: publicArticleLocationForSlug(redirect.slug) }).location } : null;
     }
     if (!article.publishedAt || article.status !== "published") throw new Error("public predicate returned a non-public article");
     const tagsPromise = db.select({ name: schema.tags.name, slug: schema.tags.slug })

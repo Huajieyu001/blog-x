@@ -9,5 +9,6 @@ export * from "./media";
 export * from "./distribution";
 export * from "./audit";
 export * from "./analytics";
+export * from "./slug";
 export * from "./site-settings";
 export * from "./operations";

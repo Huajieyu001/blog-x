@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { publicArticleRedirectResponseSchema } from "@blog-x/contracts";
+import { publicArticleRedirectResponseSchema, publicArticleLocationForSlug } from "@blog-x/contracts";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { createAdminPostRepository } from "../src/content/admin-repository.js";
@@ -15,6 +15,18 @@ test("a public article redirect response has one canonical root-relative locatio
     publicArticleRedirectResponseSchema.parse({ location: "/public/articles/current-slug" }),
     { location: "/public/articles/current-slug" },
   );
+  assert.deepEqual(
+    publicArticleRedirectResponseSchema.parse({ location: publicArticleLocationForSlug("中文-My-Post") }),
+    { location: "/public/articles/%E4%B8%AD%E6%96%87-My-Post" },
+  );
+  for (const location of [
+    "/public/articles/%25E4%25B8%25AD%25E6%2596%2587",
+    "/public/articles/%2E%2E",
+    "/public/articles/%2Fetc",
+    "/public/articles/current?next=/admin",
+    "https://outside.invalid/public/articles/current",
+    "/public/articles/%E4%B8%AD%E6%96%87%ZZ",
+  ]) assert.equal(publicArticleRedirectResponseSchema.safeParse({ location }).success, false, location);
 });
 
 test("published aliases stay direct, private targets stay invisible, and history cannot be reused", async (context) => {
