@@ -347,6 +347,110 @@ test("mounted transport retries only an exact complete ciphertext receipt pair a
   await assert.rejects(transport.transfer(payload), /incomplete/i);
 });
 
+test("mounted publication journal recovers only its own interrupted objects and rejects corrupt or foreign artifacts", async (context) => {
+  const input = await adapterFixture(context, "t1b2c3d4");
+  const objects = join(input.destination.mountRoot, "objects");
+  const payload = {
+    setId: "20260809T100003Z-d1b2c3d4", ciphertext: Buffer.from("journal-ciphertext"), manifestSha256: "a".repeat(64),
+    aadSha256: "b".repeat(64), createdAt: "2026-08-09T10:00:00.000Z",
+  };
+  payload.ciphertextSha256 = sha(payload.ciphertext);
+  await mkdir(objects, { mode: 0o700 });
+  const journal = {
+    format: "blog-x-mounted-publication", version: 1, setId: payload.setId, manifestSha256: payload.manifestSha256,
+    ciphertextSha256: payload.ciphertextSha256, aadSha256: payload.aadSha256, createdAt: payload.createdAt,
+    destinationProfileId: "blog-x-mounted-directory-v1", cipherStage: ".publication-aaaaaaaaaaaaaaaaaaaaaaaa.cipher", receiptStage: ".publication-aaaaaaaaaaaaaaaaaaaaaaaa.receipt",
+  };
+  await writeFile(join(objects, `.${"publication"}-${payload.setId}.json`), JSON.stringify(journal), { mode: 0o600 });
+  await writeFile(join(objects, journal.cipherStage), "partial", { mode: 0o600 });
+  const transport = await createMountedDirectoryTransport(input.destination, { inspectMount: async (root) => ({ isMountPoint: true, root }) });
+  assert.deepEqual(await transport.catalog(), []);
+  assert.deepEqual(await readdir(objects), []);
+
+  await writeFile(join(objects, `.${"publication"}-${payload.setId}.json`), JSON.stringify(journal), { mode: 0o600 });
+  await writeFile(join(objects, `${payload.setId}.aesgcm`), payload.ciphertext, { mode: 0o600 });
+  assert.deepEqual(await transport.catalog(), []);
+  assert.deepEqual(await readdir(objects), []);
+
+  await writeFile(join(objects, `.${"publication"}-${payload.setId}.json`), JSON.stringify(journal), { mode: 0o600 });
+  await writeFile(join(objects, `${payload.setId}.aesgcm`), "corrupt", { mode: 0o600 });
+  await assert.rejects(transport.catalog(), /publication ciphertext digest mismatch/i);
+  assert.equal((await readdir(objects)).includes(`${payload.setId}.aesgcm`), true);
+  await rm(objects, { recursive: true, force: true });
+  await mkdir(objects, { mode: 0o700 });
+  await writeFile(join(objects, ".foreign.incomplete"), "foreign", { mode: 0o600 });
+  await assert.rejects(transport.catalog(), /unexpected object/i);
+  await rm(join(objects, ".foreign.incomplete"));
+  await symlink(join(input.destination.mountRoot, "identity.json"), join(objects, ".publication-foreign"));
+  await assert.rejects(transport.catalog(), /non-file/i);
+});
+
+test("mounted publication retries after a receipt-stage fault without replacing a completed pair", async (context) => {
+  const input = await adapterFixture(context, "v1b2c3d4");
+  let failReceiptWrite = true;
+  const filesystemWithOneReceiptFault = new Proxy(filesystem, {
+    get(target, property) {
+      if (property !== "writeFile") return target[property];
+      return async (path, ...rest) => {
+        if (failReceiptWrite && String(path).endsWith(".receipt")) {
+          failReceiptWrite = false;
+          throw new Error("receipt staging fault");
+        }
+        return target.writeFile(path, ...rest);
+      };
+    },
+  });
+  const transport = await createMountedDirectoryTransport(input.destination, {
+    inspectMount: async (root) => ({ isMountPoint: true, root }), filesystem: filesystemWithOneReceiptFault,
+  });
+  const payload = {
+    setId: "20260809T100004Z-e1b2c3d4", ciphertext: Buffer.from("retry-after-receipt-fault"), manifestSha256: "a".repeat(64),
+    aadSha256: "b".repeat(64), createdAt: "2026-08-09T10:00:00.000Z",
+  };
+  payload.ciphertextSha256 = sha(payload.ciphertext);
+  await assert.rejects(transport.transfer(payload), /receipt staging fault/i);
+  const retried = await transport.transfer(payload);
+  assert.equal(retried.ciphertextSha256, payload.ciphertextSha256);
+  assert.equal((await transport.catalog()).length, 1);
+});
+
+test("mounted publication recovers persisted crash windows and preserves a completed pair", async (context) => {
+  for (const faultAt of ["cipher-rename", "receipt-rename", "journal-unlink"]) {
+    const input = await adapterFixture(context, "w1b2c3d4");
+    let interrupted = false;
+    const crashFilesystem = new Proxy(filesystem, {
+      get(target, property) {
+        if (property === "readdir") return (...args) => {
+          if (interrupted) throw new Error("process interrupted before cleanup");
+          return target.readdir(...args);
+        };
+        if (property !== "rename" && property !== "unlink") return target[property];
+        return async (path, ...rest) => {
+          const trigger = property === "rename"
+            ? String(path).endsWith(faultAt === "cipher-rename" ? ".cipher" : ".receipt") && faultAt !== "journal-unlink"
+            : faultAt === "journal-unlink" && String(path).endsWith(".json");
+          if (trigger && !interrupted) {
+            interrupted = true;
+            throw new Error("simulated process interruption");
+          }
+          return target[property](path, ...rest);
+        };
+      },
+    });
+    const inspectMount = async (root) => ({ isMountPoint: true, root });
+    const crashed = await createMountedDirectoryTransport(input.destination, { inspectMount, filesystem: crashFilesystem });
+    const ciphertext = Buffer.from(`window-${faultAt}`);
+    const payload = { setId: "20260809T100005Z-f1b2c3d4", ciphertext, ciphertextSha256: sha(ciphertext), manifestSha256: "a".repeat(64), aadSha256: "b".repeat(64), createdAt: "2026-08-09T10:00:00.000Z" };
+    await assert.rejects(crashed.transfer(payload), /simulated process interruption/);
+    const resumed = await createMountedDirectoryTransport(input.destination, { inspectMount });
+    const catalog = await resumed.catalog();
+    assert.equal(catalog.length, faultAt === "journal-unlink" ? 1 : 0);
+    await resumed.transfer(payload);
+    assert.equal((await resumed.catalog()).length, 1);
+    assert.deepEqual((await resumed.readSet(payload.setId)).ciphertext, ciphertext);
+  }
+});
+
 test("failure attempt evidence is append-only, fixed-schema, and redacted", async (context) => {
   const input = await adapterFixture(context, "s1b2c3d4");
   const result = await recordProductionFailure(input.resultAuthority, {

@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { lstat, mkdir, open, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
+import * as nativeFilesystem from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 
@@ -7,6 +7,7 @@ const profileId = "blog-x-mounted-directory-v1";
 const setPattern = /^\d{8}T\d{6}Z-[a-z0-9]{8,32}$/;
 const digestPattern = /^[a-f0-9]{64}$/;
 const generatedMountBasePattern = /^blog-x-production-mount-[A-Za-z0-9_-]{6,64}$/;
+const journalNamePattern = /^\.publication-(\d{8}T\d{6}Z-[a-z0-9]{8,32})\.json$/;
 
 function fail(message) {
   throw new Error(`mounted destination ${message}`);
@@ -22,7 +23,7 @@ function within(value, parent) {
 
 async function restrictive(path, expectedType, label) {
   let info;
-  try { info = await lstat(path); } catch { fail(`${label} is missing`); }
+  try { info = await nativeFilesystem.lstat(path); } catch { fail(`${label} is missing`); }
   if ((expectedType === "directory" ? !info.isDirectory() : !info.isFile()) || info.isSymbolicLink() || (info.mode & 0o077) !== 0) fail(`${label} is unsafe`);
   if (typeof process.getuid === "function" && info.uid !== process.getuid()) fail(`${label} ownership is invalid`);
   return info;
@@ -49,20 +50,20 @@ export async function validateMountedDestination(value, inspectMount) {
   const identityPath = resolve(destination.mountRoot, "identity.json");
   await restrictive(identityPath, "file", "identity sentinel");
   let identity;
-  try { identity = JSON.parse(await readFile(identityPath, "utf8")); } catch { fail("identity sentinel is invalid"); }
+  try { identity = JSON.parse(await nativeFilesystem.readFile(identityPath, "utf8")); } catch { fail("identity sentinel is invalid"); }
   if (!strictObject(identity, ["format", "profileId", "version"]) || identity.format !== "blog-x-mounted-directory" || identity.version !== 1 || identity.profileId !== destination.profileId) fail("identity sentinel does not match profile");
   const inspected = await inspectMount(destination.mountRoot);
   if (!inspected || inspected.isMountPoint !== true || (typeof inspected.root === "string" && resolve(inspected.root) !== destination.mountRoot)) fail("is not the configured mountpoint");
   return destination;
 }
 
-async function fsync(path) {
-  const handle = await open(path, "r");
+async function fsync(filesystem, path) {
+  const handle = await filesystem.open(path, "r");
   try { await handle.sync(); } finally { await handle.close(); }
 }
 
-async function fsyncDirectory(path) {
-  const handle = await open(path, "r");
+async function fsyncDirectory(filesystem, path) {
+  const handle = await filesystem.open(path, "r");
   try { await handle.sync(); } finally { await handle.close(); }
 }
 
@@ -73,7 +74,21 @@ function receiptFor(value) {
   return value;
 }
 
-export async function createMountedDirectoryTransport(value, { inspectMount } = {}) {
+function publicationJournalFor(value) {
+  if (!strictObject(value, ["aadSha256", "cipherStage", "ciphertextSha256", "createdAt", "destinationProfileId", "format", "manifestSha256", "receiptStage", "setId", "version"])
+    || value.format !== "blog-x-mounted-publication" || value.version !== 1 || !setPattern.test(value.setId ?? "")
+    || value.destinationProfileId !== profileId || !Number.isFinite(Date.parse(value.createdAt))
+    || [value.aadSha256, value.ciphertextSha256, value.manifestSha256].some((item) => !digestPattern.test(item ?? ""))
+    || !/^\.publication-[a-f0-9]{24}\.cipher$/.test(value.cipherStage ?? "")
+    || !/^\.publication-[a-f0-9]{24}\.receipt$/.test(value.receiptStage ?? "")) fail("publication journal is invalid");
+  return value;
+}
+
+async function entryState(filesystem, path) {
+  try { return await filesystem.lstat(path); } catch (error) { if (error?.code === "ENOENT") return null; throw error; }
+}
+
+export async function createMountedDirectoryTransport(value, { inspectMount, filesystem = nativeFilesystem } = {}) {
   const destination = await validateMountedDestination(value, inspectMount);
   const objectsRoot = resolve(destination.mountRoot, "objects");
   const receiptHash = (receipt) => createHash("sha256").update(JSON.stringify(receipt)).digest("hex");
@@ -83,11 +98,67 @@ export async function createMountedDirectoryTransport(value, { inspectMount } = 
     const receiptPath = resolve(objectsRoot, `${setId}.receipt.json`);
     await Promise.all([restrictive(cipherPath, "file", "ciphertext"), restrictive(receiptPath, "file", "receipt")]);
     let receipt;
-    try { receipt = receiptFor(JSON.parse(await readFile(receiptPath, "utf8"))); } catch { fail("receipt is invalid"); }
+    try { receipt = receiptFor(JSON.parse(await filesystem.readFile(receiptPath, "utf8"))); } catch { fail("receipt is invalid"); }
     if (receipt.setId !== setId || receipt.destinationProfileId !== destination.profileId) fail("catalog receipt identity mismatch");
-    const ciphertext = await readFile(cipherPath);
+    const ciphertext = await filesystem.readFile(cipherPath);
     if (createHash("sha256").update(ciphertext).digest("hex") !== receipt.ciphertextSha256) fail("catalog ciphertext digest mismatch");
     return { setId, ciphertext, receipt, receiptSha256: receiptHash(receipt) };
+  }
+  async function removeOwn(path) {
+    const state = await entryState(filesystem, path);
+    if (!state) return;
+    if (!state.isFile() || state.isSymbolicLink() || (state.mode & 0o077) !== 0) fail("publication staging object is unsafe");
+    await filesystem.unlink(path);
+  }
+  async function recoverPublicationJournals() {
+    const entries = await filesystem.readdir(objectsRoot, { withFileTypes: true });
+    const journals = [];
+    for (const entry of entries) {
+      if (!entry.isFile() || entry.isSymbolicLink()) fail("catalog contains a non-file");
+      const match = journalNamePattern.exec(entry.name);
+      if (match) journals.push({ setId: match[1], path: resolve(objectsRoot, entry.name) });
+    }
+    for (const journal of journals) {
+      await restrictive(journal.path, "file", "publication journal");
+      let details;
+      try { details = publicationJournalFor(JSON.parse(await filesystem.readFile(journal.path, "utf8"))); } catch { fail("publication journal is invalid"); }
+      if (details.setId !== journal.setId || details.destinationProfileId !== destination.profileId) fail("publication journal identity mismatch");
+      const cipherPath = resolve(objectsRoot, `${journal.setId}.aesgcm`);
+      const receiptPath = resolve(objectsRoot, `${journal.setId}.receipt.json`);
+      const cipherStage = resolve(objectsRoot, details.cipherStage);
+      const receiptStage = resolve(objectsRoot, details.receiptStage);
+      if ([cipherStage, receiptStage].some((path) => dirname(path) !== objectsRoot)) fail("publication journal staging path is invalid");
+      const [cipherState, receiptState] = await Promise.all([entryState(filesystem, cipherPath), entryState(filesystem, receiptPath)]);
+      if (receiptState && !cipherState) fail("publication journal has receipt without ciphertext");
+      if (receiptState) {
+        const verified = await readVerifiedSet(journal.setId);
+        if (verified.receipt.ciphertextSha256 !== details.ciphertextSha256 || verified.receipt.manifestSha256 !== details.manifestSha256
+          || verified.receipt.aadSha256 !== details.aadSha256 || verified.receipt.createdAt !== details.createdAt) fail("publication journal completed pair does not match");
+        await removeOwn(cipherStage);
+        await removeOwn(receiptStage);
+        await fsyncDirectory(filesystem, objectsRoot);
+        await filesystem.unlink(journal.path);
+        await fsyncDirectory(filesystem, objectsRoot);
+        continue;
+      }
+      if (cipherState) {
+        await restrictive(cipherPath, "file", "publication ciphertext");
+        const cipher = await filesystem.readFile(cipherPath);
+        if (createHash("sha256").update(cipher).digest("hex") !== details.ciphertextSha256) fail("publication ciphertext digest mismatch");
+        await filesystem.unlink(cipherPath);
+      }
+      await removeOwn(cipherStage);
+      await removeOwn(receiptStage);
+      // Make removal durable before retiring the only recovery authority.
+      await fsyncDirectory(filesystem, objectsRoot);
+      await filesystem.unlink(journal.path);
+      await fsyncDirectory(filesystem, objectsRoot);
+    }
+    const remaining = await filesystem.readdir(objectsRoot, { withFileTypes: true });
+    for (const entry of remaining) {
+      if (!entry.isFile() || entry.isSymbolicLink()) fail("catalog contains a non-file");
+      if (!/^(\d{8}T\d{6}Z-[a-z0-9]{8,32})\.(?:aesgcm|receipt\.json)$/.test(entry.name)) fail("catalog contains an unexpected object");
+    }
   }
   return {
     scope: destination.kind === "generated-test" ? "generated-mounted-fixture" : "service-mounted-directory",
@@ -95,11 +166,12 @@ export async function createMountedDirectoryTransport(value, { inspectMount } = 
     async transfer({ setId, ciphertext, ciphertextSha256, manifestSha256, aadSha256, createdAt }) {
       if (!setPattern.test(setId ?? "") || !Buffer.isBuffer(ciphertext) || ciphertext.length === 0 || [ciphertextSha256, manifestSha256, aadSha256].some((item) => !digestPattern.test(item ?? "")) || !Number.isFinite(Date.parse(createdAt))) fail("transfer input is invalid");
       if (createHash("sha256").update(ciphertext).digest("hex") !== ciphertextSha256) fail("local ciphertext digest mismatch");
-      await mkdir(objectsRoot, { mode: 0o700 }).catch((error) => { if (error?.code !== "EEXIST") throw error; });
+      await filesystem.mkdir(objectsRoot, { mode: 0o700 }).catch((error) => { if (error?.code !== "EEXIST") throw error; });
       await restrictive(objectsRoot, "directory", "objects prefix");
+      await recoverPublicationJournals();
       const cipherPath = resolve(objectsRoot, `${setId}.aesgcm`);
       const receiptPath = resolve(objectsRoot, `${setId}.receipt.json`);
-      const present = await Promise.all([cipherPath, receiptPath].map(async (path) => lstat(path).then(() => true).catch((error) => {
+      const present = await Promise.all([cipherPath, receiptPath].map(async (path) => filesystem.lstat(path).then(() => true).catch((error) => {
         if (error?.code === "ENOENT") return false;
         throw error;
       })));
@@ -112,25 +184,40 @@ export async function createMountedDirectoryTransport(value, { inspectMount } = 
         return { ...existing.receipt, receiptSha256: existing.receiptSha256 };
       }
       const token = randomBytes(12).toString("hex");
-      const cipherIncomplete = resolve(objectsRoot, `.${setId}.aesgcm.incomplete-${token}`);
-      const receiptIncomplete = resolve(objectsRoot, `.${setId}.receipt.json.incomplete-${token}`);
-      for (const path of [cipherIncomplete, receiptIncomplete]) await lstat(path).then(() => fail("object collision exists")).catch((error) => { if (error?.code !== "ENOENT") throw error; });
-      await writeFile(cipherIncomplete, ciphertext, { flag: "wx", mode: 0o600 });
-      await fsync(cipherIncomplete);
-      const remoteDigest = createHash("sha256").update(await readFile(cipherIncomplete)).digest("hex");
-      if (remoteDigest !== ciphertextSha256) fail("remote ciphertext digest mismatch");
-      await rename(cipherIncomplete, cipherPath);
-      await fsyncDirectory(objectsRoot);
-      const receipt = receiptFor({ format: "blog-x-backup-receipt", version: 1, setId, manifestSha256, ciphertextSha256: remoteDigest, aadSha256, createdAt, destinationProfileId: destination.profileId });
-      await writeFile(receiptIncomplete, JSON.stringify(receipt), { flag: "wx", mode: 0o600 });
-      await fsync(receiptIncomplete);
-      await rename(receiptIncomplete, receiptPath);
-      await fsyncDirectory(objectsRoot);
-      return { ...receipt, receiptSha256: receiptHash(receipt) };
+      const cipherIncomplete = `.publication-${token}.cipher`;
+      const receiptIncomplete = `.publication-${token}.receipt`;
+      const journalPath = resolve(objectsRoot, `.publication-${setId}.json`);
+      const receipt = receiptFor({ format: "blog-x-backup-receipt", version: 1, setId, manifestSha256, ciphertextSha256, aadSha256, createdAt, destinationProfileId: destination.profileId });
+      const journal = publicationJournalFor({ format: "blog-x-mounted-publication", version: 1, setId, manifestSha256, ciphertextSha256, aadSha256, createdAt, destinationProfileId: destination.profileId, cipherStage: cipherIncomplete, receiptStage: receiptIncomplete });
+      const cipherStagePath = resolve(objectsRoot, cipherIncomplete);
+      const receiptStagePath = resolve(objectsRoot, receiptIncomplete);
+      try {
+        await filesystem.writeFile(journalPath, JSON.stringify(journal), { flag: "wx", mode: 0o600 });
+        await fsync(filesystem, journalPath);
+        await fsyncDirectory(filesystem, objectsRoot);
+        await filesystem.writeFile(cipherStagePath, ciphertext, { flag: "wx", mode: 0o600 });
+        await fsync(filesystem, cipherStagePath);
+        const remoteDigest = createHash("sha256").update(await filesystem.readFile(cipherStagePath)).digest("hex");
+        if (remoteDigest !== ciphertextSha256) fail("remote ciphertext digest mismatch");
+        await filesystem.rename(cipherStagePath, cipherPath);
+        await fsyncDirectory(filesystem, objectsRoot);
+        const publishedReceipt = receiptFor({ ...receipt, ciphertextSha256: remoteDigest });
+        await filesystem.writeFile(receiptStagePath, JSON.stringify(publishedReceipt), { flag: "wx", mode: 0o600 });
+        await fsync(filesystem, receiptStagePath);
+        await filesystem.rename(receiptStagePath, receiptPath);
+        await fsyncDirectory(filesystem, objectsRoot);
+        await filesystem.unlink(journalPath);
+        await fsyncDirectory(filesystem, objectsRoot);
+        return { ...publishedReceipt, receiptSha256: receiptHash(publishedReceipt) };
+      } catch (error) {
+        try { await recoverPublicationJournals(); } catch { /* durable recovery remains available on the next run */ }
+        throw error;
+      }
     },
     async catalog() {
       try { await restrictive(objectsRoot, "directory", "objects prefix"); } catch (error) { if (/is missing/.test(error.message)) return []; throw error; }
-      const entries = await readdir(objectsRoot, { withFileTypes: true });
+      await recoverPublicationJournals();
+      const entries = await filesystem.readdir(objectsRoot, { withFileTypes: true });
       const records = new Map();
       for (const entry of entries) {
         if (!entry.isFile()) fail("catalog contains a non-file");
@@ -157,8 +244,8 @@ export async function createMountedDirectoryTransport(value, { inspectMount } = 
     },
     async deleteCatalogEntry(entry) {
       if (!entry || !setPattern.test(entry.setId ?? "") || dirname(entry.cipherPath ?? "") !== objectsRoot || dirname(entry.receiptPath ?? "") !== objectsRoot) fail("deletion target is invalid");
-      await Promise.all([unlink(entry.cipherPath), unlink(entry.receiptPath)]);
-      await fsyncDirectory(objectsRoot);
+      await Promise.all([filesystem.unlink(entry.cipherPath), filesystem.unlink(entry.receiptPath)]);
+      await fsyncDirectory(filesystem, objectsRoot);
     },
   };
 }
